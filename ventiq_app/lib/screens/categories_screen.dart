@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'products_screen.dart';
 
 class CategoriesScreen extends StatelessWidget {
   const CategoriesScreen({super.key});
@@ -96,29 +97,21 @@ class _CategoryCardState extends State<_CategoryCard> with SingleTickerProviderS
   void _onTapUp(TapUpDetails details) {
     setState(() => _isPressed = false);
     _animationController.reverse();
-    // TODO: Navigate to category products
-    _showSelectionFeedback();
+    // Navigate to products list for this category
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProductsScreen(
+          categoryName: widget.name,
+          categoryColor: widget.color,
+        ),
+      ),
+    );
   }
 
   void _onTapCancel() {
     setState(() => _isPressed = false);
     _animationController.reverse();
-  }
-
-  void _showSelectionFeedback() {
-    // Haptic feedback for better UX
-    // HapticFeedback.lightImpact(); // Uncomment if you want haptic feedback
-    
-    // Visual feedback
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Categoría "${widget.name}" seleccionada'),
-        duration: const Duration(milliseconds: 800),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: widget.color,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
   }
 
   @override
