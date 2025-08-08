@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="120dp"
+        android:height="120dp"
+        android:gravity="center">
+        <bitmap
+            android:src="@drawable/ventas"
+            android:tintMode="src_in"
+            android:tint="#FFFFFF"
+            android:gravity="center" />
+    </item>
+</layer-list>

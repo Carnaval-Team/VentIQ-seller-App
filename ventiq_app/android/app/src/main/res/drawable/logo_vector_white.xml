@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    
+    <!-- White circle background -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,60m-50,0a50,50 0,1 1,100 0a50,50 0,1 1,-100 0" />
+    
+    <!-- Simple VentIQ text representation in blue -->
+    <path
+        android:fillColor="#4A90E2"
+        android:pathData="M30,45 L35,65 L40,45 L45,65 L50,45 M55,45 L55,65 L70,65 L70,60 L60,60 L60,50 L70,50 L70,45 L55,45 M75,45 L75,65 L90,65 L90,60 L80,60 L80,50 L90,50 L90,45 L75,45"
+        android:strokeWidth="1" />
+</vector>
