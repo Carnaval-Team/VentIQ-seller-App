@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
- import 'screens/login_screen.dart';
- import 'screens/categories_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/categories_screen.dart';
+import 'screens/preorder_screen.dart';
+import 'screens/orders_screen.dart';
+import 'screens/settings_screen.dart';
  
 void main() {
   runApp(const MyApp());
@@ -23,6 +26,9 @@ class MyApp extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginScreen(),
         '/categories': (context) => const CategoriesScreen(),
+        '/preorder': (context) => const PreorderScreen(),
+        '/orders': (context) => const OrdersScreen(),
+        '/settings': (context) => const SettingsScreen(),
       },
     );
   }
