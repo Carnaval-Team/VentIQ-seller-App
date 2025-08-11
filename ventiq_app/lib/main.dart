@@ -4,6 +4,10 @@ import 'screens/categories_screen.dart';
 import 'screens/preorder_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/apertura_screen.dart';
+import 'screens/egreso_screen.dart';
+import 'screens/venta_total_screen.dart';
+import 'screens/cierre_screen.dart';
  
 void main() {
   runApp(const MyApp());
@@ -29,6 +33,10 @@ class MyApp extends StatelessWidget {
         '/preorder': (context) => const PreorderScreen(),
         '/orders': (context) => const OrdersScreen(),
         '/settings': (context) => const SettingsScreen(),
+        '/apertura': (context) => const AperturaScreen(),
+        '/egreso': (context) => const EgresoScreen(),
+        '/venta-total': (context) => const VentaTotalScreen(),
+        '/cierre': (context) => const CierreScreen(),
       },
     );
   }

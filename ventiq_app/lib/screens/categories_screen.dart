@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'products_screen.dart';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/app_drawer.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -28,6 +29,15 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         backgroundColor: const Color(0xFF4A90E2),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+              tooltip: 'Menú',
+            ),
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -49,8 +59,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           },
         ),
       ),
+      endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
-        currentIndex: 0, // Home tab
+        currentIndex: 0, // Categorías tab
         onTap: _onBottomNavTap,
       ),
     );

@@ -11,7 +11,7 @@ class OrderService {
 
   // Getter para la orden actual
   Order? get currentOrder => _currentOrder;
-  List<Order> get orders => List.unmodifiable(_orders);
+  List<Order> get orders => List.from(_orders);
 
   // Crear una nueva orden o obtener la actual
   Order getCurrentOrCreateOrder() {

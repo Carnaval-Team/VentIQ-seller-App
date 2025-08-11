@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/app_drawer.dart';
 import 'checkout_screen.dart';
 
 class PreorderScreen extends StatefulWidget {
@@ -39,11 +40,19 @@ class _PreorderScreenState extends State<PreorderScreen> {
               onPressed: _showClearOrderDialog,
               tooltip: 'Limpiar orden',
             ),
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+              tooltip: 'Menú',
+            ),
+          ),
         ],
       ),
       body: currentOrder == null || currentOrder.items.isEmpty
           ? _buildEmptyState()
           : _buildOrderContent(currentOrder),
+      endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 1, // Preorden tab
         onTap: _onBottomNavTap,

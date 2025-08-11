@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/order_service.dart';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/app_drawer.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -28,6 +29,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+              tooltip: 'Menú',
+            ),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -132,6 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 80), // Espacio para el bottom navigation
         ],
       ),
+      endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 3, // Configuración tab
         onTap: _onBottomNavTap,

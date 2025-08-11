@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/app_drawer.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({Key? key}) : super(key: key);
@@ -38,14 +39,48 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   void _filterOrders() {
     final allOrders = _orderService.orders;
+    List<Order> filtered;
+    
     if (_searchQuery.isEmpty) {
-      _filteredOrders = allOrders;
+      // Crear una nueva lista para evitar modificar la original
+      filtered = List<Order>.from(allOrders);
     } else {
-      _filteredOrders = allOrders.where((order) {
+      filtered = allOrders.where((order) {
         final buyerName = order.buyerName?.toLowerCase() ?? '';
         final buyerPhone = order.buyerPhone?.toLowerCase() ?? '';
         return buyerName.contains(_searchQuery) || buyerPhone.contains(_searchQuery);
       }).toList();
+    }
+    
+    // Ordenar por prioridad de estado y luego por fecha
+    filtered.sort((a, b) {
+      final aPriority = _getStatusPriority(a.status);
+      final bPriority = _getStatusPriority(b.status);
+      
+      if (aPriority != bPriority) {
+        return aPriority.compareTo(bPriority);
+      }
+      
+      // Si tienen la misma prioridad, ordenar por fecha (más recientes primero)
+      return b.fechaCreacion.compareTo(a.fechaCreacion);
+    });
+    
+    _filteredOrders = filtered;
+  }
+  
+  int _getStatusPriority(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.enviada:
+      case OrderStatus.procesando:
+        return 1; // Pendientes - prioridad alta
+      case OrderStatus.pagoConfirmado:
+        return 2; // Pago confirmado - prioridad media
+      case OrderStatus.completada:
+      case OrderStatus.cancelada:
+      case OrderStatus.devuelta:
+        return 3; // Finalizadas - prioridad baja
+      case OrderStatus.borrador:
+        return 0; // Borradores - prioridad más alta
     }
   }
 
@@ -68,6 +103,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+              tooltip: 'Menú',
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -77,6 +121,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ],
       ),
+      endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 2, // Órdenes tab
         onTap: _onBottomNavTap,
@@ -162,13 +207,70 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Widget _buildOrdersList(List<Order> orders) {
-    return ListView.builder(
+    if (orders.isEmpty) return _buildEmptyState();
+    
+    // Agrupar órdenes por estado
+    final pendingOrders = orders.where((o) => _getStatusPriority(o.status) == 1).toList();
+    final paymentConfirmedOrders = orders.where((o) => _getStatusPriority(o.status) == 2).toList();
+    final completedOrders = orders.where((o) => _getStatusPriority(o.status) == 3).toList();
+    
+    return ListView(
       padding: const EdgeInsets.all(16),
-      itemCount: orders.length,
-      itemBuilder: (context, index) {
-        final order = orders[orders.length - 1 - index]; // Mostrar más recientes primero
-        return _buildOrderCard(order);
-      },
+      children: [
+        // Órdenes pendientes
+        if (pendingOrders.isNotEmpty) ...[
+          _buildSectionHeader('Órdenes Pendientes', pendingOrders.length),
+          ...pendingOrders.map((order) => _buildOrderCard(order)),
+        ],
+        
+        // Órdenes con pago confirmado
+        if (paymentConfirmedOrders.isNotEmpty) ...[
+          if (pendingOrders.isNotEmpty) const SizedBox(height: 16),
+          _buildSectionHeader('Pago Confirmado', paymentConfirmedOrders.length),
+          ...paymentConfirmedOrders.map((order) => _buildOrderCard(order)),
+        ],
+        
+        // Órdenes completadas/finalizadas
+        if (completedOrders.isNotEmpty) ...[
+          if (pendingOrders.isNotEmpty || paymentConfirmedOrders.isNotEmpty) const SizedBox(height: 16),
+          _buildSectionHeader('Completadas', completedOrders.length),
+          ...completedOrders.map((order) => _buildOrderCard(order)),
+        ],
+      ],
+    );
+  }
+  
+  Widget _buildSectionHeader(String title, int count) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1F2937),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0xFF4A90E2).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              count.toString(),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF4A90E2),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -231,9 +333,30 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              // Fecha
+              // Cliente y fecha
               Row(
                 children: [
+                  if (order.buyerName != null) ...[
+                    Icon(
+                      Icons.person_outline,
+                      size: 16,
+                      color: Colors.grey[600],
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        order.buyerName!,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   Icon(
                     Icons.access_time,
                     size: 16,
