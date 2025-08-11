@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- Splash screen compatible con todas las versiones de Android -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="#4A90E2" />
+    <!-- Fondo sólido -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#4A90E2" />
+        </shape>
+    </item>
+    
+    <!-- Logo centrado -->
+    <item android:gravity="center">
+        <bitmap
+            android:src="@drawable/simple_white_logo"
+            android:gravity="center" />
+    </item>
 </layer-list>

@@ -22,12 +22,15 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.ventiq_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // Configuración de compatibilidad amplia
+        minSdk = 21  // Android 5.0 - Compatibilidad con ~95% de dispositivos
+        targetSdk = 34  // Android 14 - Última versión estable
+        compileSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // Configuración adicional para compatibilidad
+        multiDexEnabled = true
     }
 
     buildTypes {
