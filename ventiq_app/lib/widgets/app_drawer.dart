@@ -1,7 +1,59 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+import '../services/user_preferences_service.dart';
 
-class AppDrawer extends StatelessWidget {
+class AppDrawer extends StatefulWidget {
   const AppDrawer({Key? key}) : super(key: key);
+
+  @override
+  State<AppDrawer> createState() => _AppDrawerState();
+}
+
+class _AppDrawerState extends State<AppDrawer> {
+  String _userName = '';
+  String _userEmail = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final userPrefs = UserPreferencesService();
+      
+      // Obtener perfil del trabajador
+      final workerProfile = await userPrefs.getWorkerProfile();
+      final nombres = workerProfile['nombres'] as String?;
+      final apellidos = workerProfile['apellidos'] as String?;
+      
+      // Obtener email del usuario
+      final email = await userPrefs.getUserEmail();
+      
+      String displayName = '';
+      if (nombres != null && apellidos != null) {
+        displayName = '$nombres $apellidos';
+      } else if (nombres != null) {
+        displayName = nombres;
+      } else {
+        displayName = 'Usuario';
+      }
+      
+      setState(() {
+        _userName = displayName;
+        _userEmail = email ?? 'Sin email';
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _userName = 'Usuario';
+        _userEmail = 'Sin email';
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -10,7 +62,6 @@ class AppDrawer extends StatelessWidget {
         children: [
           // Header
           Container(
-            height: 100,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
@@ -18,38 +69,94 @@ class AppDrawer extends StatelessWidget {
                 colors: [Color(0xFF4A90E2), Color(0xFF357ABD)],
               ),
             ),
-            child: const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.store,
-                    size: 28,
-                    color: Colors.white,
-                  ),
-                  SizedBox(width: 12),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'VentIQ',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 12.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const CircleAvatar(
+                      radius: 26,
+                      backgroundColor: Colors.white24,
+                      child: Icon(
+                        Icons.person,
+                        size: 30,
+                        color: Colors.white,
                       ),
-                      Text(
-                        'Gestión de Ventas',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // const Text(
+                          //   'VentIQ',
+                          //   style: TextStyle(
+                          //     color: Colors.white,
+                          //     fontSize: 18,
+                          //     fontWeight: FontWeight.bold,
+                          //     letterSpacing: 0.5,
+                          //   ),
+                          // ),
+                          const SizedBox(height: 6),
+                          if (_isLoading)
+                            const Row(
+                              children: [
+                                SizedBox(
+                                  height: 12,
+                                  width: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Cargando...',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            )
+                          else ...[
+                            Text(
+                              _userName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _userEmail,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Gestión de Ventas',
+                              style: TextStyle(
+                                color: Colors.white60,
+                                fontSize: 10,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -120,6 +227,15 @@ class AppDrawer extends StatelessWidget {
                     Navigator.pushNamed(context, '/cierre');
                   },
                 ),
+                const Divider(height: 1),
+                
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.logout,
+                  title: 'Cerrar Sesión',
+                  subtitle: 'Salir de la aplicación',
+                  onTap: () => _handleLogout(context),
+                ),
               ],
             ),
           ),
@@ -153,6 +269,63 @@ class AppDrawer extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // Manejar logout
+  Future<void> _handleLogout(BuildContext context) async {
+    try {
+      // Mostrar diálogo de confirmación
+      final bool? confirm = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Cerrar Sesión'),
+            content: const Text('¿Estás seguro de que quieres cerrar sesión?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.red,
+                ),
+                child: const Text('Cerrar Sesión'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirm == true) {
+        // Cerrar sesión en Supabase
+        await AuthService().signOut();
+        
+        // Limpiar datos del usuario de las preferencias
+        await UserPreferencesService().clearUserData();
+        
+        print('🔓 Sesión cerrada y datos limpiados');
+        
+        // Navegar al login y limpiar toda la pila de navegación
+        if (context.mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/login',
+            (route) => false,
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Error al cerrar sesión: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cerrar sesión: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildDrawerItem(

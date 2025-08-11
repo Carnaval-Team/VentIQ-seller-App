@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/user_preferences_service.dart';
+import '../services/seller_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,9 +14,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final AuthService _authService = AuthService();
-  bool _obscure = true;
+  final _authService = AuthService();
+  final _userPreferencesService = UserPreferencesService();
+  final _sellerService = SellerService();
   bool _isLoading = false;
+  bool _obscure = true;
   String? _errorMessage;
 
   @override
@@ -38,11 +42,61 @@ class _LoginScreenState extends State<LoginScreen> {
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
-
+        
         if (response.user != null) {
-          // Login exitoso
-          if (mounted) {
-            Navigator.of(context).pushReplacementNamed('/categories');
+          // Guardar datos básicos del usuario en las preferencias
+          await _userPreferencesService.saveUserData(
+            userId: response.user!.id,
+            email: response.user!.email ?? _emailController.text.trim(),
+            accessToken: response.session?.accessToken ?? '',
+          );
+          
+          print('✅ Usuario guardado en preferencias:');
+          print('  - ID: ${response.user!.id}');
+          print('  - Email: ${response.user!.email}');
+          print('  - Access Token: ${response.session?.accessToken != null ? response.session!.accessToken.substring(0, 20) : "null"}...');
+          
+          // Verificar si el usuario es un vendedor válido
+          try {
+            final sellerProfile = await _sellerService.verifySellerAndGetProfile(response.user!.id);
+            
+            final sellerData = sellerProfile['seller'] as Map<String, dynamic>;
+            final workerData = sellerProfile['worker'] as Map<String, dynamic>;
+            
+            // Guardar datos del vendedor
+            await _userPreferencesService.saveSellerData(
+              idTpv: sellerData['id_tpv'] as int,
+              idTrabajador: sellerData['id_trabajador'] as int,
+            );
+            
+            // Guardar perfil del trabajador
+            await _userPreferencesService.saveWorkerProfile(
+              nombres: workerData['nombres'] as String,
+              apellidos: workerData['apellidos'] as String,
+              idTienda: workerData['id_tienda'] as int,
+              idRoll: workerData['id_roll'] as int,
+            );
+            
+            print('✅ Perfil completo del vendedor guardado');
+            
+            // Login exitoso - ir al catálogo
+            if (mounted) {
+              Navigator.of(context).pushReplacementNamed('/categories');
+            }
+            
+          } catch (e) {
+            // Error: usuario no es vendedor válido
+            print('❌ Error de verificación: $e');
+            
+            // Limpiar datos guardados
+            await _userPreferencesService.clearUserData();
+            await _authService.signOut();
+            
+            setState(() {
+              _errorMessage = 'Acceso denegado: $e';
+              _isLoading = false;
+            });
+            return;
           }
         } else {
           setState(() {

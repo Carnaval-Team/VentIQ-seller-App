@@ -1,0 +1,88 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/supabase_config.dart';
+
+class SellerService {
+  static final SellerService _instance = SellerService._internal();
+  factory SellerService() => _instance;
+  SellerService._internal();
+
+  SupabaseClient get client => Supabase.instance.client;
+
+  // Verificar si el usuario es un vendedor válido
+  Future<Map<String, dynamic>?> checkSellerByUuid(String userUuid) async {
+    try {
+      final response = await client
+          .from('app_dat_vendedor')
+          .select('*')
+          .eq('uuid', userUuid);
+      print('respuesta: $response $userUuid');
+      if (response.isEmpty) {
+        return null; // Usuario no es vendedor
+      }
+
+      // Retornar el primer vendedor encontrado
+      return response.first as Map<String, dynamic>;
+    } catch (e) {
+      print('❌ Error al verificar vendedor: $e');
+      rethrow;
+    }
+  }
+
+  // Obtener datos del trabajador por ID
+  Future<Map<String, dynamic>?> getWorkerById(int idTrabajador) async {
+    try {
+      final response = await client
+          .from('app_dat_trabajadores')
+          .select('*')
+          .eq('id', idTrabajador);
+
+      if (response.isEmpty) {
+        return null; // Trabajador no encontrado
+      }
+
+      // Retornar el primer trabajador encontrado
+      return response.first as Map<String, dynamic>;
+    } catch (e) {
+      print('❌ Error al obtener datos del trabajador: $e');
+      rethrow;
+    }
+  }
+
+  // Verificar vendedor y obtener perfil completo (método combinado)
+  Future<Map<String, dynamic>> verifySellerAndGetProfile(
+    String userUuid,
+  ) async {
+    try {
+      // 1. Verificar si es vendedor
+      final sellerData = await checkSellerByUuid(userUuid);
+
+      if (sellerData == null) {
+        throw Exception('Usuario no pertenece a los vendedores autorizados');
+      }
+
+      print('✅ Vendedor verificado:');
+      print('  - ID: ${sellerData['id']}');
+      print('  - ID TPV: ${sellerData['id_tpv']}');
+      print('  - ID Trabajador: ${sellerData['id_trabajador']}');
+
+      // 2. Obtener datos del trabajador
+      final workerData = await getWorkerById(sellerData['id_trabajador']);
+
+      if (workerData == null) {
+        throw Exception('No se encontraron datos del trabajador');
+      }
+
+      print('✅ Perfil del trabajador obtenido:');
+      print('  - Nombres: ${workerData['nombres']}');
+      print('  - Apellidos: ${workerData['apellidos']}');
+      print('  - ID Tienda: ${workerData['id_tienda']}');
+      print('  - ID Roll: ${workerData['id_roll']}');
+
+      // 3. Retornar datos combinados
+      return {'seller': sellerData, 'worker': workerData};
+    } catch (e) {
+      print('❌ Error en verificación de vendedor: $e');
+      rethrow;
+    }
+  }
+}
