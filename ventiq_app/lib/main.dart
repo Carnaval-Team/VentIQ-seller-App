@@ -8,8 +8,14 @@ import 'screens/apertura_screen.dart';
 import 'screens/egreso_screen.dart';
 import 'screens/venta_total_screen.dart';
 import 'screens/cierre_screen.dart';
- 
-void main() {
+import 'services/auth_service.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializar Supabase
+  await AuthService.initialize();
+  
   runApp(const MyApp());
 }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -9,22 +10,70 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final AuthService _authService = AuthService();
   bool _obscure = true;
+  bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
-    _usernameController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_formKey.currentState?.validate() ?? false) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
       FocusScope.of(context).unfocus();
-      Navigator.of(context).pushReplacementNamed('/categories');
+
+      try {
+        final response = await _authService.signInWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+
+        if (response.user != null) {
+          // Login exitoso
+          if (mounted) {
+            Navigator.of(context).pushReplacementNamed('/categories');
+          }
+        } else {
+          setState(() {
+            _errorMessage = 'Error de autenticación. Verifica tus credenciales.';
+          });
+        }
+      } catch (e) {
+        setState(() {
+          _errorMessage = _getErrorMessage(e.toString());
+        });
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
     }
+  }
+
+  String _getErrorMessage(String error) {
+    if (error.contains('Invalid login credentials')) {
+      return 'Credenciales inválidas. Verifica tu email y contraseña.';
+    } else if (error.contains('Email not confirmed')) {
+      return 'Email no confirmado. Revisa tu bandeja de entrada.';
+    } else if (error.contains('Too many requests')) {
+      return 'Demasiados intentos. Intenta de nuevo más tarde.';
+    } else if (error.contains('Network')) {
+      return 'Error de conexión. Verifica tu internet.';
+    }
+    return 'Error de autenticación. Intenta de nuevo.';
   }
 
   @override
@@ -88,7 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 border: Border.all(color: const Color(0xFFE9ECEF)),
                               ),
                               child: TextFormField(
-                                controller: _usernameController,
+                                controller: _emailController,
                                 textInputAction: TextInputAction.next,
                                 keyboardType: TextInputType.emailAddress,
                                 decoration: const InputDecoration(
@@ -98,7 +147,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                   border: InputBorder.none,
                                   contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                                 ),
-                                validator: (v) => (v == null || v.trim().isEmpty) ? 'Ingrese su email' : null,
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return 'Ingrese su email';
+                                  }
+                                  if (!v.contains('@')) {
+                                    return 'Ingrese un email válido';
+                                  }
+                                  return null;
+                                },
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -130,7 +187,33 @@ class _LoginScreenState extends State<LoginScreen> {
                                 validator: (v) => (v == null || v.isEmpty) ? 'Ingrese su contraseña' : null,
                               ),
                             ),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 16),
+                            // Error message
+                            if (_errorMessage != null)
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.red.shade200),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: TextStyle(
+                                          color: Colors.red.shade700,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (_errorMessage != null) const SizedBox(height: 16),
                             // Login button
                             SizedBox(
                               width: double.infinity,
@@ -144,14 +227,23 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   elevation: 0,
                                 ),
-                                onPressed: _submit,
-                                child: const Text(
-                                  'Login',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                                onPressed: _isLoading ? null : _submit,
+                                child: _isLoading
+                                    ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                    : const Text(
+                                        'Login',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
                               ),
                             ),
                             const SizedBox(height: 20),
