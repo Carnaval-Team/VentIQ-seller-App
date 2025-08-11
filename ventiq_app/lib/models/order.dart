@@ -7,6 +7,10 @@ class Order {
   final double total;
   final OrderStatus status;
   final String? notas;
+  final String? buyerName;
+  final String? buyerPhone;
+  final String? extraContacts;
+  final String? paymentMethod;
 
   Order({
     required this.id,
@@ -15,6 +19,10 @@ class Order {
     required this.total,
     required this.status,
     this.notas,
+    this.buyerName,
+    this.buyerPhone,
+    this.extraContacts,
+    this.paymentMethod,
   });
 
   double get subtotal {
@@ -32,6 +40,10 @@ class Order {
     double? total,
     OrderStatus? status,
     String? notas,
+    String? buyerName,
+    String? buyerPhone,
+    String? extraContacts,
+    String? paymentMethod,
   }) {
     return Order(
       id: id ?? this.id,
@@ -40,6 +52,10 @@ class Order {
       total: total ?? this.total,
       status: status ?? this.status,
       notas: notas ?? this.notas,
+      buyerName: buyerName ?? this.buyerName,
+      buyerPhone: buyerPhone ?? this.buyerPhone,
+      extraContacts: extraContacts ?? this.extraContacts,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
     );
   }
 }
@@ -95,6 +111,8 @@ enum OrderStatus {
   procesando,
   completada,
   cancelada,
+  devuelta,
+  pagoConfirmado,
 }
 
 extension OrderStatusExtension on OrderStatus {
@@ -110,6 +128,10 @@ extension OrderStatusExtension on OrderStatus {
         return 'Completada';
       case OrderStatus.cancelada:
         return 'Cancelada';
+      case OrderStatus.devuelta:
+        return 'Devuelta';
+      case OrderStatus.pagoConfirmado:
+        return 'Pago Confirmado';
     }
   }
 
@@ -125,6 +147,10 @@ extension OrderStatusExtension on OrderStatus {
         return '#28A745'; // Verde
       case OrderStatus.cancelada:
         return '#DC3545'; // Rojo
+      case OrderStatus.devuelta:
+        return '#FF6B35'; // Naranja rojizo
+      case OrderStatus.pagoConfirmado:
+        return '#10B981'; // Verde esmeralda
     }
   }
 }

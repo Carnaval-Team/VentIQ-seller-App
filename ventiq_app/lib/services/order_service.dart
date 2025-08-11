@@ -111,6 +111,18 @@ class OrderService {
     _currentOrder = null; // Limpiar orden actual
   }
 
+  // Finalizar orden con detalles completos del checkout
+  void finalizeOrderWithDetails(Order order, Map<String, dynamic> orderData) {
+    if (order.items.isEmpty) return;
+
+    final finalizedOrder = order.copyWith(
+      status: OrderStatus.enviada,
+    );
+
+    _orders.add(finalizedOrder);
+    _currentOrder = null; // Limpiar orden actual
+  }
+
   // Cancelar orden actual
   void cancelCurrentOrder() {
     _currentOrder = null;
@@ -122,6 +134,15 @@ class OrderService {
       return _orders.firstWhere((order) => order.id == orderId);
     } catch (e) {
       return null;
+    }
+  }
+
+  // Actualizar estado de una orden
+  void updateOrderStatus(String orderId, OrderStatus newStatus) {
+    final orderIndex = _orders.indexWhere((order) => order.id == orderId);
+    if (orderIndex != -1) {
+      final updatedOrder = _orders[orderIndex].copyWith(status: newStatus);
+      _orders[orderIndex] = updatedOrder;
     }
   }
 

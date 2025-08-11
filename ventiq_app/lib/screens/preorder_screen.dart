@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../widgets/bottom_navigation.dart';
+import 'checkout_screen.dart';
 
 class PreorderScreen extends StatefulWidget {
   const PreorderScreen({Key? key}) : super(key: key);
@@ -395,36 +396,27 @@ class _PreorderScreenState extends State<PreorderScreen> {
   }
 
   void _finalizeOrder() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Enviar Orden'),
-        content: const Text('¿Confirmas que quieres enviar esta orden?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _orderService.finalizeCurrentOrder();
-              Navigator.pop(context);
-              setState(() {});
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('✅ Orden enviada exitosamente'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A90E2),
-            ),
-            child: const Text('Enviar'),
-          ),
-        ],
+    final currentOrder = _orderService.currentOrder;
+    if (currentOrder == null || currentOrder.items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay productos en la orden'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Navigate to checkout screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CheckoutScreen(order: currentOrder),
       ),
-    );
+    ).then((_) {
+      // Refresh the screen when returning from checkout
+      setState(() {});
+    });
   }
 
   void _onBottomNavTap(int index) {

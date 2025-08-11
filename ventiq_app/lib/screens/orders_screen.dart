@@ -12,10 +12,47 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   final OrderService _orderService = OrderService();
+  final TextEditingController _searchController = TextEditingController();
+  List<Order> _filteredOrders = [];
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _filteredOrders = _orderService.orders;
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text.toLowerCase();
+      _filterOrders();
+    });
+  }
+
+  void _filterOrders() {
+    final allOrders = _orderService.orders;
+    if (_searchQuery.isEmpty) {
+      _filteredOrders = allOrders;
+    } else {
+      _filteredOrders = allOrders.where((order) {
+        final buyerName = order.buyerName?.toLowerCase() ?? '';
+        final buyerPhone = order.buyerPhone?.toLowerCase() ?? '';
+        return buyerName.contains(_searchQuery) || buyerPhone.contains(_searchQuery);
+      }).toList();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final orders = _orderService.orders;
+    _filterOrders();
+    final orders = _filteredOrders;
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -32,10 +69,48 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ),
         centerTitle: true,
       ),
-      body: orders.isEmpty ? _buildEmptyState() : _buildOrdersList(orders),
+      body: Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: orders.isEmpty ? _buildEmptyState() : _buildOrdersList(orders),
+          ),
+        ],
+      ),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 2, // Órdenes tab
         onTap: _onBottomNavTap,
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: Colors.white,
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Buscar por nombre o teléfono del cliente...',
+          prefixIcon: const Icon(Icons.search, color: Color(0xFF4A90E2)),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _searchController.clear();
+                  },
+                )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey[300]!),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF4A90E2)),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
       ),
     );
   }
@@ -230,6 +305,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return Colors.green;
       case OrderStatus.cancelada:
         return Colors.red;
+      case OrderStatus.devuelta:
+        return const Color(0xFFFF6B35);
+      case OrderStatus.pagoConfirmado:
+        return const Color(0xFF10B981);
     }
   }
 
@@ -309,6 +388,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     _buildDetailRow('Fecha:', _formatDate(order.fechaCreacion)),
                     _buildDetailRow('Total productos:', '${order.totalItems}'),
                     _buildDetailRow('Total:', '\$${order.total.toStringAsFixed(2)}'),
+                    
+                    // Datos del cliente
+                    if (order.buyerName != null || order.buyerPhone != null) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Datos del Cliente:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (order.buyerName != null)
+                        _buildDetailRow('Nombre:', order.buyerName!),
+                      if (order.buyerPhone != null)
+                        _buildDetailRow('Teléfono:', order.buyerPhone!),
+                      if (order.extraContacts != null && order.extraContacts!.isNotEmpty)
+                        _buildDetailRow('Contactos extra:', order.extraContacts!),
+                      if (order.paymentMethod != null)
+                        _buildDetailRow('Método de pago:', order.paymentMethod!),
+                    ],
+                    
                     const SizedBox(height: 16),
                     const Text(
                       'Productos:',
@@ -363,12 +465,168 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ],
                       ),
                     )),
+                    
+                    // Botones de acción
+                    const SizedBox(height: 24),
+                    _buildActionButtons(order),
                   ],
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(Order order) {
+    // Solo mostrar botones para órdenes que no estén en estado final
+    if (order.status == OrderStatus.cancelada || 
+        order.status == OrderStatus.devuelta ||
+        order.status == OrderStatus.completada) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      children: [
+        const Divider(),
+        const SizedBox(height: 16),
+        const Text(
+          'Acciones:',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1F2937),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            // Botón Cancelar
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _showConfirmationDialog(
+                  order,
+                  OrderStatus.cancelada,
+                  'Cancelar Orden',
+                  '¿Estás seguro de que quieres cancelar esta orden?',
+                  Colors.red,
+                ),
+                icon: const Icon(Icons.cancel_outlined),
+                label: const Text('Cancelar'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Botón Devolver
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _showConfirmationDialog(
+                  order,
+                  OrderStatus.devuelta,
+                  'Devolver Orden',
+                  '¿Estás seguro de que quieres marcar esta orden como devuelta?',
+                  const Color(0xFFFF6B35),
+                ),
+                icon: const Icon(Icons.keyboard_return),
+                label: const Text('Devolver'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFFF6B35),
+                  side: const BorderSide(color: Color(0xFFFF6B35)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Botón Confirmar Pago (ancho completo)
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => _showConfirmationDialog(
+              order,
+              OrderStatus.pagoConfirmado,
+              'Confirmar Pago',
+              '¿Confirmas que el pago de esta orden ha sido recibido?',
+              const Color(0xFF10B981),
+            ),
+            icon: const Icon(Icons.payment),
+            label: const Text('Confirmar Pago'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showConfirmationDialog(
+    Order order,
+    OrderStatus newStatus,
+    String title,
+    String message,
+    Color color,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _updateOrderStatus(order, newStatus);
+              Navigator.pop(context); // Cerrar diálogo
+              Navigator.pop(context); // Cerrar modal de detalles
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: color,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _updateOrderStatus(Order order, OrderStatus newStatus) {
+    _orderService.updateOrderStatus(order.id, newStatus);
+    setState(() {
+      _filterOrders(); // Actualizar la lista filtrada
+    });
+    
+    String statusMessage = '';
+    switch (newStatus) {
+      case OrderStatus.cancelada:
+        statusMessage = 'Orden cancelada exitosamente';
+        break;
+      case OrderStatus.devuelta:
+        statusMessage = 'Orden marcada como devuelta';
+        break;
+      case OrderStatus.pagoConfirmado:
+        statusMessage = 'Pago confirmado exitosamente';
+        break;
+      default:
+        statusMessage = 'Estado actualizado';
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(statusMessage),
+        backgroundColor: Colors.green,
       ),
     );
   }
