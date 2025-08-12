@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
+import '../services/bluetooth_printer_service.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 
@@ -13,6 +14,7 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   final OrderService _orderService = OrderService();
+  final BluetoothPrinterService _printerService = BluetoothPrinterService();
   final TextEditingController _searchController = TextEditingController();
   List<Order> _filteredOrders = [];
   String _searchQuery = '';
@@ -741,6 +743,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
         break;
       case OrderStatus.pagoConfirmado:
         statusMessage = 'Pago confirmado exitosamente';
+        // Mostrar diálogo de impresión cuando se confirme el pago
+        _showPrintDialog(order);
         break;
       default:
         statusMessage = 'Estado actualizado';
@@ -794,5 +798,131 @@ class _OrdersScreenState extends State<OrdersScreen> {
         Navigator.pushNamed(context, '/settings');
         break;
     }
+  }
+
+  /// Mostrar diálogo de impresión después de confirmar pago
+  Future<void> _showPrintDialog(Order order) async {
+    // Mostrar diálogo de confirmación de impresión
+    bool shouldPrint = await _printerService.showPrintConfirmationDialog(context, order);
+    
+    if (!shouldPrint) return;
+
+    // Mostrar diálogo de selección de impresora
+    var selectedDevice = await _printerService.showDeviceSelectionDialog(context);
+    
+    if (selectedDevice == null) return;
+
+    // Mostrar diálogo de progreso
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFF4A90E2)),
+            SizedBox(height: 16),
+            Text('Conectando a impresora...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      // Conectar a la impresora
+      bool connected = await _printerService.connectToDevice(selectedDevice);
+      
+      if (!connected) {
+        Navigator.pop(context); // Cerrar diálogo de progreso
+        _showErrorDialog('Error de Conexión', 'No se pudo conectar a la impresora. Verifica que esté encendida y en rango.');
+        return;
+      }
+
+      // Actualizar mensaje de progreso
+      Navigator.pop(context); // Cerrar diálogo anterior
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Imprimiendo factura...'),
+            ],
+          ),
+        ),
+      );
+
+      // Imprimir la factura
+      bool printed = await _printerService.printInvoice(order);
+      
+      Navigator.pop(context); // Cerrar diálogo de progreso
+
+      if (printed) {
+        _showSuccessDialog('¡Factura Impresa!', 'La factura de la orden ${order.id} se ha impreso correctamente.');
+      } else {
+        _showErrorDialog('Error de Impresión', 'No se pudo imprimir la factura. Verifica la conexión con la impresora.');
+      }
+
+      // Desconectar de la impresora
+      await _printerService.disconnect();
+
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de progreso si está abierto
+      _showErrorDialog('Error', 'Ocurrió un error durante la impresión: $e');
+      await _printerService.disconnect();
+    }
+  }
+
+  /// Mostrar diálogo de error
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.error, color: Colors.red),
+            SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mostrar diálogo de éxito
+  void _showSuccessDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green),
+            SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('¡Genial!'),
+          ),
+        ],
+      ),
+    );
   }
 }
