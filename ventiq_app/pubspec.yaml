@@ -40,10 +40,13 @@ dependencies:
   supabase_flutter: ^2.5.6
   shared_preferences: ^2.2.2
   
-  # Bluetooth printer dependencies
-  bluetooth_print: ^4.3.0
+  # Bluetooth printing
+  print_bluetooth_thermal: ^1.1.6
+  esc_pos_utils_plus: ^2.0.1
+  
+  # Permissions
   permission_handler: ^11.3.1
-
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -332,16 +332,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             controller: _buyerPhoneController,
             keyboardType: TextInputType.phone,
             decoration: InputDecoration(
-              labelText: 'Teléfono *',
+              labelText: 'Teléfono (opcional)',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
             validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'El teléfono es requerido';
-              }
+              // Phone is now optional, no validation required
               return null;
             },
           ),

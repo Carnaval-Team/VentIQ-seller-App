@@ -744,7 +744,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
       case OrderStatus.pagoConfirmado:
         statusMessage = 'Pago confirmado exitosamente';
         // Mostrar diálogo de impresión cuando se confirme el pago
-        _showPrintDialog(order);
+        print('DEBUG: Llamando a _showPrintDialog para orden ${order.id}');
+        // Agregar un pequeño delay para asegurar que el contexto esté disponible
+        Future.delayed(Duration(milliseconds: 500), () {
+          _showPrintDialog(order);
+        });
         break;
       default:
         statusMessage = 'Estado actualizado';
@@ -802,8 +806,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   /// Mostrar diálogo de impresión después de confirmar pago
   Future<void> _showPrintDialog(Order order) async {
+    print('DEBUG: Iniciando _showPrintDialog para orden ${order.id}');
+    
     // Mostrar diálogo de confirmación de impresión
+    print('DEBUG: Mostrando diálogo de confirmación de impresión');
     bool shouldPrint = await _printerService.showPrintConfirmationDialog(context, order);
+    print('DEBUG: Resultado del diálogo de confirmación: $shouldPrint');
     
     if (!shouldPrint) return;
 

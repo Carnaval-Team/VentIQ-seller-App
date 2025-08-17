@@ -7,8 +7,8 @@ plugins {
 
 android {
     namespace = "com.example.ventiq_app"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk = 35
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -25,7 +25,6 @@ android {
         // Configuración de compatibilidad amplia
         minSdk = 21  // Android 5.0 - Compatibilidad con ~95% de dispositivos
         targetSdk = 34  // Android 14 - Última versión estable
-        compileSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         
