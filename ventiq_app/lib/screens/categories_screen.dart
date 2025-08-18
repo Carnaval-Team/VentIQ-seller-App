@@ -3,6 +3,9 @@ import 'products_screen.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../services/category_service.dart';
+import '../services/user_preferences_service.dart';
+import '../services/changelog_service.dart';
+import '../widgets/changelog_dialog.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -13,6 +16,8 @@ class CategoriesScreen extends StatefulWidget {
 
 class _CategoriesScreenState extends State<CategoriesScreen> {
   final CategoryService _categoryService = CategoryService();
+  final UserPreferencesService _preferencesService = UserPreferencesService();
+  final ChangelogService _changelogService = ChangelogService();
   List<Category> _categories = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -20,7 +25,33 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   @override
   void initState() {
     super.initState();
+    _checkForChangelog();
     _loadCategories();
+  }
+
+  Future<void> _checkForChangelog() async {
+    try {
+      final isFirstTime = await _preferencesService.isFirstTimeOpening();
+      
+      if (isFirstTime) {
+        // Wait a bit for the screen to load
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        final changelog = await _changelogService.getLatestChangelog();
+        if (changelog != null && mounted) {
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => ChangelogDialog(changelog: changelog),
+          );
+          
+          // Save current app version to preferences
+          await _preferencesService.saveAppVersion('1.0.0');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking changelog: $e');
+    }
   }
 
   Future<void> _loadCategories() async {

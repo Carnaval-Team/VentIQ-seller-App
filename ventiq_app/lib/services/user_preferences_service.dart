@@ -17,6 +17,7 @@ class UserPreferencesService {
   static const String _apellidosKey = 'apellidos';
   static const String _idTiendaKey = 'id_tienda';
   static const String _idRollKey = 'id_roll';
+  static const String _appVersionKey = 'app_version';
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -110,6 +111,24 @@ class UserPreferencesService {
     await prefs.remove(_idTiendaKey);
     await prefs.remove(_idRollKey);
     await prefs.setBool(_isLoggedInKey, false);
+  }
+
+  // Guardar versión de la app
+  Future<void> saveAppVersion(String version) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_appVersionKey, version);
+  }
+
+  // Obtener versión de la app
+  Future<String?> getAppVersion() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_appVersionKey);
+  }
+
+  // Verificar si es la primera vez que se abre la app
+  Future<bool> isFirstTimeOpening() async {
+    final prefs = await SharedPreferences.getInstance();
+    return !prefs.containsKey(_appVersionKey);
   }
 
   // Obtener todos los datos del usuario

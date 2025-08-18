@@ -1,0 +1,51 @@
+{
+  "changelogs": [
+    {
+      "version": "1.0.0",
+      "date": "2024-08-17",
+      "title": "🎉 Lanzamiento Inicial de VentIQ",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Sistema de Categorías",
+          "description": "Visualización de categorías de productos con integración a Supabase y colores dinámicos"
+        },
+        {
+          "type": "feature", 
+          "title": "Gestión de Pedidos",
+          "description": "Sistema completo de pedidos con estados: enviada, procesando, pago confirmado, completada"
+        },
+        {
+          "type": "feature",
+          "title": "Checkout Avanzado",
+          "description": "Proceso de checkout con códigos promocionales, descuentos por efectivo y datos del comprador"
+        },
+        {
+          "type": "feature",
+          "title": "Impresión Bluetooth",
+          "description": "Impresión automática de facturas mediante impresoras térmicas Bluetooth"
+        },
+        {
+          "type": "feature",
+          "title": "Menú de Gestión",
+          "description": "Drawer con opciones de apertura, egreso, venta total y cierre de caja"
+        },
+        {
+          "type": "feature",
+          "title": "Búsqueda y Filtros",
+          "description": "Búsqueda de pedidos por nombre de cliente o teléfono en tiempo real"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de Estados",
+          "description": "Acciones para cancelar, devolver y confirmar pago de pedidos"
+        },
+        {
+          "type": "improvement",
+          "title": "Interfaz Moderna",
+          "description": "Diseño Material Design con colores consistentes y experiencia de usuario optimizada"
+        }
+      ]
+    }
+  ]
+}
