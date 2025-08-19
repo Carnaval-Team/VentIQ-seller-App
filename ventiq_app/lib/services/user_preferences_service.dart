@@ -18,6 +18,12 @@ class UserPreferencesService {
   static const String _idTiendaKey = 'id_tienda';
   static const String _idRollKey = 'id_roll';
   static const String _appVersionKey = 'app_version';
+  
+  // Remember me keys
+  static const String _rememberMeKey = 'remember_me';
+  static const String _savedEmailKey = 'saved_email';
+  static const String _savedPasswordKey = 'saved_password';
+  static const String _tokenExpiryKey = 'token_expiry';
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -30,6 +36,10 @@ class UserPreferencesService {
     await prefs.setString(_userEmailKey, email);
     await prefs.setString(_accessTokenKey, accessToken);
     await prefs.setBool(_isLoggedInKey, true);
+    
+    // Set token expiry (24 hours from now)
+    final expiryTime = DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch;
+    await prefs.setInt(_tokenExpiryKey, expiryTime);
   }
 
   // Obtener ID del usuario
@@ -145,5 +155,51 @@ class UserPreferencesService {
       'idTienda': prefs.getInt(_idTiendaKey),
       'idRoll': prefs.getInt(_idRollKey),
     };
+  }
+  
+  // Remember Me functionality
+  Future<void> saveCredentials(String email, String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_savedEmailKey, email);
+    await prefs.setString(_savedPasswordKey, password);
+    await prefs.setBool(_rememberMeKey, true);
+  }
+  
+  Future<void> clearSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_savedEmailKey);
+    await prefs.remove(_savedPasswordKey);
+    await prefs.setBool(_rememberMeKey, false);
+  }
+  
+  Future<Map<String, String?>> getSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'email': prefs.getString(_savedEmailKey),
+      'password': prefs.getString(_savedPasswordKey),
+    };
+  }
+  
+  Future<bool> shouldRememberMe() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_rememberMeKey) ?? false;
+  }
+  
+  // Token validation
+  Future<bool> isTokenValid() async {
+    final prefs = await SharedPreferences.getInstance();
+    final expiryTime = prefs.getInt(_tokenExpiryKey);
+    if (expiryTime == null) return false;
+    
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return now < expiryTime;
+  }
+  
+  Future<bool> hasValidSession() async {
+    final isLoggedIn = await this.isLoggedIn();
+    final hasValidToken = await isTokenValid();
+    final accessToken = await getAccessToken();
+    
+    return isLoggedIn && hasValidToken && accessToken != null && accessToken.isNotEmpty;
   }
 }

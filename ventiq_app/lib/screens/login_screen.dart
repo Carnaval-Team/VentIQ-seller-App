@@ -19,13 +19,32 @@ class _LoginScreenState extends State<LoginScreen> {
   final _sellerService = SellerService();
   bool _isLoading = false;
   bool _obscure = true;
+  bool _rememberMe = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+  
+  Future<void> _loadSavedCredentials() async {
+    final shouldRemember = await _userPreferencesService.shouldRememberMe();
+    if (shouldRemember) {
+      final credentials = await _userPreferencesService.getSavedCredentials();
+      setState(() {
+        _emailController.text = credentials['email'] ?? '';
+        _passwordController.text = credentials['password'] ?? '';
+        _rememberMe = true;
+      });
+    }
   }
 
   Future<void> _submit() async {
@@ -76,6 +95,16 @@ class _LoginScreenState extends State<LoginScreen> {
               idTienda: workerData['id_tienda'] as int,
               idRoll: workerData['id_roll'] as int,
             );
+            
+            // Guardar credenciales si el usuario marcó "Recordarme"
+            if (_rememberMe) {
+              await _userPreferencesService.saveCredentials(
+                _emailController.text.trim(),
+                _passwordController.text,
+              );
+            } else {
+              await _userPreferencesService.clearSavedCredentials();
+            }
             
             print('✅ Perfil completo del vendedor guardado');
             
@@ -240,6 +269,28 @@ class _LoginScreenState extends State<LoginScreen> {
                                 onFieldSubmitted: (_) => _submit(),
                                 validator: (v) => (v == null || v.isEmpty) ? 'Ingrese su contraseña' : null,
                               ),
+                            ),
+                            const SizedBox(height: 16),
+                            // Remember me checkbox
+                            Row(
+                              children: [
+                                Checkbox(
+                                  value: _rememberMe,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _rememberMe = value ?? false;
+                                    });
+                                  },
+                                  activeColor: const Color(0xFF4A90E2),
+                                ),
+                                const Text(
+                                  'Recordarme',
+                                  style: TextStyle(
+                                    color: Color(0xFF6B7280),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 16),
                             // Error message

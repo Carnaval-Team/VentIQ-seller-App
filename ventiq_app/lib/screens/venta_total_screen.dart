@@ -256,163 +256,161 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   }
 
   Widget _buildOrdersList() {
-    return Column(
-      children: [
-        // Header de la lista
-        Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.grey[100],
-          child: const Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: Text(
-                  'Orden',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  'Cliente',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  'Total',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  'Acción',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1F2937),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        // Lista de órdenes
-        Expanded(
-          child: ListView.builder(
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Header de la lista
+          Container(
             padding: const EdgeInsets.all(16),
-            itemCount: _ordenesVendidas.length,
-            itemBuilder: (context, index) {
-              final order = _ordenesVendidas[index];
-              return _buildOrderItem(order);
-            },
-          ),
-        ),
-        
-        // Resumen de productos detallado
-        Container(
-          margin: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4A90E2).withOpacity(0.1),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    topRight: Radius.circular(12),
+            color: Colors.grey[100],
+            child: const Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'Orden',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1F2937),
+                    ),
                   ),
                 ),
-                child: Row(
-                  children: [
-                    Icon(Icons.summarize, color: const Color(0xFF4A90E2)),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Resumen Detallado de Productos',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
+                Expanded(
+                  child: Text(
+                    'Cliente',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1F2937),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    'Total',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1F2937),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    'Acción',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1F2937),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Lista de órdenes
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: _ordenesVendidas.map((order) => _buildOrderItem(order)).toList(),
+            ),
+          ),
+          
+          // Resumen de productos detallado
+          Container(
+            margin: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4A90E2).withOpacity(0.1),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.summarize, color: const Color(0xFF4A90E2)),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Resumen Detallado de Productos',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1F2937),
+                          ),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: _imprimirResumenDetallado,
-                      icon: const Icon(Icons.print),
-                      color: const Color(0xFF10B981),
-                      tooltip: 'Imprimir resumen',
-                    ),
-                  ],
+                      IconButton(
+                        onPressed: _imprimirResumenDetallado,
+                        icon: const Icon(Icons.print),
+                        color: const Color(0xFF10B981),
+                        tooltip: 'Imprimir resumen',
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              _buildDetailedProductsTable(),
-            ],
+                _buildDetailedProductsTable(),
+              ],
+            ),
           ),
-        ),
-        
-        // Total final
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, -2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'TOTAL GENERAL:',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1F2937),
+          
+          // Total final
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
                 ),
-              ),
-              Text(
-                '\$${_totalVentas.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF4A90E2),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'TOTAL GENERAL:',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1F2937),
+                  ),
                 ),
-              ),
-            ],
+                Text(
+                  '\$${_totalVentas.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF4A90E2),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

@@ -398,17 +398,48 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              // Preview de productos
+              // Preview de productos y botón de impresión
               if (order.items.isNotEmpty) ...[
                 const Divider(height: 16),
-                Text(
-                  'Productos: ${order.items.take(2).map((item) => item.nombre).join(', ')}${order.items.length > 2 ? '...' : ''}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Productos: ${order.items.take(2).map((item) => item.nombre).join(', ')}${order.items.length > 2 ? '...' : ''}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // Botón de impresión pequeño para órdenes con pago confirmado o completadas
+                    if (order.status == OrderStatus.pagoConfirmado || 
+                        order.status == OrderStatus.completada)
+                      Container(
+                        margin: const EdgeInsets.only(left: 8),
+                        child: InkWell(
+                          onTap: () => _printOrder(order),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4A90E2).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: const Color(0xFF4A90E2).withOpacity(0.3),
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.print,
+                              size: 16,
+                              color: Color(0xFF4A90E2),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ],
@@ -605,13 +636,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Widget _buildActionButtons(Order order) {
-    // Solo mostrar botones para órdenes que no estén en estado final
-    if (order.status == OrderStatus.cancelada || 
-        order.status == OrderStatus.devuelta ||
-        order.status == OrderStatus.completada) {
-      return const SizedBox.shrink();
-    }
-
     return Column(
       children: [
         const Divider(),
@@ -625,70 +649,95 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            // Botón Cancelar
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _showConfirmationDialog(
-                  order,
-                  OrderStatus.cancelada,
-                  'Cancelar Orden',
-                  '¿Estás seguro de que quieres cancelar esta orden?',
-                  Colors.red,
-                ),
-                icon: const Icon(Icons.cancel_outlined),
-                label: const Text('Cancelar'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red,
-                  side: const BorderSide(color: Colors.red),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
+        
+        // Botón de imprimir (siempre disponible para órdenes con pago confirmado o completadas)
+        if (order.status == OrderStatus.pagoConfirmado || 
+            order.status == OrderStatus.completada) ...[
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _printOrder(order),
+              icon: const Icon(Icons.print),
+              label: const Text('Imprimir Factura'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A90E2),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
-            ),
-            const SizedBox(width: 8),
-            // Botón Devolver
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _showConfirmationDialog(
-                  order,
-                  OrderStatus.devuelta,
-                  'Devolver Orden',
-                  '¿Estás seguro de que quieres marcar esta orden como devuelta?',
-                  const Color(0xFFFF6B35),
-                ),
-                icon: const Icon(Icons.keyboard_return),
-                label: const Text('Devolver'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFFF6B35),
-                  side: const BorderSide(color: Color(0xFFFF6B35)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        // Botón Confirmar Pago (ancho completo)
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () => _showConfirmationDialog(
-              order,
-              OrderStatus.pagoConfirmado,
-              'Confirmar Pago',
-              '¿Confirmas que el pago de esta orden ha sido recibido?',
-              const Color(0xFF10B981),
-            ),
-            icon: const Icon(Icons.payment),
-            label: const Text('Confirmar Pago'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
             ),
           ),
-        ),
+          const SizedBox(height: 8),
+        ],
+        
+        // Botones de gestión solo para órdenes que no estén en estado final
+        if (order.status != OrderStatus.cancelada && 
+            order.status != OrderStatus.devuelta &&
+            order.status != OrderStatus.completada) ...[
+          Row(
+            children: [
+              // Botón Cancelar
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _showConfirmationDialog(
+                    order,
+                    OrderStatus.cancelada,
+                    'Cancelar Orden',
+                    '¿Estás seguro de que quieres cancelar esta orden?',
+                    Colors.red,
+                  ),
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Cancelar'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Botón Devolver
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _showConfirmationDialog(
+                    order,
+                    OrderStatus.devuelta,
+                    'Devolver Orden',
+                    '¿Estás seguro de que quieres marcar esta orden como devuelta?',
+                    const Color(0xFFFF6B35),
+                  ),
+                  icon: const Icon(Icons.keyboard_return),
+                  label: const Text('Devolver'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFFF6B35),
+                    side: const BorderSide(color: Color(0xFFFF6B35)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Botón Confirmar Pago (ancho completo)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _showConfirmationDialog(
+                order,
+                OrderStatus.pagoConfirmado,
+                'Confirmar Pago',
+                '¿Confirmas que el pago de esta orden ha sido recibido?',
+                const Color(0xFF10B981),
+              ),
+              icon: const Icon(Icons.payment),
+              label: const Text('Confirmar Pago'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10B981),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -932,5 +981,79 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ],
       ),
     );
+  }
+
+  /// Imprimir orden individual
+  Future<void> _printOrder(Order order) async {
+    try {
+      // Mostrar diálogo de confirmación de impresión
+      bool shouldPrint = await _printerService.showPrintConfirmationDialog(context, order);
+      if (!shouldPrint) return;
+
+      // Mostrar diálogo de selección de impresora
+      var selectedDevice = await _printerService.showDeviceSelectionDialog(context);
+      if (selectedDevice == null) return;
+
+      // Mostrar diálogo de progreso
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Conectando a impresora...'),
+            ],
+          ),
+        ),
+      );
+
+      // Conectar a la impresora
+      bool connected = await _printerService.connectToDevice(selectedDevice);
+      
+      if (!connected) {
+        Navigator.pop(context); // Cerrar diálogo de progreso
+        _showErrorDialog('Error de Conexión', 'No se pudo conectar a la impresora. Verifica que esté encendida y en rango.');
+        return;
+      }
+
+      // Actualizar mensaje de progreso
+      Navigator.pop(context); // Cerrar diálogo anterior
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Imprimiendo factura...'),
+            ],
+          ),
+        ),
+      );
+
+      // Imprimir la factura
+      bool printed = await _printerService.printInvoice(order);
+      
+      Navigator.pop(context); // Cerrar diálogo de progreso
+
+      if (printed) {
+        _showSuccessDialog('¡Factura Impresa!', 'La factura de la orden ${order.id} se ha impreso correctamente.');
+      } else {
+        _showErrorDialog('Error de Impresión', 'No se pudo imprimir la factura. Verifica la conexión con la impresora.');
+      }
+
+      // Desconectar de la impresora
+      await _printerService.disconnect();
+
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de progreso si está abierto
+      _showErrorDialog('Error', 'Ocurrió un error durante la impresión: $e');
+      await _printerService.disconnect();
+    }
   }
 }
