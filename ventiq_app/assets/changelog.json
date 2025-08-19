@@ -1,6 +1,43 @@
 {
   "changelogs": [
     {
+      "version": "1.1.0",
+      "date": "2024-08-18",
+      "title": "📊 Resumen de Ventas Avanzado",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Resumen Detallado de Productos",
+          "description": "Nueva tabla con información completa: producto, cantidad vendida, costo, descuento y total por producto"
+        },
+        {
+          "type": "feature",
+          "title": "Impresión de Resumen Completo",
+          "description": "Botón para imprimir resumen detallado con información del vendedor, fecha, hora y análisis completo de ventas"
+        },
+        {
+          "type": "feature",
+          "title": "Impresión Individual de Tickets",
+          "description": "Botón de impresión para cada venta individual, permitiendo imprimir tickets específicos ahorrando papel"
+        },
+        {
+          "type": "feature",
+          "title": "Métricas de Costos y Descuentos",
+          "description": "Nuevas tarjetas de resumen mostrando costo total estimado y descuentos aplicados en todas las ventas"
+        },
+        {
+          "type": "improvement",
+          "title": "Información del Vendedor en Reportes",
+          "description": "Los reportes impresos incluyen nombre completo y email del vendedor de turno obtenidos del perfil almacenado"
+        },
+        {
+          "type": "improvement",
+          "title": "Formato de Ticket Optimizado",
+          "description": "Tickets con formato compacto y profesional para impresoras térmicas de 58mm, optimizando el uso de papel"
+        }
+      ]
+    },
+    {
       "version": "1.0.0",
       "date": "2024-08-17",
       "title": "🎉 Lanzamiento Inicial de VentIQ",

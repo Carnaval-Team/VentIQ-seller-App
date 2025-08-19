@@ -723,7 +723,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         });
       }
 
-      // Mostrar mensaje de éxito
+      // Mostrar mensaje de éxito y navegar a categorías
       if (totalItemsAdded > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -756,17 +756,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             backgroundColor: widget.categoryColor,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            duration: const Duration(seconds: 4),
-            action: SnackBarAction(
-              label: 'Ver Orden',
-              textColor: Colors.white,
-              onPressed: () {
-                // TODO: Navegar a la pantalla de orden
-                Navigator.pushNamed(context, '/preorder');
-              },
-            ),
+            duration: const Duration(seconds: 2),
           ),
         );
+        
+        // Navegar de vuelta a categorías después de agregar productos
+        Navigator.pop(context);
       } else {
         // No hay items seleccionados
         ScaffoldMessenger.of(context).showSnackBar(

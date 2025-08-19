@@ -21,6 +21,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   List<Category> _categories = [];
   bool _isLoading = true;
   String? _errorMessage;
+  bool _categoriesLoaded = false; // Flag para controlar si ya se cargaron las categorías
 
   @override
   void initState() {
@@ -54,7 +55,15 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     }
   }
 
-  Future<void> _loadCategories() async {
+  Future<void> _loadCategories({bool forceRefresh = false}) async {
+    // Si ya están cargadas y no es un refresh forzado, no hacer nada
+    if (_categoriesLoaded && !forceRefresh) {
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
     try {
       setState(() {
         _isLoading = true;
@@ -66,6 +75,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       setState(() {
         _categories = categories;
         _isLoading = false;
+        _categoriesLoaded = true; // Marcar como cargadas
       });
 
       debugPrint('✅ Categorías cargadas: ${categories.length}');
@@ -157,7 +167,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _loadCategories,
+              onPressed: () => _loadCategories(forceRefresh: true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4A90E2),
                 foregroundColor: Colors.white,
@@ -193,7 +203,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: _loadCategories,
+      onRefresh: () => _loadCategories(forceRefresh: true),
       color: const Color(0xFF4A90E2),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
