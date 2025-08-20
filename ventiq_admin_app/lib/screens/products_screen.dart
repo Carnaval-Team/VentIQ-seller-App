@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
+import '../models/product.dart';
+import '../services/mock_data_service.dart';
 
 class ProductsScreen extends StatefulWidget {
   const ProductsScreen({super.key});
@@ -13,11 +15,35 @@ class ProductsScreen extends StatefulWidget {
 class _ProductsScreenState extends State<ProductsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  List<Product> _products = [];
+  bool _isLoading = true;
+  String _selectedCategory = 'Todas';
+  String _sortBy = 'name';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts();
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _loadProducts() {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    // Simular carga de datos
+    Future.delayed(const Duration(milliseconds: 800), () {
+      setState(() {
+        _products = MockDataService.getMockProducts();
+        _isLoading = false;
+      });
+    });
   }
 
   @override
@@ -54,9 +80,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
       ),
       body: Column(
         children: [
-          _buildSearchBar(),
+          _buildSearchAndFilters(),
           Expanded(
-            child: _buildProductsList(),
+            child: _isLoading ? _buildLoadingState() : _buildProductsList(),
           ),
         ],
       ),
@@ -69,6 +95,37 @@ class _ProductsScreenState extends State<ProductsScreen> {
         onPressed: _showAddProductDialog,
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.add, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: AppColors.primary),
+          SizedBox(height: 16),
+          Text(
+            'Cargando productos...',
+            style: TextStyle(
+              fontSize: 16,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchAndFilters() {
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          _buildSearchBar(),
+          _buildFilters(),
+        ],
       ),
     );
   }
@@ -112,13 +169,88 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
+  Widget _buildFilters() {
+    final categories = ['Todas', 'Bebidas', 'Panadería', 'Lácteos', 'Granos', 'Aceites'];
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: categories.map((category) {
+                  final isSelected = _selectedCategory == category;
+                  return Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(category),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        setState(() {
+                          _selectedCategory = category;
+                        });
+                      },
+                      selectedColor: AppColors.primary.withOpacity(0.2),
+                      checkmarkColor: AppColors.primary,
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.sort, color: AppColors.primary),
+            onSelected: (value) {
+              setState(() {
+                _sortBy = value;
+              });
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'name',
+                child: Text('Ordenar por Nombre'),
+              ),
+              const PopupMenuItem(
+                value: 'price',
+                child: Text('Ordenar por Precio'),
+              ),
+              const PopupMenuItem(
+                value: 'category',
+                child: Text('Ordenar por Categoría'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildProductsList() {
-    // Mock data - reemplazar con datos reales de Supabase
-    final products = _getMockProducts();
-    final filteredProducts = products.where((product) {
-      return product['name'].toLowerCase().contains(_searchQuery.toLowerCase()) ||
-             product['category'].toLowerCase().contains(_searchQuery.toLowerCase());
+    List<Product> filteredProducts = _products.where((product) {
+      final matchesSearch = product.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                           product.categoryName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                           product.brand.toLowerCase().contains(_searchQuery.toLowerCase());
+      
+      final matchesCategory = _selectedCategory == 'Todas' || product.categoryName == _selectedCategory;
+      
+      return matchesSearch && matchesCategory;
     }).toList();
+
+    // Aplicar ordenamiento
+    filteredProducts.sort((a, b) {
+      switch (_sortBy) {
+        case 'name':
+          return a.name.compareTo(b.name);
+        case 'price':
+          return a.basePrice.compareTo(b.basePrice);
+        case 'category':
+          return a.categoryName.compareTo(b.categoryName);
+        default:
+          return 0;
+      }
+    });
 
     if (filteredProducts.isEmpty) {
       return _buildEmptyState();
@@ -184,7 +316,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
-  Widget _buildProductCard(Map<String, dynamic> product) {
+  Widget _buildProductCard(Product product) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -213,14 +345,26 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     width: 60,
                     height: 60,
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
+                      image: DecorationImage(
+                        image: NetworkImage(product.imageUrl),
+                        fit: BoxFit.cover,
+                        onError: (exception, stackTrace) {},
+                      ),
                     ),
-                    child: Icon(
-                      Icons.inventory_2,
-                      color: AppColors.primary,
-                      size: 30,
-                    ),
+                    child: product.imageUrl.isEmpty
+                        ? Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.inventory_2,
+                              color: AppColors.primary,
+                              size: 30,
+                            ),
+                          )
+                        : null,
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -228,7 +372,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          product['name'],
+                          product.name,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -237,10 +381,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          product['category'],
+                          product.categoryName,
                           style: const TextStyle(
                             fontSize: 14,
                             color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'SKU: ${product.sku}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textLight,
                           ),
                         ),
                       ],
@@ -250,7 +402,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '\$${product['price']}',
+                        '\$${product.basePrice.toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -261,15 +413,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: _getStockColor(product['stock']).withOpacity(0.1),
+                          color: product.isActive ? AppColors.success.withOpacity(0.1) : AppColors.error.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          'Stock: ${product['stock']}',
+                          product.isActive ? 'Activo' : 'Inactivo',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
-                            color: _getStockColor(product['stock']),
+                            color: product.isActive ? AppColors.success : AppColors.error,
                           ),
                         ),
                       ),
@@ -278,23 +430,37 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 ],
               ),
               const SizedBox(height: 12),
+              Text(
+                product.description,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      product['description'],
+                      '${product.variants.length} variante(s)',
                       style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.primary,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const SizedBox(width: 12),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.visibility, size: 20),
+                        onPressed: () => _showProductDetails(product),
+                        color: AppColors.info,
+                        tooltip: 'Ver detalles',
+                      ),
                       IconButton(
                         icon: const Icon(Icons.edit, size: 20),
                         onPressed: () => _showEditProductDialog(product),
@@ -318,58 +484,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
-  Color _getStockColor(int stock) {
-    if (stock == 0) return AppColors.error;
-    if (stock < 10) return AppColors.warning;
-    return AppColors.success;
-  }
 
-  List<Map<String, dynamic>> _getMockProducts() {
-    return [
-      {
-        'id': '1',
-        'name': 'Coca Cola 500ml',
-        'category': 'Bebidas',
-        'price': '2.50',
-        'stock': 45,
-        'description': 'Bebida gaseosa sabor cola en presentación de 500ml',
-      },
-      {
-        'id': '2',
-        'name': 'Pan Integral',
-        'category': 'Panadería',
-        'price': '1.80',
-        'stock': 0,
-        'description': 'Pan integral artesanal, rico en fibra',
-      },
-      {
-        'id': '3',
-        'name': 'Leche Entera 1L',
-        'category': 'Lácteos',
-        'price': '3.20',
-        'stock': 8,
-        'description': 'Leche entera pasteurizada en presentación de 1 litro',
-      },
-      {
-        'id': '4',
-        'name': 'Detergente Líquido',
-        'category': 'Limpieza',
-        'price': '4.50',
-        'stock': 25,
-        'description': 'Detergente líquido concentrado para ropa',
-      },
-    ];
-  }
 
-  void _showProductDetails(Map<String, dynamic> product) {
+  void _showProductDetails(Product product) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        minChildSize: 0.4,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
         builder: (context, scrollController) => Container(
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -391,9 +516,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
+                    const Text(
                       'Detalles del Producto',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
@@ -412,11 +537,27 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   controller: scrollController,
                   padding: const EdgeInsets.all(16),
                   children: [
-                    _buildDetailRow('Nombre:', product['name']),
-                    _buildDetailRow('Categoría:', product['category']),
-                    _buildDetailRow('Precio:', '\$${product['price']}'),
-                    _buildDetailRow('Stock:', '${product['stock']} unidades'),
-                    _buildDetailRow('Descripción:', product['description']),
+                    _buildDetailRow('Nombre:', product.name),
+                    _buildDetailRow('Descripción:', product.description),
+                    _buildDetailRow('Categoría:', product.categoryName),
+                    _buildDetailRow('Marca:', product.brand),
+                    _buildDetailRow('SKU:', product.sku),
+                    _buildDetailRow('Código de barras:', product.barcode),
+                    _buildDetailRow('Precio base:', '\$${product.basePrice.toStringAsFixed(2)}'),
+                    _buildDetailRow('Estado:', product.isActive ? 'Activo' : 'Inactivo'),
+                    _buildDetailRow('Creado:', _formatDate(product.createdAt)),
+                    _buildDetailRow('Actualizado:', _formatDate(product.updatedAt)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Variantes del Producto',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...product.variants.map((variant) => _buildVariantCard(variant)).toList(),
                   ],
                 ),
               ),
@@ -462,16 +603,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
     _showComingSoonDialog('Agregar Producto');
   }
 
-  void _showEditProductDialog(Map<String, dynamic> product) {
+  void _showEditProductDialog(Product product) {
     _showComingSoonDialog('Editar Producto');
   }
 
-  void _showDeleteConfirmation(Map<String, dynamic> product) {
+  void _showDeleteConfirmation(Product product) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Eliminar Producto'),
-        content: Text('¿Estás seguro de que quieres eliminar "${product['name']}"?'),
+        content: Text('¿Estás seguro de que quieres eliminar "${product.name}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -488,6 +629,80 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ),
             child: const Text('Eliminar'),
           ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  Widget _buildVariantCard(ProductVariant variant) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  variant.name,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                '\$${variant.price.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Text(
+                'Presentación: ${variant.presentation}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                'SKU: ${variant.sku}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          if (variant.barcode.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Código: ${variant.barcode}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textLight,
+              ),
+            ),
+          ],
         ],
       ),
     );

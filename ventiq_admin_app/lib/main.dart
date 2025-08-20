@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'config/app_colors.dart';
+import 'screens/splash_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/products_screen.dart';
@@ -18,11 +19,11 @@ void main() async {
   // TODO: Inicializar Supabase cuando se implemente
   // await AuthService.initialize();
   
-  runApp(const VentIQAdminApp());
+  runApp(const MyApp());
 }
 
-class VentIQAdminApp extends StatelessWidget {
-  const VentIQAdminApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -30,11 +31,8 @@ class VentIQAdminApp extends StatelessWidget {
       title: 'VentIQ Admin',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primary),
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.primary,
-          brightness: Brightness.light,
-        ),
         appBarTheme: AppBarTheme(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
@@ -63,8 +61,9 @@ class VentIQAdminApp extends StatelessWidget {
           color: Colors.white,
         ),
       ),
-      initialRoute: '/dashboard', // Cambiar a '/login' cuando se implemente auth
+      initialRoute: '/', // Inicia con splash screen
       routes: {
+        '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
         '/dashboard': (context) => const DashboardScreen(),
         '/products': (context) => const ProductsScreen(),

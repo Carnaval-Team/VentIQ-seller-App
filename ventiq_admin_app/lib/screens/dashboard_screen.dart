@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
+import '../services/mock_data_service.dart';
+import '../services/mock_sales_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -11,6 +14,82 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  bool _isLoading = true;
+  Map<String, dynamic> _dashboardData = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboardData();
+  }
+
+  void _loadDashboardData() {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    // Simular carga de datos del dashboard
+    Future.delayed(const Duration(milliseconds: 1000), () {
+      final products = MockDataService.getMockProducts();
+      final inventory = MockDataService.getMockInventory();
+      final sales = MockSalesService.getMockSales();
+      final expenses = MockSalesService.getMockExpenses();
+      
+      setState(() {
+        _dashboardData = {
+          'totalProducts': products.length,
+          'totalSales': sales.fold(0.0, (sum, sale) => sum + sale.total),
+          'totalOrders': sales.length,
+          'totalExpenses': expenses.fold(0.0, (sum, expense) => sum + expense.amount),
+          'outOfStock': inventory.where((item) => item.currentStock == 0).length,
+          'lowStock': inventory.where((item) => item.needsRestock).length,
+          'okStock': inventory.where((item) => !item.needsRestock && item.currentStock > 0).length,
+          'salesData': _generateSalesData(),
+          'categoryData': _generateCategoryData(products),
+        };
+        _isLoading = false;
+      });
+    });
+  }
+
+  List<FlSpot> _generateSalesData() {
+    return [
+      const FlSpot(0, 1200),
+      const FlSpot(1, 1800),
+      const FlSpot(2, 1500),
+      const FlSpot(3, 2200),
+      const FlSpot(4, 1900),
+      const FlSpot(5, 2800),
+      const FlSpot(6, 2400),
+    ];
+  }
+
+  List<PieChartSectionData> _generateCategoryData(products) {
+    final categoryCount = <String, int>{};
+    for (var product in products) {
+      categoryCount[product.categoryName] = (categoryCount[product.categoryName] ?? 0) + 1;
+    }
+    
+    final colors = [AppColors.primary, AppColors.success, AppColors.warning, AppColors.error, AppColors.info];
+    int colorIndex = 0;
+    
+    return categoryCount.entries.map((entry) {
+      final color = colors[colorIndex % colors.length];
+      colorIndex++;
+      return PieChartSectionData(
+        color: color,
+        value: entry.value.toDouble(),
+        title: '${entry.key}\n${entry.value}',
+        radius: 50,
+        titleStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      );
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -38,11 +117,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-      body: _buildDashboard(),
+      body: _isLoading ? _buildLoadingState() : _buildDashboard(),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 0,
         onTap: _onBottomNavTap,
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: AppColors.primary),
+          SizedBox(height: 16),
+          Text(
+            'Cargando dashboard...',
+            style: TextStyle(
+              fontSize: 16,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -61,6 +159,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _buildSalesSection(),
           const SizedBox(height: 24),
           
+          // Distribución por categorías
+          _buildCategorySection(),
+          const SizedBox(height: 24),
+          
           // Estado del inventario
           _buildInventorySection(),
           const SizedBox(height: 24),
@@ -76,21 +178,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'KPIs Principales',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'KPIs Principales',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh, color: AppColors.primary),
+              onPressed: _loadDashboardData,
+              tooltip: 'Actualizar datos',
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
               child: _buildKPICard(
-                title: 'Ventas Hoy',
-                value: '\$12,450',
+                title: 'Ventas Total',
+                value: '\$${_dashboardData['totalSales']?.toStringAsFixed(2) ?? '0.00'}',
                 subtitle: '+15% vs ayer',
                 icon: Icons.trending_up,
                 color: AppColors.success,
@@ -100,8 +212,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: _buildKPICard(
                 title: 'Productos',
-                value: '1,234',
-                subtitle: '45 sin stock',
+                value: '${_dashboardData['totalProducts'] ?? 0}',
+                subtitle: '${_dashboardData['outOfStock'] ?? 0} sin stock',
                 icon: Icons.inventory,
                 color: AppColors.warning,
               ),
@@ -114,8 +226,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: _buildKPICard(
                 title: 'Órdenes',
-                value: '89',
-                subtitle: '12 pendientes',
+                value: '${_dashboardData['totalOrders'] ?? 0}',
+                subtitle: 'Completadas',
                 icon: Icons.receipt_long,
                 color: AppColors.info,
               ),
@@ -124,7 +236,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: _buildKPICard(
                 title: 'Gastos',
-                value: '\$2,340',
+                value: '\$${_dashboardData['totalExpenses']?.toStringAsFixed(2) ?? '0.00'}',
                 subtitle: 'Este mes',
                 icon: Icons.money_off,
                 color: AppColors.error,
@@ -206,7 +318,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Ventas Recientes',
+          'Tendencia de Ventas (7 días)',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -215,31 +327,162 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(height: 12),
         Container(
+          height: 200,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border),
           ),
-          child: const Column(
-            children: [
-              Text(
-                'Gráfico de ventas aquí',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
+          child: LineChart(
+            LineChartData(
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: 500,
+                getDrawingHorizontalLine: (value) {
+                  return FlLine(
+                    color: AppColors.border,
+                    strokeWidth: 1,
+                  );
+                },
+              ),
+              titlesData: FlTitlesData(
+                show: true,
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 30,
+                    interval: 1,
+                    getTitlesWidget: (double value, TitleMeta meta) {
+                      const style = TextStyle(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      );
+                      Widget text;
+                      switch (value.toInt()) {
+                        case 0:
+                          text = const Text('Lun', style: style);
+                          break;
+                        case 1:
+                          text = const Text('Mar', style: style);
+                          break;
+                        case 2:
+                          text = const Text('Mié', style: style);
+                          break;
+                        case 3:
+                          text = const Text('Jue', style: style);
+                          break;
+                        case 4:
+                          text = const Text('Vie', style: style);
+                          break;
+                        case 5:
+                          text = const Text('Sáb', style: style);
+                          break;
+                        case 6:
+                          text = const Text('Dom', style: style);
+                          break;
+                        default:
+                          text = const Text('', style: style);
+                          break;
+                      }
+                      return SideTitleWidget(
+                        axisSide: meta.axisSide,
+                        child: text,
+                      );
+                    },
+                  ),
+                ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: 500,
+                    getTitlesWidget: (double value, TitleMeta meta) {
+                      return Text(
+                        '\$${(value / 1000).toStringAsFixed(1)}K',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 12,
+                        ),
+                      );
+                    },
+                    reservedSize: 42,
+                  ),
                 ),
               ),
-              SizedBox(height: 40),
-              Text(
-                '(Se implementará con fl_chart)',
-                style: TextStyle(
-                  color: AppColors.textLight,
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                ),
+              borderData: FlBorderData(
+                show: true,
+                border: Border.all(color: AppColors.border, width: 1),
               ),
-            ],
+              minX: 0,
+              maxX: 6,
+              minY: 0,
+              maxY: 3000,
+              lineBarsData: [
+                LineChartBarData(
+                  spots: _dashboardData['salesData'] ?? [],
+                  isCurved: true,
+                  gradient: LinearGradient(
+                    colors: [AppColors.primary, AppColors.primary.withOpacity(0.3)],
+                  ),
+                  barWidth: 3,
+                  isStrokeCapRound: true,
+                  dotData: const FlDotData(
+                    show: true,
+                  ),
+                  belowBarData: BarAreaData(
+                    show: true,
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.primary.withOpacity(0.3),
+                        AppColors.primary.withOpacity(0.1),
+                      ],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategorySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Distribución por Categorías',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          height: 250,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: PieChart(
+            PieChartData(
+              sections: _dashboardData['categoryData'] ?? [],
+              borderData: FlBorderData(show: false),
+              sectionsSpace: 2,
+              centerSpaceRadius: 60,
+              startDegreeOffset: -90,
+            ),
           ),
         ),
       ],
@@ -271,21 +514,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Expanded(
                 child: _buildInventoryItem(
                   'Sin Stock',
-                  '45',
+                  '${_dashboardData['outOfStock'] ?? 0}',
                   Icons.warning,
-                  AppColors.warning,
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 40,
-                color: AppColors.border,
-              ),
-              Expanded(
-                child: _buildInventoryItem(
-                  'Stock Bajo',
-                  '23',
-                  Icons.inventory_2,
                   AppColors.error,
                 ),
               ),
@@ -296,8 +526,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               Expanded(
                 child: _buildInventoryItem(
+                  'Stock Bajo',
+                  '${_dashboardData['lowStock'] ?? 0}',
+                  Icons.inventory_2,
+                  AppColors.warning,
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 40,
+                color: AppColors.border,
+              ),
+              Expanded(
+                child: _buildInventoryItem(
                   'Stock OK',
-                  '1,166',
+                  '${_dashboardData['okStock'] ?? 0}',
                   Icons.check_circle,
                   AppColors.success,
                 ),
