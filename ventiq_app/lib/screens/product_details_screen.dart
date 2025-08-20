@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/order_service.dart';
+import '../widgets/bottom_navigation.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
   final Product product;
@@ -74,6 +75,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           ),
         ),
         centerTitle: true,
+      ),
+      bottomNavigationBar: AppBottomNavigation(
+        currentIndex: -1, // No tab selected since this is a detail screen
+        onTap: _onBottomNavTap,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -785,6 +790,26 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           duration: const Duration(seconds: 3),
         ),
       );
+    }
+  }
+
+  void _onBottomNavTap(int index) {
+    switch (index) {
+      case 0: // Home (Categorías)
+        Navigator.popUntil(context, (route) => route.isFirst);
+        break;
+      case 1: // Preorden
+        Navigator.popUntil(context, (route) => route.isFirst);
+        Navigator.pushNamed(context, '/preorder');
+        break;
+      case 2: // Órdenes
+        Navigator.popUntil(context, (route) => route.isFirst);
+        Navigator.pushNamed(context, '/orders');
+        break;
+      case 3: // Configuración
+        Navigator.popUntil(context, (route) => route.isFirst);
+        Navigator.pushNamed(context, '/settings');
+        break;
     }
   }
 }

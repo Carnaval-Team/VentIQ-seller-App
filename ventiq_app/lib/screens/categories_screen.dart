@@ -14,7 +14,7 @@ class CategoriesScreen extends StatefulWidget {
   State<CategoriesScreen> createState() => _CategoriesScreenState();
 }
 
-class _CategoriesScreenState extends State<CategoriesScreen> {
+class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBindingObserver {
   final CategoryService _categoryService = CategoryService();
   final UserPreferencesService _preferencesService = UserPreferencesService();
   final ChangelogService _changelogService = ChangelogService();
@@ -26,8 +26,23 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkForChangelog();
     _loadCategories();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh the screen when returning from other screens
+      setState(() {});
+    }
   }
 
   Future<void> _checkForChangelog() async {
@@ -231,15 +246,26 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Home (current)
+        // Refresh the current screen to update badges
+        setState(() {});
         break;
       case 1: // Preorden
-        Navigator.pushNamed(context, '/preorder');
+        Navigator.pushNamed(context, '/preorder').then((_) {
+          // Refresh when returning from preorder
+          setState(() {});
+        });
         break;
       case 2: // Órdenes
-        Navigator.pushNamed(context, '/orders');
+        Navigator.pushNamed(context, '/orders').then((_) {
+          // Refresh when returning from orders
+          setState(() {});
+        });
         break;
       case 3: // Configuración
-        Navigator.pushNamed(context, '/settings');
+        Navigator.pushNamed(context, '/settings').then((_) {
+          // Refresh when returning from settings
+          setState(() {});
+        });
         break;
     }
   }
