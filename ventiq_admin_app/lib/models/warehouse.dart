@@ -74,6 +74,11 @@ class WarehouseZone {
   final int capacity;
   final int currentOccupancy;
   final List<String> locations;
+  final String? abc; // 'A', 'B', 'C'
+  final List<String> conditionCodes; // e.g., ['refrigerado','fragil','peligroso']
+  final int productCount; // productos ubicados en esta zona
+  final double utilization; // 0.0 - 1.0 (ocupación)
+  final String? parentId; // layout padre (opcional)
 
   WarehouseZone({
     required this.id,
@@ -85,6 +90,11 @@ class WarehouseZone {
     required this.capacity,
     required this.currentOccupancy,
     this.locations = const [],
+    this.abc,
+    this.conditionCodes = const [],
+    this.productCount = 0,
+    this.utilization = 0.0,
+    this.parentId,
   });
 
   factory WarehouseZone.fromJson(Map<String, dynamic> json) {
@@ -98,6 +108,11 @@ class WarehouseZone {
       capacity: json['capacity'] ?? 0,
       currentOccupancy: json['currentOccupancy'] ?? 0,
       locations: List<String>.from(json['locations'] ?? []),
+      abc: json['abc'],
+      conditionCodes: List<String>.from(json['conditionCodes'] ?? []),
+      productCount: json['productCount'] ?? 0,
+      utilization: (json['utilization'] ?? 0.0).toDouble(),
+      parentId: json['parentId'],
     );
   }
 
@@ -112,6 +127,11 @@ class WarehouseZone {
       'capacity': capacity,
       'currentOccupancy': currentOccupancy,
       'locations': locations,
+      'abc': abc,
+      'conditionCodes': conditionCodes,
+      'productCount': productCount,
+      'utilization': utilization,
+      'parentId': parentId,
     };
   }
 }
