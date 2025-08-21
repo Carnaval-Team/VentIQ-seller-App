@@ -25,6 +25,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
   bool isLoading = true;
   String? errorMessage;
   final ProductService _productService = ProductService();
+  
+  // Cache para evitar peticiones frecuentes
+  static final Map<int, Map<String, List<Product>>> _productsCache = {};
+  static final Map<int, DateTime> _cacheTimestamps = {};
+  static const Duration _cacheExpiration = Duration(minutes: 5);
 
   @override
   void initState() {
@@ -32,14 +37,27 @@ class _ProductsScreenState extends State<ProductsScreen> {
     _loadProducts();
   }
 
-  void _loadProducts() async {
+  void _loadProducts({bool forceRefresh = false}) async {
     try {
       setState(() {
         isLoading = true;
         errorMessage = null;
       });
 
+      // Verificar caché si no es refresh forzado
+      if (!forceRefresh && _isCacheValid(widget.categoryId)) {
+        setState(() {
+          productsBySubcategory = _productsCache[widget.categoryId]!;
+          isLoading = false;
+        });
+        return;
+      }
+
       final products = await _productService.getProductsByCategory(widget.categoryId);
+      
+      // Guardar en caché
+      _productsCache[widget.categoryId] = products;
+      _cacheTimestamps[widget.categoryId] = DateTime.now();
       
       setState(() {
         productsBySubcategory = products;
@@ -51,6 +69,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
         isLoading = false;
       });
     }
+  }
+  
+  bool _isCacheValid(int categoryId) {
+    if (!_productsCache.containsKey(categoryId) || !_cacheTimestamps.containsKey(categoryId)) {
+      return false;
+    }
+    
+    final cacheTime = _cacheTimestamps[categoryId]!;
+    final now = DateTime.now();
+    return now.difference(cacheTime) < _cacheExpiration;
   }
 
 
@@ -128,7 +156,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         ),
                         const SizedBox(height: 16),
                         ElevatedButton(
-                          onPressed: _loadProducts,
+                          onPressed: () => _loadProducts(forceRefresh: true),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: widget.categoryColor,
                             foregroundColor: Colors.white,
@@ -160,18 +188,22 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           ],
                         ),
                       )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    itemCount: productsBySubcategory.keys.length,
-                    itemBuilder: (context, index) {
-                      final subcategory = productsBySubcategory.keys.elementAt(index);
-                      final products = productsBySubcategory[subcategory]!;
-                      return _SubcategorySection(
-                        title: subcategory,
-                        products: products,
-                        categoryColor: widget.categoryColor,
-                      );
-                    },
+                : RefreshIndicator(
+                    onRefresh: () async => _loadProducts(forceRefresh: true),
+                    color: widget.categoryColor,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      itemCount: productsBySubcategory.keys.length,
+                      itemBuilder: (context, index) {
+                        final subcategory = productsBySubcategory.keys.elementAt(index);
+                        final products = productsBySubcategory[subcategory]!;
+                        return _SubcategorySection(
+                          title: subcategory,
+                          products: products,
+                          categoryColor: widget.categoryColor,
+                        );
+                      },
+                    ),
                   ),
       ),
     );
@@ -245,44 +277,72 @@ class _SubcategorySection extends StatelessWidget {
             ],
           ),
         ),
-        // Lista horizontal de productos (máximo 3 visibles con scroll)
-        SizedBox(
-          height: 252, // Altura optimizada: 3 productos (80px) + espaciado (6px entre cards)
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: (products.length / 3).ceil(), // Número de columnas de 3 productos
-            itemBuilder: (context, columnIndex) {
-              // Calcular productos para esta columna
-              final startIndex = columnIndex * 3;
-              final endIndex = (startIndex + 3).clamp(0, products.length);
-              final columnProducts = products.sublist(startIndex, endIndex);
-              
-              return Container(
-                width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
-                margin: const EdgeInsets.only(right: 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: columnProducts.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final product = entry.value;
-                    return Container(
-                      margin: EdgeInsets.only(
-                        bottom: index < columnProducts.length - 1 ? 6 : 0, // Solo espaciado entre cards, no al final
-                      ),
-                      child: _PlayStoreProductCard(
-                        product: product,
-                        categoryColor: categoryColor,
-                      ),
-                    );
-                  }).toList(),
-                ),
-              );
-            },
-          ),
-        ),
+        // Lista horizontal de productos optimizada para espaciado
+        _buildProductsList(),
         const SizedBox(height: 24), // Espaciado entre secciones
       ],
+    );
+  }
+
+  Widget _buildProductsList() {
+    // Si hay 3 o menos productos, mostrar en una sola columna sin espacios extra
+    if (products.length <= 3) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: products.asMap().entries.map((entry) {
+            final index = entry.key;
+            final product = entry.value;
+            return Container(
+              margin: EdgeInsets.only(
+                bottom: index < products.length - 1 ? 6 : 0,
+              ),
+              child: _PlayStoreProductCard(
+                product: product,
+                categoryColor: categoryColor,
+              ),
+            );
+          }).toList(),
+        ),
+      );
+    }
+
+    // Para más de 3 productos, usar el layout horizontal original
+    return SizedBox(
+      height: 252, // Altura optimizada: 3 productos (80px) + espaciado (6px entre cards)
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: (products.length / 3).ceil(), // Número de columnas de 3 productos
+        itemBuilder: (context, columnIndex) {
+          // Calcular productos para esta columna
+          final startIndex = columnIndex * 3;
+          final endIndex = (startIndex + 3).clamp(0, products.length);
+          final columnProducts = products.sublist(startIndex, endIndex);
+          
+          return Container(
+            width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
+            margin: const EdgeInsets.only(right: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: columnProducts.asMap().entries.map((entry) {
+                final index = entry.key;
+                final product = entry.value;
+                return Container(
+                  margin: EdgeInsets.only(
+                    bottom: index < columnProducts.length - 1 ? 6 : 0, // Solo espaciado entre cards, no al final
+                  ),
+                  child: _PlayStoreProductCard(
+                    product: product,
+                    categoryColor: categoryColor,
+                  ),
+                );
+              }).toList(),
+            ),
+          );
+        },
+      ),
     );
   }
 }

@@ -77,7 +77,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         centerTitle: true,
       ),
       bottomNavigationBar: AppBottomNavigation(
-        currentIndex: -1, // No tab selected since this is a detail screen
+        currentIndex: 0, // No tab selected since this is a detail screen
         onTap: _onBottomNavTap,
       ),
       body: SingleChildScrollView(
