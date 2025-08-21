@@ -233,6 +233,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
           itemBuilder: (context, index) {
             final category = _categories[index];
             return _CategoryCard(
+              id: category.id,
               name: category.name,
               imageUrl: category.imageUrl,
               color: category.color,
@@ -272,11 +273,13 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
 }
 
 class _CategoryCard extends StatefulWidget {
+  final int id;
   final String name;
   final String? imageUrl;
   final Color color;
   
   const _CategoryCard({
+    required this.id,
     required this.name,
     this.imageUrl,
     required this.color,
@@ -326,6 +329,7 @@ class _CategoryCardState extends State<_CategoryCard> with SingleTickerProviderS
       context,
       MaterialPageRoute(
         builder: (_) => ProductsScreen(
+          categoryId: widget.id,
           categoryName: widget.name,
           categoryColor: widget.color,
         ),

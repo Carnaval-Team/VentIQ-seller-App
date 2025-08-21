@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import '../models/product.dart';
+import '../services/product_service.dart';
 import 'product_details_screen.dart';
 import '../widgets/bottom_navigation.dart';
 
 class ProductsScreen extends StatefulWidget {
+  final int categoryId;
   final String categoryName;
   final Color categoryColor;
 
   const ProductsScreen({
     Key? key,
+    required this.categoryId,
     required this.categoryName,
     required this.categoryColor,
   }) : super(key: key);
@@ -20,6 +23,8 @@ class ProductsScreen extends StatefulWidget {
 class _ProductsScreenState extends State<ProductsScreen> {
   Map<String, List<Product>> productsBySubcategory = {};
   bool isLoading = true;
+  String? errorMessage;
+  final ProductService _productService = ProductService();
 
   @override
   void initState() {
@@ -27,249 +32,27 @@ class _ProductsScreenState extends State<ProductsScreen> {
     _loadProducts();
   }
 
-  void _loadProducts() {
-    // Simulando datos de productos organizados por subcategorías
-    Future.delayed(const Duration(milliseconds: 800), () {
+  void _loadProducts() async {
+    try {
       setState(() {
-        productsBySubcategory = _generateProductsBySubcategory(widget.categoryName);
+        isLoading = true;
+        errorMessage = null;
+      });
+
+      final products = await _productService.getProductsByCategory(widget.categoryId);
+      
+      setState(() {
+        productsBySubcategory = products;
         isLoading = false;
       });
-    });
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Error al cargar productos: $e';
+        isLoading = false;
+      });
+    }
   }
 
-  Map<String, List<Product>> _generateProductsBySubcategory(String category) {
-    // Datos organizados por subcategorías al estilo Google Play Store
-    final productsBySubcategory = <String, List<Product>>{
-      'Bebidas': [
-        Product(
-          id: 1,
-          denominacion: 'Coca Cola 500ml',
-          descripcion: 'Bebida gaseosa refrescante, sabor original.',
-          foto: 'https://images.unsplash.com/photo-1581636625402-29b2a704ef13?w=300&h=300&fit=crop',
-          precio: 2.50,
-          cantidad: 150,
-          esRefrigerado: true,
-          esFragil: true,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: false,
-          categoria: category,
-          variantes: [
-            ProductVariant(
-              id: 1,
-              nombre: 'Coca Cola Original 500ml',
-              precio: 2.50,
-              cantidad: 50,
-              descripcion: 'Sabor clásico original',
-            ),
-            ProductVariant(
-              id: 2,
-              nombre: 'Coca Cola Zero 500ml',
-              precio: 2.75,
-              cantidad: 35,
-              descripcion: 'Sin azúcar, mismo sabor',
-            ),
-            ProductVariant(
-              id: 3,
-              nombre: 'Coca Cola Light 500ml',
-              precio: 2.60,
-              cantidad: 40,
-              descripcion: 'Baja en calorías',
-            ),
-            ProductVariant(
-              id: 4,
-              nombre: 'Coca Cola Cherry 500ml',
-              precio: 3.00,
-              cantidad: 25,
-              descripcion: 'Sabor cereza',
-            ),
-          ],
-        ),
-        Product(
-          id: 2,
-          denominacion: 'Pepsi 500ml',
-          descripcion: 'Bebida cola refrescante.',
-          foto: 'https://images.unsplash.com/photo-1629203851122-3726ecdf080e?w=300&h=300&fit=crop',
-          precio: 2.25,
-          cantidad: 120,
-          esRefrigerado: true,
-          esFragil: true,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: false,
-          categoria: category,
-          variantes: [
-            ProductVariant(
-              id: 5,
-              nombre: 'Pepsi Original 500ml',
-              precio: 2.25,
-              cantidad: 45,
-              descripcion: 'Cola refrescante clásica',
-            ),
-            ProductVariant(
-              id: 6,
-              nombre: 'Pepsi Max 500ml',
-              precio: 2.50,
-              cantidad: 30,
-              descripcion: 'Sin azúcar, máximo sabor',
-            ),
-            ProductVariant(
-              id: 7,
-              nombre: 'Pepsi Light 500ml',
-              precio: 2.40,
-              cantidad: 25,
-              descripcion: 'Menos calorías',
-            ),
-            ProductVariant(
-              id: 8,
-              nombre: 'Pepsi Twist 500ml',
-              precio: 2.80,
-              cantidad: 20,
-              descripcion: 'Con sabor a limón',
-            ),
-          ],
-        ),
-        Product(
-          id: 3,
-          denominacion: 'Sprite 500ml',
-          descripcion: 'Bebida de lima-limón.',
-          foto: 'https://images.unsplash.com/photo-1625772452859-1c03d5bf1137?w=300&h=300&fit=crop',
-          precio: 2.30,
-          cantidad: 100,
-          esRefrigerado: true,
-          esFragil: true,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: false,
-          categoria: category,
-        ),
-        Product(
-          id: 89,
-          denominacion: 'Coca Cola 500ml',
-          descripcion: 'Bebida gaseosa refrescante, sabor original.',
-          foto: 'https://images.unsplash.com/photo-1581636625402-29b2a704ef13?w=300&h=300&fit=crop',
-          precio: 2.50,
-          cantidad: 150,
-          esRefrigerado: true,
-          esFragil: true,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: false,
-          categoria: category,
-        ),
-      ],
-      'Subcategoria 1': [
-        Product(
-          id: 4,
-          denominacion: 'Agua Mineral 1L',
-          descripcion: 'Agua mineral natural purificada.',
-          foto: 'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=300&h=300&fit=crop',
-          precio: 1.25,
-          cantidad: 200,
-          esRefrigerado: false,
-          esFragil: false,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: true,
-          categoria: category,
-        ),
-        Product(
-          id: 5,
-          denominacion: 'Jugo de Naranja 1L',
-          descripcion: 'Jugo natural de naranja.',
-          foto: 'https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=300&h=300&fit=crop',
-          precio: 3.75,
-          cantidad: 85,
-          esRefrigerado: true,
-          esFragil: true,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: false,
-          categoria: category,
-        ),
-        Product(
-          id: 6,
-          denominacion: 'Té Helado 500ml',
-          descripcion: 'Té helado sabor limón.',
-          foto: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=300&h=300&fit=crop',
-          precio: 2.00,
-          cantidad: 90,
-          esRefrigerado: true,
-          esFragil: false,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: false,
-          categoria: category,
-        ),
-      ],
-      'Nuevos productos': [
-        Product(
-          id: 7,
-          denominacion: 'Energizante Red Bull',
-          descripcion: 'Bebida energizante premium.',
-          foto: 'https://images.unsplash.com/photo-1622543925917-763c34d1a86e?w=300&h=300&fit=crop',
-          precio: 6.25,
-          cantidad: 60,
-          esRefrigerado: true,
-          esFragil: false,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: false,
-          categoria: category,
-        ),
-        Product(
-          id: 8,
-          denominacion: 'Monster Energy',
-          descripcion: 'Bebida energética sabor original.',
-          foto: 'https://images.unsplash.com/photo-1571934811356-5cc061b6821f?w=300&h=300&fit=crop',
-          precio: 5.50,
-          cantidad: 45,
-          esRefrigerado: true,
-          esFragil: false,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: false,
-          categoria: category,
-        ),
-        Product(
-          id: 9,
-          denominacion: 'Gatorade 500ml',
-          descripcion: 'Bebida deportiva hidratante.',
-          foto: 'https://images.unsplash.com/photo-1594736797933-d0401ba2fe65?w=300&h=300&fit=crop',
-          precio: 3.25,
-          cantidad: 75,
-          esRefrigerado: true,
-          esFragil: false,
-          esPeligroso: false,
-          esVendible: true,
-          esComprable: true,
-          esInventariable: true,
-          esPorLotes: false,
-          categoria: category,
-        ),
-      ],
-    };
-
-    return productsBySubcategory;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -293,7 +76,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         centerTitle: true,
       ),
       bottomNavigationBar: AppBottomNavigation(
-        currentIndex: -1, // No tab selected since this is a detail screen
+        currentIndex: 0, // No tab selected since this is a detail screen
         onTap: _onBottomNavTap,
       ),
       body: Container(
@@ -306,33 +89,77 @@ class _ProductsScreenState extends State<ProductsScreen> {
         ),
         child: isLoading
             ? Center(
-                child: CircularProgressIndicator(
-                  color: widget.categoryColor,
-                  strokeWidth: 3,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      color: widget.categoryColor,
+                      strokeWidth: 3,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Cargando productos...',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: widget.categoryColor,
+                      ),
+                    ),
+                  ],
                 ),
               )
-            : productsBySubcategory.isEmpty
+            : errorMessage != null
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          Icons.inventory_2_outlined,
+                          Icons.error_outline,
                           size: 80,
-                          color: widget.categoryColor.withOpacity(0.3),
+                          color: Colors.red.withOpacity(0.3),
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'No hay productos disponibles',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: widget.categoryColor,
+                          errorMessage!,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.red,
                           ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _loadProducts,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: widget.categoryColor,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Reintentar'),
                         ),
                       ],
                     ),
                   )
+                : productsBySubcategory.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.inventory_2_outlined,
+                              size: 80,
+                              color: widget.categoryColor.withOpacity(0.3),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No hay productos disponibles',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: widget.categoryColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     itemCount: productsBySubcategory.keys.length,
