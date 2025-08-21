@@ -22,7 +22,7 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     
     <application
-        android:label="VentIQ Vendedor"
+        android:label="Vendedor Cuba"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

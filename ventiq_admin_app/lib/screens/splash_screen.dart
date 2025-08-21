@@ -18,7 +18,7 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _navigateToLogin() async {
     // Add a small delay for splash screen effect
     await Future.delayed(const Duration(seconds: 3));
-    
+
     if (mounted) {
       Navigator.of(context).pushReplacementNamed('/login');
     }
@@ -28,9 +28,7 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.primary,
-        ),
+        decoration: const BoxDecoration(color: AppColors.primary),
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -51,7 +49,7 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 32),
               // App name
               const Text(
-                'VentIQ Admin',
+                'Vendedor admin',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 28,
@@ -77,7 +75,7 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 24),
               // Loading text
               const Text(
-                'Iniciando VentIQ Admin...',
+                'Iniciando Vendedor admin...',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,

@@ -93,14 +93,14 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.pushNamedAndRemoveUntil(
-                      context, 
-                      '/dashboard', 
+                      context,
+                      '/dashboard',
                       (route) => false,
                     );
                   },
                 ),
                 const Divider(height: 1),
-                
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.inventory_2,
@@ -112,7 +112,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
-                
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.category,
@@ -124,7 +124,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
-                
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.warehouse,
@@ -136,7 +136,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
-                
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.store,
@@ -148,7 +148,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
-                
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.point_of_sale,
@@ -160,7 +160,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
-                
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.account_balance_wallet,
@@ -172,7 +172,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
-                
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.people,
@@ -184,7 +184,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
-                
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.group,
@@ -196,7 +196,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
                 const Divider(height: 1),
-                
+
                 _buildDrawerItem(
                   context,
                   icon: Icons.settings,
@@ -210,29 +210,20 @@ class _AdminDrawerState extends State<AdminDrawer> {
               ],
             ),
           ),
-          
+
           // Footer
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(color: Colors.grey[300]!),
-              ),
+              border: Border(top: BorderSide(color: Colors.grey[300]!)),
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 16,
-                  color: Colors.grey[600],
-                ),
+                Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 8),
                 Text(
-                  'VentIQ Admin v1.0',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                  'Vendedor admin v1.0',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
             ),
@@ -256,11 +247,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
           color: AppColors.primary.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Icon(
-          icon,
-          color: AppColors.primary,
-          size: 24,
-        ),
+        child: Icon(icon, color: AppColors.primary, size: 24),
       ),
       title: Text(
         title,
@@ -272,10 +259,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
       ),
       subtitle: Text(
         subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
-        ),
+        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
       ),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

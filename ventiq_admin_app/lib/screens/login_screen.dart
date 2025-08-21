@@ -33,19 +33,19 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 60),
-              
+
               // Logo y título
               _buildHeader(),
               const SizedBox(height: 60),
-              
+
               // Formulario de login
               _buildLoginForm(),
               const SizedBox(height: 32),
-              
+
               // Botón de login
               _buildLoginButton(),
               const SizedBox(height: 24),
-              
+
               // Enlaces adicionales
               _buildFooterLinks(),
             ],
@@ -73,7 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 24),
         const Text(
-          'VentIQ Admin',
+          'Vendedor admin',
           style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,
@@ -83,10 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 8),
         const Text(
           'Panel de Administración',
-          style: TextStyle(
-            fontSize: 16,
-            color: AppColors.textSecondary,
-          ),
+          style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
         ),
       ],
     );
@@ -124,7 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
             },
           ),
           const SizedBox(height: 16),
-          
+
           // Password
           TextFormField(
             controller: _passwordController,
@@ -179,22 +176,20 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           elevation: 2,
         ),
-        child: _isLoading
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
+        child:
+            _isLoading
+                ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+                : const Text(
+                  'Iniciar Sesión',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
-              )
-            : const Text(
-                'Iniciar Sesión',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
       ),
     );
   }
@@ -253,13 +248,13 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       // Simular login (reemplazar con lógica real de Supabase)
       await Future.delayed(const Duration(seconds: 2));
-      
+
       // TODO: Implementar autenticación real con Supabase
       // final success = await AuthService.signIn(
       //   _emailController.text,
       //   _passwordController.text,
       // );
-      
+
       // Por ahora, simular login exitoso
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/dashboard');
@@ -285,18 +280,19 @@ class _LoginScreenState extends State<LoginScreen> {
   void _showComingSoonDialog(String feature) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(feature),
-        content: const Text(
-          'Esta funcionalidad se implementará próximamente.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(feature),
+            content: const Text(
+              'Esta funcionalidad se implementará próximamente.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 }
