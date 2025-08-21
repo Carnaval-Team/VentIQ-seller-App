@@ -16,6 +16,18 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _isLoading = true;
   Map<String, dynamic> _dashboardData = {};
+  String _selectedTimeFilter = '1 mes';
+  
+  final List<String> _timeFilterOptions = [
+    '5 años',
+    '3 años', 
+    '1 año',
+    '6 meses',
+    '3 meses',
+    '1 mes',
+    'Semana',
+    'Día'
+  ];
 
   @override
   void initState() {
@@ -28,7 +40,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _isLoading = true;
     });
     
-    // Simular carga de datos del dashboard
+    // Simular carga de datos del dashboard con filtro de tiempo
     Future.delayed(const Duration(milliseconds: 1000), () {
       final products = MockDataService.getMockProducts();
       final inventory = MockDataService.getMockInventory();
@@ -44,7 +56,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           'outOfStock': inventory.where((item) => item.currentStock == 0).length,
           'lowStock': inventory.where((item) => item.needsRestock).length,
           'okStock': inventory.where((item) => !item.needsRestock && item.currentStock > 0).length,
-          'salesData': _generateSalesData(),
+          'salesData': _generateSalesData(_selectedTimeFilter),
           'categoryData': _generateCategoryData(products),
         };
         _isLoading = false;
@@ -52,16 +64,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  List<FlSpot> _generateSalesData() {
-    return [
-      const FlSpot(0, 1200),
-      const FlSpot(1, 1800),
-      const FlSpot(2, 1500),
-      const FlSpot(3, 2200),
-      const FlSpot(4, 1900),
-      const FlSpot(5, 2800),
-      const FlSpot(6, 2400),
-    ];
+  List<FlSpot> _generateSalesData(String timeFilter) {
+    // Generar datos basados en el filtro de tiempo seleccionado
+    switch (timeFilter) {
+      case 'Día':
+        return [
+          const FlSpot(0, 150),   // 6 AM
+          const FlSpot(1, 280),   // 9 AM
+          const FlSpot(2, 420),   // 12 PM
+          const FlSpot(3, 380),   // 3 PM
+          const FlSpot(4, 520),   // 6 PM
+          const FlSpot(5, 340),   // 9 PM
+        ];
+      case 'Semana':
+        return [
+          const FlSpot(0, 1200),  // Lun
+          const FlSpot(1, 1800),  // Mar
+          const FlSpot(2, 1500),  // Mié
+          const FlSpot(3, 2200),  // Jue
+          const FlSpot(4, 1900),  // Vie
+          const FlSpot(5, 2800),  // Sáb
+          const FlSpot(6, 2400),  // Dom
+        ];
+      case '1 mes':
+        return [
+          const FlSpot(0, 8500),   // Semana 1
+          const FlSpot(1, 12300),  // Semana 2
+          const FlSpot(2, 10800),  // Semana 3
+          const FlSpot(3, 15200),  // Semana 4
+        ];
+      case '3 meses':
+        return [
+          const FlSpot(0, 35000),  // Mes 1
+          const FlSpot(1, 42000),  // Mes 2
+          const FlSpot(2, 38500),  // Mes 3
+        ];
+      case '6 meses':
+        return [
+          const FlSpot(0, 35000),
+          const FlSpot(1, 42000),
+          const FlSpot(2, 38500),
+          const FlSpot(3, 45200),
+          const FlSpot(4, 41800),
+          const FlSpot(5, 48300),
+        ];
+      case '1 año':
+        return [
+          const FlSpot(0, 120000), // Ene-Mar
+          const FlSpot(1, 135000), // Abr-Jun
+          const FlSpot(2, 142000), // Jul-Sep
+          const FlSpot(3, 158000), // Oct-Dic
+        ];
+      case '3 años':
+        return [
+          const FlSpot(0, 480000), // Año 1
+          const FlSpot(1, 520000), // Año 2
+          const FlSpot(2, 580000), // Año 3
+        ];
+      case '5 años':
+        return [
+          const FlSpot(0, 480000), // Año 1
+          const FlSpot(1, 520000), // Año 2
+          const FlSpot(2, 580000), // Año 3
+          const FlSpot(3, 620000), // Año 4
+          const FlSpot(4, 680000), // Año 5
+        ];
+      default:
+        return [
+          const FlSpot(0, 1200),
+          const FlSpot(1, 1800),
+          const FlSpot(2, 1500),
+          const FlSpot(3, 2200),
+          const FlSpot(4, 1900),
+          const FlSpot(5, 2800),
+          const FlSpot(6, 2400),
+        ];
+    }
   }
 
   List<PieChartSectionData> _generateCategoryData(products) {
@@ -151,6 +229,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Filtro de tiempo
+          _buildTimeFilterSection(),
+          const SizedBox(height: 24),
+          
           // KPIs principales
           _buildKPISection(),
           const SizedBox(height: 24),
@@ -169,6 +251,79 @@ class _DashboardScreenState extends State<DashboardScreen> {
           
           // Accesos rápidos
           _buildQuickActionsSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimeFilterSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.filter_list,
+            color: AppColors.primary,
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Período:',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(8),
+                color: AppColors.background,
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedTimeFilter,
+                  isExpanded: true,
+                  icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.primary),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  items: _timeFilterOptions.map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    if (newValue != null && newValue != _selectedTimeFilter) {
+                      setState(() {
+                        _selectedTimeFilter = newValue;
+                      });
+                      _loadDashboardData();
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -317,9 +472,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Tendencia de Ventas (7 días)',
-          style: TextStyle(
+        Text(
+          'Tendencia de Ventas ($_selectedTimeFilter)',
+          style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: AppColors.textPrimary,
@@ -357,41 +512,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     reservedSize: 30,
                     interval: 1,
                     getTitlesWidget: (double value, TitleMeta meta) {
-                      const style = TextStyle(
-                        color: AppColors.textSecondary,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 12,
-                      );
-                      Widget text;
-                      switch (value.toInt()) {
-                        case 0:
-                          text = const Text('Lun', style: style);
-                          break;
-                        case 1:
-                          text = const Text('Mar', style: style);
-                          break;
-                        case 2:
-                          text = const Text('Mié', style: style);
-                          break;
-                        case 3:
-                          text = const Text('Jue', style: style);
-                          break;
-                        case 4:
-                          text = const Text('Vie', style: style);
-                          break;
-                        case 5:
-                          text = const Text('Sáb', style: style);
-                          break;
-                        case 6:
-                          text = const Text('Dom', style: style);
-                          break;
-                        default:
-                          text = const Text('', style: style);
-                          break;
-                      }
                       return SideTitleWidget(
                         axisSide: meta.axisSide,
-                        child: text,
+                        child: Text(
+                          _getChartLabel(value.toInt()),
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
+                          ),
+                        ),
                       );
                     },
                   ),
@@ -419,9 +549,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 border: Border.all(color: AppColors.border, width: 1),
               ),
               minX: 0,
-              maxX: 6,
+              maxX: _getMaxX(),
               minY: 0,
-              maxY: 3000,
+              maxY: _getMaxY(),
               lineBarsData: [
                 LineChartBarData(
                   spots: _dashboardData['salesData'] ?? [],
@@ -684,6 +814,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
     );
+  }
+
+  String _getChartLabel(int index) {
+    switch (_selectedTimeFilter) {
+      case 'Día':
+        const labels = ['6AM', '9AM', '12PM', '3PM', '6PM', '9PM'];
+        return index < labels.length ? labels[index] : '';
+      case 'Semana':
+        const labels = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+        return index < labels.length ? labels[index] : '';
+      case '1 mes':
+        const labels = ['S1', 'S2', 'S3', 'S4'];
+        return index < labels.length ? labels[index] : '';
+      case '3 meses':
+        const labels = ['Mes 1', 'Mes 2', 'Mes 3'];
+        return index < labels.length ? labels[index] : '';
+      case '6 meses':
+        const labels = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6'];
+        return index < labels.length ? labels[index] : '';
+      case '1 año':
+        const labels = ['Q1', 'Q2', 'Q3', 'Q4'];
+        return index < labels.length ? labels[index] : '';
+      case '3 años':
+        const labels = ['Año 1', 'Año 2', 'Año 3'];
+        return index < labels.length ? labels[index] : '';
+      case '5 años':
+        const labels = ['A1', 'A2', 'A3', 'A4', 'A5'];
+        return index < labels.length ? labels[index] : '';
+      default:
+        return '';
+    }
+  }
+
+  double _getMaxX() {
+    switch (_selectedTimeFilter) {
+      case 'Día':
+        return 5;
+      case 'Semana':
+        return 6;
+      case '1 mes':
+        return 3;
+      case '3 meses':
+        return 2;
+      case '6 meses':
+        return 5;
+      case '1 año':
+        return 3;
+      case '3 años':
+        return 2;
+      case '5 años':
+        return 4;
+      default:
+        return 6;
+    }
+  }
+
+  double _getMaxY() {
+    switch (_selectedTimeFilter) {
+      case 'Día':
+        return 600;
+      case 'Semana':
+        return 3000;
+      case '1 mes':
+        return 20000;
+      case '3 meses':
+        return 50000;
+      case '6 meses':
+        return 60000;
+      case '1 año':
+        return 200000;
+      case '3 años':
+        return 700000;
+      case '5 años':
+        return 800000;
+      default:
+        return 3000;
+    }
   }
 
   void _onBottomNavTap(int index) {
