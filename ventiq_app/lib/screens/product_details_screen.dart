@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/order_service.dart';
+import '../services/product_detail_service.dart';
 import '../widgets/bottom_navigation.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
@@ -21,6 +22,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   ProductVariant? selectedVariant;
   int selectedQuantity = 1;
   Map<ProductVariant, int> variantQuantities = {};
+  final ProductDetailService _productDetailService = ProductDetailService();
+  Product? _detailedProduct;
+  bool _isLoadingDetails = false;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -29,14 +34,47 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     for (var variant in widget.product.variantes) {
       variantQuantities[variant] = 0;
     }
+    // Cargar detalles completos del producto
+    _loadProductDetails();
   }
+
+  /// Cargar detalles completos del producto desde Supabase
+  Future<void> _loadProductDetails() async {
+    setState(() {
+      _isLoadingDetails = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final detailedProduct = await _productDetailService.getProductDetail(widget.product.id);
+      
+      setState(() {
+        _detailedProduct = detailedProduct;
+        _isLoadingDetails = false;
+        
+        // Reinicializar cantidades de variantes con los nuevos datos
+        variantQuantities.clear();
+        for (var variant in detailedProduct.variantes) {
+          variantQuantities[variant] = 0;
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error al cargar detalles: $e';
+        _isLoadingDetails = false;
+      });
+    }
+  }
+
+  /// Get the current product (detailed if loaded, otherwise fallback to original)
+  Product get currentProduct => _detailedProduct ?? widget.product;
 
   double get totalPrice {
     double total = 0.0;
     
-    if (widget.product.variantes.isEmpty) {
+    if (currentProduct.variantes.isEmpty) {
       // Producto sin variantes
-      total = widget.product.precio * selectedQuantity;
+      total = currentProduct.precio * selectedQuantity;
     } else {
       // Producto con variantes
       for (var entry in variantQuantities.entries) {
@@ -48,7 +86,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 
   int get maxQuantityForProduct {
-    return widget.product.cantidad;
+    return currentProduct.cantidad;
   }
 
   int maxQuantityForVariant(ProductVariant variant) {
@@ -67,7 +105,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          widget.product.denominacion,
+          currentProduct.denominacion,
           style: const TextStyle(
             color: Color.fromARGB(255, 255, 255, 255),
             fontSize: 18,
@@ -80,11 +118,70 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         currentIndex: 0, // No tab selected since this is a detail screen
         onTap: _onBottomNavTap,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: _isLoadingDetails
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    color: Color(0xFF4A90E2),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Cargando detalles del producto...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : _errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.red[300],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error al cargar detalles',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage!,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: _loadProductDetails,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4A90E2),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
             // Sección superior: Imagen y información del producto
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -99,9 +196,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(11),
-                    child: widget.product.foto != null
+                    child: currentProduct.foto != null
                         ? Image.network(
-                            widget.product.foto!,
+                            currentProduct.foto!,
                             fit: BoxFit.cover,
                             errorBuilder: (context, error, stackTrace) {
                               return Container(
@@ -156,7 +253,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     children: [
                       // Denominación
                       Text(
-                        widget.product.denominacion,
+                        currentProduct.denominacion,
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
@@ -169,7 +266,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                       const SizedBox(height: 4),
                       // Categoría
                       Text(
-                        widget.product.categoria,
+                        currentProduct.categoria,
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[600],
@@ -181,7 +278,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                       const SizedBox(height: 8),
                       // Precio del producto
                       Text(
-                        '\$${widget.product.precio.toStringAsFixed(2)}',
+                        '\$${currentProduct.precio.toStringAsFixed(2)}',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -197,7 +294,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             ),
             const SizedBox(height: 24),
             // Sección de variantes
-            if (widget.product.variantes.isNotEmpty) ...[
+            if (currentProduct.variantes.isNotEmpty) ...[
               Text(
                 'VARIANTES:',
                 style: TextStyle(
@@ -218,9 +315,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
                 ),
-                itemCount: widget.product.variantes.length,
+                itemCount: currentProduct.variantes.length,
                 itemBuilder: (context, index) {
-                  final variant = widget.product.variantes[index];
+                  final variant = currentProduct.variantes[index];
                   final isSelected = variantQuantities[variant]! > 0;
                   return _buildVariantProductCard(variant, isSelected);
                 },
@@ -249,18 +346,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   ),
                   const SizedBox(height: 12),
                   // Lista de productos seleccionados
-                  if (widget.product.variantes.isEmpty && selectedQuantity > 0)
+                  if (currentProduct.variantes.isEmpty && selectedQuantity > 0)
                     _buildSelectedProductItem(
-                      widget.product.denominacion,
+                      currentProduct.denominacion,
                       selectedQuantity,
-                      widget.product.precio,
+                      currentProduct.precio,
                       'Almacén A-1', // Ubicación por defecto
                     ),
-                  if (widget.product.variantes.isNotEmpty)
+                  if (currentProduct.variantes.isNotEmpty)
                     ...variantQuantities.entries
                         .where((entry) => entry.value > 0)
                         .map((entry) => _buildSelectedProductItem(
-                              '${widget.product.denominacion} - ${entry.key.nombre}',
+                              '${currentProduct.denominacion} - ${entry.key.nombre}',
                               entry.value,
                               entry.key.precio,
                               'Almacén B-${entry.key.nombre.substring(0, 1)}', // Ubicación generada de la variante
@@ -565,11 +662,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     InkWell(
                       onTap: () {
                         setState(() {
-                          if (widget.product.variantes.isEmpty) {
+                          if (currentProduct.variantes.isEmpty) {
                             if (selectedQuantity > 0) selectedQuantity--;
                           } else {
                             // Buscar la variante correspondiente
-                            for (var variant in widget.product.variantes) {
+                            for (var variant in currentProduct.variantes) {
                               if (name.contains(variant.nombre)) {
                                 if (variantQuantities[variant]! > 0) {
                                   variantQuantities[variant] = variantQuantities[variant]! - 1;
@@ -624,11 +721,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     InkWell(
                       onTap: () {
                         setState(() {
-                          if (widget.product.variantes.isEmpty) {
+                          if (currentProduct.variantes.isEmpty) {
                             if (selectedQuantity < maxQuantityForProduct) selectedQuantity++;
                           } else {
                             // Buscar la variante correspondiente
-                            for (var variant in widget.product.variantes) {
+                            for (var variant in currentProduct.variantes) {
                               if (name.contains(variant.nombre)) {
                                 if (variantQuantities[variant]! < variant.cantidad) {
                                   variantQuantities[variant] = variantQuantities[variant]! + 1;
@@ -673,7 +770,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   // Método para obtener el total de items
   int _getTotalItems() {
     int total = 0;
-    if (widget.product.variantes.isEmpty) {
+    if (currentProduct.variantes.isEmpty) {
       total = selectedQuantity;
     } else {
       for (var quantity in variantQuantities.values) {
@@ -689,16 +786,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     List<String> addedItems = [];
 
     try {
-      if (widget.product.variantes.isEmpty) {
+      if (currentProduct.variantes.isEmpty) {
         // Producto sin variantes
         if (selectedQuantity > 0) {
           orderService.addItemToCurrentOrder(
-            producto: widget.product,
+            producto: currentProduct,
             cantidad: selectedQuantity,
             ubicacionAlmacen: 'Almacén A-1',
           );
           totalItemsAdded += selectedQuantity;
-          addedItems.add('${widget.product.denominacion} (x$selectedQuantity)');
+          addedItems.add('${currentProduct.denominacion} (x$selectedQuantity)');
           
           // Resetear cantidad después de agregar
           setState(() {
@@ -710,7 +807,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         for (var entry in variantQuantities.entries) {
           if (entry.value > 0) {
             orderService.addItemToCurrentOrder(
-              producto: widget.product,
+              producto: currentProduct,
               variante: entry.key,
               cantidad: entry.value,
               ubicacionAlmacen: 'Almacén B-${entry.key.nombre.substring(0, 1)}',
@@ -722,7 +819,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         
         // Resetear cantidades después de agregar
         setState(() {
-          for (var variant in widget.product.variantes) {
+          for (var variant in currentProduct.variantes) {
             variantQuantities[variant] = 0;
           }
         });
