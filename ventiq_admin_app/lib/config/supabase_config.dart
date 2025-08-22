@@ -1,16 +1,4 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 class SupabaseConfig {
-  // TODO: Configurar con las credenciales reales de Supabase
-  static const String url = 'YOUR_SUPABASE_URL';
-  static const String anonKey = 'YOUR_SUPABASE_ANON_KEY';
-  
-  static SupabaseClient get client => Supabase.instance.client;
-  
-  static Future<void> initialize() async {
-    await Supabase.initialize(
-      url: url,
-      anonKey: anonKey,
-    );
-  }
+  static const String supabaseUrl = 'https://vsieeihstajlrdvpuooh.supabase.co';
+  static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzaWVlaWhzdGFqbHJkdnB1b29oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDUzMjIwNiwiZXhwIjoyMDcwMTA4MjA2fQ.d9fKCcunP_J0tdlZF8eg0vAD-bsK3XfemavnZWT3Ro8';
 }
