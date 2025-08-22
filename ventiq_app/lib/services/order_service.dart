@@ -1,5 +1,7 @@
 import '../models/order.dart';
 import '../models/product.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'user_preferences_service.dart';
 
 class OrderService {
   static final OrderService _instance = OrderService._internal();
@@ -33,6 +35,7 @@ class OrderService {
     ProductVariant? variante,
     required int cantidad,
     required String ubicacionAlmacen,
+    Map<String, dynamic>? inventoryData,
   }) {
     final order = getCurrentOrCreateOrder();
     final precioUnitario = variante?.precio ?? producto.precio;
@@ -51,7 +54,7 @@ class OrderService {
       );
       order.items[existingItemIndex] = updatedItem;
     } else {
-      // Crear nuevo item
+      // Crear nuevo item con datos completos de inventario
       final newItem = OrderItem(
         id: 'ITEM-${DateTime.now().millisecondsSinceEpoch}-${order.items.length}',
         producto: producto,
@@ -59,6 +62,7 @@ class OrderService {
         cantidad: cantidad,
         precioUnitario: precioUnitario,
         ubicacionAlmacen: ubicacionAlmacen,
+        inventoryData: inventoryData,
       );
       order.items.add(newItem);
     }
@@ -112,15 +116,46 @@ class OrderService {
   }
 
   // Finalizar orden con detalles completos del checkout
-  void finalizeOrderWithDetails(Order order, Map<String, dynamic> orderData) {
-    if (order.items.isEmpty) return;
+  Future<Map<String, dynamic>> finalizeOrderWithDetails(Order order, Map<String, dynamic> orderData) async {
+    if (order.items.isEmpty) {
+      throw Exception('No hay productos en la orden');
+    }
 
-    final finalizedOrder = order.copyWith(
-      status: OrderStatus.enviada,
-    );
+    try {
+      // Registrar venta en Supabase usando fn_registrar_venta
+      final result = await _registerSaleInSupabase(order, orderData);
+      
+      if (result['success'] == true) {
+        final finalizedOrder = order.copyWith(
+          status: OrderStatus.enviada,
+          buyerName: orderData['buyerName'],
+          buyerPhone: orderData['buyerPhone'],
+          extraContacts: orderData['extraContacts'],
+          paymentMethod: orderData['paymentMethod'],
+          notas: orderData['notas'],
+        );
 
-    _orders.add(finalizedOrder);
-    _currentOrder = null; // Limpiar orden actual
+        _orders.add(finalizedOrder);
+        _currentOrder = null; // Limpiar orden actual
+        
+        return {
+          'success': true,
+          'operationId': result['operationId'],
+          'message': 'Orden registrada exitosamente'
+        };
+      } else {
+        return {
+          'success': false,
+          'error': result['error'] ?? 'Error desconocido al registrar la venta'
+        };
+      }
+    } catch (e) {
+      print('Error al finalizar orden: $e');
+      return {
+        'success': false,
+        'error': 'Error al procesar la orden: ${e.toString()}'
+      };
+    }
   }
 
   // Cancelar orden actual
@@ -150,6 +185,95 @@ class OrderService {
   void clearAllOrders() {
     _orders.clear();
     _currentOrder = null;
+  }
+
+  // Registrar venta en Supabase usando fn_registrar_venta
+  Future<Map<String, dynamic>> _registerSaleInSupabase(Order order, Map<String, dynamic> orderData) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final userData = await userPrefs.getUserData();
+      
+      // Obtener IDs por separado usando los nuevos métodos
+      final idTienda = await userPrefs.getIdTienda(); // Desde app_dat_trabajadores
+      final idTpv = await userPrefs.getIdTpv(); // Desde app_dat_vendedor
+      final userId = userData['userId'];
+      
+      print('=== DEBUG PARAMETROS SUPABASE (IDs SEPARADOS) ===');
+      print('userData completo: $userData');
+      print('idTienda (app_dat_trabajadores): $idTienda');
+      print('idTpv (app_dat_vendedor): $idTpv');
+      print('userId: $userId');
+      print('================================================');
+      
+      if (idTpv == null || idTienda == null || userId == null) {
+        throw Exception('Datos de usuario incompletos - idTpv: $idTpv, idTienda: $idTienda, userId: $userId');
+      }
+
+      // Preparar productos para fn_registrar_venta
+      final productos = order.items.map((item) {
+        final inventoryData = item.inventoryData ?? {};
+        
+        return {
+          'id_producto': item.producto.id,
+          'id_variante': item.variante?.id,
+          'id_opcion_variante': inventoryData['id_opcion_variante'],
+          'id_ubicacion': inventoryData['id_ubicacion'],
+          'id_presentacion': inventoryData['id_presentacion'],
+          'cantidad': item.cantidad,
+          'precio_unitario': item.precioUnitario,
+          'sku_producto': inventoryData['sku_producto'] ?? item.producto.id.toString(),
+          'sku_ubicacion': inventoryData['sku_ubicacion'],
+        };
+      }).toList();
+
+      // Preparar parámetros para fn_registrar_venta
+      final rpcParams = {
+        'p_codigo_promocion': orderData['promoCode'],
+        'p_denominacion': 'Venta App Vendedor - ${order.id}',
+        'p_estado_inicial': 1,
+        'p_id_tpv': idTpv,
+        'p_observaciones': orderData['notas'] ?? 'Venta realizada desde app móvil',
+        'p_productos': productos,
+        'p_uuid': userId,
+      };
+
+      print('=== PARAMETROS RPC fn_registrar_venta ===');
+      print('p_codigo_promocion: ${rpcParams['p_codigo_promocion']}');
+      print('p_denominacion: ${rpcParams['p_denominacion']}');
+      print('p_estado_inicial: ${rpcParams['p_estado_inicial']}');
+      print('p_id_tpv: ${rpcParams['p_id_tpv']}');
+      print('p_observaciones: ${rpcParams['p_observaciones']}');
+      print('p_uuid: ${rpcParams['p_uuid']}');
+      print('p_productos (${productos.length} items): $productos');
+      print('========================================');
+
+      // Llamar a fn_registrar_venta
+      final response = await Supabase.instance.client.rpc(
+        'fn_registrar_venta',
+        params: rpcParams,
+      );
+
+      print('Respuesta fn_registrar_venta: $response');
+      
+      if (response != null && response['status'] == 'success') {
+        return {
+          'success': true,
+          'operationId': response['operation_id'],
+          'data': response
+        };
+      } else {
+        return {
+          'success': false,
+          'error': response?['message'] ?? 'Error en el registro de venta'
+        };
+      }
+    } catch (e) {
+      print('Error en _registerSaleInSupabase: $e');
+      return {
+        'success': false,
+        'error': e.toString()
+      };
+    }
   }
 
   // Estadísticas rápidas

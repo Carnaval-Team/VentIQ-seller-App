@@ -780,6 +780,21 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     return total;
   }
 
+  // Build inventory data for fn_registrar_venta RPC
+  Map<String, dynamic> _buildInventoryData(Product product, ProductVariant? variant) {
+    // Extract inventory data from the product detail response
+    // This should contain the IDs needed for the RPC call
+    return {
+      'id_producto': product.id,
+      'id_variante': variant?.id,
+      'id_opcion_variante': null, // Will be populated from actual inventory data
+      'id_ubicacion': null, // Will be populated from actual inventory data  
+      'id_presentacion': null, // Will be populated from actual inventory data
+      'sku_producto': product.id.toString(),
+      'sku_ubicacion': null, // Will be populated from actual inventory data
+    };
+  }
+
   void _addToCart() {
     final orderService = OrderService();
     int totalItemsAdded = 0;
@@ -793,6 +808,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             producto: currentProduct,
             cantidad: selectedQuantity,
             ubicacionAlmacen: 'Almacén A-1',
+            inventoryData: _buildInventoryData(currentProduct, null),
           );
           totalItemsAdded += selectedQuantity;
           addedItems.add('${currentProduct.denominacion} (x$selectedQuantity)');
@@ -811,6 +827,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               variante: entry.key,
               cantidad: entry.value,
               ubicacionAlmacen: 'Almacén B-${entry.key.nombre.substring(0, 1)}',
+              inventoryData: _buildInventoryData(currentProduct, entry.key),
             );
             totalItemsAdded += entry.value;
             addedItems.add('${entry.key.nombre} (x${entry.value})');

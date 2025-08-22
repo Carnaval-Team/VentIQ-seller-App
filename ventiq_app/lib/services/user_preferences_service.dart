@@ -84,10 +84,16 @@ class UserPreferencesService {
     await prefs.setInt(_idRollKey, idRoll);
   }
 
-  // Obtener ID TPV (tienda)
+  // Obtener ID TPV (desde app_dat_vendedor)
   Future<int?> getIdTpv() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_idTpvKey);
+  }
+
+  // Obtener ID Tienda (desde app_dat_trabajadores)
+  Future<int?> getIdTienda() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_idTiendaKey);
   }
 
   // Obtener datos del perfil del trabajador
@@ -97,6 +103,7 @@ class UserPreferencesService {
       'nombres': prefs.getString(_nombresKey),
       'apellidos': prefs.getString(_apellidosKey),
       'idTienda': prefs.getInt(_idTiendaKey),
+      'idTpv': prefs.getInt(_idTpvKey),
       'idRoll': prefs.getInt(_idRollKey),
       'idTrabajador': prefs.getInt(_idTrabajadorKey),
     };
