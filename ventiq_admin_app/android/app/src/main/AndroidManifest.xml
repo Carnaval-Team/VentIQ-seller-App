@@ -1,4 +1,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Internet and network permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    
+    <!-- Storage permissions for file operations -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    
+    <!-- Camera permission for potential future features -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    
+    <!-- Wake lock to keep app active during operations -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    
     <application
         android:label="Vendedor admin"
         android:name="${applicationName}"
