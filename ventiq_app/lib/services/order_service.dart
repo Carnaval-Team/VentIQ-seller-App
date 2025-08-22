@@ -235,6 +235,7 @@ class OrderService {
         'p_observaciones': orderData['notas'] ?? 'Venta realizada desde app móvil',
         'p_productos': productos,
         'p_uuid': userId,
+        'p_id_cliente':orderData['idCliente']
       };
 
       print('=== PARAMETROS RPC fn_registrar_venta ===');
@@ -245,6 +246,7 @@ class OrderService {
       print('p_observaciones: ${rpcParams['p_observaciones']}');
       print('p_uuid: ${rpcParams['p_uuid']}');
       print('p_productos (${productos.length} items): $productos');
+      print('order_cli ${orderData['idCliente']}');
       print('========================================');
 
       // Llamar a fn_registrar_venta
@@ -273,6 +275,83 @@ class OrderService {
         'success': false,
         'error': e.toString()
       };
+    }
+  }
+
+  // Listar órdenes desde Supabase
+  Future<void> listOrdersFromSupabase() async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final userData = await userPrefs.getUserData();
+      
+      // Obtener IDs necesarios
+      final idTienda = await userPrefs.getIdTienda();
+      final idTpv = await userPrefs.getIdTpv();
+      final userId = userData['userId'];
+      
+      // Configurar fechas del día actual
+      final now = DateTime.now();
+      final fechaDesde = DateTime(now.year, now.month, now.day);
+      final fechaHasta = DateTime(now.year, now.month, now.day);
+      
+      print('=== DEBUG PARAMETROS LISTAR ORDENES ===');
+      print('idTienda: $idTienda');
+      print('idTpv: $idTpv');
+      print('userId: $userId');
+      print('fechaDesde: $fechaDesde');
+      print('fechaHasta: $fechaHasta');
+      print('======================================');
+      
+      // Preparar parámetros para listar_ordenes
+      final rpcParams = {
+        'con_inventario_param': false,
+        'fecha_desde_param': fechaDesde.toIso8601String().split('T')[0], // Solo fecha YYYY-MM-DD
+        'fecha_hasta_param': fechaDesde.toIso8601String().split('T')[0], // Solo fecha YYYY-MM-DD
+        'id_estado_param': null, // Todos los estados
+        'id_tienda_param': idTienda,
+        'id_tipo_operacion_param': null, // Todas las operaciones
+        'id_tpv_param': idTpv,
+        'id_usuario_param': userId,
+        'limite_param': null, // 0 para traer todas
+        'pagina_param': null,
+        'solo_pendientes_param': false,
+      };
+
+      print('=== PARAMETROS RPC listar_ordenes ===');
+      print('con_inventario_param: ${rpcParams['con_inventario_param']}');
+      print('fecha_desde_param: ${rpcParams['fecha_desde_param']}');
+      print('fecha_hasta_param: ${rpcParams['fecha_hasta_param']}');
+      print('id_estado_param: ${rpcParams['id_estado_param']}');
+      print('id_tienda_param: ${rpcParams['id_tienda_param']}');
+      print('id_tipo_operacion_param: ${rpcParams['id_tipo_operacion_param']}');
+      print('id_tpv_param: ${rpcParams['id_tpv_param']}');
+      print('id_usuario_param: ${rpcParams['id_usuario_param']}');
+      print('limite_param: ${rpcParams['limite_param']}');
+      print('pagina_param: ${rpcParams['pagina_param']}');
+      print('solo_pendientes_param: ${rpcParams['solo_pendientes_param']}');
+      print('==========================================');
+
+      // Llamar a listar_ordenes
+      final response = await Supabase.instance.client.rpc(
+        'listar_ordenes',
+        params: rpcParams,
+      );
+
+      print('=== RESPUESTA listar_ordenes ===');
+      print('Tipo de respuesta: ${response.runtimeType}');
+      print('Cantidad de órdenes: ${response is List ? response.length : 'No es lista'}');
+      print('Respuesta completa:');
+      print(response);
+      print('===============================');
+      
+      if (response is List && response.isNotEmpty) {
+        print('=== PRIMERA ORDEN (EJEMPLO) ===');
+        print(response.first);
+        print('==============================');
+      }
+      
+    } catch (e) {
+      print('Error en listOrdersFromSupabase: $e');
     }
   }
 

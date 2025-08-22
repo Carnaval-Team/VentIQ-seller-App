@@ -24,6 +24,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
     super.initState();
     _filteredOrders = _orderService.orders;
     _searchController.addListener(_onSearchChanged);
+    // Cargar órdenes desde Supabase
+    _orderService.listOrdersFromSupabase();
   }
 
   @override
