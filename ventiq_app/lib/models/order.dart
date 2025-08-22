@@ -125,7 +125,7 @@ extension OrderStatusExtension on OrderStatus {
       case OrderStatus.borrador:
         return 'Borrador';
       case OrderStatus.enviada:
-        return 'Enviada';
+        return 'Pendiente';
       case OrderStatus.procesando:
         return 'Procesando';
       case OrderStatus.completada:

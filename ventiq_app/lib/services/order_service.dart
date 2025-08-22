@@ -348,12 +348,133 @@ class OrderService {
         print('=== PRIMERA ORDEN (EJEMPLO) ===');
         print(response.first);
         print('==============================');
+        
+        // Transformar respuesta de Supabase a modelo Order
+        _transformSupabaseToOrders(response);
       }
       
     } catch (e) {
       print('Error en listOrdersFromSupabase: $e');
     }
   }
+
+  // Transformar datos de Supabase al modelo Order existente
+  void _transformSupabaseToOrders(List<dynamic> supabaseOrders) {
+    try {
+      print('=== TRANSFORMANDO ORDENES DE SUPABASE ===');
+      print('Órdenes recibidas: ${supabaseOrders.length}');
+      
+      // Limpiar órdenes existentes
+      _orders.clear();
+      
+      // Si no hay órdenes, simplemente retornar con la lista vacía
+      if (supabaseOrders.isEmpty) {
+        print('No hay órdenes para mostrar');
+        print('===========================================');
+        return;
+      }
+      
+      for (var supabaseOrder in supabaseOrders) {
+        
+        // Extraer items de la respuesta
+        List<OrderItem> orderItems = [];
+        final detalles = supabaseOrder['detalles'];
+        if (detalles != null && detalles['items'] != null) {
+          final items = detalles['items'] as List<dynamic>;
+          
+          for (var item in items) {
+            // Crear producto desde los datos de Supabase
+            final product = Product(
+              id: item['id_producto'],
+              denominacion: item['producto_nombre'] ?? 'Producto',
+              precio: (item['precio_unitario'] ?? 0.0).toDouble(),
+              cantidad: (item['cantidad'] ?? 1).toInt(),
+              esRefrigerado: false,
+              esFragil: false,
+              esPeligroso: false,
+              esVendible: true,
+              esComprable: true,
+              esInventariable: true,
+              esPorLotes: false,
+              categoria: 'General',
+              descripcion: item['presentacion'] ?? '',
+              foto: null,
+            );
+            
+            // Crear variante si existe
+            ProductVariant? variant;
+            if (item['variante'] != null) {
+              final variantData = item['variante'];
+              variant = ProductVariant(
+                id: variantData['id'],
+                nombre: variantData['atributo'] ?? '',
+                precio: (item['precio_unitario'] ?? 0.0).toDouble(),
+                cantidad: (item['cantidad'] ?? 1).toInt(),
+                descripcion: variantData['opcion'],
+              );
+            }
+            
+            // Crear OrderItem
+            final orderItem = OrderItem(
+              id: 'ITEM-${item['id_producto']}-${DateTime.now().millisecondsSinceEpoch}',
+              producto: product,
+              variante: variant,
+              cantidad: (item['cantidad'] ?? 1).toInt(),
+              precioUnitario: (item['precio_unitario'] ?? 0.0).toDouble(),
+              ubicacionAlmacen: 'Principal', // Valor por defecto
+            );
+            
+            orderItems.add(orderItem);
+          }
+        }
+        
+        // Extraer información del cliente
+        final clienteData = supabaseOrder['detalles']?['cliente'];
+        final clienteNombre = clienteData?['nombre_completo'] ?? supabaseOrder['usuario_nombre'] ?? 'Cliente';
+        final clienteTelefono = clienteData?['telefono']?.toString() ?? '';
+
+        // Crear orden desde los datos de Supabase
+        final order = Order(
+          id: 'ORD-${supabaseOrder['id_operacion']}',
+          fechaCreacion: DateTime.parse(supabaseOrder['fecha_operacion']),
+          status: _mapSupabaseStatusToOrderStatus(supabaseOrder['estado']),
+          total: (supabaseOrder['total_operacion'] ?? 0.0).toDouble(),
+          items: orderItems,
+          buyerName: clienteNombre,
+          buyerPhone: clienteTelefono,
+          extraContacts: '', // String vacío por defecto
+          paymentMethod: 'Efectivo', // Valor por defecto
+          notas: supabaseOrder['observaciones'] ?? '',
+        );
+        
+        _orders.add(order);
+      }
+      
+      print('Transformadas ${_orders.length} órdenes de Supabase');
+      print('===========================================');
+      
+    } catch (e) {
+      print('Error transformando órdenes de Supabase: $e');
+    }
+  }
+  
+  // Mapear estado numérico de Supabase a OrderStatus
+  OrderStatus _mapSupabaseStatusToOrderStatus(int? estado) {
+    switch (estado) {
+      case 1:
+        return OrderStatus.enviada; // Pendiente -> enviada para agrupar como pendiente
+      case 2:
+        return OrderStatus.completada;
+      case 3:
+        return OrderStatus.cancelada;
+      case 4:
+        return OrderStatus.procesando;
+      default:
+        return OrderStatus.enviada;
+    }
+  }
+  
+  // Extraer nombre del comprador (por ahora no disponible en respuesta)
 
   // Estadísticas rápidas
   int get totalOrders => _orders.length;

@@ -25,7 +25,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
     _filteredOrders = _orderService.orders;
     _searchController.addListener(_onSearchChanged);
     // Cargar órdenes desde Supabase
-    _orderService.listOrdersFromSupabase();
+    _loadOrdersFromSupabase();
+  }
+
+  Future<void> _loadOrdersFromSupabase() async {
+    await _orderService.listOrdersFromSupabase();
+    // Actualizar la UI después de cargar las órdenes
+    if (mounted) {
+      setState(() {
+        _filteredOrders = _orderService.orders;
+      });
+    }
+  }
+
+  Future<void> _refreshOrders() async {
+    // Recargar órdenes desde Supabase
+    await _loadOrdersFromSupabase();
   }
 
   @override
@@ -94,20 +109,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final orders = _filteredOrders;
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
       appBar: AppBar(
+        title: const Text('Órdenes'),
         backgroundColor: const Color(0xFF4A90E2),
-        elevation: 0,
-        title: const Text(
-          'Mis Órdenes',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        foregroundColor: Colors.white,
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshOrders,
+            tooltip: 'Actualizar órdenes',
+          ),
           Builder(
             builder: (context) => IconButton(
               icon: const Icon(Icons.menu, color: Colors.white),
@@ -117,13 +129,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          _buildSearchBar(),
-          Expanded(
-            child: orders.isEmpty ? _buildEmptyState() : _buildOrdersList(orders),
-          ),
-        ],
+      body: RefreshIndicator(
+        onRefresh: _refreshOrders,
+        child: Column(
+          children: [
+            _buildSearchBar(),
+            Expanded(
+              child: orders.isEmpty ? _buildEmptyState() : _buildOrdersList(orders),
+            ),
+          ],
+        ),
       ),
       endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
