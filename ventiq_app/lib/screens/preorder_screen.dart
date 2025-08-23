@@ -3,6 +3,7 @@ import '../models/order.dart';
 import '../services/order_service.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/scrolling_text.dart';
 import 'checkout_screen.dart';
 
 class PreorderScreen extends StatefulWidget {
@@ -224,19 +225,28 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 color: Colors.grey[600],
               ),
               const SizedBox(width: 4),
-              Text(
-                item.ubicacionAlmacen,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[600],
+              Expanded(
+                flex: 2,
+                child: ScrollingText(
+                  text: item.ubicacionAlmacen,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                  maxWidth: 180, // Further increased width for longer text
+                  scrollDuration: const Duration(seconds: 4), // Slower animation
+                  pauseDuration: const Duration(seconds: 2), // Longer pause
                 ),
               ),
               const SizedBox(width: 16),
-              Text(
-                'Precio: \$${item.precioUnitario.toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[600],
+              Expanded(
+                child: Text(
+                  'Precio: \$${item.precioUnitario.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],

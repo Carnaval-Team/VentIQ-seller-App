@@ -41,6 +41,8 @@ class ProductDetailService {
     final productData = response['producto'] as Map<String, dynamic>;
     final inventoryData = response['inventario'] as List<dynamic>? ?? [];
 
+    debugPrint('🔍 Transformando producto con ${inventoryData.length} items de inventario');
+
     // Extract basic product information
     final id = productData['id'] as int;
     final denominacion = productData['denominacion'] as String? ?? 'Sin nombre';
@@ -59,13 +61,22 @@ class ProductDetailService {
 
     // Calculate total stock from all variants
     int totalStock = 0;
+    Map<String, dynamic>? productInventoryMetadata;
+    
     if (variants.isNotEmpty) {
       totalStock = variants.fold(0, (sum, variant) => sum + variant.cantidad);
     } else {
-      // If no variants, use a default stock or calculate from inventory
-      totalStock = inventoryData.isNotEmpty 
-          ? (inventoryData.first['cantidad_disponible'] as int? ?? 0)
-          : 100; // Default stock
+      // If no variants, use inventory data for the product itself
+      if (inventoryData.isNotEmpty) {
+        final firstInventory = inventoryData.first as Map<String, dynamic>;
+        totalStock = firstInventory['cantidad_disponible'] as int? ?? 0;
+        
+        // Store inventory metadata for products without variants
+        productInventoryMetadata = _extractInventoryMetadata(firstInventory);
+        debugPrint('📦 Producto sin variantes - metadata: $productInventoryMetadata');
+      } else {
+        totalStock = 100; // Default stock
+      }
     }
 
     // Generate product image URL from multimedias or fallback
@@ -108,6 +119,7 @@ class ProductDetailService {
       esPorLotes: false, // Default value
       categoria: categoryName,
       variantes: variants,
+      inventoryMetadata: productInventoryMetadata,
     );
   }
 
@@ -122,6 +134,7 @@ class ProductDetailService {
       final variante = item['variante'] as Map<String, dynamic>?;
       final presentacion = item['presentacion'] as Map<String, dynamic>?;
       final cantidadDisponible = item['cantidad_disponible'] as int? ?? 0;
+      
       
       String variantName = 'Variante ${i + 1}';
       String variantDescription = '';
@@ -160,6 +173,10 @@ class ProductDetailService {
       } else if (presentacion != null && presentacion['precio'] != null) {
         precio = (presentacion['precio'] as num).toDouble();
       }
+
+      // Extract inventory metadata for this variant
+      final variantInventoryMetadata = _extractInventoryMetadata(item);
+      debugPrint('🔧 Variante ${i + 1} - metadata: $variantInventoryMetadata');
       
       variants.add(ProductVariant(
         id: i + 1, // Generate sequential IDs
@@ -167,9 +184,30 @@ class ProductDetailService {
         precio: precio,
         cantidad: cantidadDisponible,
         descripcion: variantDescription.isNotEmpty ? variantDescription : null,
+        inventoryMetadata: variantInventoryMetadata,
       ));
     }
     
     return variants;
+  }
+
+  /// Extract inventory metadata from inventory item
+  Map<String, dynamic> _extractInventoryMetadata(Map<String, dynamic> inventoryItem) {
+    final variante = inventoryItem['variante'] as Map<String, dynamic>?;
+    final presentacion = inventoryItem['presentacion'] as Map<String, dynamic>?;
+    final ubicacion = inventoryItem['ubicacion'] as Map<String, dynamic>?;
+    
+    return {
+      'id_inventario': inventoryItem['id_inventario'],
+      'id_variante': variante?['id'],
+      'id_opcion_variante': variante?['opcion']?['id'],
+      'id_presentacion': presentacion?['id'],
+      'id_ubicacion': ubicacion?['id'],
+      'sku_producto': inventoryItem['sku_producto'],
+      'sku_ubicacion': ubicacion?['sku_codigo'],
+      'cantidad_disponible': inventoryItem['cantidad_disponible'],
+      'ubicacion_nombre': ubicacion?['denominacion'],
+      'almacen_nombre': ubicacion?['almacen']?['denominacion'],
+    };
   }
 }

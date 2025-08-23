@@ -17,7 +17,8 @@ class OrderService {
 
   // Crear una nueva orden o obtener la actual
   Order getCurrentOrCreateOrder() {
-    if (_currentOrder == null || _currentOrder!.status != OrderStatus.borrador) {
+    if (_currentOrder == null ||
+        _currentOrder!.status != OrderStatus.borrador) {
       _currentOrder = Order(
         id: 'ORD-${DateTime.now().millisecondsSinceEpoch}',
         fechaCreacion: DateTime.now(),
@@ -39,12 +40,14 @@ class OrderService {
   }) {
     final order = getCurrentOrCreateOrder();
     final precioUnitario = variante?.precio ?? producto.precio;
-    
+
     // Verificar si ya existe un item similar
-    final existingItemIndex = order.items.indexWhere((item) =>
-        item.producto.id == producto.id &&
-        ((item.variante == null && variante == null) ||
-         (item.variante?.id == variante?.id)));
+    final existingItemIndex = order.items.indexWhere(
+      (item) =>
+          item.producto.id == producto.id &&
+          ((item.variante == null && variante == null) ||
+              (item.variante?.id == variante?.id)),
+    );
 
     if (existingItemIndex != -1) {
       // Actualizar cantidad del item existente
@@ -75,14 +78,15 @@ class OrderService {
   void updateItemQuantity(String itemId, int newQuantity) {
     if (_currentOrder == null) return;
 
-    final itemIndex = _currentOrder!.items.indexWhere((item) => item.id == itemId);
+    final itemIndex = _currentOrder!.items.indexWhere(
+      (item) => item.id == itemId,
+    );
     if (itemIndex != -1) {
       if (newQuantity <= 0) {
         _currentOrder!.items.removeAt(itemIndex);
       } else {
-        _currentOrder!.items[itemIndex] = _currentOrder!.items[itemIndex].copyWith(
-          cantidad: newQuantity,
-        );
+        _currentOrder!.items[itemIndex] = _currentOrder!.items[itemIndex]
+            .copyWith(cantidad: newQuantity);
       }
       _updateOrderTotal(_currentOrder!);
     }
@@ -91,7 +95,7 @@ class OrderService {
   // Remover item de la orden
   void removeItemFromCurrentOrder(String itemId) {
     if (_currentOrder == null) return;
-    
+
     _currentOrder!.items.removeWhere((item) => item.id == itemId);
     _updateOrderTotal(_currentOrder!);
   }
@@ -116,7 +120,10 @@ class OrderService {
   }
 
   // Finalizar orden con detalles completos del checkout
-  Future<Map<String, dynamic>> finalizeOrderWithDetails(Order order, Map<String, dynamic> orderData) async {
+  Future<Map<String, dynamic>> finalizeOrderWithDetails(
+    Order order,
+    Map<String, dynamic> orderData,
+  ) async {
     if (order.items.isEmpty) {
       throw Exception('No hay productos en la orden');
     }
@@ -124,7 +131,7 @@ class OrderService {
     try {
       // Registrar venta en Supabase usando fn_registrar_venta
       final result = await _registerSaleInSupabase(order, orderData);
-      
+
       if (result['success'] == true) {
         final finalizedOrder = order.copyWith(
           status: OrderStatus.enviada,
@@ -137,23 +144,23 @@ class OrderService {
 
         _orders.add(finalizedOrder);
         _currentOrder = null; // Limpiar orden actual
-        
+
         return {
           'success': true,
           'operationId': result['operationId'],
-          'message': 'Orden registrada exitosamente'
+          'message': 'Orden registrada exitosamente',
         };
       } else {
         return {
           'success': false,
-          'error': result['error'] ?? 'Error desconocido al registrar la venta'
+          'error': result['error'] ?? 'Error desconocido al registrar la venta',
         };
       }
     } catch (e) {
       print('Error al finalizar orden: $e');
       return {
         'success': false,
-        'error': 'Error al procesar la orden: ${e.toString()}'
+        'error': 'Error al procesar la orden: ${e.toString()}',
       };
     }
   }
@@ -173,11 +180,106 @@ class OrderService {
   }
 
   // Actualizar estado de una orden
-  void updateOrderStatus(String orderId, OrderStatus newStatus) {
-    final orderIndex = _orders.indexWhere((order) => order.id == orderId);
-    if (orderIndex != -1) {
-      final updatedOrder = _orders[orderIndex].copyWith(status: newStatus);
-      _orders[orderIndex] = updatedOrder;
+  Future<Map<String, dynamic>> updateOrderStatus(
+    String orderId,
+    OrderStatus newStatus,
+  ) async {
+    try {
+      // Extraer el ID de operación del orderId (formato: ORD-{id_operacion})
+      final operationId = int.tryParse(orderId.replaceFirst('ORD-', ''));
+      if (operationId == null) {
+        return {'success': false, 'error': 'ID de orden inválido: $orderId'};
+      }
+
+      // Actualizar estado en Supabase
+      final supabaseResult = await updateOrderStatusInSupabase(
+        operationId,
+        newStatus,
+      );
+
+      if (supabaseResult['success'] == true) {
+        // Actualizar estado local solo si Supabase fue exitoso
+        final orderIndex = _orders.indexWhere((order) => order.id == orderId);
+        if (orderIndex != -1) {
+          final updatedOrder = _orders[orderIndex].copyWith(status: newStatus);
+          _orders[orderIndex] = updatedOrder;
+        }
+
+        return {'success': true, 'message': 'Estado actualizado correctamente'};
+      } else {
+        return supabaseResult;
+      }
+    } catch (e) {
+      print('Error en updateOrderStatus: $e');
+      return {
+        'success': false,
+        'error': 'Error al actualizar estado: ${e.toString()}',
+      };
+    }
+  }
+
+  // Actualizar estado de orden en Supabase usando fn_registrar_cambio_estado_operacion
+  Future<Map<String, dynamic>> updateOrderStatusInSupabase(
+    int operationId,
+    OrderStatus newStatus,
+  ) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final userData = await userPrefs.getUserData();
+      final userId = userData['userId'];
+
+      if (userId == null) {
+        throw Exception('Usuario no encontrado en preferencias');
+      }
+
+      // Mapear OrderStatus a valores numéricos de Supabase
+      final statusNumber = _mapOrderStatusToSupabaseNumber(newStatus);
+
+      print('=== DEBUG CAMBIO ESTADO ORDEN ===');
+      print('operationId: $operationId');
+      print('newStatus: $newStatus');
+      print('statusNumber: $statusNumber');
+      print('userId: $userId');
+      print('================================');
+
+      // Llamar a fn_registrar_cambio_estado_operacion
+      final response = await Supabase.instance.client.rpc(
+        'fn_registrar_cambio_estado_operacion',
+        params: {
+          'p_id_operacion': operationId,
+          'p_nuevo_estado': statusNumber,
+          'p_uuid_usuario': userId,
+        },
+      );
+
+      print('Respuesta fn_registrar_cambio_estado_operacion: $response');
+
+      return {
+        'success': true,
+        'message': 'Estado actualizado en Supabase',
+        'data': response,
+      };
+    } catch (e) {
+      print('Error en updateOrderStatusInSupabase: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // Mapear OrderStatus a valores numéricos de Supabase
+  int _mapOrderStatusToSupabaseNumber(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.enviada:
+      case OrderStatus.procesando:
+        return 1; // Pendiente
+      case OrderStatus.pagoConfirmado:
+      case OrderStatus.completada:
+        return 2; // Completado
+      case OrderStatus.devuelta:
+        return 3; // Devuelta
+      case OrderStatus.cancelada:
+        return 4; // Cancelada
+      default:
+        return 1; // Por defecto pendiente
     }
   }
 
@@ -188,43 +290,56 @@ class OrderService {
   }
 
   // Registrar venta en Supabase usando fn_registrar_venta
-  Future<Map<String, dynamic>> _registerSaleInSupabase(Order order, Map<String, dynamic> orderData) async {
+  Future<Map<String, dynamic>> _registerSaleInSupabase(
+    Order order,
+    Map<String, dynamic> orderData,
+  ) async {
     try {
       final userPrefs = UserPreferencesService();
       final userData = await userPrefs.getUserData();
-      
+
       // Obtener IDs por separado usando los nuevos métodos
-      final idTienda = await userPrefs.getIdTienda(); // Desde app_dat_trabajadores
+      final idTienda =
+          await userPrefs.getIdTienda(); // Desde app_dat_trabajadores
       final idTpv = await userPrefs.getIdTpv(); // Desde app_dat_vendedor
       final userId = userData['userId'];
-      
+
       print('=== DEBUG PARAMETROS SUPABASE (IDs SEPARADOS) ===');
       print('userData completo: $userData');
       print('idTienda (app_dat_trabajadores): $idTienda');
       print('idTpv (app_dat_vendedor): $idTpv');
       print('userId: $userId');
       print('================================================');
-      
+
       if (idTpv == null || idTienda == null || userId == null) {
-        throw Exception('Datos de usuario incompletos - idTpv: $idTpv, idTienda: $idTienda, userId: $userId');
+        throw Exception(
+          'Datos de usuario incompletos - idTpv: $idTpv, idTienda: $idTienda, userId: $userId',
+        );
       }
 
       // Preparar productos para fn_registrar_venta
-      final productos = order.items.map((item) {
-        final inventoryData = item.inventoryData ?? {};
-        
-        return {
-          'id_producto': item.producto.id,
-          'id_variante': item.variante?.id,
-          'id_opcion_variante': inventoryData['id_opcion_variante'],
-          'id_ubicacion': inventoryData['id_ubicacion'],
-          'id_presentacion': inventoryData['id_presentacion'],
-          'cantidad': item.cantidad,
-          'precio_unitario': item.precioUnitario,
-          'sku_producto': inventoryData['sku_producto'] ?? item.producto.id.toString(),
-          'sku_ubicacion': inventoryData['sku_ubicacion'],
-        };
-      }).toList();
+      final productos =
+          order.items.map((item) {
+            final inventoryData = item.inventoryData ?? {};
+
+            print('ID del producto: ${item.producto.id}');
+            print('ID de la variante (si aplica): ${item.variante?.id}');
+            print('ID de la ubicación: ${inventoryData['id_ubicacion']}');
+            print('Cantidad a descontar: ${item.cantidad}');
+
+            return {
+              'id_producto': item.producto.id,
+              'id_variante': item.variante?.id,
+              'id_opcion_variante': inventoryData['id_opcion_variante'],
+              'id_ubicacion': inventoryData['id_ubicacion'],
+              'id_presentacion': inventoryData['id_presentacion'],
+              'cantidad': item.cantidad,
+              'precio_unitario': item.precioUnitario,
+              'sku_producto':
+                  inventoryData['sku_producto'] ?? item.producto.id.toString(),
+              'sku_ubicacion': inventoryData['sku_ubicacion'],
+            };
+          }).toList();
 
       // Preparar parámetros para fn_registrar_venta
       final rpcParams = {
@@ -232,10 +347,11 @@ class OrderService {
         'p_denominacion': 'Venta App Vendedor - ${order.id}',
         'p_estado_inicial': 1,
         'p_id_tpv': idTpv,
-        'p_observaciones': orderData['notas'] ?? 'Venta realizada desde app móvil',
+        'p_observaciones':
+            orderData['notas'] ?? 'Venta realizada desde app móvil',
         'p_productos': productos,
         'p_uuid': userId,
-        'p_id_cliente':orderData['idCliente']
+        'p_id_cliente': orderData['idCliente'],
       };
 
       print('=== PARAMETROS RPC fn_registrar_venta ===');
@@ -256,25 +372,22 @@ class OrderService {
       );
 
       print('Respuesta fn_registrar_venta: $response');
-      
+
       if (response != null && response['status'] == 'success') {
         return {
           'success': true,
           'operationId': response['operation_id'],
-          'data': response
+          'data': response,
         };
       } else {
         return {
           'success': false,
-          'error': response?['message'] ?? 'Error en el registro de venta'
+          'error': response?['message'] ?? 'Error en el registro de venta',
         };
       }
     } catch (e) {
       print('Error en _registerSaleInSupabase: $e');
-      return {
-        'success': false,
-        'error': e.toString()
-      };
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -283,17 +396,17 @@ class OrderService {
     try {
       final userPrefs = UserPreferencesService();
       final userData = await userPrefs.getUserData();
-      
+
       // Obtener IDs necesarios
       final idTienda = await userPrefs.getIdTienda();
       final idTpv = await userPrefs.getIdTpv();
       final userId = userData['userId'];
-      
+
       // Configurar fechas del día actual
       final now = DateTime.now();
       final fechaDesde = DateTime(now.year, now.month, now.day);
       final fechaHasta = DateTime(now.year, now.month, now.day);
-      
+
       print('=== DEBUG PARAMETROS LISTAR ORDENES ===');
       print('idTienda: $idTienda');
       print('idTpv: $idTpv');
@@ -301,12 +414,14 @@ class OrderService {
       print('fechaDesde: $fechaDesde');
       print('fechaHasta: $fechaHasta');
       print('======================================');
-      
+
       // Preparar parámetros para listar_ordenes
       final rpcParams = {
         'con_inventario_param': false,
-        'fecha_desde_param': fechaDesde.toIso8601String().split('T')[0], // Solo fecha YYYY-MM-DD
-        'fecha_hasta_param': fechaDesde.toIso8601String().split('T')[0], // Solo fecha YYYY-MM-DD
+        'fecha_desde_param':
+            fechaDesde.toIso8601String().split('T')[0], // Solo fecha YYYY-MM-DD
+        'fecha_hasta_param':
+            fechaDesde.toIso8601String().split('T')[0], // Solo fecha YYYY-MM-DD
         'id_estado_param': null, // Todos los estados
         'id_tienda_param': idTienda,
         'id_tipo_operacion_param': null, // Todas las operaciones
@@ -339,20 +454,21 @@ class OrderService {
 
       print('=== RESPUESTA listar_ordenes ===');
       print('Tipo de respuesta: ${response.runtimeType}');
-      print('Cantidad de órdenes: ${response is List ? response.length : 'No es lista'}');
+      print(
+        'Cantidad de órdenes: ${response is List ? response.length : 'No es lista'}',
+      );
       print('Respuesta completa:');
       print(response);
       print('===============================');
-      
+
       if (response is List && response.isNotEmpty) {
         print('=== PRIMERA ORDEN (EJEMPLO) ===');
         print(response.first);
         print('==============================');
-        
+
         // Transformar respuesta de Supabase a modelo Order
         _transformSupabaseToOrders(response);
       }
-      
     } catch (e) {
       print('Error en listOrdersFromSupabase: $e');
     }
@@ -363,25 +479,24 @@ class OrderService {
     try {
       print('=== TRANSFORMANDO ORDENES DE SUPABASE ===');
       print('Órdenes recibidas: ${supabaseOrders.length}');
-      
+
       // Limpiar órdenes existentes
       _orders.clear();
-      
+
       // Si no hay órdenes, simplemente retornar con la lista vacía
       if (supabaseOrders.isEmpty) {
         print('No hay órdenes para mostrar');
         print('===========================================');
         return;
       }
-      
+
       for (var supabaseOrder in supabaseOrders) {
-        
         // Extraer items de la respuesta
         List<OrderItem> orderItems = [];
         final detalles = supabaseOrder['detalles'];
         if (detalles != null && detalles['items'] != null) {
           final items = detalles['items'] as List<dynamic>;
-          
+
           for (var item in items) {
             // Crear producto desde los datos de Supabase
             final product = Product(
@@ -400,37 +515,44 @@ class OrderService {
               descripcion: item['presentacion'] ?? '',
               foto: null,
             );
-            
+
             // Crear variante si existe
             ProductVariant? variant;
             if (item['variante'] != null) {
               final variantData = item['variante'];
+              print(variantData['opcion']);
               variant = ProductVariant(
                 id: variantData['id'],
-                nombre: variantData['atributo'] ?? '',
+                nombre:'(' +
+                    (variantData['atributo'] ?? '') + ' : '+
+                    (variantData['opcion'] ?? '') +')',
                 precio: (item['precio_unitario'] ?? 0.0).toDouble(),
                 cantidad: (item['cantidad'] ?? 1).toInt(),
                 descripcion: variantData['opcion'],
               );
             }
-            
+
             // Crear OrderItem
             final orderItem = OrderItem(
-              id: 'ITEM-${item['id_producto']}-${DateTime.now().millisecondsSinceEpoch}',
+              id:
+                  'ITEM-${item['id_producto']}-${DateTime.now().millisecondsSinceEpoch}',
               producto: product,
               variante: variant,
               cantidad: (item['cantidad'] ?? 1).toInt(),
               precioUnitario: (item['precio_unitario'] ?? 0.0).toDouble(),
               ubicacionAlmacen: 'Principal', // Valor por defecto
             );
-            
+
             orderItems.add(orderItem);
           }
         }
-        
+
         // Extraer información del cliente
         final clienteData = supabaseOrder['detalles']?['cliente'];
-        final clienteNombre = clienteData?['nombre_completo'] ?? supabaseOrder['usuario_nombre'] ?? 'Cliente';
+        final clienteNombre =
+            clienteData?['nombre_completo'] ??
+            supabaseOrder['usuario_nombre'] ??
+            'Cliente';
         final clienteTelefono = clienteData?['telefono']?.toString() ?? '';
 
         // Crear orden desde los datos de Supabase
@@ -446,34 +568,34 @@ class OrderService {
           paymentMethod: 'Efectivo', // Valor por defecto
           notas: supabaseOrder['observaciones'] ?? '',
         );
-        
+
         _orders.add(order);
       }
-      
+
       print('Transformadas ${_orders.length} órdenes de Supabase');
       print('===========================================');
-      
     } catch (e) {
       print('Error transformando órdenes de Supabase: $e');
     }
   }
-  
+
   // Mapear estado numérico de Supabase a OrderStatus
   OrderStatus _mapSupabaseStatusToOrderStatus(int? estado) {
     switch (estado) {
       case 1:
-        return OrderStatus.enviada; // Pendiente -> enviada para agrupar como pendiente
+        return OrderStatus
+            .enviada; // Pendiente -> enviada para agrupar como pendiente
       case 2:
         return OrderStatus.completada;
       case 3:
-        return OrderStatus.cancelada;
+        return OrderStatus.devuelta;
       case 4:
-        return OrderStatus.procesando;
+        return OrderStatus.cancelada;
       default:
         return OrderStatus.enviada;
     }
   }
-  
+
   // Extraer nombre del comprador (por ahora no disponible en respuesta)
 
   // Estadísticas rápidas
