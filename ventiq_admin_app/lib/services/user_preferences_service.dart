@@ -14,6 +14,7 @@ class UserPreferencesService {
   static const String _adminNameKey = 'admin_name';
   static const String _adminRoleKey = 'admin_role';
   static const String _appVersionKey = 'app_version';
+  static const String _idTiendaKey = 'id_tienda';
   
   // Remember me keys
   static const String _rememberMeKey = 'remember_me';
@@ -28,6 +29,7 @@ class UserPreferencesService {
     required String accessToken,
     String? adminName,
     String? adminRole,
+    int? idTienda,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_userIdKey, userId);
@@ -40,6 +42,9 @@ class UserPreferencesService {
     }
     if (adminRole != null) {
       await prefs.setString(_adminRoleKey, adminRole);
+    }
+    if (idTienda != null) {
+      await prefs.setInt(_idTiendaKey, idTienda);
     }
     
     // Set token expiry (24 hours from now)
@@ -77,6 +82,12 @@ class UserPreferencesService {
     return prefs.getString(_adminRoleKey);
   }
 
+  // Obtener ID de tienda del supervisor
+  Future<int?> getIdTienda() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_idTiendaKey);
+  }
+
   // Verificar si el usuario está logueado
   Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
@@ -91,6 +102,7 @@ class UserPreferencesService {
     await prefs.remove(_accessTokenKey);
     await prefs.remove(_adminNameKey);
     await prefs.remove(_adminRoleKey);
+    await prefs.remove(_idTiendaKey);
     await prefs.setBool(_isLoggedInKey, false);
   }
 
@@ -121,6 +133,7 @@ class UserPreferencesService {
       'accessToken': prefs.getString(_accessTokenKey),
       'adminName': prefs.getString(_adminNameKey),
       'adminRole': prefs.getString(_adminRoleKey),
+      'idTienda': prefs.getInt(_idTiendaKey),
     };
   }
   

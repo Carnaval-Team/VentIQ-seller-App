@@ -60,36 +60,91 @@ class AuthService {
   // Listen to auth state changes
   Stream<AuthState> get authStateChanges => _supabase.auth.onAuthStateChange;
 
-  // Verify admin permissions (placeholder for future implementation)
-  Future<bool> verifyAdminPermissions(String userId) async {
+  // Verify supervisor permissions in app_dat_supervisor table
+  Future<Map<String, dynamic>?> verifySupervisorPermissions(String userId) async {
     try {
-      // TODO: Implement admin verification logic with Supabase
-      // This could check a specific admin table or user roles
-      print('🔍 Verifying admin permissions for user: $userId');
+      print('🔍 Verifying supervisor permissions for user: $userId');
       
-      // For now, return true - implement actual verification later
-      return true;
+      final response = await _supabase
+          .from('app_dat_supervisor')
+          .select('*')
+          .eq('uuid', userId)
+          .maybeSingle();
+      
+      if (response == null) {
+        print('❌ No supervisor record found for user: $userId');
+        return null;
+      }
+      
+      print('✅ Supervisor found: ${response['id_tienda']}');
+      return response;
     } catch (e) {
-      print('❌ Admin verification error: $e');
-      return false;
+      print('❌ Supervisor verification error: $e');
+      return null;
     }
   }
 
-  // Get admin profile (placeholder for future implementation)
+  // Complete login with supervisor verification
+  Future<Map<String, dynamic>> signInWithSupervisorVerification({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      // Step 1: Authenticate with Supabase
+      final authResponse = await signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      
+      if (authResponse.user == null) {
+        throw Exception('Authentication failed');
+      }
+      
+      final userId = authResponse.user!.id;
+      
+      // Step 2: Verify supervisor permissions
+      final supervisorData = await verifySupervisorPermissions(userId);
+      
+      if (supervisorData == null) {
+        // Sign out the user since they don't have supervisor privileges
+        await signOut();
+        throw Exception('NO_SUPERVISOR_PRIVILEGES');
+      }
+      
+      // Step 3: Return complete data for saving
+      return {
+        'user': authResponse.user!,
+        'session': authResponse.session!,
+        'supervisorData': supervisorData,
+      };
+    } catch (e) {
+      print('❌ Complete login error: $e');
+      rethrow;
+    }
+  }
+
+  // Get admin profile from user metadata
   Future<Map<String, dynamic>?> getAdminProfile(String userId) async {
     try {
-      // TODO: Implement admin profile fetching from Supabase
       print('👤 Fetching admin profile for user: $userId');
       
-      // Return mock data for now - implement actual fetching later
+      final user = currentUser;
+      if (user == null) return null;
+      
       return {
-        'name': 'Administrador',
-        'role': 'Super Admin',
-        'permissions': ['all'],
+        'name': user.userMetadata?['name'] ?? user.email?.split('@')[0] ?? 'Administrador',
+        'role': 'Supervisor',
+        'email': user.email,
       };
     } catch (e) {
       print('❌ Admin profile fetch error: $e');
       return null;
     }
+  }
+
+  // Verify admin permissions (backward compatibility)
+  Future<bool> verifyAdminPermissions(String userId) async {
+    final supervisorData = await verifySupervisorPermissions(userId);
+    return supervisorData != null;
   }
 }

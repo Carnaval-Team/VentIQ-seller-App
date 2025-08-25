@@ -334,40 +334,34 @@ class _LoginScreenState extends State<LoginScreen> {
     FocusScope.of(context).unfocus();
 
     try {
-      final response = await _authService.signInWithEmailAndPassword(
+      // Use new supervisor verification method
+      final loginData = await _authService.signInWithSupervisorVerification(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
       
-      if (response.user != null) {
-        // Verify admin permissions
-        final isAdmin = await _authService.verifyAdminPermissions(response.user!.id);
+      final user = loginData['user'];
+      final session = loginData['session'];
+      final supervisorData = loginData['supervisorData'];
+      
+      // Get admin profile
+      final adminProfile = await _authService.getAdminProfile(user.id);
+      
+      // Save user data in preferences including id_tienda
+      await _userPreferencesService.saveUserData(
+        userId: user.id,
+        email: user.email ?? _emailController.text.trim(),
+        accessToken: session.accessToken,
+        adminName: adminProfile?['name'],
+        adminRole: adminProfile?['role'],
+        idTienda: supervisorData['id_tienda'],
+      );
         
-        if (!isAdmin) {
-          setState(() {
-            _errorMessage = 'Acceso denegado: No tienes permisos de administrador.';
-            _isLoading = false;
-          });
-          await _authService.signOut();
-          return;
-        }
-
-        // Get admin profile
-        final adminProfile = await _authService.getAdminProfile(response.user!.id);
-        
-        // Save user data in preferences
-        await _userPreferencesService.saveUserData(
-          userId: response.user!.id,
-          email: response.user!.email ?? _emailController.text.trim(),
-          accessToken: response.session?.accessToken ?? '',
-          adminName: adminProfile?['name'],
-          adminRole: adminProfile?['role'],
-        );
-        
-        print('✅ Admin user saved in preferences:');
-        print('  - ID: ${response.user!.id}');
-        print('  - Email: ${response.user!.email}');
+        print('✅ Supervisor user saved in preferences:');
+        print('  - ID: ${user.id}');
+        print('  - Email: ${user.email}');
         print('  - Role: ${adminProfile?['role']}');
+        print('  - ID Tienda: ${supervisorData['id_tienda']}');
         
         // Save credentials if user marked "Remember me"
         if (_rememberMe) {
@@ -379,43 +373,32 @@ class _LoginScreenState extends State<LoginScreen> {
           await _userPreferencesService.clearSavedCredentials();
         }
         
-        print('✅ Admin login successful');
+        print('✅ Supervisor login successful');
         
         // Navigate to dashboard
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/dashboard');
         }
         
-      } else {
-        setState(() {
-          _errorMessage = 'Error de autenticación. Verifica tus credenciales.';
-        });
-      }
     } catch (e) {
+      print('❌ Login error: $e');
       setState(() {
-        _errorMessage = _getErrorMessage(e.toString());
+        if (e.toString().contains('NO_SUPERVISOR_PRIVILEGES')) {
+          _errorMessage = 'No tienes los privilegios para entrar aquí.';
+        } else if (e.toString().contains('Invalid login credentials')) {
+          _errorMessage = 'Credenciales inválidas. Verifica tu email y contraseña.';
+        } else if (e.toString().contains('Email not confirmed')) {
+          _errorMessage = 'Email no confirmado. Revisa tu bandeja de entrada.';
+        } else if (e.toString().contains('Too many requests')) {
+          _errorMessage = 'Demasiados intentos. Intenta de nuevo más tarde.';
+        } else {
+          _errorMessage = 'Error de conexión. Verifica tu internet e intenta de nuevo.';
+        }
+        _isLoading = false;
       });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
   }
 
-  String _getErrorMessage(String error) {
-    if (error.contains('Invalid login credentials')) {
-      return 'Credenciales inválidas. Verifica tu email y contraseña.';
-    } else if (error.contains('Email not confirmed')) {
-      return 'Email no confirmado. Revisa tu bandeja de entrada.';
-    } else if (error.contains('Too many requests')) {
-      return 'Demasiados intentos. Intenta de nuevo más tarde.';
-    } else if (error.contains('Network')) {
-      return 'Error de conexión. Verifica tu internet.';
-    }
-    return 'Error de autenticación. Intenta de nuevo.';
-  }
 
   void _showComingSoonDialog(String feature) {
     showDialog(
