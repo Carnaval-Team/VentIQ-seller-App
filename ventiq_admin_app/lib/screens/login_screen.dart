@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
+import '../services/auth_service.dart';
+import '../services/user_preferences_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,14 +14,46 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _authService = AuthService();
+  final _userPreferencesService = UserPreferencesService();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _rememberMe = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAutoLogin();
+    _loadSavedCredentials();
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkAutoLogin() async {
+    // Check if user has a valid session and auto-login
+    final hasValidSession = await _userPreferencesService.hasValidSession();
+    if (hasValidSession && mounted) {
+      print('✅ Valid session found, auto-logging in...');
+      Navigator.pushReplacementNamed(context, '/dashboard');
+    }
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final shouldRemember = await _userPreferencesService.shouldRememberMe();
+    if (shouldRemember) {
+      final credentials = await _userPreferencesService.getSavedCredentials();
+      setState(() {
+        _emailController.text = credentials['email'] ?? '';
+        _passwordController.text = credentials['password'] ?? '';
+        _rememberMe = true;
+      });
+    }
   }
 
   @override
@@ -41,6 +75,33 @@ class _LoginScreenState extends State<LoginScreen> {
               // Formulario de login
               _buildLoginForm(),
               const SizedBox(height: 32),
+
+              // Error message
+              if (_errorMessage != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            color: AppColors.error,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
               // Botón de login
               _buildLoginButton(),
@@ -148,6 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 borderSide: const BorderSide(color: AppColors.primary),
               ),
             ),
+            onFieldSubmitted: (_) => _handleLogin(),
             validator: (value) {
               if (value == null || value.isEmpty) {
                 return 'Por favor ingresa tu contraseña';
@@ -157,6 +219,29 @@ class _LoginScreenState extends State<LoginScreen> {
               }
               return null;
             },
+          ),
+          const SizedBox(height: 16),
+
+          // Remember me checkbox
+          Row(
+            children: [
+              Checkbox(
+                value: _rememberMe,
+                onChanged: (value) {
+                  setState(() {
+                    _rememberMe = value ?? false;
+                  });
+                },
+                activeColor: AppColors.primary,
+              ),
+              const Text(
+                'Recordarme',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -243,39 +328,77 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
 
+    FocusScope.of(context).unfocus();
+
     try {
-      // Simular login (reemplazar con lógica real de Supabase)
-      await Future.delayed(const Duration(seconds: 2));
-
-      // TODO: Implementar autenticación real con Supabase
-      // final success = await AuthService.signIn(
-      //   _emailController.text,
-      //   _passwordController.text,
-      // );
-
-      // Por ahora, simular login exitoso
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/dashboard');
-      }
+      // Use new supervisor verification method
+      final loginData = await _authService.signInWithSupervisorVerification(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      
+      final user = loginData['user'];
+      final session = loginData['session'];
+      final supervisorData = loginData['supervisorData'];
+      
+      // Get admin profile
+      final adminProfile = await _authService.getAdminProfile(user.id);
+      
+      // Save user data in preferences including id_tienda
+      await _userPreferencesService.saveUserData(
+        userId: user.id,
+        email: user.email ?? _emailController.text.trim(),
+        accessToken: session.accessToken,
+        adminName: adminProfile?['name'],
+        adminRole: adminProfile?['role'],
+        idTienda: supervisorData['id_tienda'],
+      );
+        
+        print('✅ Supervisor user saved in preferences:');
+        print('  - ID: ${user.id}');
+        print('  - Email: ${user.email}');
+        print('  - Role: ${adminProfile?['role']}');
+        print('  - ID Tienda: ${supervisorData['id_tienda']}');
+        
+        // Save credentials if user marked "Remember me"
+        if (_rememberMe) {
+          await _userPreferencesService.saveCredentials(
+            _emailController.text.trim(),
+            _passwordController.text,
+          );
+        } else {
+          await _userPreferencesService.clearSavedCredentials();
+        }
+        
+        print('✅ Supervisor login successful');
+        
+        // Navigate to dashboard
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/dashboard');
+        }
+        
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al iniciar sesión: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      print('❌ Login error: $e');
+      setState(() {
+        if (e.toString().contains('NO_SUPERVISOR_PRIVILEGES')) {
+          _errorMessage = 'No tienes los privilegios para entrar aquí.';
+        } else if (e.toString().contains('Invalid login credentials')) {
+          _errorMessage = 'Credenciales inválidas. Verifica tu email y contraseña.';
+        } else if (e.toString().contains('Email not confirmed')) {
+          _errorMessage = 'Email no confirmado. Revisa tu bandeja de entrada.';
+        } else if (e.toString().contains('Too many requests')) {
+          _errorMessage = 'Demasiados intentos. Intenta de nuevo más tarde.';
+        } else {
+          _errorMessage = 'Error de conexión. Verifica tu internet e intenta de nuevo.';
+        }
+        _isLoading = false;
+      });
     }
   }
+
 
   void _showComingSoonDialog(String feature) {
     showDialog(

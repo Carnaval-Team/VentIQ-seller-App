@@ -82,9 +82,17 @@ class _LoginScreenState extends State<LoginScreen> {
             final sellerData = sellerProfile['seller'] as Map<String, dynamic>;
             final workerData = sellerProfile['worker'] as Map<String, dynamic>;
             
+            // Extraer IDs por separado
+            final idTpv = sellerProfile['idTpv'] as int; // Desde app_dat_vendedor
+            final idTienda = sellerProfile['idTienda'] as int; // Desde app_dat_trabajadores
+            
+            print('🔍 IDs extraídos por separado:');
+            print('  - ID TPV (app_dat_vendedor): $idTpv');
+            print('  - ID Tienda (app_dat_trabajadores): $idTienda');
+            
             // Guardar datos del vendedor
             await _userPreferencesService.saveSellerData(
-              idTpv: sellerData['id_tpv'] as int,
+              idTpv: idTpv,
               idTrabajador: sellerData['id_trabajador'] as int,
             );
             
@@ -92,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
             await _userPreferencesService.saveWorkerProfile(
               nombres: workerData['nombres'] as String,
               apellidos: workerData['apellidos'] as String,
-              idTienda: workerData['id_tienda'] as int,
+              idTienda: idTienda,
               idRoll: workerData['id_roll'] as int,
             );
             

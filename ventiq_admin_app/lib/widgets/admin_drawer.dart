@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
+import '../services/user_preferences_service.dart';
 
 class AdminDrawer extends StatefulWidget {
   const AdminDrawer({Key? key}) : super(key: key);
@@ -207,6 +208,16 @@ class _AdminDrawerState extends State<AdminDrawer> {
                     Navigator.pushNamed(context, '/settings');
                   },
                 ),
+                const Divider(height: 1),
+
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.logout,
+                  title: 'Cerrar Sesión',
+                  subtitle: 'Salir del panel de administración',
+                  onTap: () => _showLogoutDialog(context),
+                  isLogout: true,
+                ),
               ],
             ),
           ),
@@ -233,33 +244,108 @@ class _AdminDrawerState extends State<AdminDrawer> {
     );
   }
 
+  // Mostrar diálogo de confirmación para cerrar sesión
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Cerrar Sesión'),
+          content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.of(context).pop(); // Cerrar diálogo
+                await _performLogout(context);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Cerrar Sesión'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Realizar logout y navegar al login
+  Future<void> _performLogout(BuildContext context) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      
+      // Limpiar datos del usuario pero mantener credenciales si "recordar" está activo
+      final shouldRemember = await userPrefs.shouldRememberMe();
+      if (!shouldRemember) {
+        await userPrefs.clearSavedCredentials();
+      }
+      
+      // Limpiar datos de sesión
+      await userPrefs.clearUserData();
+      
+      // Navegar al login y limpiar stack de navegación
+      if (context.mounted) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/login',
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      // Mostrar error si algo falla
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cerrar sesión: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildDrawerItem(
     BuildContext context, {
     required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    bool isLogout = false,
   }) {
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.1),
+          color: isLogout 
+              ? Colors.red.withOpacity(0.1) 
+              : AppColors.primary.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Icon(icon, color: AppColors.primary, size: 24),
+        child: Icon(
+          icon, 
+          color: isLogout ? Colors.red : AppColors.primary, 
+          size: 24
+        ),
       ),
       title: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
+          color: isLogout ? Colors.red : AppColors.textPrimary,
         ),
       ),
       subtitle: Text(
         subtitle,
-        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        style: TextStyle(
+          fontSize: 12, 
+          color: isLogout ? Colors.red[400] : Colors.grey[600]
+        ),
       ),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

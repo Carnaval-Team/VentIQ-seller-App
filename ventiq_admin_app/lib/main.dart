@@ -12,12 +12,13 @@ import 'screens/customers_screen.dart';
 import 'screens/workers_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/warehouse_screen.dart';
+import 'services/auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // TODO: Inicializar Supabase cuando se implemente
-  // await AuthService.initialize();
+  // Initialize Supabase
+  await AuthService.initialize();
 
   runApp(const MyApp());
 }

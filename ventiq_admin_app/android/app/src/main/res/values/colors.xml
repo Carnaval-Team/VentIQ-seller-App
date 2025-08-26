@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- VentIQ Brand Colors -->
+    <color name="ventiq_blue">#4A90E2</color>
+    <color name="ventiq_blue_dark">#357ABD</color>
+</resources>

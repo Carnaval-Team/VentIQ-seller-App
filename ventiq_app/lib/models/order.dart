@@ -67,6 +67,7 @@ class OrderItem {
   final int cantidad;
   final double precioUnitario;
   final String ubicacionAlmacen;
+  final Map<String, dynamic>? inventoryData;
 
   OrderItem({
     required this.id,
@@ -75,6 +76,7 @@ class OrderItem {
     required this.cantidad,
     required this.precioUnitario,
     required this.ubicacionAlmacen,
+    this.inventoryData,
   });
 
   double get subtotal => precioUnitario * cantidad;
@@ -93,6 +95,7 @@ class OrderItem {
     int? cantidad,
     double? precioUnitario,
     String? ubicacionAlmacen,
+    Map<String, dynamic>? inventoryData,
   }) {
     return OrderItem(
       id: id ?? this.id,
@@ -101,6 +104,7 @@ class OrderItem {
       cantidad: cantidad ?? this.cantidad,
       precioUnitario: precioUnitario ?? this.precioUnitario,
       ubicacionAlmacen: ubicacionAlmacen ?? this.ubicacionAlmacen,
+      inventoryData: inventoryData ?? this.inventoryData,
     );
   }
 }
@@ -121,7 +125,7 @@ extension OrderStatusExtension on OrderStatus {
       case OrderStatus.borrador:
         return 'Borrador';
       case OrderStatus.enviada:
-        return 'Enviada';
+        return 'Pendiente';
       case OrderStatus.procesando:
         return 'Procesando';
       case OrderStatus.completada:

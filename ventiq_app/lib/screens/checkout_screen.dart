@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 
 enum PaymentMethod { efectivo, transferencia }
 
@@ -546,6 +549,65 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
   }
 
+  // Generar código de cliente basado en el nombre encriptado (máximo 20 caracteres)
+  String _generateClientCode(String buyerName) {
+    // Crear hash MD5 del nombre
+    final bytes = utf8.encode(buyerName.toLowerCase().trim());
+    final digest = md5.convert(bytes);
+    
+    // Tomar los primeros 12 caracteres del hash para mantener el código bajo 20 caracteres
+    final clientCode = 'CLI${digest.toString().substring(0, 12).toUpperCase()}';
+    
+    print('🔐 Código generado para "$buyerName": $clientCode (${clientCode.length} caracteres)');
+    return clientCode;
+  }
+
+  // Registrar cliente en Supabase y retornar el ID del cliente
+  Future<int?> _registerClientInSupabase(String buyerName, String buyerPhone) async {
+    try {
+      print('🔄 Registrando cliente en Supabase...');
+      print('  - Nombre: $buyerName');
+      print('  - Teléfono: ${buyerPhone.isNotEmpty ? buyerPhone : "No proporcionado"}');
+      
+      // Generar código de cliente encriptado
+      final clientCode = _generateClientCode(buyerName);
+      
+      final response = await Supabase.instance.client.rpc(
+        'fn_insertar_cliente_con_contactos',
+        params: {
+          'p_codigo_cliente': clientCode, // Código generado desde nombre encriptado
+          'p_contactos': null, // Sin contactos adicionales por ahora
+          'p_direccion': null, // No tenemos dirección
+          'p_documento_identidad': null, // No tenemos documento
+          'p_email': null, // No tenemos email
+          'p_fecha_nacimiento': null, // No tenemos fecha nacimiento
+          'p_genero': null, // No tenemos género
+          'p_limite_credito': 0, // Sin límite de crédito
+          'p_nombre_completo': buyerName,
+          'p_telefono': buyerPhone.isNotEmpty ? buyerPhone : null,
+          'p_tipo_cliente': 1, // Tipo cliente por defecto
+        },
+      );
+      
+      print('✅ Respuesta fn_insertar_cliente_con_contactos:');
+      print('$response');
+      
+      if (response != null && response['status'] == 'success') {
+        final idCliente = response['id_cliente'] as int;
+        print('✅ Cliente registrado exitosamente - ID: $idCliente');
+        return idCliente; // Retornar el ID del cliente
+      } else {
+        print('⚠️ Advertencia al registrar cliente: ${response?['message'] ?? "Respuesta vacía"}');
+        return null;
+      }
+      
+    } catch (e) {
+      print('❌ Error al registrar cliente en Supabase: $e');
+      // No lanzamos excepción para no interrumpir el flujo de la venta
+      return null;
+    }
+  }
+
   void _createOrder() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -561,10 +623,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
-      // Create order with all the collected information
+      // 1. Primero registrar el cliente en Supabase si tenemos datos
+      final buyerName = _buyerNameController.text.trim();
+      final buyerPhone = _buyerPhoneController.text.trim();
+      int? idCliente;
+      
+      if (buyerName.isNotEmpty) {
+        idCliente = await _registerClientInSupabase(buyerName, buyerPhone);
+        print('📝 ID Cliente capturado: $idCliente');
+      }
+      
+      // 2. Create order with all the collected information
       final orderData = {
-        'buyerName': _buyerNameController.text.trim(),
-        'buyerPhone': _buyerPhoneController.text.trim(),
+        'buyerName': buyerName,
+        'buyerPhone': buyerPhone,
         'extraContacts': _extraContactsController.text.trim(),
         'paymentMethod': _selectedPaymentMethod == PaymentMethod.efectivo ? 'efectivo' : 'transferencia',
         'promoCode': _promoApplied ? _promoCodeController.text.trim() : null,
@@ -572,6 +644,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'cashDiscount': _cashDiscount,
         'finalTotal': finalTotal,
         'originalTotal': subtotal,
+        'idCliente': idCliente, // Agregar ID del cliente al orderData
       };
 
       // Update the order with final information
@@ -585,13 +658,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
 
       // Finalize the order
-      _orderService.finalizeOrderWithDetails(updatedOrder, orderData);
+      final result = await _orderService.finalizeOrderWithDetails(updatedOrder, orderData);
 
-      // Show success and navigate back
-      _showSuccessMessage('¡Orden creada exitosamente!');
-      
-      // Navigate back to orders screen or home
-      Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
+      if (result['success'] == true) {
+        // Show success and navigate back
+        _showSuccessMessage('¡Orden registrada exitosamente!');
+        
+        // Navigate back to orders screen or home
+        Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
+      } else {
+        _showErrorMessage('Error al registrar la venta: ${result['error']}');
+      }
 
     } catch (e) {
       _showErrorMessage('Error al crear la orden: $e');

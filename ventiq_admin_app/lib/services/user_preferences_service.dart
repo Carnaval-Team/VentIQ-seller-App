@@ -10,14 +10,11 @@ class UserPreferencesService {
   static const String _accessTokenKey = 'access_token';
   static const String _isLoggedInKey = 'is_logged_in';
   
-  // Seller data keys
-  static const String _idTpvKey = 'id_tpv';
-  static const String _idTrabajadorKey = 'id_trabajador';
-  static const String _nombresKey = 'nombres';
-  static const String _apellidosKey = 'apellidos';
-  static const String _idTiendaKey = 'id_tienda';
-  static const String _idRollKey = 'id_roll';
+  // Admin user data keys
+  static const String _adminNameKey = 'admin_name';
+  static const String _adminRoleKey = 'admin_role';
   static const String _appVersionKey = 'app_version';
+  static const String _idTiendaKey = 'id_tienda';
   
   // Remember me keys
   static const String _rememberMeKey = 'remember_me';
@@ -25,17 +22,30 @@ class UserPreferencesService {
   static const String _savedPasswordKey = 'saved_password';
   static const String _tokenExpiryKey = 'token_expiry';
 
-  // Guardar datos del usuario
+  // Guardar datos del usuario admin
   Future<void> saveUserData({
     required String userId,
     required String email,
     required String accessToken,
+    String? adminName,
+    String? adminRole,
+    int? idTienda,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_userIdKey, userId);
     await prefs.setString(_userEmailKey, email);
     await prefs.setString(_accessTokenKey, accessToken);
     await prefs.setBool(_isLoggedInKey, true);
+    
+    if (adminName != null) {
+      await prefs.setString(_adminNameKey, adminName);
+    }
+    if (adminRole != null) {
+      await prefs.setString(_adminRoleKey, adminRole);
+    }
+    if (idTienda != null) {
+      await prefs.setInt(_idTiendaKey, idTienda);
+    }
     
     // Set token expiry (24 hours from now)
     final expiryTime = DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch;
@@ -60,53 +70,22 @@ class UserPreferencesService {
     return prefs.getString(_accessTokenKey);
   }
 
-  // Guardar datos del vendedor
-  Future<void> saveSellerData({
-    required int idTpv,
-    required int idTrabajador,
-  }) async {
+  // Obtener nombre del admin
+  Future<String?> getAdminName() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_idTpvKey, idTpv);
-    await prefs.setInt(_idTrabajadorKey, idTrabajador);
+    return prefs.getString(_adminNameKey);
   }
 
-  // Guardar datos del trabajador/perfil
-  Future<void> saveWorkerProfile({
-    required String nombres,
-    required String apellidos,
-    required int idTienda,
-    required int idRoll,
-  }) async {
+  // Obtener rol del admin
+  Future<String?> getAdminRole() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_nombresKey, nombres);
-    await prefs.setString(_apellidosKey, apellidos);
-    await prefs.setInt(_idTiendaKey, idTienda);
-    await prefs.setInt(_idRollKey, idRoll);
+    return prefs.getString(_adminRoleKey);
   }
 
-  // Obtener ID TPV (desde app_dat_vendedor)
-  Future<int?> getIdTpv() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_idTpvKey);
-  }
-
-  // Obtener ID Tienda (desde app_dat_trabajadores)
+  // Obtener ID de tienda del supervisor
   Future<int?> getIdTienda() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_idTiendaKey);
-  }
-
-  // Obtener datos del perfil del trabajador
-  Future<Map<String, dynamic?>> getWorkerProfile() async {
-    final prefs = await SharedPreferences.getInstance();
-    return {
-      'nombres': prefs.getString(_nombresKey),
-      'apellidos': prefs.getString(_apellidosKey),
-      'idTienda': prefs.getInt(_idTiendaKey),
-      'idTpv': prefs.getInt(_idTpvKey),
-      'idRoll': prefs.getInt(_idRollKey),
-      'idTrabajador': prefs.getInt(_idTrabajadorKey),
-    };
   }
 
   // Verificar si el usuario está logueado
@@ -121,12 +100,9 @@ class UserPreferencesService {
     await prefs.remove(_userIdKey);
     await prefs.remove(_userEmailKey);
     await prefs.remove(_accessTokenKey);
-    await prefs.remove(_idTpvKey);
-    await prefs.remove(_idTrabajadorKey);
-    await prefs.remove(_nombresKey);
-    await prefs.remove(_apellidosKey);
+    await prefs.remove(_adminNameKey);
+    await prefs.remove(_adminRoleKey);
     await prefs.remove(_idTiendaKey);
-    await prefs.remove(_idRollKey);
     await prefs.setBool(_isLoggedInKey, false);
   }
 
@@ -149,18 +125,15 @@ class UserPreferencesService {
   }
 
   // Obtener todos los datos del usuario
-  Future<Map<String, dynamic?>> getUserData() async {
+  Future<Map<String, dynamic>> getUserData() async {
     final prefs = await SharedPreferences.getInstance();
     return {
       'userId': prefs.getString(_userIdKey),
       'email': prefs.getString(_userEmailKey),
       'accessToken': prefs.getString(_accessTokenKey),
-      'idTpv': prefs.getInt(_idTpvKey),
-      'idTrabajador': prefs.getInt(_idTrabajadorKey),
-      'nombres': prefs.getString(_nombresKey),
-      'apellidos': prefs.getString(_apellidosKey),
+      'adminName': prefs.getString(_adminNameKey),
+      'adminRole': prefs.getString(_adminRoleKey),
       'idTienda': prefs.getInt(_idTiendaKey),
-      'idRoll': prefs.getInt(_idRollKey),
     };
   }
   

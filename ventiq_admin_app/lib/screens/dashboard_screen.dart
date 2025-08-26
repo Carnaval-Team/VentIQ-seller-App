@@ -3,8 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
-import '../services/mock_data_service.dart';
-import '../services/mock_sales_service.dart';
+import '../services/dashboard_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -17,6 +16,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isLoading = true;
   Map<String, dynamic> _dashboardData = {};
   String _selectedTimeFilter = '1 mes';
+  final DashboardService _dashboardService = DashboardService();
   
   final List<String> _timeFilterOptions = [
     '5 años',
@@ -35,138 +35,71 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadDashboardData();
   }
 
-  void _loadDashboardData() {
+  void _loadDashboardData() async {
     setState(() {
       _isLoading = true;
     });
     
-    // Simular carga de datos del dashboard con filtro de tiempo
-    Future.delayed(const Duration(milliseconds: 1000), () {
-      final products = MockDataService.getMockProducts();
-      final inventory = MockDataService.getMockInventory();
-      final sales = MockSalesService.getMockSales();
-      final expenses = MockSalesService.getMockExpenses();
+    try {
+      // Validar que el supervisor tenga id_tienda
+      final hasValidStore = await _dashboardService.validateSupervisorStore();
       
+      if (!hasValidStore) {
+        print('❌ Supervisor no tiene id_tienda válido');
+        // Fallback a datos mock si no hay id_tienda
+        _loadMockData();
+        return;
+      }
+      
+      // Llamar a la función RPC con el período seleccionado
+      print('🔄 Loading dashboard data for period: $_selectedTimeFilter');
+      final realData = await _dashboardService.getStoreAnalysis(
+        periodo: _selectedTimeFilter,
+      );
+      
+      if (realData != null) {
+        print('✅ Real data loaded successfully');
+        setState(() {
+          _dashboardData = realData;
+          _isLoading = false;
+        });
+      } else {
+        print('⚠️ No real data available, using mock data');
+        _loadMockData();
+      }
+    } catch (e) {
+      print('❌ Error loading dashboard data: $e');
+      _loadMockData();
+    }
+  }
+  
+  void _loadMockData() {
+    // Fallback con datos básicos cuando no hay datos reales
+    Future.delayed(const Duration(milliseconds: 500), () {
       setState(() {
         _dashboardData = {
-          'totalProducts': products.length,
-          'totalSales': sales.fold(0.0, (sum, sale) => sum + sale.total),
-          'totalOrders': sales.length,
-          'totalExpenses': expenses.fold(0.0, (sum, expense) => sum + expense.amount),
-          'outOfStock': inventory.where((item) => item.currentStock == 0).length,
-          'lowStock': inventory.where((item) => item.needsRestock).length,
-          'okStock': inventory.where((item) => !item.needsRestock && item.currentStock > 0).length,
-          'salesData': _generateSalesData(_selectedTimeFilter),
-          'categoryData': _generateCategoryData(products),
+          'totalProducts': 0,
+          'totalSales': 0.0,
+          'totalOrders': 0,
+          'totalExpenses': 0.0,
+          'salesChange': 0.0,
+          'ordersChange': 0.0,
+          'productsChange': 0.0,
+          'expensesChange': 0.0,
+          'outOfStock': 0,
+          'lowStock': 0,
+          'okStock': 0,
+          'salesData': <FlSpot>[],
+          'categoryData': [{'name': 'Sin datos', 'value': 1, 'color': 0xFF9E9E9E}],
+          'period': _selectedTimeFilter,
+          'lastUpdated': DateTime.now().toIso8601String(),
         };
         _isLoading = false;
       });
     });
   }
 
-  List<FlSpot> _generateSalesData(String timeFilter) {
-    // Generar datos basados en el filtro de tiempo seleccionado
-    switch (timeFilter) {
-      case 'Día':
-        return [
-          const FlSpot(0, 150),   // 6 AM
-          const FlSpot(1, 280),   // 9 AM
-          const FlSpot(2, 420),   // 12 PM
-          const FlSpot(3, 380),   // 3 PM
-          const FlSpot(4, 520),   // 6 PM
-          const FlSpot(5, 340),   // 9 PM
-        ];
-      case 'Semana':
-        return [
-          const FlSpot(0, 1200),  // Lun
-          const FlSpot(1, 1800),  // Mar
-          const FlSpot(2, 1500),  // Mié
-          const FlSpot(3, 2200),  // Jue
-          const FlSpot(4, 1900),  // Vie
-          const FlSpot(5, 2800),  // Sáb
-          const FlSpot(6, 2400),  // Dom
-        ];
-      case '1 mes':
-        return [
-          const FlSpot(0, 8500),   // Semana 1
-          const FlSpot(1, 12300),  // Semana 2
-          const FlSpot(2, 10800),  // Semana 3
-          const FlSpot(3, 15200),  // Semana 4
-        ];
-      case '3 meses':
-        return [
-          const FlSpot(0, 35000),  // Mes 1
-          const FlSpot(1, 42000),  // Mes 2
-          const FlSpot(2, 38500),  // Mes 3
-        ];
-      case '6 meses':
-        return [
-          const FlSpot(0, 35000),
-          const FlSpot(1, 42000),
-          const FlSpot(2, 38500),
-          const FlSpot(3, 45200),
-          const FlSpot(4, 41800),
-          const FlSpot(5, 48300),
-        ];
-      case '1 año':
-        return [
-          const FlSpot(0, 120000), // Ene-Mar
-          const FlSpot(1, 135000), // Abr-Jun
-          const FlSpot(2, 142000), // Jul-Sep
-          const FlSpot(3, 158000), // Oct-Dic
-        ];
-      case '3 años':
-        return [
-          const FlSpot(0, 480000), // Año 1
-          const FlSpot(1, 520000), // Año 2
-          const FlSpot(2, 580000), // Año 3
-        ];
-      case '5 años':
-        return [
-          const FlSpot(0, 480000), // Año 1
-          const FlSpot(1, 520000), // Año 2
-          const FlSpot(2, 580000), // Año 3
-          const FlSpot(3, 620000), // Año 4
-          const FlSpot(4, 680000), // Año 5
-        ];
-      default:
-        return [
-          const FlSpot(0, 1200),
-          const FlSpot(1, 1800),
-          const FlSpot(2, 1500),
-          const FlSpot(3, 2200),
-          const FlSpot(4, 1900),
-          const FlSpot(5, 2800),
-          const FlSpot(6, 2400),
-        ];
-    }
-  }
 
-  List<PieChartSectionData> _generateCategoryData(products) {
-    final categoryCount = <String, int>{};
-    for (var product in products) {
-      categoryCount[product.categoryName] = (categoryCount[product.categoryName] ?? 0) + 1;
-    }
-    
-    final colors = [AppColors.primary, AppColors.success, AppColors.warning, AppColors.error, AppColors.info];
-    int colorIndex = 0;
-    
-    return categoryCount.entries.map((entry) {
-      final color = colors[colorIndex % colors.length];
-      colorIndex++;
-      return PieChartSectionData(
-        color: color,
-        value: entry.value.toDouble(),
-        title: '${entry.key}\n${entry.value}',
-        radius: 50,
-        titleStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-      );
-    }).toList();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -494,7 +427,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               gridData: FlGridData(
                 show: true,
                 drawVerticalLine: false,
-                horizontalInterval: 500,
+                horizontalInterval: _getYAxisInterval(),
                 getDrawingHorizontalLine: (value) {
                   return FlLine(
                     color: AppColors.border,
@@ -529,10 +462,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    interval: 500,
+                    interval: _getYAxisInterval(),
+                    reservedSize: 60,
                     getTitlesWidget: (double value, TitleMeta meta) {
                       return Text(
-                        '\$${(value / 1000).toStringAsFixed(1)}K',
+                        _formatYAxisLabel(value),
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontWeight: FontWeight.w500,
@@ -540,7 +474,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       );
                     },
-                    reservedSize: 42,
                   ),
                 ),
               ),
@@ -871,25 +804,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   double _getMaxY() {
-    switch (_selectedTimeFilter) {
-      case 'Día':
-        return 600;
-      case 'Semana':
-        return 3000;
-      case '1 mes':
-        return 20000;
-      case '3 meses':
-        return 50000;
-      case '6 meses':
-        return 60000;
-      case '1 año':
-        return 200000;
-      case '3 años':
-        return 700000;
-      case '5 años':
-        return 800000;
-      default:
-        return 3000;
+    // Obtener el valor máximo de los datos reales
+    final salesData = _dashboardData['salesData'] as List<FlSpot>? ?? [];
+    if (salesData.isEmpty) {
+      return 1000; // Valor por defecto
+    }
+    
+    double maxValue = salesData.map((spot) => spot.y).reduce((a, b) => a > b ? a : b);
+    
+    // Agregar un 20% de margen superior para que el gráfico se vea mejor
+    return maxValue * 1.2;
+  }
+
+  double _getYAxisInterval() {
+    final maxY = _getMaxY();
+    
+    // Calcular intervalo dinámico para mostrar aproximadamente 5-6 etiquetas
+    if (maxY <= 100) {
+      return 20;
+    } else if (maxY <= 500) {
+      return 100;
+    } else if (maxY <= 1000) {
+      return 200;
+    } else if (maxY <= 5000) {
+      return 1000;
+    } else if (maxY <= 10000) {
+      return 2000;
+    } else if (maxY <= 50000) {
+      return 10000;
+    } else if (maxY <= 100000) {
+      return 20000;
+    } else {
+      return 50000;
+    }
+  }
+
+  String _formatYAxisLabel(double value) {
+    if (value == 0) return '0';
+    
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1)}M';
+    } else if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(0)}K';
+    } else {
+      return value.toStringAsFixed(0);
     }
   }
 

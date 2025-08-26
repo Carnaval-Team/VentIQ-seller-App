@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
+import '../services/user_preferences_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -9,18 +10,29 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  final _userPreferencesService = UserPreferencesService();
+
   @override
   void initState() {
     super.initState();
-    _navigateToLogin();
+    _checkAuthAndNavigate();
   }
 
-  Future<void> _navigateToLogin() async {
+  Future<void> _checkAuthAndNavigate() async {
     // Add a small delay for splash screen effect
-    await Future.delayed(const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 2));
 
     if (mounted) {
-      Navigator.of(context).pushReplacementNamed('/login');
+      // Check if user has a valid session
+      final hasValidSession = await _userPreferencesService.hasValidSession();
+      
+      if (hasValidSession) {
+        print('✅ Valid admin session found, navigating to dashboard...');
+        Navigator.of(context).pushReplacementNamed('/dashboard');
+      } else {
+        print('❌ No valid session found, navigating to login...');
+        Navigator.of(context).pushReplacementNamed('/login');
+      }
     }
   }
 

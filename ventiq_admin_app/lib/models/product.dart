@@ -13,6 +13,21 @@ class Product {
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<ProductVariant> variants;
+  
+  // Nuevos campos de la API optimizada
+  final String? nombreComercial;
+  final String? um; // Unidad de medida
+  final bool esRefrigerado;
+  final bool esFragil;
+  final bool esPeligroso;
+  final bool esVendible;
+  final int stockDisponible;
+  final bool tieneStock;
+  final List<Map<String, dynamic>> subcategorias;
+  final List<Map<String, dynamic>> presentaciones;
+  final List<Map<String, dynamic>> multimedias;
+  final List<String> etiquetas;
+  final List<Map<String, dynamic>> inventario;
 
   Product({
     required this.id,
@@ -29,6 +44,20 @@ class Product {
     required this.createdAt,
     required this.updatedAt,
     this.variants = const [],
+    // Nuevos campos opcionales con valores por defecto
+    this.nombreComercial,
+    this.um,
+    this.esRefrigerado = false,
+    this.esFragil = false,
+    this.esPeligroso = false,
+    this.esVendible = true,
+    this.stockDisponible = 0,
+    this.tieneStock = false,
+    this.subcategorias = const [],
+    this.presentaciones = const [],
+    this.multimedias = const [],
+    this.etiquetas = const [],
+    this.inventario = const [],
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -49,6 +78,20 @@ class Product {
       variants: (json['variants'] as List<dynamic>?)
           ?.map((v) => ProductVariant.fromJson(v))
           .toList() ?? [],
+      // Nuevos campos de la API
+      nombreComercial: json['nombreComercial'],
+      um: json['um'],
+      esRefrigerado: json['esRefrigerado'] ?? false,
+      esFragil: json['esFragil'] ?? false,
+      esPeligroso: json['esPeligroso'] ?? false,
+      esVendible: json['esVendible'] ?? true,
+      stockDisponible: json['stockDisponible'] ?? 0,
+      tieneStock: json['tieneStock'] ?? false,
+      subcategorias: (json['subcategorias'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+      presentaciones: (json['presentaciones'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+      multimedias: (json['multimedias'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+      etiquetas: (json['etiquetas'] as List<dynamic>?)?.cast<String>() ?? [],
+      inventario: (json['inventario'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
   }
 

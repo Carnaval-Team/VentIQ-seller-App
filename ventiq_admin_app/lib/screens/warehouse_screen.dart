@@ -200,7 +200,11 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                     : _stores)
                 .map((s) => DropdownMenuItem<String>(
                       value: s.id,
-                      child: Text(s.name),
+                      child: Text(
+                        s.name,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ))
                 .toList(),
             onChanged: (v) async {
