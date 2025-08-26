@@ -495,6 +495,8 @@ class MockDataService {
         longitude: -99.1332,
         type: 'principal',
         createdAt: DateTime.now().subtract(const Duration(days: 365)),
+        denominacion: 'Almacén Principal',
+        direccion: 'Av. Industrial 123',
         zones: [
           WarehouseZone(
             id: 'z1',
@@ -527,6 +529,8 @@ class MockDataService {
         address: 'Calle Comercio 456',
         city: 'Guadalajara',
         country: 'México',
+        denominacion: 'Almacén Secundario',
+        direccion: 'Calle Comercio 456',
         type: 'secundario',
         createdAt: DateTime.now().subtract(const Duration(days: 180)),
         zones: [
