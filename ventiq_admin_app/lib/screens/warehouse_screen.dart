@@ -7,7 +7,6 @@ import '../models/warehouse.dart';
 import '../models/store.dart';
 import '../services/warehouse_service.dart';
 import 'warehouse_detail_screen.dart';
-import 'warehouse_form_screen.dart';
 
 class WarehouseScreen extends StatefulWidget {
   const WarehouseScreen({super.key});
@@ -239,14 +238,10 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   }
 
   void _onAddWarehouse() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const WarehouseFormScreen()),
-    ).then((created) {
-      if (created == true) {
-        _loadData();
-      }
-    });
+    // Placeholder: in future, open modal to create warehouse
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Acción: Agregar almacén (pendiente)')),
+    );
   }
 
   void _onEditWarehouse(Warehouse w) {
