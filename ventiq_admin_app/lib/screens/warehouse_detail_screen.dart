@@ -17,6 +17,7 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   Warehouse? _warehouse;
   bool _loading = true;
   String _sort = 'abc'; // abc | type | utilization
+  String? _selectedZoneId; // selección actual para panel de detalles
 
   @override
   void initState() {
@@ -37,6 +38,7 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
     setState(() {
       _warehouse = w;
       _loading = false;
+      _selectedZoneId ??= w.zones.isNotEmpty ? w.zones.first.id : null;
     });
   }
 
@@ -150,7 +152,7 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
         children: [
           AdminSectionHeader(
             title: 'Layouts/Zonas',
-            subtitle: 'Define zonas, clasificación ABC y condiciones',
+            subtitle: 'Árbol de dependencias y detalles',
             action: Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               spacing: 8,
@@ -179,66 +181,186 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
           if (w.zones.isEmpty)
             const Text('Sin layouts aún', style: TextStyle(color: AppColors.textSecondary))
           else
-            Column(
-              children: zones
-                  .map((z) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: _zoneLeading(z),
-                        title: Row(
-                          children: [
-                            Expanded(child: Text(z.name)),
-                            const SizedBox(width: 8),
-                            if (z.abc != null) _abcChip(z.abc!),
-                          ],
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                                'Código: ${z.code} • Tipo: ${z.type} • Capacidad: ${z.capacity}'
-                                '${_parentName(w, z) != null ? ' • Padre: ${_parentName(w, z)}' : ''}'),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: [
-                                _metricChip(Icons.inventory_2_outlined, '${z.productCount} prod.'),
-                                _metricChip(Icons.storage, '${(z.utilization * 100).toStringAsFixed(0)}% ocupado'),
-                                ..._conditionIcons(z),
-                              ],
-                            ),
-                          ],
-                        ),
-                        trailing: Wrap(
-                          spacing: 8,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.copy),
-                              tooltip: 'Duplicar layout',
-                              onPressed: () => _onDuplicateLayout(w, z.id),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.edit),
-                              tooltip: 'Editar layout',
-                              onPressed: () => _onEditLayout(w, z.id),
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.delete_outline,
-                                color: z.productCount > 0 ? Colors.grey : null,
-                              ),
-                              tooltip: z.productCount > 0
-                                  ? 'No se puede eliminar: contiene productos'
-                                  : 'Eliminar layout',
-                              onPressed: z.productCount > 0
-                                  ? () => _showSnack('No se puede eliminar: contiene productos')
-                                  : () => _onDeleteLayout(w, z.id),
-                            ),
-                          ],
-                        ),
-                      ))
-                  .toList(),
+            LayoutBuilder(
+              builder: (ctx, c) {
+                final wide = c.maxWidth > 720;
+                final left = SizedBox(
+                  width: wide ? c.maxWidth * 0.42 : c.maxWidth,
+                  child: _buildTreeView(w),
+                );
+                final right = SizedBox(
+                  width: wide ? c.maxWidth * 0.58 : c.maxWidth,
+                  child: _buildZoneDetail(w),
+                );
+                return wide
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(flex: 5, child: left),
+                          const SizedBox(width: 12),
+                          Expanded(flex: 7, child: right),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [left, const SizedBox(height: 12), right],
+                      );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Construye el árbol de dependencias de layouts
+  Widget _buildTreeView(Warehouse w) {
+    final roots = w.zones.where((z) => z.parentId == null).toList();
+    final childrenMap = <String, List<WarehouseZone>>{};
+    for (final z in w.zones) {
+      final p = z.parentId;
+      if (p != null) {
+        childrenMap.putIfAbsent(p, () => []).add(z);
+      }
+    }
+    List<Widget> buildNodes(List<WarehouseZone> nodes, int depth) {
+      return nodes.map((z) => _zoneExpansionTile(w, z, childrenMap, depth)).toList();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Árbol de layouts', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        ListView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: buildNodes(roots.isNotEmpty ? roots : w.zones, 0),
+        ),
+      ],
+    );
+  }
+
+  Widget _zoneExpansionTile(Warehouse w, WarehouseZone z, Map<String, List<WarehouseZone>> childrenMap, int depth) {
+    final children = childrenMap[z.id] ?? const <WarehouseZone>[];
+    final isSelected = z.id == _selectedZoneId;
+    final title = Row(
+      children: [
+        Expanded(child: Text(z.name, style: TextStyle(fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500))),
+        const SizedBox(width: 8),
+        if (z.abc != null) _abcChip(z.abc!),
+      ],
+    );
+
+    if (children.isEmpty) {
+      return ListTile(
+        contentPadding: EdgeInsets.only(left: 8.0 + depth * 12.0, right: 8.0),
+        leading: _zoneLeading(z),
+        title: title,
+        subtitle: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            _metricChip(Icons.inventory_2_outlined, '${z.productCount} prod.'),
+            _metricChip(Icons.storage, '${(z.utilization * 100).toStringAsFixed(0)}% ocupado'),
+            ..._conditionIcons(z),
+          ],
+        ),
+        selected: isSelected,
+        onTap: () => setState(() => _selectedZoneId = z.id),
+      );
+    }
+
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        leading: _zoneLeading(z),
+        title: title,
+        subtitle: Text('Código: ${z.code} • Tipo: ${z.type} • Capacidad: ${z.capacity}'),
+        tilePadding: EdgeInsets.only(left: depth * 12.0),
+        childrenPadding: EdgeInsets.only(left: 12.0 + depth * 12.0, right: 8.0, bottom: 4.0),
+        onExpansionChanged: (_) {},
+        children: children.map((c) => _zoneExpansionTile(w, c, childrenMap, depth + 1)).toList(),
+      ),
+    );
+  }
+
+  // Panel derecho con detalles y acciones del layout seleccionado
+  Widget _buildZoneDetail(Warehouse w) {
+    if (_selectedZoneId == null) {
+      return const Text('Selecciona un layout para ver detalles', style: TextStyle(color: AppColors.textSecondary));
+    }
+    final z = w.zones.firstWhere((e) => e.id == _selectedZoneId, orElse: () => w.zones.first);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  _zoneLeading(z),
+                  const SizedBox(width: 8),
+                  Text(z.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                ],
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _onEditLayout(w, z.id),
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Editar'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _onDuplicateLayout(w, z.id),
+                    icon: const Icon(Icons.copy),
+                    label: const Text('Duplicar'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: z.productCount > 0
+                        ? () => _showSnack('No se puede eliminar: contiene productos')
+                        : () => _onDeleteLayout(w, z.id),
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Eliminar'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _metricChip(Icons.badge, 'Código ${z.code}'),
+              _metricChip(Icons.category, 'Tipo ${z.type}'),
+              _metricChip(Icons.view_array, 'Capacidad ${z.capacity}') ,
+              _metricChip(Icons.inventory_2_outlined, '${z.productCount} prod.'),
+              _metricChip(Icons.storage, '${(z.utilization * 100).toStringAsFixed(0)}% ocupado'),
+              if (_parentName(w, z) != null) _metricChip(Icons.account_tree, 'Padre ${_parentName(w, z)!}'),
+              if (z.abc != null) _abcChip(z.abc!),
+              ..._conditionIcons(z),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text('Ubicaciones', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          if (z.locations.isEmpty)
+            const Text('Sin ubicaciones registradas', style: TextStyle(color: AppColors.textSecondary))
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: z.locations.map((l) => _metricChip(Icons.place_outlined, l)).toList(),
             ),
         ],
       ),
@@ -525,6 +647,7 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                                     createdAt: w.createdAt,
                                     zones: [...w.zones, newZone],
                                   );
+                                  _selectedZoneId = newZone.id;
                                 });
                                 if (mounted) Navigator.of(ctx).pop();
                                 _showSnack(isDuplicate ? 'Layout duplicado' : 'Layout creado');
@@ -563,6 +686,7 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                                     createdAt: w.createdAt,
                                     zones: newZones,
                                   );
+                                  _selectedZoneId = updatedZone.id;
                                 });
                                 if (mounted) Navigator.of(ctx).pop();
                                 _showSnack('Layout actualizado');
