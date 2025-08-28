@@ -85,16 +85,21 @@ class _LoginScreenState extends State<LoginScreen> {
             // Extraer IDs por separado
             final idTpv = sellerProfile['idTpv'] as int; // Desde app_dat_vendedor
             final idTienda = sellerProfile['idTienda'] as int; // Desde app_dat_trabajadores
+            final idSeller = sellerData['id'] as int; // ID del vendedor desde app_dat_vendedor
             
             print('🔍 IDs extraídos por separado:');
             print('  - ID TPV (app_dat_vendedor): $idTpv');
             print('  - ID Tienda (app_dat_trabajadores): $idTienda');
+            print('  - ID Seller (app_dat_vendedor): $idSeller');
             
             // Guardar datos del vendedor
             await _userPreferencesService.saveSellerData(
               idTpv: idTpv,
               idTrabajador: sellerData['id_trabajador'] as int,
             );
+            
+            // Guardar ID del vendedor
+            await _userPreferencesService.saveIdSeller(idSeller);
             
             // Guardar perfil del trabajador
             await _userPreferencesService.saveWorkerProfile(
