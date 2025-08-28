@@ -6,6 +6,8 @@ import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/warehouse_service.dart';
+import '../models/warehouse.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
   const InventoryReceptionScreen({super.key});
@@ -28,9 +30,12 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   List<Map<String, dynamic>> _selectedProducts = [];
   List<Map<String, dynamic>> _motivoOptions = [];
   Map<String, dynamic>? _selectedMotivo;
+  List<Warehouse> _warehouses = [];
+  WarehouseZone? _selectedLocation;
   bool _isLoading = false;
   bool _isLoadingProducts = true;
   bool _isLoadingMotivos = true;
+  bool _isLoadingWarehouses = true;
   String _searchQuery = '';
 
   @override
@@ -38,6 +43,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     super.initState();
     _loadProducts();
     _loadMotivoOptions();
+    _loadWarehouses();
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -59,21 +65,21 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   }
 
   void _filterProducts() {
+    // Apply search filter to available products (no location filtering here)
     if (_searchQuery.isEmpty) {
       _filteredProducts = List.from(_availableProducts);
     } else {
-      _filteredProducts =
-          _availableProducts.where((product) {
-            return product.name.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                ) ||
-                product.sku.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                ) ||
-                product.brand.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                );
-          }).toList();
+      _filteredProducts = _availableProducts.where((product) {
+        return product.name.toLowerCase().contains(
+              _searchQuery.toLowerCase(),
+            ) ||
+            product.sku.toLowerCase().contains(
+              _searchQuery.toLowerCase(),
+            ) ||
+            product.brand.toLowerCase().contains(
+              _searchQuery.toLowerCase(),
+            );
+      }).toList();
     }
   }
 
@@ -94,6 +100,47 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error al cargar motivos: $e')));
+      }
+    }
+  }
+
+  Future<void> _loadWarehouses() async {
+    try {
+      setState(() => _isLoadingWarehouses = true);
+      final warehouseService = WarehouseService();
+      final warehouses = await warehouseService.listWarehouses();
+      
+      // Keep warehouses with their zones for tree structure
+      List<WarehouseZone> allLocations = [];
+      for (final warehouse in warehouses) {
+        for (final zone in warehouse.zones) {
+          // Add warehouse info to zone for display
+          final zoneWithWarehouse = WarehouseZone(
+            id: zone.id,
+            warehouseId: warehouse.id,
+            name: zone.name,
+            code: zone.code,
+            type: zone.type,
+            conditions: zone.conditions,
+            capacity: zone.capacity,
+            currentOccupancy: zone.currentOccupancy,
+            locations: zone.locations,
+            conditionCodes: zone.conditionCodes,
+          );
+          allLocations.add(zoneWithWarehouse);
+        }
+      }
+      
+      setState(() {
+        _warehouses = warehouses;
+        _isLoadingWarehouses = false;
+      });
+    } catch (e) {
+      setState(() => _isLoadingWarehouses = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar almacenes: $e')),
+        );
       }
     }
   }
@@ -179,7 +226,22 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 : _totalAmount,
         motivo: _selectedMotivo?['id']?.toString() ?? '',
         observaciones: _observacionesController.text,
-        productos: _selectedProducts,
+        productos: _selectedProducts.map((product) {
+          // Add selected location ID to each product
+          final productWithLocation = Map<String, dynamic>.from(product);
+          if (_selectedLocation != null) {
+            // Try to parse as int, if it fails, use the string value or null
+            try {
+              productWithLocation['id_ubicacion'] = int.parse(_selectedLocation!.id);
+            } catch (e) {
+              print('Warning: Could not parse location ID "${_selectedLocation!.id}" as integer: $e');
+              // If the ID is not a valid integer, we might need to handle it differently
+              // For now, we'll skip adding the id_ubicacion or use a default value
+              productWithLocation['id_ubicacion'] = null;
+            }
+          }
+          return productWithLocation;
+        }).toList(),
         recibidoPor: _recibidoPorController.text,
         uuid: userUuid,
       );
@@ -237,6 +299,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildReceptionInfoSection(),
+                    const SizedBox(height: 24),
+                    _buildLocationSelectionSection(),
                     const SizedBox(height: 24),
                     _buildProductSelectionSection(),
                     const SizedBox(height: 24),
@@ -421,20 +485,35 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: _selectedProducts.length,
+                itemCount: _getFilteredSelectedProducts().length,
                 itemBuilder: (context, index) {
-                  final item = _selectedProducts[index];
+                  final item = _getFilteredSelectedProducts()[index];
+                  final originalIndex = _selectedProducts.indexOf(item);
                   return ListTile(
                     title: Text(item['nombre_producto']),
-                    subtitle: Text(
-                      'Cantidad: ${item['cantidad']} | Precio: \$${item['precio_unitario']?.toStringAsFixed(2) ?? '0.00'}',
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Cantidad: ${item['cantidad']} | Precio: \$${item['precio_unitario']?.toStringAsFixed(2) ?? '0.00'}',
+                        ),
+                        if (_buildVariantInfo(item).isNotEmpty)
+                          Text(
+                            _buildVariantInfo(item),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
                     ),
                     trailing: IconButton(
                       icon: const Icon(
                         Icons.remove_circle,
                         color: AppColors.error,
                       ),
-                      onPressed: () => _removeProduct(index),
+                      onPressed: () => _removeProduct(originalIndex),
                     ),
                   );
                 },
@@ -499,6 +578,225 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildLocationSelectionSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Seleccionar Ubicación',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            _isLoadingWarehouses
+                ? const Center(child: CircularProgressIndicator())
+                : _buildWarehouseTree(),
+            if (_selectedLocation != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Ubicación seleccionada: ${_getWarehouseName(_selectedLocation!.warehouseId)} - ${_selectedLocation!.name}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          if (_selectedLocation!.code.isNotEmpty)
+                            Text(
+                              'Código: ${_selectedLocation!.code}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWarehouseTree() {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: _warehouses.map((warehouse) {
+          return ExpansionTile(
+            leading: Icon(
+              Icons.warehouse,
+              color: AppColors.primary,
+            ),
+            title: Text(
+              warehouse.name,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+            subtitle: Text(
+              warehouse.address,
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 12,
+              ),
+            ),
+            children: warehouse.zones.map((zone) {
+              final isSelected = _selectedLocation?.id == zone.id;
+              return ListTile(
+                contentPadding: const EdgeInsets.only(left: 56, right: 16),
+                leading: Icon(
+                  Icons.location_on,
+                  color: isSelected ? AppColors.primary : Colors.grey,
+                  size: 20,
+                ),
+                title: Text(
+                  zone.name,
+                  style: TextStyle(
+                    color: isSelected ? AppColors.primary : null,
+                    fontWeight: isSelected ? FontWeight.w600 : null,
+                  ),
+                ),
+                subtitle: zone.code.isNotEmpty
+                    ? Text(
+                        'Código: ${zone.code}',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 11,
+                        ),
+                      )
+                    : null,
+                trailing: isSelected
+                    ? Icon(
+                        Icons.check_circle,
+                        color: AppColors.primary,
+                        size: 20,
+                      )
+                    : null,
+                onTap: () {
+                  setState(() {
+                    _selectedLocation = zone;
+                  });
+                },
+              );
+            }).toList(),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  String _getWarehouseName(String warehouseId) {
+    final warehouse = _warehouses.firstWhere(
+      (w) => w.id == warehouseId,
+      orElse: () => Warehouse(
+        id: '',
+        name: 'Almacén',
+        description: '',
+        address: '',
+        city: '',
+        country: '',
+        type: '',
+        isActive: true,
+        createdAt: DateTime.now(),
+        denominacion: 'Almacén',
+        direccion: '',
+      ),
+    );
+    return warehouse.name;
+  }
+
+  List<Map<String, dynamic>> _getFilteredSelectedProducts() {
+    // Always show all selected products - don't filter by location here
+    // The location filtering will be applied when sending to backend
+    return _selectedProducts;
+  }
+
+  String _buildVariantInfo(Map<String, dynamic> item) {
+    List<String> variantParts = [];
+    
+    // Add variant information if available
+    if (item['id_variante'] != null) {
+      // Try to find variant info from the original product
+      final productId = item['id_producto']?.toString();
+      if (productId != null) {
+        try {
+          final product = _availableProducts.firstWhere((p) => p.id == productId);
+          
+          // Find matching variant in product inventory
+          for (final inv in product.inventario) {
+            if (inv['variante'] != null && 
+                inv['variante']['id']?.toString() == item['id_variante']?.toString()) {
+              final atributo = inv['variante']['atributo']?['label'] ?? '';
+              final opcion = inv['variante']['opcion']?['valor'] ?? '';
+              if (atributo.isNotEmpty && opcion.isNotEmpty) {
+                variantParts.add('$atributo: $opcion');
+              }
+              break;
+            }
+          }
+        } catch (e) {
+          // Product not found, skip variant info
+        }
+      }
+    }
+    
+    // Add presentation information if available
+    if (item['id_presentacion'] != null) {
+      final productId = item['id_producto']?.toString();
+      if (productId != null) {
+        try {
+          final product = _availableProducts.firstWhere((p) => p.id == productId);
+          
+          // Find matching presentation in product inventory
+          for (final inv in product.inventario) {
+            if (inv['presentacion'] != null && 
+                inv['presentacion']['id']?.toString() == item['id_presentacion']?.toString()) {
+              final denominacion = inv['presentacion']['denominacion'] ?? '';
+              final cantidad = inv['presentacion']['cantidad'] ?? 1;
+              if (denominacion.isNotEmpty) {
+                variantParts.add('Presentación: $denominacion (${cantidad}x)');
+              }
+              break;
+            }
+          }
+        } catch (e) {
+          // Product not found, skip presentation info
+        }
+      }
+    }
+    
+    return variantParts.join(' | ');
   }
 }
 
