@@ -15,7 +15,8 @@ class InventoryScreen extends StatefulWidget {
   State<InventoryScreen> createState() => _InventoryScreenState();
 }
 
-class _InventoryScreenState extends State<InventoryScreen> with TickerProviderStateMixin {
+class _InventoryScreenState extends State<InventoryScreen>
+    with TickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -29,7 +30,7 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
   String _selectedClassification = 'Todas';
   String _stockFilter = 'Todos';
   String _errorMessage = '';
-  
+
   // Pagination and summary data
   int _currentPage = 1;
   bool _hasNextPage = false;
@@ -46,7 +47,8 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
   }
 
   void _scrollListener() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
       _loadNextPage();
     }
   }
@@ -69,7 +71,7 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
         _inventoryItems.clear();
       });
     }
-    
+
     try {
       // Load warehouses first (only on initial load)
       if (reset) {
@@ -78,7 +80,7 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
           _warehouses = warehouses;
         });
       }
-      
+
       // Load inventory products with pagination
       final response = await InventoryService.getInventoryProducts(
         idAlmacen: _selectedWarehouseId,
@@ -87,24 +89,28 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
         conStockMinimo: _stockFilter == 'Stock Bajo' ? true : null,
         pagina: _currentPage,
       );
-      
+
       setState(() {
         if (reset) {
           _inventoryProducts = response.products;
         } else {
           _inventoryProducts.addAll(response.products);
         }
-        _inventoryItems = _inventoryProducts.map((p) => p.toInventoryItem()).toList();
+        _inventoryItems =
+            _inventoryProducts.map((p) => p.toInventoryItem()).toList();
         _inventorySummary = response.summary;
         _paginationInfo = response.pagination;
         _hasNextPage = response.pagination?.tieneSiguiente ?? false;
         _isLoading = false;
         _isLoadingMore = false;
       });
-      
-      print('✅ Loaded ${response.products.length} products (page $_currentPage)');
-      print('📊 Summary: ${_inventorySummary?.totalInventario} total, ${_inventorySummary?.totalSinStock} sin stock');
-      
+
+      print(
+        '✅ Loaded ${response.products.length} products (page $_currentPage)',
+      );
+      print(
+        '📊 Summary: ${_inventorySummary?.totalInventario} total, ${_inventorySummary?.totalSinStock} sin stock',
+      );
     } catch (e) {
       print('❌ Error loading inventory data: $e');
       setState(() {
@@ -117,12 +123,12 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
 
   void _loadNextPage() async {
     if (_isLoadingMore || !_hasNextPage) return;
-    
+
     setState(() {
       _isLoadingMore = true;
       _currentPage++;
     });
-    
+
     _loadInventoryData(reset: false);
   }
 
@@ -150,11 +156,12 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
             tooltip: 'Actualizar',
           ),
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
         bottom: TabBar(
@@ -170,16 +177,20 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
           ],
         ),
       ),
-      body: _isLoading ? _buildLoadingState() : 
-             _errorMessage.isNotEmpty ? _buildErrorState() : TabBarView(
-        controller: _tabController,
-        children: [
-          _buildStockTab(),
-          _buildWarehousesTab(),
-          _buildMovementsTab(),
-          _buildABCTab(),
-        ],
-      ),
+      body:
+          _isLoading
+              ? _buildLoadingState()
+              : _errorMessage.isNotEmpty
+              ? _buildErrorState()
+              : TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildStockTab(),
+                  _buildWarehousesTab(),
+                  _buildMovementsTab(),
+                  _buildABCTab(),
+                ],
+              ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showInventoryReceptionDialog,
         backgroundColor: AppColors.primary,
@@ -201,7 +212,10 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
         children: [
           CircularProgressIndicator(color: AppColors.primary),
           SizedBox(height: 16),
-          Text('Cargando inventario...', style: TextStyle(color: AppColors.textSecondary)),
+          Text(
+            'Cargando inventario...',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
         ],
       ),
     );
@@ -235,7 +249,7 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
 
   Widget _buildStockTab() {
     final filteredItems = _getFilteredInventoryItems();
-    
+
     return Column(
       children: [
         _buildSearchAndFilters(),
@@ -271,9 +285,11 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
 
   Widget _buildABCTab() {
     return const Center(
-      child: Text('Clasificación ABC\n(Próximamente)', 
+      child: Text(
+        'Clasificación ABC\n(Próximamente)',
         textAlign: TextAlign.center,
-        style: TextStyle(color: AppColors.textSecondary)),
+        style: TextStyle(color: AppColors.textSecondary),
+      ),
     );
   }
 
@@ -288,7 +304,9 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
             decoration: InputDecoration(
               hintText: 'Buscar productos...',
               prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onChanged: (value) {
               setState(() => _searchQuery = value);
@@ -310,7 +328,10 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
                   decoration: const InputDecoration(
                     labelText: 'Almacén',
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                   isExpanded: true,
                   items: [
@@ -318,14 +339,16 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
                       value: 'Todos',
                       child: Text('Todos', style: TextStyle(fontSize: 14)),
                     ),
-                    ..._warehouses.map((w) => DropdownMenuItem<String>(
-                      value: w.name,
-                      child: Text(
-                        w.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14),
+                    ..._warehouses.map(
+                      (w) => DropdownMenuItem<String>(
+                        value: w.name,
+                        child: Text(
+                          w.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14),
+                        ),
                       ),
-                    )),
+                    ),
                   ],
                   onChanged: (value) {
                     setState(() {
@@ -333,7 +356,9 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
                       if (value == 'Todos') {
                         _selectedWarehouseId = null;
                       } else {
-                        final warehouse = _warehouses.firstWhere((w) => w.name == value);
+                        final warehouse = _warehouses.firstWhere(
+                          (w) => w.name == value,
+                        );
                         _selectedWarehouseId = int.tryParse(warehouse.id);
                       }
                     });
@@ -349,19 +374,25 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
                   decoration: const InputDecoration(
                     labelText: 'Stock',
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                   isExpanded: true,
-                  items: ['Todos', 'Sin Stock', 'Stock Bajo', 'Stock OK'].map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value, 
-                      child: Text(
-                        value,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    );
-                  }).toList(),
+                  items:
+                      ['Todos', 'Sin Stock', 'Stock Bajo', 'Stock OK'].map((
+                        String value,
+                      ) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(
+                            value,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        );
+                      }).toList(),
                   onChanged: (value) {
                     setState(() => _stockFilter = value!);
                     // No need to reload data, just update the UI
@@ -377,7 +408,7 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
 
   Widget _buildInventorySummary() {
     if (_inventorySummary == null) return const SizedBox.shrink();
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       color: AppColors.background,
@@ -385,21 +416,30 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
         children: [
           Row(
             children: [
-              _buildSummaryCard('Total Inventario', _inventorySummary!.totalInventario.toString(), AppColors.info),
+              _buildSummaryCard(
+                'Total Inventario',
+                _inventorySummary!.totalInventario.toString(),
+                AppColors.info,
+              ),
               const SizedBox(width: 8),
-              _buildSummaryCard('Sin Stock', _inventorySummary!.totalSinStock.toString(), AppColors.error),
+              _buildSummaryCard(
+                'Sin Stock',
+                _inventorySummary!.totalSinStock.toString(),
+                AppColors.error,
+              ),
               const SizedBox(width: 8),
-              _buildSummaryCard('Stock Bajo', _inventorySummary!.totalConCantidadBaja.toString(), AppColors.warning),
+              _buildSummaryCard(
+                'Stock Bajo',
+                _inventorySummary!.totalConCantidadBaja.toString(),
+                AppColors.warning,
+              ),
             ],
           ),
           if (_paginationInfo != null) ...[
             const SizedBox(height: 8),
             Text(
               'Página ${_paginationInfo!.paginaActual} de ${_paginationInfo!.totalPaginas} • ${_paginationInfo!.totalRegistros} productos total',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-              ),
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
           ],
         ],
@@ -410,27 +450,41 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
   Widget _buildLoadingMoreIndicator() {
     return Container(
       padding: const EdgeInsets.all(16),
-      child: const Center(
-        child: CircularProgressIndicator(),
-      ),
+      child: const Center(child: CircularProgressIndicator()),
     );
   }
 
   Widget _buildStockSummary() {
     final totalItems = _inventoryProducts.length;
-    final outOfStock = _inventoryProducts.where((item) => item.cantidadFinal <= 0).length;
-    final lowStock = _inventoryProducts.where((item) => item.cantidadFinal > 0 && item.cantidadFinal <= 10).length;
-    
+    final outOfStock =
+        _inventoryProducts.where((item) => item.cantidadFinal <= 0).length;
+    final lowStock =
+        _inventoryProducts
+            .where((item) => item.cantidadFinal > 0 && item.cantidadFinal <= 10)
+            .length;
+
     return Container(
       padding: const EdgeInsets.all(16),
       color: AppColors.background,
       child: Row(
         children: [
-          _buildSummaryCard('Total Items', totalItems.toString(), AppColors.info),
+          _buildSummaryCard(
+            'Total Items',
+            totalItems.toString(),
+            AppColors.info,
+          ),
           const SizedBox(width: 8),
-          _buildSummaryCard('Sin Stock', outOfStock.toString(), AppColors.error),
+          _buildSummaryCard(
+            'Sin Stock',
+            outOfStock.toString(),
+            AppColors.error,
+          ),
           const SizedBox(width: 8),
-          _buildSummaryCard('Stock Bajo', lowStock.toString(), AppColors.warning),
+          _buildSummaryCard(
+            'Stock Bajo',
+            lowStock.toString(),
+            AppColors.warning,
+          ),
         ],
       ),
     );
@@ -450,10 +504,10 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
           children: [
             FittedBox(
               child: Text(
-                value, 
+                value,
                 style: TextStyle(
-                  fontSize: 18, 
-                  fontWeight: FontWeight.bold, 
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
                   color: color,
                 ),
               ),
@@ -461,9 +515,9 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
             const SizedBox(height: 4),
             FittedBox(
               child: Text(
-                title, 
+                title,
                 style: const TextStyle(
-                  fontSize: 11, 
+                  fontSize: 11,
                   color: AppColors.textSecondary,
                 ),
                 textAlign: TextAlign.center,
@@ -477,7 +531,7 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
 
   Widget _buildInventoryCard(InventoryProduct item) {
     final stockStatus = _getStockStatus(item.stockDisponible.toInt());
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -536,7 +590,10 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
           backgroundColor: AppColors.primary,
           child: Icon(Icons.warehouse, color: Colors.white),
         ),
-        title: Text(warehouse.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Text(
+          warehouse.name,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -544,8 +601,10 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
             Text('${warehouse.zones.length} zonas'),
           ],
         ),
-        trailing: Icon(warehouse.isActive ? Icons.check_circle : Icons.cancel, 
-          color: warehouse.isActive ? AppColors.success : AppColors.error),
+        trailing: Icon(
+          warehouse.isActive ? Icons.check_circle : Icons.cancel,
+          color: warehouse.isActive ? AppColors.success : AppColors.error,
+        ),
         onTap: () => _showWarehouseDetails(warehouse),
       ),
     );
@@ -553,37 +612,50 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
 
   List<InventoryProduct> _getFilteredInventoryItems() {
     List<InventoryProduct> filtered = List.from(_inventoryProducts);
-    
+
     // Apply search filter
     if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((item) {
-        return item.nombreProducto.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-               item.skuProducto.toLowerCase().contains(_searchQuery.toLowerCase());
-      }).toList();
+      filtered =
+          filtered.where((item) {
+            return item.nombreProducto.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                item.skuProducto.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                );
+          }).toList();
     }
-    
+
     // Apply warehouse filter
     if (_selectedWarehouse != 'Todos') {
-      filtered = filtered.where((item) => item.almacen == _selectedWarehouse).toList();
+      filtered =
+          filtered.where((item) => item.almacen == _selectedWarehouse).toList();
     }
-    
+
     // Apply stock filter based on stock_disponible field
     switch (_stockFilter) {
       case 'Sin Stock':
         filtered = filtered.where((item) => item.stockDisponible <= 0).toList();
         break;
       case 'Stock Bajo':
-        filtered = filtered.where((item) => item.stockDisponible > 0 && item.stockDisponible < 10).toList();
+        filtered =
+            filtered
+                .where(
+                  (item) =>
+                      item.stockDisponible > 0 && item.stockDisponible < 10,
+                )
+                .toList();
         break;
       case 'Stock OK':
-        filtered = filtered.where((item) => item.stockDisponible >= 10).toList();
+        filtered =
+            filtered.where((item) => item.stockDisponible >= 10).toList();
         break;
       case 'Todos':
       default:
         // No stock filtering needed
         break;
     }
-    
+
     return filtered;
   }
 
@@ -600,72 +672,80 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
   void _showInventoryProductDetails(InventoryProduct item) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(item.nombreProducto),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Variante: ${item.variante} ${item.opcionVariante}'),
-            Text('Almacén: ${item.almacen}'),
-            Text('Stock Disponible: ${item.stockDisponible}'),
-            if (item.precioVenta != null) Text('Precio: \$${item.precioVenta!.toStringAsFixed(2)}'),
-            Text('Categoría: ${item.categoria}'),
-            Text('Subcategoría: ${item.subcategoria}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(item.nombreProducto),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Variante: ${item.variante} ${item.opcionVariante}'),
+                Text('Almacén: ${item.almacen}'),
+                Text('Stock Disponible: ${item.stockDisponible}'),
+                if (item.precioVenta != null)
+                  Text('Precio: \$${item.precioVenta!.toStringAsFixed(2)}'),
+                Text('Categoría: ${item.categoria}'),
+                Text('Subcategoría: ${item.subcategoria}'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _showInventoryReceptionDialog() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => InventoryReceptionScreen(),
-        fullscreenDialog: true,
-      ),
-    ).then((_) {
-      // Refresh inventory after reception
-      _loadInventoryData();
-    });
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (context) => InventoryReceptionScreen(),
+            fullscreenDialog: true,
+          ),
+        )
+        .then((_) {
+          // Refresh inventory after reception
+          _loadInventoryData();
+        });
   }
-
 
   void _showWarehouseDetails(Warehouse warehouse) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(warehouse.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Dirección: ${warehouse.address}'),
-            Text('Tipo: ${warehouse.type}'),
-            Text('Zonas: ${warehouse.zones.length}'),
-            Text('Estado: ${warehouse.isActive ? "Activo" : "Inactivo"}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(warehouse.name),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Dirección: ${warehouse.address}'),
+                Text('Tipo: ${warehouse.type}'),
+                Text('Zonas: ${warehouse.zones.length}'),
+                Text('Estado: ${warehouse.isActive ? "Activo" : "Inactivo"}'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Dashboard
-        Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/dashboard',
+          (route) => false,
+        );
         break;
       case 1: // Productos
         Navigator.pushNamed(context, '/products');

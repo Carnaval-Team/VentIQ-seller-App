@@ -13,7 +13,7 @@ class AddProductScreen extends StatefulWidget {
 class _AddProductScreenState extends State<AddProductScreen> {
   final _formKey = GlobalKey<FormState>();
   final _scrollController = ScrollController();
-  
+
   // Controladores de texto
   final _skuController = TextEditingController();
   final _denominacionController = TextEditingController();
@@ -25,22 +25,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final _diasAlertController = TextEditingController();
   final _codigoBarrasController = TextEditingController();
   final _precioVentaController = TextEditingController();
-  
+
   // Variables de estado
   bool _isLoading = false;
   bool _isLoadingData = true;
-  
+
   // Datos para dropdowns
   List<Map<String, dynamic>> _categorias = [];
   List<Map<String, dynamic>> _subcategorias = [];
   List<Map<String, dynamic>> _presentaciones = [];
   List<Map<String, dynamic>> _atributos = [];
-  
+
   // Selecciones
   int? _selectedCategoryId;
   List<int> _selectedSubcategorias = [];
   List<int> _selectedPresentaciones = [];
-  
+
   // Checkboxes
   bool _esRefrigerado = false;
   bool _esFragil = false;
@@ -49,20 +49,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _esComprable = true;
   bool _esInventariable = true;
   bool _esPorLotes = false;
-  
+
   // Listas dinámicas
   List<String> _etiquetas = [];
   List<String> _multimedias = [];
-  
+
   // Variables para variantes
   List<Map<String, dynamic>> _selectedVariantes = [];
-  
+
   @override
   void initState() {
     super.initState();
     _loadInitialData();
   }
-  
+
   @override
   void dispose() {
     _skuController.dispose();
@@ -82,21 +82,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Future<void> _loadInitialData() async {
     try {
       setState(() => _isLoadingData = true);
-      
+
       // Cargar datos iniciales en paralelo
       final futures = await Future.wait([
         ProductService.getCategorias(),
         ProductService.getPresentaciones(),
         ProductService.getAtributos(),
       ]);
-      
+
       setState(() {
         _categorias = futures[0];
         _presentaciones = futures[1];
         _atributos = futures[2];
         _isLoadingData = false;
       });
-      
     } catch (e) {
       setState(() => _isLoadingData = false);
       _showErrorSnackBar('Error al cargar datos iniciales: $e');
@@ -134,10 +133,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       appBar: AppBar(
         title: const Text(
           'Agregar Producto',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
         ),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -155,42 +151,43 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ),
         ],
       ),
-      body: _isLoadingData
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Cargando datos...'),
-                ],
+      body:
+          _isLoadingData
+              ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Cargando datos...'),
+                  ],
+                ),
+              )
+              : Form(
+                key: _formKey,
+                child: ListView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildBasicInfoSection(),
+                    const SizedBox(height: 24),
+                    _buildCategorySection(),
+                    const SizedBox(height: 24),
+                    _buildPropertiesSection(),
+                    const SizedBox(height: 24),
+                    _buildPricingSection(),
+                    const SizedBox(height: 24),
+                    _buildTagsSection(),
+                    const SizedBox(height: 24),
+                    _buildMultimediaSection(),
+                    const SizedBox(height: 24),
+                    _buildPresentacionesSection(),
+                    const SizedBox(height: 24),
+                    _buildVariantesSection(),
+                    const SizedBox(height: 32),
+                  ],
+                ),
               ),
-            )
-          : Form(
-              key: _formKey,
-              child: ListView(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildBasicInfoSection(),
-                  const SizedBox(height: 24),
-                  _buildCategorySection(),
-                  const SizedBox(height: 24),
-                  _buildPropertiesSection(),
-                  const SizedBox(height: 24),
-                  _buildPricingSection(),
-                  const SizedBox(height: 24),
-                  _buildTagsSection(),
-                  const SizedBox(height: 24),
-                  _buildMultimediaSection(),
-                  const SizedBox(height: 24),
-                  _buildPresentacionesSection(),
-                  const SizedBox(height: 24),
-                  _buildVariantesSection(),
-                  const SizedBox(height: 32),
-                ],
-              ),
-            ),
     );
   }
 
@@ -330,12 +327,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 labelText: 'Categoría *',
                 border: OutlineInputBorder(),
               ),
-              items: _categorias.map((categoria) {
-                return DropdownMenuItem<int>(
-                  value: categoria['id'],
-                  child: Text(categoria['denominacion']),
-                );
-              }).toList(),
+              items:
+                  _categorias.map((categoria) {
+                    return DropdownMenuItem<int>(
+                      value: categoria['id'],
+                      child: Text(categoria['denominacion']),
+                    );
+                  }).toList(),
               onChanged: (value) {
                 setState(() {
                   _selectedCategoryId = value;
@@ -366,22 +364,25 @@ class _AddProductScreenState extends State<AddProductScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _subcategorias.map((subcat) {
-                  final isSelected = _selectedSubcategorias.contains(subcat['id']);
-                  return FilterChip(
-                    label: Text(subcat['denominacion']),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedSubcategorias.add(subcat['id']);
-                        } else {
-                          _selectedSubcategorias.remove(subcat['id']);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
+                children:
+                    _subcategorias.map((subcat) {
+                      final isSelected = _selectedSubcategorias.contains(
+                        subcat['id'],
+                      );
+                      return FilterChip(
+                        label: Text(subcat['denominacion']),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              _selectedSubcategorias.add(subcat['id']);
+                            } else {
+                              _selectedSubcategorias.remove(subcat['id']);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
               ),
             ],
           ],
@@ -410,7 +411,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
               title: const Text('Es Refrigerado'),
               subtitle: const Text('Requiere refrigeración'),
               value: _esRefrigerado,
-              onChanged: (value) => setState(() => _esRefrigerado = value ?? false),
+              onChanged:
+                  (value) => setState(() => _esRefrigerado = value ?? false),
             ),
             CheckboxListTile(
               title: const Text('Es Frágil'),
@@ -422,7 +424,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
               title: const Text('Es Peligroso'),
               subtitle: const Text('Producto peligroso o tóxico'),
               value: _esPeligroso,
-              onChanged: (value) => setState(() => _esPeligroso = value ?? false),
+              onChanged:
+                  (value) => setState(() => _esPeligroso = value ?? false),
             ),
             CheckboxListTile(
               title: const Text('Es Vendible'),
@@ -434,19 +437,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
               title: const Text('Es Comprable'),
               subtitle: const Text('Se puede comprar a proveedores'),
               value: _esComprable,
-              onChanged: (value) => setState(() => _esComprable = value ?? true),
+              onChanged:
+                  (value) => setState(() => _esComprable = value ?? true),
             ),
             CheckboxListTile(
               title: const Text('Es Inventariable'),
               subtitle: const Text('Se controla en inventario'),
               value: _esInventariable,
-              onChanged: (value) => setState(() => _esInventariable = value ?? true),
+              onChanged:
+                  (value) => setState(() => _esInventariable = value ?? true),
             ),
             CheckboxListTile(
               title: const Text('Es por Lotes'),
               subtitle: const Text('Se maneja por lotes con fechas'),
               value: _esPorLotes,
-              onChanged: (value) => setState(() => _esPorLotes = value ?? false),
+              onChanged:
+                  (value) => setState(() => _esPorLotes = value ?? false),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -541,15 +547,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _etiquetas.map((etiqueta) {
-                  return Chip(
-                    label: Text(etiqueta),
-                    deleteIcon: const Icon(Icons.close, size: 18),
-                    onDeleted: () {
-                      setState(() => _etiquetas.remove(etiqueta));
-                    },
-                  );
-                }).toList(),
+                children:
+                    _etiquetas.map((etiqueta) {
+                      return Chip(
+                        label: Text(etiqueta),
+                        deleteIcon: const Icon(Icons.close, size: 18),
+                        onDeleted: () {
+                          setState(() => _etiquetas.remove(etiqueta));
+                        },
+                      );
+                    }).toList(),
               ),
           ],
         ),
@@ -590,18 +597,19 @@ class _AddProductScreenState extends State<AddProductScreen> {
               )
             else
               Column(
-                children: _multimedias.map((media) {
-                  return ListTile(
-                    leading: const Icon(Icons.image),
-                    title: Text(media),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () {
-                        setState(() => _multimedias.remove(media));
-                      },
-                    ),
-                  );
-                }).toList(),
+                children:
+                    _multimedias.map((media) {
+                      return ListTile(
+                        leading: const Icon(Icons.image),
+                        title: Text(media),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () {
+                            setState(() => _multimedias.remove(media));
+                          },
+                        ),
+                      );
+                    }).toList(),
               ),
           ],
         ),
@@ -690,7 +698,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // Obtener ID de tienda
       final userPrefs = UserPreferencesService();
       final idTienda = await userPrefs.getIdTienda();
-      
+
       if (idTienda == null) {
         throw Exception('No se encontró ID de tienda');
       }
@@ -713,58 +721,81 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'es_comprable': _esComprable,
         'es_inventariable': _esInventariable,
         'es_por_lotes': _esPorLotes,
-        'dias_alert_caducidad': _diasAlertController.text.isNotEmpty 
-            ? int.tryParse(_diasAlertController.text) 
-            : null,
+        'dias_alert_caducidad':
+            _diasAlertController.text.isNotEmpty
+                ? int.tryParse(_diasAlertController.text)
+                : null,
         'codigo_barras': _codigoBarrasController.text,
       };
 
       // Preparar subcategorías
-      final subcategoriasData = _selectedSubcategorias.map((id) => {
-        'id_sub_categoria': id,
-      }).toList();
+      final subcategoriasData =
+          _selectedSubcategorias.map((id) => {'id_sub_categoria': id}).toList();
 
       // Preparar etiquetas
-      final etiquetasData = _etiquetas.map((etiqueta) => {
-        'etiqueta': etiqueta,
-      }).toList();
+      final etiquetasData =
+          _etiquetas.map((etiqueta) => {'etiqueta': etiqueta}).toList();
 
       // Preparar multimedia
-      final multimediasData = _multimedias.map((media) => {
-        'media': media,
-      }).toList();
+      final multimediasData =
+          _multimedias.map((media) => {'media': media}).toList();
 
       // Preparar presentaciones
-      final presentacionesData = _selectedPresentaciones.map((id) => {
-        'id_presentacion': id,
-        'cantidad': 1, // Cantidad por defecto
-        'es_base': _selectedPresentaciones.indexOf(id) == 0, // Primera como base
-      }).toList();
+      final presentacionesData =
+          _selectedPresentaciones
+              .map(
+                (id) => {
+                  'id_presentacion': id,
+                  'cantidad': 1, // Cantidad por defecto
+                  'es_base':
+                      _selectedPresentaciones.indexOf(id) ==
+                      0, // Primera como base
+                },
+              )
+              .toList();
 
       // Solo incluir variantes si hay subcategorías seleccionadas (requerido por RPC)
       List<Map<String, dynamic>>? variantesData;
       if (_selectedVariantes.isNotEmpty && _selectedSubcategorias.isNotEmpty) {
-        variantesData = _selectedVariantes.map((variante) => {
-          'id_sub_categoria': _selectedSubcategorias.first, // Usar primera subcategoría
-          'id_atributo': variante['id_atributo'],
-          'opciones': variante['opciones'].map((opcion) => {
-            'valor': opcion['valor'],
-            'sku_codigo': '${_skuController.text}-${opcion['valor']}'.replaceAll(' ', ''),
-          }).toList(),
-        }).toList();
+        variantesData =
+            _selectedVariantes
+                .map(
+                  (variante) => {
+                    'id_sub_categoria':
+                        _selectedSubcategorias
+                            .first, // Usar primera subcategoría
+                    'id_atributo': variante['id_atributo'],
+                    'opciones':
+                        variante['opciones']
+                            .map(
+                              (opcion) => {
+                                'valor': opcion['valor'],
+                                'sku_codigo':
+                                    '${_skuController.text}-${opcion['valor']}'
+                                        .replaceAll(' ', ''),
+                              },
+                            )
+                            .toList(),
+                  },
+                )
+                .toList();
       }
 
       // Preparar precios
-      final preciosData = [{
-        'precio_venta_cup': double.parse(_precioVentaController.text),
-        'fecha_desde': DateTime.now().toIso8601String().split('T')[0],
-      }];
+      final preciosData = [
+        {
+          'precio_venta_cup': double.parse(_precioVentaController.text),
+          'fecha_desde': DateTime.now().toIso8601String().split('T')[0],
+        },
+      ];
 
       // Insertar producto
       final result = await ProductService.insertProductoCompleto(
         productoData: productoData,
-        subcategoriasData: subcategoriasData.isNotEmpty ? subcategoriasData : null,
-        presentacionesData: presentacionesData.isNotEmpty ? presentacionesData : null,
+        subcategoriasData:
+            subcategoriasData.isNotEmpty ? subcategoriasData : null,
+        presentacionesData:
+            presentacionesData.isNotEmpty ? presentacionesData : null,
         etiquetasData: etiquetasData.isNotEmpty ? etiquetasData : null,
         multimediasData: multimediasData.isNotEmpty ? multimediasData : null,
         variantesData: variantesData,
@@ -774,7 +805,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // Mostrar éxito y regresar
       _showSuccessSnackBar('Producto creado exitosamente');
       Navigator.pop(context, true); // true indica que se creó un producto
-
     } catch (e) {
       _showErrorSnackBar('Error al crear producto: $e');
     } finally {
@@ -784,19 +814,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.error,
-      ),
+      SnackBar(content: Text(message), backgroundColor: AppColors.error),
     );
   }
 
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.success,
-      ),
+      SnackBar(content: Text(message), backgroundColor: AppColors.success),
     );
   }
 
@@ -825,37 +849,42 @@ class _AddProductScreenState extends State<AddProductScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _presentaciones.map((presentacion) {
-                  final isSelected = _selectedPresentaciones.contains(presentacion['id']);
-                  return FilterChip(
-                    label: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(presentacion['denominacion']),
-                        if (presentacion['descripcion'] != null)
-                          Text(
-                            presentacion['descripcion'],
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                      ],
-                    ),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedPresentaciones.add(presentacion['id']);
-                        } else {
-                          _selectedPresentaciones.remove(presentacion['id']);
-                        }
-                      });
-                    },
-                    selectedColor: AppColors.primary.withOpacity(0.2),
-                    checkmarkColor: AppColors.primary,
-                  );
-                }).toList(),
+                children:
+                    _presentaciones.map((presentacion) {
+                      final isSelected = _selectedPresentaciones.contains(
+                        presentacion['id'],
+                      );
+                      return FilterChip(
+                        label: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(presentacion['denominacion']),
+                            if (presentacion['descripcion'] != null)
+                              Text(
+                                presentacion['descripcion'],
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                          ],
+                        ),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              _selectedPresentaciones.add(presentacion['id']);
+                            } else {
+                              _selectedPresentaciones.remove(
+                                presentacion['id'],
+                              );
+                            }
+                          });
+                        },
+                        selectedColor: AppColors.primary.withOpacity(0.2),
+                        checkmarkColor: AppColors.primary,
+                      );
+                    }).toList(),
               ),
           ],
         ),
@@ -882,7 +911,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   ),
                 ),
                 TextButton.icon(
-                  onPressed: _selectedSubcategorias.isNotEmpty ? _addVariante : null,
+                  onPressed:
+                      _selectedSubcategorias.isNotEmpty ? _addVariante : null,
                   icon: const Icon(Icons.add),
                   label: const Text('Agregar Variante'),
                 ),
@@ -904,10 +934,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     Expanded(
                       child: Text(
                         'Selecciona al menos una subcategoría para poder agregar variantes',
-                        style: TextStyle(
-                          color: Colors.orange,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: Colors.orange, fontSize: 12),
                       ),
                     ),
                   ],
@@ -921,22 +948,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
               )
             else
               Column(
-                children: _selectedVariantes.map((variante) {
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      title: Text(variante['atributo_nombre']),
-                      subtitle: Text('Opciones: ${variante['opciones'].length}'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () {
-                          setState(() => _selectedVariantes.remove(variante));
-                        },
-                      ),
-                      onTap: () => _editVariante(variante),
-                    ),
-                  );
-                }).toList(),
+                children:
+                    _selectedVariantes.map((variante) {
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text(variante['atributo_nombre']),
+                          subtitle: Text(
+                            'Opciones: ${variante['opciones'].length}',
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () {
+                              setState(
+                                () => _selectedVariantes.remove(variante),
+                              );
+                            },
+                          ),
+                          onTap: () => _editVariante(variante),
+                        ),
+                      );
+                    }).toList(),
               ),
           ],
         ),
@@ -952,28 +984,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => _VarianteDialog(
-        atributos: _atributos,
-        onSave: (variante) {
-          setState(() => _selectedVariantes.add(variante));
-        },
-      ),
+      builder:
+          (context) => _VarianteDialog(
+            atributos: _atributos,
+            onSave: (variante) {
+              setState(() => _selectedVariantes.add(variante));
+            },
+          ),
     );
   }
 
   void _editVariante(Map<String, dynamic> variante) {
     showDialog(
       context: context,
-      builder: (context) => _VarianteDialog(
-        atributos: _atributos,
-        initialVariante: variante,
-        onSave: (updatedVariante) {
-          setState(() {
-            final index = _selectedVariantes.indexOf(variante);
-            _selectedVariantes[index] = updatedVariante;
-          });
-        },
-      ),
+      builder:
+          (context) => _VarianteDialog(
+            atributos: _atributos,
+            initialVariante: variante,
+            onSave: (updatedVariante) {
+              setState(() {
+                final index = _selectedVariantes.indexOf(variante);
+                _selectedVariantes[index] = updatedVariante;
+              });
+            },
+          ),
     );
   }
 }
@@ -1003,7 +1037,9 @@ class _VarianteDialogState extends State<_VarianteDialog> {
     super.initState();
     if (widget.initialVariante != null) {
       _selectedAtributoId = widget.initialVariante!['id_atributo'];
-      _selectedOpciones = List<Map<String, dynamic>>.from(widget.initialVariante!['opciones']);
+      _selectedOpciones = List<Map<String, dynamic>>.from(
+        widget.initialVariante!['opciones'],
+      );
       _loadOpciones(_selectedAtributoId!);
     }
   }
@@ -1012,7 +1048,7 @@ class _VarianteDialogState extends State<_VarianteDialog> {
     final atributo = widget.atributos.firstWhere((a) => a['id'] == atributoId);
     setState(() {
       _availableOpciones = List<Map<String, dynamic>>.from(
-        atributo['app_dat_atributo_opcion'] ?? []
+        atributo['app_dat_atributo_opcion'] ?? [],
       );
     });
   }
@@ -1020,7 +1056,9 @@ class _VarianteDialogState extends State<_VarianteDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.initialVariante == null ? 'Agregar Variante' : 'Editar Variante'),
+      title: Text(
+        widget.initialVariante == null ? 'Agregar Variante' : 'Editar Variante',
+      ),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -1032,12 +1070,13 @@ class _VarianteDialogState extends State<_VarianteDialog> {
                 labelText: 'Atributo',
                 border: OutlineInputBorder(),
               ),
-              items: widget.atributos.map((atributo) {
-                return DropdownMenuItem<int>(
-                  value: atributo['id'],
-                  child: Text(atributo['denominacion']),
-                );
-              }).toList(),
+              items:
+                  widget.atributos.map((atributo) {
+                    return DropdownMenuItem<int>(
+                      value: atributo['id'],
+                      child: Text(atributo['denominacion']),
+                    );
+                  }).toList(),
               onChanged: (value) {
                 setState(() {
                   _selectedAtributoId = value;
@@ -1058,22 +1097,27 @@ class _VarianteDialogState extends State<_VarianteDialog> {
               Flexible(
                 child: ListView(
                   shrinkWrap: true,
-                  children: _availableOpciones.map((opcion) {
-                    final isSelected = _selectedOpciones.any((o) => o['id'] == opcion['id']);
-                    return CheckboxListTile(
-                      title: Text(opcion['valor']),
-                      value: isSelected,
-                      onChanged: (selected) {
-                        setState(() {
-                          if (selected == true) {
-                            _selectedOpciones.add(opcion);
-                          } else {
-                            _selectedOpciones.removeWhere((o) => o['id'] == opcion['id']);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
+                  children:
+                      _availableOpciones.map((opcion) {
+                        final isSelected = _selectedOpciones.any(
+                          (o) => o['id'] == opcion['id'],
+                        );
+                        return CheckboxListTile(
+                          title: Text(opcion['valor']),
+                          value: isSelected,
+                          onChanged: (selected) {
+                            setState(() {
+                              if (selected == true) {
+                                _selectedOpciones.add(opcion);
+                              } else {
+                                _selectedOpciones.removeWhere(
+                                  (o) => o['id'] == opcion['id'],
+                                );
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
                 ),
               ),
             ],
@@ -1086,18 +1130,21 @@ class _VarianteDialogState extends State<_VarianteDialog> {
           child: const Text('Cancelar'),
         ),
         ElevatedButton(
-          onPressed: _selectedAtributoId != null && _selectedOpciones.isNotEmpty
-              ? () {
-                  final atributo = widget.atributos.firstWhere((a) => a['id'] == _selectedAtributoId);
-                  final variante = {
-                    'id_atributo': _selectedAtributoId,
-                    'atributo_nombre': atributo['denominacion'],
-                    'opciones': _selectedOpciones,
-                  };
-                  widget.onSave(variante);
-                  Navigator.pop(context);
-                }
-              : null,
+          onPressed:
+              _selectedAtributoId != null && _selectedOpciones.isNotEmpty
+                  ? () {
+                    final atributo = widget.atributos.firstWhere(
+                      (a) => a['id'] == _selectedAtributoId,
+                    );
+                    final variante = {
+                      'id_atributo': _selectedAtributoId,
+                      'atributo_nombre': atributo['denominacion'],
+                      'opciones': _selectedOpciones,
+                    };
+                    widget.onSave(variante);
+                    Navigator.pop(context);
+                  }
+                  : null,
           child: const Text('Guardar'),
         ),
       ],

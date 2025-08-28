@@ -11,7 +11,8 @@ class InventoryReceptionScreen extends StatefulWidget {
   const InventoryReceptionScreen({super.key});
 
   @override
-  State<InventoryReceptionScreen> createState() => _InventoryReceptionScreenState();
+  State<InventoryReceptionScreen> createState() =>
+      _InventoryReceptionScreenState();
 }
 
 class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
@@ -61,11 +62,18 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     if (_searchQuery.isEmpty) {
       _filteredProducts = List.from(_availableProducts);
     } else {
-      _filteredProducts = _availableProducts.where((product) {
-        return product.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-               product.sku.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-               product.brand.toLowerCase().contains(_searchQuery.toLowerCase());
-      }).toList();
+      _filteredProducts =
+          _availableProducts.where((product) {
+            return product.name.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                product.sku.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                product.brand.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                );
+          }).toList();
     }
   }
 
@@ -83,9 +91,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     } catch (e) {
       setState(() => _isLoadingMotivos = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar motivos: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al cargar motivos: $e')));
       }
     }
   }
@@ -112,15 +120,16 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   void _addProductToReception(Product product) {
     showDialog(
       context: context,
-      builder: (context) => _ProductQuantityDialog(
-        product: product,
-        onAdd: (productData) {
-          setState(() {
-            _selectedProducts.add(productData);
-          });
-          Navigator.pop(context);
-        },
-      ),
+      builder:
+          (context) => _ProductQuantityDialog(
+            product: product,
+            onAdd: (productData) {
+              setState(() {
+                _selectedProducts.add(productData);
+              });
+              Navigator.pop(context);
+            },
+          ),
     );
   }
 
@@ -141,7 +150,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   Future<void> _submitReception() async {
     if (!_formKey.currentState!.validate() || _selectedProducts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Complete todos los campos y agregue al menos un producto')),
+        const SnackBar(
+          content: Text(
+            'Complete todos los campos y agregue al menos un producto',
+          ),
+        ),
       );
       return;
     }
@@ -160,9 +173,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       final result = await InventoryService.insertInventoryReception(
         entregadoPor: _entregadoPorController.text,
         idTienda: idTienda,
-        montoTotal: _montoTotalController.text.isNotEmpty 
-            ? double.parse(_montoTotalController.text) 
-            : _totalAmount,
+        montoTotal:
+            _montoTotalController.text.isNotEmpty
+                ? double.parse(_montoTotalController.text)
+                : _totalAmount,
         motivo: _selectedMotivo?['id']?.toString() ?? '',
         observaciones: _observacionesController.text,
         productos: _selectedProducts,
@@ -174,7 +188,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         if (result['status'] == 'success') {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Recepción registrada exitosamente. ID: ${result['id_operacion']}'),
+              content: Text(
+                'Recepción registrada exitosamente. ID: ${result['id_operacion']}',
+              ),
               backgroundColor: AppColors.success,
             ),
           );
@@ -254,7 +270,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 labelText: 'Entregado por',
                 border: OutlineInputBorder(),
               ),
-              validator: (value) => value?.isEmpty == true ? 'Campo requerido' : null,
+              validator:
+                  (value) => value?.isEmpty == true ? 'Campo requerido' : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -263,33 +280,37 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 labelText: 'Recibido por',
                 border: OutlineInputBorder(),
               ),
-              validator: (value) => value?.isEmpty == true ? 'Campo requerido' : null,
+              validator:
+                  (value) => value?.isEmpty == true ? 'Campo requerido' : null,
             ),
             const SizedBox(height: 12),
             _isLoadingMotivos
                 ? const Center(child: CircularProgressIndicator())
                 : DropdownButtonFormField<Map<String, dynamic>>(
-                    value: _selectedMotivo,
-                    decoration: const InputDecoration(
-                      labelText: 'Motivo',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _motivoOptions.map((motivo) {
-                      return DropdownMenuItem(
-                        value: motivo,
-                        child: Text(motivo['denominacion'] ?? 'Sin denominación'),
-                      );
-                    }).toList(),
-                    onChanged: (motivo) {
-                      setState(() {
-                        _selectedMotivo = motivo;
-                      });
-                    },
-                    validator: (value) {
-                      if (value == null) return 'Campo requerido';
-                      return null;
-                    },
+                  value: _selectedMotivo,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo',
+                    border: OutlineInputBorder(),
                   ),
+                  items:
+                      _motivoOptions.map((motivo) {
+                        return DropdownMenuItem(
+                          value: motivo,
+                          child: Text(
+                            motivo['denominacion'] ?? 'Sin denominación',
+                          ),
+                        );
+                      }).toList(),
+                  onChanged: (motivo) {
+                    setState(() {
+                      _selectedMotivo = motivo;
+                    });
+                  },
+                  validator: (value) {
+                    if (value == null) return 'Campo requerido';
+                    return null;
+                  },
+                ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _observacionesController,
@@ -304,7 +325,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               controller: _montoTotalController,
               decoration: InputDecoration(
                 labelText: 'Monto Total (Opcional)',
-                hintText: 'Calculado automáticamente: \$${_totalAmount.toStringAsFixed(2)}',
+                hintText:
+                    'Calculado automáticamente: \$${_totalAmount.toStringAsFixed(2)}',
                 border: const OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
@@ -338,26 +360,37 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             const SizedBox(height: 16),
             SizedBox(
               height: 300,
-              child: _isLoadingProducts
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      itemCount: _filteredProducts.length,
-                      itemBuilder: (context, index) {
-                        final product = _filteredProducts[index];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: AppColors.primary.withOpacity(0.1),
-                            child: Icon(Icons.inventory_2, color: AppColors.primary),
-                          ),
-                          title: Text(product.name),
-                          subtitle: Text('SKU: ${product.sku} | Marca: ${product.brand}'),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.add_circle, color: AppColors.primary),
-                            onPressed: () => _addProductToReception(product),
-                          ),
-                        );
-                      },
-                    ),
+              child:
+                  _isLoadingProducts
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView.builder(
+                        itemCount: _filteredProducts.length,
+                        itemBuilder: (context, index) {
+                          final product = _filteredProducts[index];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: AppColors.primary.withOpacity(
+                                0.1,
+                              ),
+                              child: Icon(
+                                Icons.inventory_2,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            title: Text(product.name),
+                            subtitle: Text(
+                              'SKU: ${product.sku} | Marca: ${product.brand}',
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(
+                                Icons.add_circle,
+                                color: AppColors.primary,
+                              ),
+                              onPressed: () => _addProductToReception(product),
+                            ),
+                          );
+                        },
+                      ),
             ),
           ],
         ),
@@ -397,7 +430,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                       'Cantidad: ${item['cantidad']} | Precio: \$${item['precio_unitario']?.toStringAsFixed(2) ?? '0.00'}',
                     ),
                     trailing: IconButton(
-                      icon: const Icon(Icons.remove_circle, color: AppColors.error),
+                      icon: const Icon(
+                        Icons.remove_circle,
+                        color: AppColors.error,
+                      ),
                       onPressed: () => _removeProduct(index),
                     ),
                   );
@@ -451,12 +487,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 backgroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text(
-                      'Registrar Recepción',
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                    ),
+              child:
+                  _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
+                        'Registrar Recepción',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
             ),
           ),
         ],
@@ -469,10 +506,7 @@ class _ProductQuantityDialog extends StatefulWidget {
   final Product product;
   final Function(Map<String, dynamic>) onAdd;
 
-  const _ProductQuantityDialog({
-    required this.product,
-    required this.onAdd,
-  });
+  const _ProductQuantityDialog({required this.product, required this.onAdd});
 
   @override
   State<_ProductQuantityDialog> createState() => _ProductQuantityDialogState();
@@ -535,30 +569,37 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     for (final inventoryItem in widget.product.inventario) {
       bool variantMatches = true;
       bool presentationMatches = true;
-      
+
       // Check variant match
       if (_selectedVariant != null && inventoryItem['variante'] != null) {
         final itemVariant = inventoryItem['variante'];
-        variantMatches = itemVariant['id'] == _selectedVariant!['id'] &&
+        variantMatches =
+            itemVariant['id'] == _selectedVariant!['id'] &&
             itemVariant['opcion']?['id'] == _selectedVariant!['opcion']?['id'];
-      } else if (_selectedVariant != null || inventoryItem['variante'] != null) {
+      } else if (_selectedVariant != null ||
+          inventoryItem['variante'] != null) {
         variantMatches = false;
       }
-      
+
       // Check presentation match
-      if (_selectedPresentation != null && inventoryItem['presentacion'] != null) {
-        presentationMatches = inventoryItem['presentacion']['id'] == _selectedPresentation!['id'];
-      } else if (_selectedPresentation != null || inventoryItem['presentacion'] != null) {
+      if (_selectedPresentation != null &&
+          inventoryItem['presentacion'] != null) {
+        presentationMatches =
+            inventoryItem['presentacion']['id'] == _selectedPresentation!['id'];
+      } else if (_selectedPresentation != null ||
+          inventoryItem['presentacion'] != null) {
         presentationMatches = false;
       }
-      
+
       if (variantMatches && presentationMatches) {
         return inventoryItem;
       }
     }
-    
+
     // If no exact match, return first item as fallback
-    return widget.product.inventario.isNotEmpty ? widget.product.inventario.first : null;
+    return widget.product.inventario.isNotEmpty
+        ? widget.product.inventario.first
+        : null;
   }
 
   @override
@@ -576,18 +617,20 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                 labelText: 'Variante',
                 border: OutlineInputBorder(),
               ),
-              items: _availableVariants.map((variant) {
-                final atributo = variant['atributo']?['label'] ?? '';
-                final opcion = variant['opcion']?['valor'] ?? '';
-                final displayText = atributo.isNotEmpty && opcion.isNotEmpty 
-                    ? '$atributo: $opcion' 
-                    : 'Variante ${_availableVariants.indexOf(variant) + 1}';
-                
-                return DropdownMenuItem(
-                  value: variant,
-                  child: Text(displayText),
-                );
-              }).toList(),
+              items:
+                  _availableVariants.map((variant) {
+                    final atributo = variant['atributo']?['label'] ?? '';
+                    final opcion = variant['opcion']?['valor'] ?? '';
+                    final displayText =
+                        atributo.isNotEmpty && opcion.isNotEmpty
+                            ? '$atributo: $opcion'
+                            : 'Variante ${_availableVariants.indexOf(variant) + 1}';
+
+                    return DropdownMenuItem(
+                      value: variant,
+                      child: Text(displayText),
+                    );
+                  }).toList(),
               onChanged: (variant) {
                 setState(() {
                   _selectedVariant = variant;
@@ -595,7 +638,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
               },
             ),
           if (_availableVariants.length > 1) const SizedBox(height: 12),
-          
+
           // Presentation selection dropdown
           if (_availablePresentations.length > 1)
             DropdownButtonFormField<Map<String, dynamic>>(
@@ -604,18 +647,20 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                 labelText: 'Presentación',
                 border: OutlineInputBorder(),
               ),
-              items: _availablePresentations.map((presentation) {
-                final denominacion = presentation['denominacion'] ?? '';
-                final cantidad = presentation['cantidad'] ?? 1;
-                final displayText = denominacion.isNotEmpty 
-                    ? '$denominacion (${cantidad}x)' 
-                    : 'Presentación ${_availablePresentations.indexOf(presentation) + 1}';
-                
-                return DropdownMenuItem(
-                  value: presentation,
-                  child: Text(displayText),
-                );
-              }).toList(),
+              items:
+                  _availablePresentations.map((presentation) {
+                    final denominacion = presentation['denominacion'] ?? '';
+                    final cantidad = presentation['cantidad'] ?? 1;
+                    final displayText =
+                        denominacion.isNotEmpty
+                            ? '$denominacion (${cantidad}x)'
+                            : 'Presentación ${_availablePresentations.indexOf(presentation) + 1}';
+
+                    return DropdownMenuItem(
+                      value: presentation,
+                      child: Text(displayText),
+                    );
+                  }).toList(),
               onChanged: (presentation) {
                 setState(() {
                   _selectedPresentation = presentation;
@@ -633,7 +678,8 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
             keyboardType: TextInputType.number,
             validator: (value) {
               if (value?.isEmpty == true) return 'Campo requerido';
-              if (double.tryParse(value!) == null) return 'Ingrese un número válido';
+              if (double.tryParse(value!) == null)
+                return 'Ingrese un número válido';
               return null;
             },
           ),
@@ -658,7 +704,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
             if (_cantidadController.text.isNotEmpty) {
               final cantidad = double.tryParse(_cantidadController.text) ?? 0;
               final precio = double.tryParse(_precioController.text) ?? 0;
-              
+
               // Extract proper IDs from inventory item data
               final productData = {
                 'id_producto': int.parse(widget.product.id),
@@ -672,23 +718,27 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
               if (_selectedVariant != null) {
                 productData['id_variante'] = _selectedVariant!['id'];
                 if (_selectedVariant!['opcion'] != null) {
-                  productData['id_opcion_variante'] = _selectedVariant!['opcion']['id'];
+                  productData['id_opcion_variante'] =
+                      _selectedVariant!['opcion']['id'];
                 }
               }
-              
+
               if (_selectedPresentation != null) {
                 productData['id_presentacion'] = _selectedPresentation!['id'];
               }
-              
+
               // Find matching inventory item for location info
               final matchingInventoryItem = _findMatchingInventoryItem();
               if (matchingInventoryItem != null) {
                 if (matchingInventoryItem['ubicacion'] != null) {
-                  productData['id_ubicacion'] = matchingInventoryItem['ubicacion']['id'];
-                  productData['sku_ubicacion'] = matchingInventoryItem['ubicacion']['sku_codigo'];
+                  productData['id_ubicacion'] =
+                      matchingInventoryItem['ubicacion']['id'];
+                  productData['sku_ubicacion'] =
+                      matchingInventoryItem['ubicacion']['sku_codigo'];
                 }
                 if (matchingInventoryItem['id_inventario'] != null) {
-                  productData['id_inventario'] = matchingInventoryItem['id_inventario'];
+                  productData['id_inventario'] =
+                      matchingInventoryItem['id_inventario'];
                 }
               }
 

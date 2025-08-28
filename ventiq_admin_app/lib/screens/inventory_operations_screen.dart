@@ -82,24 +82,185 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     }
   }
 
-  Future<void> _selectDateRange() async {
-    final DateTimeRange? picked = await showDateRangePicker(
+  Future<void> _showDateRangeDialog() async {
+    showModalBottomSheet(
       context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      initialDateRange: _fechaDesde != null && _fechaHasta != null
-          ? DateTimeRange(start: _fechaDesde!, end: _fechaHasta!)
-          : null,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        maxChildSize: 0.7,
+        minChildSize: 0.3,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Seleccionar Rango de Fechas',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Inline Date Range Picker
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          colorScheme: Theme.of(context).colorScheme.copyWith(
+                            primary: const Color(0xFF4A90E2),
+                            onPrimary: Colors.white,
+                          ),
+                        ),
+                        child: CalendarDatePicker(
+                          initialDate: _fechaDesde ?? DateTime.now(),
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now(),
+                          onDateChanged: (date) async {
+                            // First date selected, now select end date
+                            final endDate = await _selectEndDate(date);
+                            if (endDate != null) {
+                              Navigator.pop(context);
+                              setState(() {
+                                _fechaDesde = date;
+                                _fechaHasta = endDate;
+                              });
+                              _currentPage = 1;
+                              _loadOperations();
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Current selection display
+                    if (_fechaDesde != null && _fechaHasta != null) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4A90E2).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Rango seleccionado:',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    
+                    const SizedBox(height: 12),
+                    
+                    // Clear filter button
+                    if (_fechaDesde != null || _fechaHasta != null)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _clearDateFilter();
+                          },
+                          icon: const Icon(Icons.clear),
+                          label: const Text('Limpiar Filtro'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
+  }
 
-    if (picked != null) {
-      setState(() {
-        _fechaDesde = picked.start;
-        _fechaHasta = picked.end;
-      });
-      _currentPage = 1;
-      _loadOperations();
-    }
+  Future<DateTime?> _selectEndDate(DateTime startDate) async {
+    return await showDatePicker(
+      context: context,
+      initialDate: startDate.add(const Duration(days: 1)),
+      firstDate: startDate,
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: const Color(0xFF4A90E2),
+              onPrimary: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
   }
 
   void _clearDateFilter() {
@@ -152,46 +313,67 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           ),
         ],
       ),
-      child: Column(
+      child: Row(
         children: [
           // Search bar
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Buscar operaciones...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Buscar operaciones...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(width: 12),
           
-          // Date filters
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _selectDateRange,
-                  icon: const Icon(Icons.date_range),
-                  label: Text(
-                    _fechaDesde != null && _fechaHasta != null
-                        ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
-                        : 'Seleccionar fechas',
-                  ),
-                ),
+          // Compact date filter icon
+          Container(
+            decoration: BoxDecoration(
+              color: _fechaDesde != null && _fechaHasta != null 
+                  ? const Color(0xFF4A90E2).withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _fechaDesde != null && _fechaHasta != null 
+                    ? const Color(0xFF4A90E2)
+                    : Colors.grey.withOpacity(0.3),
               ),
-              if (_fechaDesde != null || _fechaHasta != null) ...[
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _clearDateFilter,
-                  icon: const Icon(Icons.clear),
-                  tooltip: 'Limpiar filtro de fecha',
-                ),
-              ],
-            ],
+            ),
+            child: IconButton(
+              onPressed: _showDateRangeDialog,
+              icon: Icon(
+                Icons.date_range,
+                color: _fechaDesde != null && _fechaHasta != null 
+                    ? const Color(0xFF4A90E2)
+                    : Colors.grey[600],
+              ),
+              tooltip: _fechaDesde != null && _fechaHasta != null
+                  ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
+                  : 'Seleccionar rango de fechas',
+            ),
           ),
+          
+          // Clear filter button
+          if (_fechaDesde != null || _fechaHasta != null) ...[
+            const SizedBox(width: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withOpacity(0.3)),
+              ),
+              child: IconButton(
+                onPressed: _clearDateFilter,
+                icon: const Icon(Icons.clear, color: Colors.red),
+                tooltip: 'Limpiar filtro de fecha',
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -226,8 +408,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   Widget _buildOperationCard(Map<String, dynamic> operation) {
     final tipoOperacion = operation['tipo_operacion_nombre'] ?? 'Desconocido';
     final fecha = DateTime.parse(operation['created_at']);
-    final total = operation['total']?.toDouble() ?? 0.0;
-    final cantidadItems = operation['cantidad_items'] ?? 0;
+    final total = _calculateTotalPrice(operation);
+    final cantidadItems = _calculateTotalItems(operation);
     final estadoNombre = operation['estado_nombre'] ?? 'Sin estado';
     final observaciones = operation['observaciones'] ?? '';
 
@@ -422,63 +604,128 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       print('   $key: $value');
     });
     
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Operación #${operation['id']}'),
-        content: SingleChildScrollView(
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
             children: [
-              _buildDetailRow('Tipo', operation['tipo_operacion_nombre']),
-              _buildDetailRow('Estado', operation['estado_nombre']),
-              _buildDetailRow('Fecha', _formatDateTime(DateTime.parse(operation['created_at']))),
-              _buildDetailRow('Total', '\$${(operation['total']?.toDouble() ?? 0.0).toStringAsFixed(2)}'),
-              _buildDetailRow('Items', '${operation['cantidad_items'] ?? 0}'),
-              if (operation['observaciones']?.isNotEmpty == true)
-                _buildDetailRow('Observaciones', operation['observaciones']),
-              
-              // Show specific details based on operation type
-              if (operation['detalles'] != null) ...[
-                const SizedBox(height: 16),
-                const Text('Detalles específicos:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                _buildFormattedDetails(operation['detalles']),
-              ],
-              
-              // Show completion button for pending reception operations
-              if (_shouldShowCompleteButton(operation)) ...[
-                const SizedBox(height: 16),
-                _buildCompleteButton(operation),
-              ],
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Operación #${operation['id']}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Información general
+                    _buildModalDetailRow('Tipo:', operation['tipo_operacion_nombre'] ?? 'N/A'),
+                    _buildModalDetailRow('Estado:', operation['estado_nombre'] ?? 'N/A'),
+                    _buildModalDetailRow('Fecha:', _formatDateTime(DateTime.parse(operation['created_at']))),
+                    _buildModalDetailRow('Total:', '\$${_calculateTotalPrice(operation).toStringAsFixed(2)}'),
+                    _buildModalDetailRow('Items:', '${_calculateTotalItems(operation)}'),
+                    if (operation['observaciones']?.isNotEmpty == true)
+                      _buildModalDetailRow('Observaciones:', operation['observaciones']),
+                    
+                    // Show specific details based on operation type
+                    if (operation['detalles'] != null) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Detalles específicos:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildFormattedDetails(operation['detalles']),
+                    ],
+                    
+                    // Show completion button for pending reception operations
+                    if (_shouldShowCompleteButton(operation)) ...[
+                      const SizedBox(height: 24),
+                      _buildCompleteButton(operation),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
       ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
+
+  Widget _buildModalDetailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 100,
+            width: 120,
             child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.w500),
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[600],
+              ),
             ),
           ),
-          Expanded(child: Text(value)),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -633,6 +880,54 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     if (value is double) return value.toStringAsFixed(2);
     if (value is num) return value.toString();
     return value.toString();
+  }
+
+  // Helper methods to calculate dynamic totals from products
+  int _calculateTotalItems(Map<String, dynamic> operation) {
+    try {
+      if (operation['detalles'] != null && operation['detalles'] is Map<String, dynamic>) {
+        final detalles = operation['detalles'] as Map<String, dynamic>;
+        if (detalles['items'] != null && detalles['items'] is List) {
+          final items = detalles['items'] as List<dynamic>;
+          int totalItems = 0;
+          for (var item in items) {
+            if (item is Map<String, dynamic>) {
+              final cantidad = item['cantidad'];
+              if (cantidad != null) {
+                final cantidadNum = (cantidad is int) ? cantidad : 
+                                  (cantidad is double) ? cantidad.toInt() : 
+                                  int.tryParse(cantidad.toString()) ?? 0;
+                totalItems += cantidadNum;
+              }
+            }
+          }
+          return totalItems;
+        }
+      }
+    } catch (e) {
+      print('Error calculating total items: $e');
+    }
+    // Fallback to original value
+    return operation['cantidad_items'] ?? 0;
+  }
+
+  double _calculateTotalPrice(Map<String, dynamic> operation) {
+    try {
+      if (operation['detalles'] != null && operation['detalles'] is Map<String, dynamic>) {
+        final detalles = operation['detalles'] as Map<String, dynamic>;
+        if (detalles['detalles_especificos'] != null && detalles['detalles_especificos'] is Map<String, dynamic>) {
+          final especificos = detalles['detalles_especificos'] as Map<String, dynamic>;
+          final montoTotal = especificos['monto_total'];
+          if (montoTotal != null) {
+            return (montoTotal is double) ? montoTotal : double.tryParse(montoTotal.toString()) ?? 0.0;
+          }
+        }
+      }
+    } catch (e) {
+      print('Error calculating total price: $e');
+    }
+    // Fallback to original value
+    return operation['total']?.toDouble() ?? 0.0;
   }
 
   bool _shouldShowCompleteButton(Map<String, dynamic> operation) {

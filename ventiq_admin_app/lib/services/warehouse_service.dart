@@ -52,7 +52,7 @@ class WarehouseService {
       print('  - Tipo: ${response.runtimeType}');
       print('  - Es null: ${response == null}');
       print('  - Contenido: $response');
-      
+
       if (response == null) {
         print('⚠️ Respuesta es null - usando datos mock');
         throw Exception('Respuesta de Supabase es null');
@@ -65,17 +65,17 @@ class WarehouseService {
       print('  - Página actual: ${parsedResponse.paginacion.paginaActual}');
       print('  - Total páginas: ${parsedResponse.paginacion.totalPaginas}');
       print('  - Total almacenes: ${parsedResponse.paginacion.totalAlmacenes}');
-      
+
       return parsedResponse;
     } catch (e, stackTrace) {
       print('❌ ERROR en listWarehousesWithPagination: $e');
       print('📍 Stack trace: $stackTrace');
       print('🔄 Usando datos mock como fallback...');
-      
+
       // Fallback a datos mock
       final mockWarehouses = MockDataService.getMockWarehouses();
       print('🤖 Datos mock cargados: ${mockWarehouses.length} almacenes');
-      
+
       return WarehousePaginationResponse(
         almacenes: mockWarehouses,
         paginacion: WarehousePagination(
@@ -93,11 +93,15 @@ class WarehouseService {
   }
 
   /// Método de compatibilidad para mantener la interfaz existente
-  Future<List<Warehouse>> listWarehouses({String? storeId, String? search}) async {
+  Future<List<Warehouse>> listWarehouses({
+    String? storeId,
+    String? search,
+  }) async {
     try {
       final response = await listWarehousesWithPagination(
         denominacionFilter: search,
-        tiendaFilter: storeId != null && storeId != 'all' ? int.tryParse(storeId) : null,
+        tiendaFilter:
+            storeId != null && storeId != 'all' ? int.tryParse(storeId) : null,
         pagina: 1,
         porPagina: 100, // Obtener muchos para compatibilidad
       );
@@ -106,13 +110,16 @@ class WarehouseService {
       print('⚠️ Error en listWarehouses, usando datos mock: $e');
       // Fallback a datos mock en caso de error
       final all = MockDataService.getMockWarehouses();
-      final filtered = all.where((w) {
-        final byStore = storeId == null || storeId.isEmpty || storeId == 'all';
-        final bySearch = search == null || search.trim().isEmpty
-            ? true
-            : w.name.toLowerCase().contains(search.toLowerCase());
-        return byStore && bySearch;
-      }).toList();
+      final filtered =
+          all.where((w) {
+            final byStore =
+                storeId == null || storeId.isEmpty || storeId == 'all';
+            final bySearch =
+                search == null || search.trim().isEmpty
+                    ? true
+                    : w.name.toLowerCase().contains(search.toLowerCase());
+            return byStore && bySearch;
+          }).toList();
       await Future.delayed(const Duration(milliseconds: 250));
       return filtered;
     }
@@ -122,12 +129,10 @@ class WarehouseService {
   Future<Warehouse> getWarehouseDetail(String id) async {
     try {
       print('🏪 Llamando a get_detalle_almacen_completo con ID: $id');
-      
+
       final response = await _supabase.rpc(
         'get_detalle_almacen_completo',
-        params: {
-          'p_almacen_id': int.parse(id),
-        },
+        params: {'p_almacen_id': int.parse(id)},
       );
 
       print('📦 Respuesta de get_detalle_almacen_completo:');
@@ -139,7 +144,7 @@ class WarehouseService {
 
       // La respuesta es un array, tomamos el primer elemento
       final warehouseData = response[0];
-      
+
       // Crear el objeto Warehouse con los datos detallados
       final warehouse = Warehouse(
         id: warehouseData['id']?.toString() ?? id,
@@ -154,19 +159,23 @@ class WarehouseService {
         denominacion: warehouseData['denominacion'] ?? '',
         direccion: warehouseData['direccion'] ?? '',
         ubicacion: warehouseData['ubicacion'],
-        tienda: warehouseData['id_1'] != null ? WarehouseStore(
-          id: warehouseData['id_1']?.toString() ?? '',
-          denominacion: warehouseData['denominacion_1'] ?? '',
-          direccion: '',
-        ) : null,
+        tienda:
+            warehouseData['id_1'] != null
+                ? WarehouseStore(
+                  id: warehouseData['id_1']?.toString() ?? '',
+                  denominacion: warehouseData['denominacion_1'] ?? '',
+                  direccion: '',
+                )
+                : null,
         layouts: _parseLayouts(warehouseData['layouts']),
         zones: _parseLayoutsToZones(warehouseData['layouts']),
         condiciones: [],
         roles: [],
         almacenerosCount: 0,
-        limitesStockCount: _parseStockLimits(warehouseData['limites_stock'])?.length ?? 0,
+        limitesStockCount:
+            _parseStockLimits(warehouseData['limites_stock'])?.length ?? 0,
       );
-      
+
       return warehouse;
     } catch (e) {
       print('❌ Error en getWarehouseDetail: $e');
@@ -176,41 +185,47 @@ class WarehouseService {
       return w;
     }
   }
-  
+
   /// Parsea los layouts de la respuesta de Supabase
   List<WarehouseLayout> _parseLayouts(dynamic layoutsData) {
     if (layoutsData == null) return [];
-    
+
     try {
-      final List<dynamic> layouts = layoutsData is String 
-          ? [] // Si es string vacío, retornar lista vacía
-          : layoutsData as List<dynamic>;
-      
-      return layouts.map((layout) => WarehouseLayout(
-        id: layout['layout_id']?.toString() ?? '',
-        denominacion: layout['denominacion'] ?? '',
-        tipoLayout: layout['tipo_layout'] ?? '',
-        skuCodigo: layout['sku_codigo'],
-      )).toList();
+      final List<dynamic> layouts =
+          layoutsData is String
+              ? [] // Si es string vacío, retornar lista vacía
+              : layoutsData as List<dynamic>;
+
+      return layouts
+          .map(
+            (layout) => WarehouseLayout(
+              id: layout['layout_id']?.toString() ?? '',
+              denominacion: layout['denominacion'] ?? '',
+              tipoLayout: layout['tipo_layout'] ?? '',
+              skuCodigo: layout['sku_codigo'],
+            ),
+          )
+          .toList();
     } catch (e) {
       print('Error parsing layouts: $e');
       return [];
     }
   }
-  
+
   /// Convierte layouts a zones para compatibilidad con la UI existente
   List<WarehouseZone> _parseLayoutsToZones(dynamic layoutsData) {
     if (layoutsData == null) return [];
-    
+
     try {
-      final List<dynamic> layouts = layoutsData is String 
-          ? [] 
-          : layoutsData as List<dynamic>;
-      
+      final List<dynamic> layouts =
+          layoutsData is String ? [] : layoutsData as List<dynamic>;
+
       return layouts.map((layout) {
         final conditions = layout['condiciones'] as List<dynamic>? ?? [];
-        final conditionNames = conditions.map((c) => c['condicion']?.toString() ?? '').join(', ');
-        
+        final conditionNames = conditions
+            .map((c) => c['condicion']?.toString() ?? '')
+            .join(', ');
+
         return WarehouseZone(
           id: layout['layout_id']?.toString() ?? '',
           warehouseId: '', // Se asignará después
@@ -221,7 +236,8 @@ class WarehouseService {
           capacity: 1000, // Valor por defecto
           currentOccupancy: 0,
           locations: [],
-          conditionCodes: conditions.map((c) => c['condicion']?.toString() ?? '').toList(),
+          conditionCodes:
+              conditions.map((c) => c['condicion']?.toString() ?? '').toList(),
         );
       }).toList();
     } catch (e) {
@@ -229,23 +245,26 @@ class WarehouseService {
       return [];
     }
   }
-  
+
   /// Parsea los límites de stock
   List<Map<String, dynamic>>? _parseStockLimits(dynamic stockLimitsData) {
     if (stockLimitsData == null) return null;
-    
+
     try {
-      final List<dynamic> limits = stockLimitsData is String 
-          ? []
-          : stockLimitsData as List<dynamic>;
-      
-      return limits.map((limit) => {
-        'producto_id': limit['producto_id'],
-        'producto_nombre': limit['producto_nombre'],
-        'stock_min': limit['stock_min'],
-        'stock_max': limit['stock_max'],
-        'stock_ordenar': limit['stock_ordenar'],
-      }).toList();
+      final List<dynamic> limits =
+          stockLimitsData is String ? [] : stockLimitsData as List<dynamic>;
+
+      return limits
+          .map(
+            (limit) => {
+              'producto_id': limit['producto_id'],
+              'producto_nombre': limit['producto_nombre'],
+              'stock_min': limit['stock_min'],
+              'stock_max': limit['stock_max'],
+              'stock_ordenar': limit['stock_ordenar'],
+            },
+          )
+          .toList();
     } catch (e) {
       print('Error parsing stock limits: $e');
       return null;
@@ -304,7 +323,9 @@ class WarehouseService {
 
       // Verificar si la respuesta indica éxito
       if (response['success'] == false) {
-        throw Exception(response['message'] ?? 'Error desconocido al crear almacén');
+        throw Exception(
+          response['message'] ?? 'Error desconocido al crear almacén',
+        );
       }
 
       return response;
@@ -314,7 +335,10 @@ class WarehouseService {
     }
   }
 
-  Future<void> updateWarehouseBasic(String id, Map<String, dynamic> payload) async {
+  Future<void> updateWarehouseBasic(
+    String id,
+    Map<String, dynamic> payload,
+  ) async {
     // PUT /api/almacenes/{id}
     await Future.delayed(const Duration(milliseconds: 150));
   }
@@ -324,12 +348,19 @@ class WarehouseService {
     await Future.delayed(const Duration(milliseconds: 150));
   }
 
-  Future<void> addLayout(String warehouseId, Map<String, dynamic> layout) async {
+  Future<void> addLayout(
+    String warehouseId,
+    Map<String, dynamic> layout,
+  ) async {
     // POST /api/almacenes/{id}/layouts
     await Future.delayed(const Duration(milliseconds: 150));
   }
 
-  Future<void> updateLayout(String warehouseId, String layoutId, Map<String, dynamic> layout) async {
+  Future<void> updateLayout(
+    String warehouseId,
+    String layoutId,
+    Map<String, dynamic> layout,
+  ) async {
     // PUT /api/almacenes/{id}/layouts/{layoutId}
     await Future.delayed(const Duration(milliseconds: 150));
   }
@@ -345,17 +376,27 @@ class WarehouseService {
     return 'new-layout-id';
   }
 
-  Future<void> bulkUpdateABC(String warehouseId, Map<String, String> layoutToAbc) async {
+  Future<void> bulkUpdateABC(
+    String warehouseId,
+    Map<String, String> layoutToAbc,
+  ) async {
     // POST /api/almacenes/{id}/layouts/abc: { layoutId: 'A'|'B'|'C' }
     await Future.delayed(const Duration(milliseconds: 200));
   }
 
-  Future<void> updateLayoutConditions(String warehouseId, String layoutId, List<String> conditionCodes) async {
+  Future<void> updateLayoutConditions(
+    String warehouseId,
+    String layoutId,
+    List<String> conditionCodes,
+  ) async {
     // PUT /api/almacenes/{id}/layouts/{layoutId}/condiciones
     await Future.delayed(const Duration(milliseconds: 150));
   }
 
-  Future<void> updateStockLimits(String warehouseId, List<Map<String, dynamic>> limits) async {
+  Future<void> updateStockLimits(
+    String warehouseId,
+    List<Map<String, dynamic>> limits,
+  ) async {
     // POST /api/almacenes/{id}/limites-stock
     await Future.delayed(const Duration(milliseconds: 150));
   }
@@ -366,15 +407,15 @@ class WarehouseService {
     // Se mantiene por compatibilidad pero retorna lista vacía
     return [];
   }
-  
+
   /// Obtiene tipos de layout disponibles desde Supabase
   Future<List<Map<String, dynamic>>> getTiposLayout() async {
     try {
       final response = await _supabase
-        .from('app_nom_tipo_layout_almacen')
-        .select('id, denominacion, sku_codigo')
-        .order('denominacion');
-      
+          .from('app_nom_tipo_layout_almacen')
+          .select('id, denominacion, sku_codigo')
+          .order('denominacion');
+
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('Error obteniendo tipos de layout: $e');
@@ -388,29 +429,61 @@ class WarehouseService {
       ];
     }
   }
-  
+
   /// Obtiene condiciones disponibles desde Supabase
   Future<List<Map<String, dynamic>>> getCondiciones() async {
     try {
       final response = await _supabase
-        .from('app_nom_tipo_condicion')
-        .select('id, denominacion, descripcion, es_refrigerado, es_fragil, es_peligroso')
-        .order('denominacion');
-      
+          .from('app_nom_tipo_condicion')
+          .select(
+            'id, denominacion, descripcion, es_refrigerado, es_fragil, es_peligroso',
+          )
+          .order('denominacion');
+
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('Error obteniendo condiciones: $e');
       // Fallback a datos mock
       return [
-        {'id': 1, 'denominacion': 'Refrigerado', 'es_refrigerado': true, 'es_fragil': false, 'es_peligroso': false},
-        {'id': 2, 'denominacion': 'Frágil', 'es_refrigerado': false, 'es_fragil': true, 'es_peligroso': false},
-        {'id': 3, 'denominacion': 'Peligroso', 'es_refrigerado': false, 'es_fragil': false, 'es_peligroso': true},
-        {'id': 4, 'denominacion': 'Seco', 'es_refrigerado': false, 'es_fragil': false, 'es_peligroso': false},
-        {'id': 5, 'denominacion': 'Ventilado', 'es_refrigerado': false, 'es_fragil': false, 'es_peligroso': false},
+        {
+          'id': 1,
+          'denominacion': 'Refrigerado',
+          'es_refrigerado': true,
+          'es_fragil': false,
+          'es_peligroso': false,
+        },
+        {
+          'id': 2,
+          'denominacion': 'Frágil',
+          'es_refrigerado': false,
+          'es_fragil': true,
+          'es_peligroso': false,
+        },
+        {
+          'id': 3,
+          'denominacion': 'Peligroso',
+          'es_refrigerado': false,
+          'es_fragil': false,
+          'es_peligroso': true,
+        },
+        {
+          'id': 4,
+          'denominacion': 'Seco',
+          'es_refrigerado': false,
+          'es_fragil': false,
+          'es_peligroso': false,
+        },
+        {
+          'id': 5,
+          'denominacion': 'Ventilado',
+          'es_refrigerado': false,
+          'es_fragil': false,
+          'es_peligroso': false,
+        },
       ];
     }
   }
-  
+
   /// Obtiene productos filtrados por tienda desde Supabase
   Future<List<Map<String, dynamic>>> getProductos() async {
     try {
@@ -418,14 +491,14 @@ class WarehouseService {
       if (idTienda == null) {
         throw Exception('No se encontró ID de tienda en preferencias');
       }
-      
+
       final response = await _supabase
-        .from('app_dat_producto')
-        .select('id, denominacion, sku, nombre_comercial, descripcion, um')
-        .eq('id_tienda', idTienda)
-        .eq('es_inventariable', true)
-        .order('denominacion');
-      
+          .from('app_dat_producto')
+          .select('id, denominacion, sku, nombre_comercial, descripcion, um')
+          .eq('id_tienda', idTienda)
+          .eq('es_inventariable', true)
+          .order('denominacion');
+
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('Error obteniendo productos: $e');
