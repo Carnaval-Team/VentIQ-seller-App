@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
+import 'inventory_reception_screen.dart';
+import 'inventory_operations_screen.dart';
 import '../models/inventory.dart';
 import '../models/warehouse.dart';
-import '../services/mock_data_service.dart';
+import '../services/inventory_service.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -17,39 +19,111 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  List<InventoryProduct> _inventoryProducts = [];
   List<InventoryItem> _inventoryItems = [];
   List<Warehouse> _warehouses = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
   String _selectedWarehouse = 'Todos';
+  int? _selectedWarehouseId;
   String _selectedClassification = 'Todas';
   String _stockFilter = 'Todos';
+  String _errorMessage = '';
+  
+  // Pagination and summary data
+  int _currentPage = 1;
+  bool _hasNextPage = false;
+  InventorySummary? _inventorySummary;
+  PaginationInfo? _paginationInfo;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _scrollController.addListener(_scrollListener);
     _loadInventoryData();
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      _loadNextPage();
+    }
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  void _loadInventoryData() {
+  void _loadInventoryData({bool reset = true}) async {
+    if (reset) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = '';
+        _currentPage = 1;
+        _inventoryProducts.clear();
+        _inventoryItems.clear();
+      });
+    }
+    
+    try {
+      // Load warehouses first (only on initial load)
+      if (reset) {
+        final warehouses = await InventoryService.getWarehouses();
+        setState(() {
+          _warehouses = warehouses;
+        });
+      }
+      
+      // Load inventory products with pagination
+      final response = await InventoryService.getInventoryProducts(
+        idAlmacen: _selectedWarehouseId,
+        busqueda: _searchQuery.isEmpty ? null : _searchQuery,
+        mostrarSinStock: _stockFilter != 'Sin Stock',
+        conStockMinimo: _stockFilter == 'Stock Bajo' ? true : null,
+        pagina: _currentPage,
+      );
+      
+      setState(() {
+        if (reset) {
+          _inventoryProducts = response.products;
+        } else {
+          _inventoryProducts.addAll(response.products);
+        }
+        _inventoryItems = _inventoryProducts.map((p) => p.toInventoryItem()).toList();
+        _inventorySummary = response.summary;
+        _paginationInfo = response.pagination;
+        _hasNextPage = response.pagination?.tieneSiguiente ?? false;
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
+      
+      print('✅ Loaded ${response.products.length} products (page $_currentPage)');
+      print('📊 Summary: ${_inventorySummary?.totalInventario} total, ${_inventorySummary?.totalSinStock} sin stock');
+      
+    } catch (e) {
+      print('❌ Error loading inventory data: $e');
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+        _errorMessage = 'Error al cargar inventario: $e';
+      });
+    }
+  }
+
+  void _loadNextPage() async {
+    if (_isLoadingMore || !_hasNextPage) return;
+    
     setState(() {
-      _isLoading = true;
+      _isLoadingMore = true;
+      _currentPage++;
     });
     
-    Future.delayed(const Duration(milliseconds: 800), () {
-      setState(() {
-        _inventoryItems = MockDataService.getMockInventory();
-        _warehouses = MockDataService.getMockWarehouses();
-        _isLoading = false;
-      });
-    });
+    _loadInventoryData(reset: false);
   }
 
   @override
@@ -70,11 +144,6 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: Colors.white),
-            onPressed: _showAddInventoryDialog,
-            tooltip: 'Agregar Item',
-          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadInventoryData,
@@ -101,7 +170,8 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
           ],
         ),
       ),
-      body: _isLoading ? _buildLoadingState() : TabBarView(
+      body: _isLoading ? _buildLoadingState() : 
+             _errorMessage.isNotEmpty ? _buildErrorState() : TabBarView(
         controller: _tabController,
         children: [
           _buildStockTab(),
@@ -109,6 +179,12 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
           _buildMovementsTab(),
           _buildABCTab(),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showInventoryReceptionDialog,
+        backgroundColor: AppColors.primary,
+        child: const Icon(Icons.add, color: Colors.white),
+        tooltip: 'Agregar Recepción de Inventario',
       ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
@@ -120,7 +196,40 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
 
   Widget _buildLoadingState() {
     return const Center(
-      child: CircularProgressIndicator(color: AppColors.primary),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: AppColors.primary),
+          SizedBox(height: 16),
+          Text('Cargando inventario...', style: TextStyle(color: AppColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 64, color: AppColors.error),
+          const SizedBox(height: 16),
+          Text(
+            _errorMessage,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadInventoryData,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Reintentar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -130,12 +239,18 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
     return Column(
       children: [
         _buildSearchAndFilters(),
-        _buildStockSummary(),
+        _buildInventorySummary(),
         Expanded(
           child: ListView.builder(
+            controller: _scrollController,
             padding: const EdgeInsets.all(16),
-            itemCount: filteredItems.length,
-            itemBuilder: (context, index) => _buildInventoryCard(filteredItems[index]),
+            itemCount: filteredItems.length + (_isLoadingMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index == filteredItems.length) {
+                return _buildLoadingMoreIndicator();
+              }
+              return _buildInventoryCard(filteredItems[index]);
+            },
           ),
         ),
       ],
@@ -151,11 +266,7 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
   }
 
   Widget _buildMovementsTab() {
-    return const Center(
-      child: Text('Movimientos de Inventario\n(Próximamente)', 
-        textAlign: TextAlign.center,
-        style: TextStyle(color: AppColors.textSecondary)),
-    );
+    return const InventoryOperationsScreen();
   }
 
   Widget _buildABCTab() {
@@ -179,7 +290,15 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
               prefixIcon: const Icon(Icons.search),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            onChanged: (value) => setState(() => _searchQuery = value),
+            onChanged: (value) {
+              setState(() => _searchQuery = value);
+              // Debounce search
+              Future.delayed(const Duration(milliseconds: 500), () {
+                if (_searchQuery == value) {
+                  _loadInventoryData();
+                }
+              });
+            },
           ),
           const SizedBox(height: 12),
           Row(
@@ -194,17 +313,32 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
                   isExpanded: true,
-                  items: ['Todos', ..._warehouses.map((w) => w.name)].map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value, 
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: 'Todos',
+                      child: Text('Todos', style: TextStyle(fontSize: 14)),
+                    ),
+                    ..._warehouses.map((w) => DropdownMenuItem<String>(
+                      value: w.name,
                       child: Text(
-                        value,
+                        w.name,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 14),
                       ),
-                    );
-                  }).toList(),
-                  onChanged: (value) => setState(() => _selectedWarehouse = value!),
+                    )),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedWarehouse = value!;
+                      if (value == 'Todos') {
+                        _selectedWarehouseId = null;
+                      } else {
+                        final warehouse = _warehouses.firstWhere((w) => w.name == value);
+                        _selectedWarehouseId = int.tryParse(warehouse.id);
+                      }
+                    });
+                    _loadInventoryData(); // Reload with new filter
+                  },
                 ),
               ),
               const SizedBox(width: 12),
@@ -228,7 +362,10 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
                       ),
                     );
                   }).toList(),
-                  onChanged: (value) => setState(() => _stockFilter = value!),
+                  onChanged: (value) {
+                    setState(() => _stockFilter = value!);
+                    // No need to reload data, just update the UI
+                  },
                 ),
               ),
             ],
@@ -238,10 +375,51 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
     );
   }
 
+  Widget _buildInventorySummary() {
+    if (_inventorySummary == null) return const SizedBox.shrink();
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: AppColors.background,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _buildSummaryCard('Total Inventario', _inventorySummary!.totalInventario.toString(), AppColors.info),
+              const SizedBox(width: 8),
+              _buildSummaryCard('Sin Stock', _inventorySummary!.totalSinStock.toString(), AppColors.error),
+              const SizedBox(width: 8),
+              _buildSummaryCard('Stock Bajo', _inventorySummary!.totalConCantidadBaja.toString(), AppColors.warning),
+            ],
+          ),
+          if (_paginationInfo != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Página ${_paginationInfo!.paginaActual} de ${_paginationInfo!.totalPaginas} • ${_paginationInfo!.totalRegistros} productos total',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingMoreIndicator() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+
   Widget _buildStockSummary() {
-    final totalItems = _inventoryItems.length;
-    final outOfStock = _inventoryItems.where((item) => item.currentStock <= 0).length;
-    final lowStock = _inventoryItems.where((item) => item.currentStock > 0 && item.currentStock <= item.minStock).length;
+    final totalItems = _inventoryProducts.length;
+    final outOfStock = _inventoryProducts.where((item) => item.cantidadFinal <= 0).length;
+    final lowStock = _inventoryProducts.where((item) => item.cantidadFinal > 0 && item.cantidadFinal <= 10).length;
     
     return Container(
       padding: const EdgeInsets.all(16),
@@ -297,8 +475,8 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildInventoryCard(InventoryItem item) {
-    final stockStatus = _getStockStatus(item);
+  Widget _buildInventoryCard(InventoryProduct item) {
+    final stockStatus = _getStockStatus(item.stockDisponible.toInt());
     
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -312,23 +490,35 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
           backgroundColor: stockStatus.color.withOpacity(0.1),
           child: Icon(Icons.inventory_2, color: stockStatus.color),
         ),
-        title: Text(item.productName, style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Text(
+          item.nombreProducto,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('SKU: ${item.sku}'),
-            Text('Almacén: ${item.warehouseName}'),
+            Text('${item.variante} ${item.opcionVariante}'),
+            Text('Almacén: ${item.almacen}'),
           ],
         ),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text('${item.currentStock}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: stockStatus.color)),
-            Text(stockStatus.label, style: TextStyle(fontSize: 12, color: stockStatus.color)),
+            Text('${item.stockDisponible}'),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: stockStatus.color,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                stockStatus.label,
+                style: const TextStyle(color: Colors.white, fontSize: 10),
+              ),
+            ),
           ],
         ),
-        onTap: () => _showInventoryDetails(item),
+        onTap: () => _showInventoryProductDetails(item),
       ),
     );
   }
@@ -361,63 +551,67 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
     );
   }
 
-  List<InventoryItem> _getFilteredInventoryItems() {
-    return _inventoryItems.where((item) {
-      final matchesSearch = _searchQuery.isEmpty || 
-        item.productName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-        item.sku.toLowerCase().contains(_searchQuery.toLowerCase());
-      
-      final matchesWarehouse = _selectedWarehouse == 'Todos' || item.warehouseName == _selectedWarehouse;
-      
-      final matchesStock = _stockFilter == 'Todos' ||
-        (_stockFilter == 'Sin Stock' && item.currentStock <= 0) ||
-        (_stockFilter == 'Stock Bajo' && item.currentStock > 0 && item.currentStock <= item.minStock) ||
-        (_stockFilter == 'Stock OK' && item.currentStock > item.minStock);
-      
-      return matchesSearch && matchesWarehouse && matchesStock;
-    }).toList();
+  List<InventoryProduct> _getFilteredInventoryItems() {
+    List<InventoryProduct> filtered = List.from(_inventoryProducts);
+    
+    // Apply search filter
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((item) {
+        return item.nombreProducto.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+               item.skuProducto.toLowerCase().contains(_searchQuery.toLowerCase());
+      }).toList();
+    }
+    
+    // Apply warehouse filter
+    if (_selectedWarehouse != 'Todos') {
+      filtered = filtered.where((item) => item.almacen == _selectedWarehouse).toList();
+    }
+    
+    // Apply stock filter based on stock_disponible field
+    switch (_stockFilter) {
+      case 'Sin Stock':
+        filtered = filtered.where((item) => item.stockDisponible <= 0).toList();
+        break;
+      case 'Stock Bajo':
+        filtered = filtered.where((item) => item.stockDisponible > 0 && item.stockDisponible < 10).toList();
+        break;
+      case 'Stock OK':
+        filtered = filtered.where((item) => item.stockDisponible >= 10).toList();
+        break;
+      case 'Todos':
+      default:
+        // No stock filtering needed
+        break;
+    }
+    
+    return filtered;
   }
 
-  ({Color color, String label}) _getStockStatus(InventoryItem item) {
-    if (item.currentStock <= 0) {
+  ({Color color, String label}) _getStockStatus(int stock) {
+    if (stock <= 0) {
       return (color: AppColors.error, label: 'Sin Stock');
-    } else if (item.currentStock <= item.minStock) {
+    } else if (stock < 10) {
       return (color: AppColors.warning, label: 'Stock Bajo');
     } else {
       return (color: AppColors.success, label: 'Stock OK');
     }
   }
 
-  void _showAddInventoryDialog() {
+  void _showInventoryProductDetails(InventoryProduct item) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Agregar Item'),
-        content: const Text('Funcionalidad de agregar item\n(Por implementar)'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showInventoryDetails(InventoryItem item) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(item.productName),
+        title: Text(item.nombreProducto),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('SKU: ${item.sku}'),
-            Text('Stock Actual: ${item.currentStock}'),
-            Text('Stock Mínimo: ${item.minStock}'),
-            Text('Almacén: ${item.warehouseName}'),
-            Text('Ubicación: ${item.location}'),
+            Text('Variante: ${item.variante} ${item.opcionVariante}'),
+            Text('Almacén: ${item.almacen}'),
+            Text('Stock Disponible: ${item.stockDisponible}'),
+            if (item.precioVenta != null) Text('Precio: \$${item.precioVenta!.toStringAsFixed(2)}'),
+            Text('Categoría: ${item.categoria}'),
+            Text('Subcategoría: ${item.subcategoria}'),
           ],
         ),
         actions: [
@@ -429,6 +623,19 @@ class _InventoryScreenState extends State<InventoryScreen> with TickerProviderSt
       ),
     );
   }
+
+  void _showInventoryReceptionDialog() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => InventoryReceptionScreen(),
+        fullscreenDialog: true,
+      ),
+    ).then((_) {
+      // Refresh inventory after reception
+      _loadInventoryData();
+    });
+  }
+
 
   void _showWarehouseDetails(Warehouse warehouse) {
     showDialog(

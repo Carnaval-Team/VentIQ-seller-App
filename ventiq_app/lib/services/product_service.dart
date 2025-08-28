@@ -38,7 +38,7 @@ class ProductService {
       }
 
       debugPrint('📦 Respuesta de productos: ${response.length} productos encontrados');
-      debugPrint('🔍 Estructura de respuesta: $response');
+      debugPrint('🔍 Estructura de respuesta: ${response[0]}');
 
       // Group products by subcategory_nombre
       final Map<String, List<Product>> productsBySubcategory = {};
@@ -81,7 +81,7 @@ class ProductService {
       descripcion: data['descripcion'] as String?,
       foto: data['imagen'] ?? _generateProductImage(data['denominacion'] as String? ?? 'producto'),
       precio: (data['precio_venta'] as num?)?.toDouble() ?? 0.0,
-      cantidad: 100, // Default stock since it's not in the response
+      cantidad: data['tiene_stock'] ? data['stock_disponible']:0, // Default stock since it's not in the response
       esRefrigerado: data['es_refrigerado'] as bool? ?? false,
       esFragil: data['es_fragil'] as bool? ?? false,
       esPeligroso: false, // Default value
