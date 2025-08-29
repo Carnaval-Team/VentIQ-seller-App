@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import 'product_details_screen.dart';
+import 'barcode_scanner_screen.dart';
 import '../widgets/bottom_navigation.dart';
 
 class ProductsScreen extends StatefulWidget {
@@ -102,6 +103,24 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(
+              Icons.qr_code_scanner,
+              color: Colors.white,
+              size: 28,
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const BarcodeScannerScreen(),
+                ),
+              );
+            },
+            tooltip: 'Escanear código de barras',
+          ),
+        ],
       ),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 0, // No tab selected since this is a detail screen
