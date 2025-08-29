@@ -441,17 +441,17 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                     child: Text(
                       widget.product.denominacion,
                       style: const TextStyle(
-                        fontSize: 14,
+                        fontSize: 15,
                         fontWeight: FontWeight.w500,
                         color: Color(0xFF1F2937),
-                        height: 1.2,
+                        height: 1.0,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       softWrap: false,
                     ),
                   ),
-                  const SizedBox(height: 1),
+                  const SizedBox(height: 4),
                   // Descripción/Categoría
                   Flexible(
                     child: Text(
@@ -475,7 +475,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           child: Text(
                             '\$${widget.product.precio.toStringAsFixed(2)}',
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: 14,
                               fontWeight: FontWeight.w600,
                               color: widget.categoryColor,
                               height: 1.2,
@@ -487,7 +487,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                         // Separador
                         Container(
                           width: 3,
-                          height: 3,
+                          height: 5,
                           decoration: BoxDecoration(
                             color: Colors.grey[400],
                             shape: BoxShape.circle,
@@ -497,9 +497,9 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                         // Estado de stock
                         Flexible(
                           child: Text(
-                            widget.product.cantidad > 0 ? 'En Stock' : 'Agotado',
+                            widget.product.cantidad > 0 ? 'Stock: ${widget.product.cantidad}' : 'Agotado',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 13,
                               color: widget.product.cantidad > 0
                                   ? Colors.green[600]
                                   : Colors.red[600],

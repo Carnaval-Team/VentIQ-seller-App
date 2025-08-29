@@ -1,4 +1,5 @@
 import 'product.dart';
+import 'payment_method.dart';
 
 class Order {
   final String id;
@@ -11,6 +12,7 @@ class Order {
   final String? buyerPhone;
   final String? extraContacts;
   final String? paymentMethod;
+  final int? operationId;
 
   Order({
     required this.id,
@@ -23,6 +25,7 @@ class Order {
     this.buyerPhone,
     this.extraContacts,
     this.paymentMethod,
+    this.operationId,
   });
 
   double get subtotal {
@@ -44,6 +47,7 @@ class Order {
     String? buyerPhone,
     String? extraContacts,
     String? paymentMethod,
+    int? operationId,
   }) {
     return Order(
       id: id ?? this.id,
@@ -56,6 +60,7 @@ class Order {
       buyerPhone: buyerPhone ?? this.buyerPhone,
       extraContacts: extraContacts ?? this.extraContacts,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      operationId: operationId ?? this.operationId,
     );
   }
 }
@@ -68,6 +73,7 @@ class OrderItem {
   final double precioUnitario;
   final String ubicacionAlmacen;
   final Map<String, dynamic>? inventoryData;
+  final PaymentMethod? paymentMethod;
 
   OrderItem({
     required this.id,
@@ -77,6 +83,7 @@ class OrderItem {
     required this.precioUnitario,
     required this.ubicacionAlmacen,
     this.inventoryData,
+    this.paymentMethod,
   });
 
   double get subtotal => precioUnitario * cantidad;
@@ -96,6 +103,7 @@ class OrderItem {
     double? precioUnitario,
     String? ubicacionAlmacen,
     Map<String, dynamic>? inventoryData,
+    PaymentMethod? paymentMethod,
   }) {
     return OrderItem(
       id: id ?? this.id,
@@ -105,6 +113,7 @@ class OrderItem {
       precioUnitario: precioUnitario ?? this.precioUnitario,
       ubicacionAlmacen: ubicacionAlmacen ?? this.ubicacionAlmacen,
       inventoryData: inventoryData ?? this.inventoryData,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
     );
   }
 }

@@ -12,6 +12,7 @@ import 'screens/customers_screen.dart';
 import 'screens/workers_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/warehouse_screen.dart';
+import 'screens/add_warehouse_screen.dart';
 import 'services/auth_service.dart';
 
 void main() async {
@@ -76,6 +77,7 @@ class MyApp extends StatelessWidget {
         '/workers': (context) => const WorkersScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/warehouse': (context) => const WarehouseScreen(),
+        '/add-warehouse': (context) => const AddWarehouseScreen(),
       },
     );
   }

@@ -13,7 +13,8 @@ class SalesScreen extends StatefulWidget {
   State<SalesScreen> createState() => _SalesScreenState();
 }
 
-class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin {
+class _SalesScreenState extends State<SalesScreen>
+    with TickerProviderStateMixin {
   late TabController _tabController;
   List<Sale> _sales = [];
   List<TPV> _tpvs = [];
@@ -36,7 +37,7 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
 
   void _loadSalesData() {
     setState(() => _isLoading = true);
-    
+
     Future.delayed(const Duration(milliseconds: 800), () {
       setState(() {
         _sales = MockSalesService.getMockSales();
@@ -70,11 +71,12 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
             tooltip: 'Actualizar',
           ),
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
         bottom: TabBar(
@@ -89,14 +91,17 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
           ],
         ),
       ),
-      body: _isLoading ? _buildLoadingState() : TabBarView(
-        controller: _tabController,
-        children: [
-          _buildRealTimeTab(),
-          _buildTPVsTab(),
-          _buildAnalyticsTab(),
-        ],
-      ),
+      body:
+          _isLoading
+              ? _buildLoadingState()
+              : TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildRealTimeTab(),
+                  _buildTPVsTab(),
+                  _buildAnalyticsTab(),
+                ],
+              ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 1,
@@ -112,11 +117,13 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
   }
 
   Widget _buildRealTimeTab() {
-    final todaySales = _sales.where((sale) => 
-      sale.saleDate.day == DateTime.now().day).toList();
+    final todaySales =
+        _sales
+            .where((sale) => sale.saleDate.day == DateTime.now().day)
+            .toList();
     final totalToday = todaySales.fold(0.0, (sum, sale) => sum + sale.total);
     final salesCount = todaySales.length;
-    
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -166,11 +173,24 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
             ),
             child: Column(
               children: [
-                const Icon(Icons.attach_money, color: AppColors.success, size: 32),
+                const Icon(
+                  Icons.attach_money,
+                  color: AppColors.success,
+                  size: 32,
+                ),
                 const SizedBox(height: 8),
-                Text('\$${totalToday.toStringAsFixed(2)}', 
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.success)),
-                const Text('Ventas Hoy', style: TextStyle(color: AppColors.textSecondary)),
+                Text(
+                  '\$${totalToday.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.success,
+                  ),
+                ),
+                const Text(
+                  'Ventas Hoy',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
               ],
             ),
           ),
@@ -188,9 +208,18 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
               children: [
                 const Icon(Icons.receipt, color: AppColors.info, size: 32),
                 const SizedBox(height: 8),
-                Text('$salesCount', 
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.info)),
-                const Text('Transacciones', style: TextStyle(color: AppColors.textSecondary)),
+                Text(
+                  '$salesCount',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.info,
+                  ),
+                ),
+                const Text(
+                  'Transacciones',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
               ],
             ),
           ),
@@ -211,19 +240,28 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
         children: [
           const Padding(
             padding: EdgeInsets.all(16),
-            child: Text('Ventas Recientes', 
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ),
-          ...recentSales.map((sale) => ListTile(
-            leading: CircleAvatar(
-              backgroundColor: AppColors.primary.withOpacity(0.1),
-              child: const Icon(Icons.receipt, color: AppColors.primary),
+            child: Text(
+              'Ventas Recientes',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            title: Text('Venta #${sale.id.substring(0, 8)}'),
-            subtitle: Text('${sale.customerName} • ${sale.tpvName}'),
-            trailing: Text('\$${sale.total.toStringAsFixed(2)}', 
-              style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.success)),
-          )),
+          ),
+          ...recentSales.map(
+            (sale) => ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppColors.primary.withOpacity(0.1),
+                child: const Icon(Icons.receipt, color: AppColors.primary),
+              ),
+              title: Text('Venta #${sale.id.substring(0, 8)}'),
+              subtitle: Text('${sale.customerName} • ${sale.tpvName}'),
+              trailing: Text(
+                '\$${sale.total.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.success,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -231,9 +269,10 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
 
   Widget _buildTPVCard(TPV tpv) {
     final tpvSales = _sales.where((sale) => sale.tpvId == tpv.id).length;
-    final tpvTotal = _sales.where((sale) => sale.tpvId == tpv.id)
+    final tpvTotal = _sales
+        .where((sale) => sale.tpvId == tpv.id)
         .fold(0.0, (sum, sale) => sum + sale.total);
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -243,11 +282,19 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
       ),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: tpv.isActive ? AppColors.success.withOpacity(0.1) : AppColors.error.withOpacity(0.1),
-          child: Icon(Icons.point_of_sale, 
-            color: tpv.isActive ? AppColors.success : AppColors.error),
+          backgroundColor:
+              tpv.isActive
+                  ? AppColors.success.withOpacity(0.1)
+                  : AppColors.error.withOpacity(0.1),
+          child: Icon(
+            Icons.point_of_sale,
+            color: tpv.isActive ? AppColors.success : AppColors.error,
+          ),
         ),
-        title: Text(tpv.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Text(
+          tpv.name,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -255,8 +302,10 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
             Text('$tpvSales ventas • \$${tpvTotal.toStringAsFixed(2)}'),
           ],
         ),
-        trailing: Icon(tpv.isActive ? Icons.check_circle : Icons.cancel,
-          color: tpv.isActive ? AppColors.success : AppColors.error),
+        trailing: Icon(
+          tpv.isActive ? Icons.check_circle : Icons.cancel,
+          color: tpv.isActive ? AppColors.success : AppColors.error,
+        ),
       ),
     );
   }
@@ -271,15 +320,24 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
       ),
       child: Row(
         children: [
-          const Text('Período: ', style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text(
+            'Período: ',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
           Expanded(
             child: DropdownButton<String>(
               value: _selectedPeriod,
               isExpanded: true,
               underline: Container(),
-              items: ['Hoy', 'Esta Semana', 'Este Mes', 'Este Año'].map((String value) {
-                return DropdownMenuItem<String>(value: value, child: Text(value));
-              }).toList(),
+              items:
+                  ['Hoy', 'Esta Semana', 'Este Mes', 'Este Año'].map((
+                    String value,
+                  ) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
               onChanged: (value) => setState(() => _selectedPeriod = value!),
             ),
           ),
@@ -300,7 +358,10 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Tendencia de Ventas', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const Text(
+            'Tendencia de Ventas',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 16),
           Expanded(
             child: LineChart(
@@ -310,8 +371,13 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
                 borderData: FlBorderData(show: false),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: List.generate(7, (index) => 
-                      FlSpot(index.toDouble(), (index * 100 + 200).toDouble())),
+                    spots: List.generate(
+                      7,
+                      (index) => FlSpot(
+                        index.toDouble(),
+                        (index * 100 + 200).toDouble(),
+                      ),
+                    ),
                     isCurved: true,
                     color: AppColors.primary,
                     barWidth: 3,
@@ -338,19 +404,32 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
         children: [
           const Padding(
             padding: EdgeInsets.all(16),
-            child: Text('Productos Más Vendidos', 
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          ),
-          ...List.generate(5, (index) => ListTile(
-            leading: CircleAvatar(
-              backgroundColor: AppColors.primary.withOpacity(0.1),
-              child: Text('${index + 1}', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+            child: Text(
+              'Productos Más Vendidos',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            title: Text('Producto ${index + 1}'),
-            subtitle: Text('${50 - index * 5} unidades vendidas'),
-            trailing: Text('\$${(1000 - index * 100).toStringAsFixed(2)}', 
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-          )),
+          ),
+          ...List.generate(
+            5,
+            (index) => ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppColors.primary.withOpacity(0.1),
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              title: Text('Producto ${index + 1}'),
+              subtitle: Text('${50 - index * 5} unidades vendidas'),
+              trailing: Text(
+                '\$${(1000 - index * 100).toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -359,7 +438,11 @@ class _SalesScreenState extends State<SalesScreen> with TickerProviderStateMixin
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Dashboard
-        Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/dashboard',
+          (route) => false,
+        );
         break;
       case 1: // Productos
         Navigator.pushNamed(context, '/products');

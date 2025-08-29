@@ -562,6 +562,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     _buildDetailRow('Total productos:', '${order.totalItems}'),
                     _buildDetailRow('Total:', '\$${order.total.toStringAsFixed(2)}'),
                     
+                    // Desglose de pagos
+                    if (order.operationId != null) ...[
+                      const SizedBox(height: 16),
+                      _buildPaymentBreakdown(order.operationId!),
+                    ],
+                    
                     // Datos del cliente
                     if (order.buyerName != null || order.buyerPhone != null) ...[
                       const SizedBox(height: 16),
@@ -867,6 +873,187 @@ class _OrdersScreenState extends State<OrdersScreen> {
       );
       
       print('Error en _updateOrderStatus: $e');
+    }
+  }
+
+  Widget _buildPaymentBreakdown(int operationId) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _orderService.getSalePayments(operationId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Desglose de Pagos:',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: const Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 8),
+                    Text('Cargando desglose de pagos...'),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Desglose de Pagos:',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: const Text(
+                  'No hay información de pagos disponible',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final payments = snapshot.data!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Desglose de Pagos:',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...payments.map((payment) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Row(
+                children: [
+                  // Icono del método de pago
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: _getPaymentMethodColor(payment),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      _getPaymentMethodIcon(payment),
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Información del pago
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          payment['medio_pago_denominacion'] ?? 'Método desconocido',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                        if (payment['referencia_pago'] != null && 
+                            payment['referencia_pago'].toString().isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Ref: ${payment['referencia_pago']}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  // Monto
+                  Text(
+                    '\$${(payment['monto'] ?? 0.0).toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4A90E2),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        );
+      },
+    );
+  }
+
+  Color _getPaymentMethodColor(Map<String, dynamic> payment) {
+    final esEfectivo = payment['medio_pago_es_efectivo'] ?? false;
+    final esDigital = payment['medio_pago_es_digital'] ?? false;
+    
+    if (esEfectivo) {
+      return Colors.green;
+    } else if (esDigital) {
+      return Colors.blue;
+    } else {
+      return Colors.orange;
+    }
+  }
+
+  IconData _getPaymentMethodIcon(Map<String, dynamic> payment) {
+    final esEfectivo = payment['medio_pago_es_efectivo'] ?? false;
+    final esDigital = payment['medio_pago_es_digital'] ?? false;
+    
+    if (esEfectivo) {
+      return Icons.payments;
+    } else if (esDigital) {
+      return Icons.credit_card;
+    } else {
+      return Icons.account_balance;
     }
   }
 

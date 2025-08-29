@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
-import '../widgets/admin_card.dart';
 import '../services/warehouse_service.dart';
 import '../models/warehouse.dart';
 
@@ -22,13 +21,6 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   void initState() {
     super.initState();
     _load();
-  }
-
-  String? _parentName(Warehouse w, WarehouseZone z) {
-    if (z.parentId == null) return null;
-    final idx = w.zones.indexWhere((e) => e.id == z.parentId);
-    if (idx == -1) return null;
-    return w.zones[idx].name;
   }
 
   Future<void> _load() async {
@@ -74,44 +66,132 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   }
 
   Widget _buildHeader(Warehouse w) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          w.name,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        Row(
-          children: [
-            TextButton.icon(
-              onPressed: () => _onEditBasic(w),
-              icon: const Icon(Icons.edit),
-              label: const Text('Editar'),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
             ),
-          ],
-        )
-      ],
+            child: const Icon(
+              Icons.warehouse,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  w.name,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on,
+                      size: 16,
+                      color: Colors.white70,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        w.address,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.white70,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () => _onEditBasic(w),
+            icon: const Icon(Icons.edit_outlined, color: Colors.white),
+            tooltip: 'Editar información básica',
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildBasicInfo(Warehouse w) {
-    return AdminCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AdminSectionHeader(
-            title: 'Información básica',
-            subtitle: 'Nombre, dirección y tipo',
-          ),
-          const SizedBox(height: 8),
-          _kv('Nombre', w.name),
-          _kv('Dirección', w.address),
-          _kv('Tipo', w.type),
-        ],
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.info_outline,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Información básica',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Nombre, dirección y tipo',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _modernKv('Nombre', w.name, Icons.warehouse),
+            _modernKv('Dirección', w.address, Icons.location_on),
+            _modernKv('Tipo', w.type, Icons.category),
+          ],
+        ),
       ),
     );
   }
@@ -144,199 +224,396 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
       }
     });
 
-    return AdminCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AdminSectionHeader(
-            title: 'Layouts/Zonas',
-            subtitle: 'Define zonas, clasificación ABC y condiciones',
-            action: Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                PopupMenuButton<String>(
-                  tooltip: 'Ordenar',
-                  onSelected: (v) => setState(() => _sort = v),
-                  itemBuilder: (ctx) => const [
-                    PopupMenuItem(value: 'abc', child: Text('Ordenar por ABC')),
-                    PopupMenuItem(value: 'type', child: Text('Ordenar por tipo')),
-                    PopupMenuItem(value: 'utilization', child: Text('Ordenar por utilización')),
-                  ],
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: Row(children: const [Icon(Icons.sort), SizedBox(width: 6), Text('Ordenar')]),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.layers,
+                    color: AppColors.primary,
+                    size: 20,
                   ),
                 ),
-                ElevatedButton.icon(
-                  onPressed: () => _onAddLayout(w),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Agregar layout'),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Layouts/Zonas',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Define zonas, clasificación ABC y condiciones',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PopupMenuButton<String>(
+                      tooltip: 'Ordenar',
+                      onSelected: (v) => setState(() => _sort = v),
+                      itemBuilder: (ctx) => const [
+                        PopupMenuItem(value: 'abc', child: Text('Ordenar por ABC')),
+                        PopupMenuItem(value: 'type', child: Text('Ordenar por tipo')),
+                        PopupMenuItem(value: 'utilization', child: Text('Ordenar por utilización')),
+                      ],
+                      child: const Icon(Icons.sort, color: AppColors.textSecondary),
+                    ),
+                    IconButton(
+                      onPressed: () => _onAddLayout(w),
+                      icon: const Icon(Icons.add, color: AppColors.primary),
+                      tooltip: 'Agregar layout',
+                    ),
+                  ],
                 ),
               ],
             ),
-          ),
-          if (w.zones.isEmpty)
-            const Text('Sin layouts aún', style: TextStyle(color: AppColors.textSecondary))
-          else
-            Column(
-              children: zones
-                  .map((z) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: _zoneLeading(z),
-                        title: Row(
-                          children: [
-                            Expanded(child: Text(z.name)),
-                            const SizedBox(width: 8),
-                            if (z.abc != null) _abcChip(z.abc!),
-                          ],
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                                'Código: ${z.code} • Tipo: ${z.type} • Capacidad: ${z.capacity}'
-                                '${_parentName(w, z) != null ? ' • Padre: ${_parentName(w, z)}' : ''}'),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: [
-                                _metricChip(Icons.inventory_2_outlined, '${z.productCount} prod.'),
-                                _metricChip(Icons.storage, '${(z.utilization * 100).toStringAsFixed(0)}% ocupado'),
-                                ..._conditionIcons(z),
-                              ],
-                            ),
-                          ],
-                        ),
-                        trailing: Wrap(
-                          spacing: 8,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.copy),
-                              tooltip: 'Duplicar layout',
-                              onPressed: () => _onDuplicateLayout(w, z.id),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.edit),
-                              tooltip: 'Editar layout',
-                              onPressed: () => _onEditLayout(w, z.id),
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.delete_outline,
-                                color: z.productCount > 0 ? Colors.grey : null,
-                              ),
-                              tooltip: z.productCount > 0
-                                  ? 'No se puede eliminar: contiene productos'
-                                  : 'Eliminar layout',
-                              onPressed: z.productCount > 0
-                                  ? () => _showSnack('No se puede eliminar: contiene productos')
-                                  : () => _onDeleteLayout(w, z.id),
-                            ),
-                          ],
-                        ),
-                      ))
-                  .toList(),
-            ),
-        ],
+            const SizedBox(height: 16),
+            if (w.zones.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text(
+                    'Sin layouts aún',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+              )
+            else
+              Column(
+                children: zones.map((z) => _buildZoneCard(w, z)).toList(),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _zoneLeading(WarehouseZone z) {
-    return CircleAvatar(
-      backgroundColor: Colors.blueGrey.shade50,
-      child: const Icon(Icons.layers, color: AppColors.primary),
-    );
-  }
 
   Widget _abcChip(String abc) {
-    Color c;
+    Color color;
     switch (abc) {
       case 'A':
-        c = Colors.green;
+        color = Colors.red;
         break;
       case 'B':
-        c = Colors.orange;
+        color = Colors.orange;
         break;
       case 'C':
+        color = Colors.green;
+        break;
       default:
-        c = Colors.red;
+        color = Colors.grey;
     }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: c.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-      child: Text('ABC $abc', style: TextStyle(color: c, fontWeight: FontWeight.w600)),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        abc,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
     );
   }
 
   Widget _metricChip(IconData icon, String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey.shade200,
+        color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(children: [Icon(icon, size: 14), const SizedBox(width: 4), Text(text)]),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: Colors.grey.shade600),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   List<Widget> _conditionIcons(WarehouseZone z) {
-    final codes = z.conditionCodes.isNotEmpty
-        ? z.conditionCodes
-        : (z.conditions.isNotEmpty ? z.conditions.split(',').map((e) => e.trim()).toList() : <String>[]);
-    Icon iconFor(String c) {
-      switch (c.toLowerCase()) {
+    if (z.conditions.isEmpty) return [];
+    
+    // Split conditions by comma if multiple, otherwise use single condition
+    final codes = z.conditions.contains(',') 
+        ? z.conditions.split(',').map((e) => e.trim()).toList()
+        : [z.conditions];
+    
+    Widget iconFor(String code) {
+      switch (code.toLowerCase()) {
         case 'refrigerado':
-          return const Icon(Icons.ac_unit, size: 16);
+          return const Icon(Icons.ac_unit, size: 14, color: Colors.blue);
         case 'fragil':
-          return const Icon(Icons.incomplete_circle, size: 16);
+          return const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange);
         case 'peligroso':
-          return const Icon(Icons.warning_amber_rounded, size: 16);
+          return const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red);
         default:
-          return const Icon(Icons.label_important_outline, size: 16);
+          return const Icon(Icons.label_important_outline, size: 14, color: Colors.grey);
       }
     }
-    return codes.take(4).map((c) => Padding(padding: const EdgeInsets.only(right: 6), child: iconFor(c))).toList();
+    
+    final limitedCodes = codes.length > 4 ? codes.sublist(0, 4) : codes;
+    return limitedCodes.map((c) => Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: iconFor(c),
+    )).toList();
+  }
+
+  Widget _buildZoneCard(Warehouse w, WarehouseZone z) {
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(
+                    Icons.layers,
+                    color: AppColors.primary,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              z.name,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          if (z.abc != null) _abcChip(z.abc!),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Código: ${z.code} • Tipo: ${z.type} • Capacidad: ${z.capacity}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _metricChip(Icons.inventory_2_outlined, '${z.productCount} prod.'),
+                const SizedBox(width: 8),
+                _metricChip(Icons.storage, '${(z.utilization * 100).toStringAsFixed(0)}% ocupado'),
+                const Spacer(),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.copy_outlined, size: 18),
+                      tooltip: 'Duplicar layout',
+                      onPressed: () => _onDuplicateLayout(w, z.id),
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      tooltip: 'Editar layout',
+                      onPressed: () => _onEditLayout(w, z.id),
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        Icons.delete_outline,
+                        size: 18,
+                        color: z.productCount > 0 ? Colors.grey : Colors.red,
+                      ),
+                      tooltip: z.productCount > 0
+                          ? 'No se puede eliminar: contiene productos'
+                          : 'Eliminar layout',
+                      onPressed: z.productCount > 0
+                          ? () => _showSnack('No se puede eliminar: contiene productos')
+                          : () => _onDeleteLayout(w, z.id),
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (z.conditions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 4,
+                children: _conditionIcons(z),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildStockLimits(Warehouse w) {
-    // Using zones placeholder to show limits section structure
-    return AdminCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.inventory,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Límites de stock',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Mínimos y máximos por producto',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => _onEditStockLimits(w),
+                  icon: const Icon(Icons.tune, color: AppColors.primary),
+                  tooltip: 'Gestionar límites',
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'Interfaz de gestión de límites por producto estará aquí (pendiente).',
+                  style: TextStyle(color: AppColors.textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _modernKv(String key, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
         children: [
-          AdminSectionHeader(
-            title: 'Límites de stock',
-            subtitle: 'Mínimos y máximos por producto',
-            action: ElevatedButton.icon(
-              onPressed: () => _onEditStockLimits(w),
-              icon: const Icon(Icons.tune),
-              label: const Text('Gestionar límites'),
+          Icon(icon, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 80,
+            child: Text(
+              key,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary,
+              ),
             ),
           ),
-          const Text(
-            'Interfaz de gestión de límites por producto estará aquí (pendiente).',
-            style: TextStyle(color: AppColors.textSecondary),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _kv(String k, String v) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        children: [
-          SizedBox(width: 120, child: Text(k, style: const TextStyle(color: AppColors.textSecondary))),
-          Expanded(child: Text(v, style: const TextStyle(color: AppColors.textPrimary))),
-        ],
-      ),
-    );
-  }
 
   void _onEditBasic(Warehouse w) {
     _showSnack('Editar información básica (pendiente)');
@@ -524,6 +801,15 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                                     isActive: w.isActive,
                                     createdAt: w.createdAt,
                                     zones: [...w.zones, newZone],
+                                    denominacion: w.denominacion,
+                                    direccion: w.direccion,
+                                    ubicacion: w.ubicacion,
+                                    tienda: w.tienda,
+                                    roles: w.roles,
+                                    layouts: w.layouts,
+                                    condiciones: w.condiciones,
+                                    almacenerosCount: w.almacenerosCount,
+                                    limitesStockCount: w.limitesStockCount,
                                   );
                                 });
                                 if (mounted) Navigator.of(ctx).pop();
@@ -562,6 +848,15 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                                     isActive: w.isActive,
                                     createdAt: w.createdAt,
                                     zones: newZones,
+                                    denominacion: w.denominacion,
+                                    direccion: w.direccion,
+                                    ubicacion: w.ubicacion,
+                                    tienda: w.tienda,
+                                    roles: w.roles,
+                                    layouts: w.layouts,
+                                    condiciones: w.condiciones,
+                                    almacenerosCount: w.almacenerosCount,
+                                    limitesStockCount: w.limitesStockCount,
                                   );
                                 });
                                 if (mounted) Navigator.of(ctx).pop();

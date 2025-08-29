@@ -5,8 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
-enum PaymentMethod { efectivo, transferencia }
-
 class CheckoutScreen extends StatefulWidget {
   final Order order;
 
@@ -27,14 +25,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _extraContactsController = TextEditingController();
   
   // State variables
-  PaymentMethod? _selectedPaymentMethod;
   double _promoDiscount = 0.0;
-  double _cashDiscount = 0.0;
   bool _promoApplied = false;
   bool _isProcessing = false;
   
   // Discount percentages (you can make these configurable)
-  static const double cashDiscountPercentage = 0.05; // 5% discount for cash
   static const double promoDiscountPercentage = 0.10; // 10% promo discount
 
   @override
@@ -50,7 +45,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   
   double get totalAfterPromo => subtotal - _promoDiscount;
   
-  double get finalTotal => totalAfterPromo - _cashDiscount;
+  double get finalTotal => totalAfterPromo;
+
+  // Calculate payment breakdown from individual product payment methods
+  Map<String, double> get paymentBreakdown {
+    Map<String, double> breakdown = {};
+    
+    for (final item in widget.order.items) {
+      if (item.paymentMethod != null) {
+        final methodName = item.paymentMethod!.denominacion;
+        final itemTotal = item.subtotal;
+        breakdown[methodName] = (breakdown[methodName] ?? 0.0) + itemTotal;
+      }
+    }
+    
+    return breakdown;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +94,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               const SizedBox(height: 20),
               _buildPromoSection(),
               const SizedBox(height: 20),
-              _buildPaymentMethodSection(),
+              _buildPaymentBreakdownSection(),
               const SizedBox(height: 20),
               _buildBuyerInfoSection(),
               const SizedBox(height: 20),
@@ -221,7 +231,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _buildPaymentMethodSection() {
+  Widget _buildPaymentBreakdownSection() {
+    final breakdown = paymentBreakdown;
+    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -233,7 +245,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Método de Pago',
+            'Desglose de Pagos',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -241,49 +253,87 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          RadioListTile<PaymentMethod>(
-            title: const Text('Efectivo'),
-            subtitle: const Text('5% de descuento adicional'),
-            value: PaymentMethod.efectivo,
-            groupValue: _selectedPaymentMethod,
-            onChanged: (PaymentMethod? value) {
-              setState(() {
-                _selectedPaymentMethod = value;
-                _updateCashDiscount();
-              });
-            },
-          ),
-          RadioListTile<PaymentMethod>(
-            title: const Text('Transferencia'),
-            subtitle: const Text('Sin descuento adicional'),
-            value: PaymentMethod.transferencia,
-            groupValue: _selectedPaymentMethod,
-            onChanged: (PaymentMethod? value) {
-              setState(() {
-                _selectedPaymentMethod = value;
-                _updateCashDiscount();
-              });
-            },
-          ),
-          if (_cashDiscount > 0) ...[
+          if (breakdown.isEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Algunos productos no tienen método de pago asignado',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            ...breakdown.entries.map((entry) {
+              final methodName = entry.key;
+              final amount = entry.value;
+              final icon = _getPaymentMethodIcon(methodName);
+              
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Text(icon, style: const TextStyle(fontSize: 16)),
+                        const SizedBox(width: 8),
+                        Text(
+                          methodName,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '\$${amount.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF4A90E2),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
             const SizedBox(height: 8),
+            const Divider(),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'Descuento por efectivo:',
+                  'Total por métodos de pago:',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.green,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
                   ),
                 ),
                 Text(
-                  '-\$${_cashDiscount.toStringAsFixed(2)}',
+                  '\$${breakdown.values.fold(0.0, (sum, amount) => sum + amount).toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 14,
-                    color: Colors.green,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF4A90E2),
                   ),
                 ),
               ],
@@ -292,6 +342,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ],
       ),
     );
+  }
+
+  String _getPaymentMethodIcon(String methodName) {
+    final lowerName = methodName.toLowerCase();
+    if (lowerName.contains('efectivo') || lowerName.contains('cash')) return '💵';
+    if (lowerName.contains('digital') || lowerName.contains('tarjeta') || lowerName.contains('card')) return '💳';
+    if (lowerName.contains('transferencia') || lowerName.contains('transfer')) return '🏦';
+    return '💰';
   }
 
   Widget _buildBuyerInfoSection() {
@@ -434,22 +492,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ],
             ),
           ],
-          if (_cashDiscount > 0) ...[
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Descuento por efectivo:',
-                  style: TextStyle(fontSize: 14, color: Colors.green),
-                ),
-                Text(
-                  '-\$${_cashDiscount.toStringAsFixed(2)}',
-                  style: const TextStyle(fontSize: 14, color: Colors.green),
-                ),
-              ],
-            ),
-          ],
           const Divider(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -522,7 +564,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _promoDiscount = totalAfterPromo * promoDiscountPercentage;
         _promoApplied = true;
-        _updateCashDiscount(); // Recalculate cash discount based on new total
       });
       _showSuccessMessage('¡Código promocional aplicado!');
     } else {
@@ -535,17 +576,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _promoDiscount = 0.0;
       _promoApplied = false;
       _promoCodeController.clear();
-      _updateCashDiscount(); // Recalculate cash discount
-    });
-  }
-
-  void _updateCashDiscount() {
-    setState(() {
-      if (_selectedPaymentMethod == PaymentMethod.efectivo) {
-        _cashDiscount = totalAfterPromo * cashDiscountPercentage;
-      } else {
-        _cashDiscount = 0.0;
-      }
     });
   }
 
@@ -613,8 +643,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
-    if (_selectedPaymentMethod == null) {
-      _showErrorMessage('Selecciona un método de pago');
+    // Validate that all products have payment methods assigned
+    final breakdown = paymentBreakdown;
+    if (breakdown.isEmpty) {
+      _showErrorMessage('Todos los productos deben tener un método de pago asignado');
       return;
     }
 
@@ -638,13 +670,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'buyerName': buyerName,
         'buyerPhone': buyerPhone,
         'extraContacts': _extraContactsController.text.trim(),
-        'paymentMethod': _selectedPaymentMethod == PaymentMethod.efectivo ? 'efectivo' : 'transferencia',
+        'paymentMethod': 'Múltiples métodos', // Since we have individual payment methods per product
         'promoCode': _promoApplied ? _promoCodeController.text.trim() : null,
         'promoDiscount': _promoDiscount,
-        'cashDiscount': _cashDiscount,
         'finalTotal': finalTotal,
         'originalTotal': subtotal,
         'idCliente': idCliente, // Agregar ID del cliente al orderData
+        'paymentBreakdown': breakdown, // Add payment breakdown
       };
 
       // Update the order with final information
@@ -654,7 +686,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         buyerName: _buyerNameController.text.trim(),
         buyerPhone: _buyerPhoneController.text.trim(),
         extraContacts: _extraContactsController.text.trim().isNotEmpty ? _extraContactsController.text.trim() : null,
-        paymentMethod: _selectedPaymentMethod == PaymentMethod.efectivo ? 'Efectivo' : 'Transferencia',
+        paymentMethod: 'Múltiples métodos',
       );
 
       // Finalize the order
@@ -662,7 +694,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       if (result['success'] == true) {
         // Show success and navigate back
-        _showSuccessMessage('¡Orden registrada exitosamente!');
+        if (result['paymentWarning'] != null) {
+          _showErrorMessage('Orden creada con advertencia: ${result['paymentWarning']}');
+        } else {
+          _showSuccessMessage('¡Orden registrada exitosamente!');
+        }
         
         // Navigate back to orders screen or home
         Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
@@ -680,31 +716,41 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   String _buildOrderNotes(Map<String, dynamic> orderData) {
-    final notes = StringBuffer();
-    notes.writeln('DATOS DEL COMPRADOR:');
-    notes.writeln('Nombre: ${orderData['buyerName']}');
-    notes.writeln('Teléfono: ${orderData['buyerPhone']}');
+    final notes = <String>[];
     
-    if (orderData['extraContacts'] != null && orderData['extraContacts'].isNotEmpty) {
-      notes.writeln('Contactos adicionales: ${orderData['extraContacts']}');
+    if (orderData['buyerName']?.isNotEmpty == true) {
+      notes.add('Cliente: ${orderData['buyerName']}');
     }
     
-    notes.writeln('\nDETALLES DE PAGO:');
-    notes.writeln('Método: ${orderData['paymentMethod']}');
-    notes.writeln('Total original: \$${orderData['originalTotal'].toStringAsFixed(2)}');
-    
-    if (orderData['promoDiscount'] > 0) {
-      notes.writeln('Descuento promocional: -\$${orderData['promoDiscount'].toStringAsFixed(2)}');
-      notes.writeln('Código usado: ${orderData['promoCode']}');
+    if (orderData['buyerPhone']?.isNotEmpty == true) {
+      notes.add('Teléfono: ${orderData['buyerPhone']}');
     }
     
-    if (orderData['cashDiscount'] > 0) {
-      notes.writeln('Descuento por efectivo: -\$${orderData['cashDiscount'].toStringAsFixed(2)}');
+    if (orderData['extraContacts']?.isNotEmpty == true) {
+      notes.add('Contactos adicionales: ${orderData['extraContacts']}');
     }
     
-    notes.writeln('Total final: \$${orderData['finalTotal'].toStringAsFixed(2)}');
+    if (orderData['paymentMethod'] != null) {
+      notes.add('Método de pago: ${orderData['paymentMethod']}');
+    }
     
-    return notes.toString();
+    // Add payment breakdown details
+    if (orderData['paymentBreakdown'] != null) {
+      final breakdown = orderData['paymentBreakdown'] as Map<String, double>;
+      notes.add('Desglose de pagos:');
+      breakdown.forEach((method, amount) {
+        notes.add('  - $method: \$${amount.toStringAsFixed(2)}');
+      });
+    }
+    
+    if (orderData['promoCode']?.isNotEmpty == true) {
+      notes.add('Código promocional: ${orderData['promoCode']} (Descuento: \$${orderData['promoDiscount']?.toStringAsFixed(2) ?? '0.00'})');
+    }
+    
+    notes.add('Total original: \$${orderData['originalTotal']?.toStringAsFixed(2) ?? '0.00'}');
+    notes.add('Total final: \$${orderData['finalTotal']?.toStringAsFixed(2) ?? '0.00'}');
+    
+    return notes.join('\n');
   }
 
   void _showSuccessMessage(String message) {

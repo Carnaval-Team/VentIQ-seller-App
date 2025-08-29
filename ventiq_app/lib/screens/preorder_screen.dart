@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
+import '../models/payment_method.dart' as pm;
 import '../services/order_service.dart';
+import '../services/payment_method_service.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/scrolling_text.dart';
@@ -15,6 +17,34 @@ class PreorderScreen extends StatefulWidget {
 
 class _PreorderScreenState extends State<PreorderScreen> {
   final OrderService _orderService = OrderService();
+  final PaymentMethodService _paymentMethodService = PaymentMethodService();
+  List<pm.PaymentMethod> _paymentMethods = [];
+  bool _loadingPaymentMethods = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPaymentMethods();
+  }
+
+  Future<void> _loadPaymentMethods() async {
+    setState(() {
+      _loadingPaymentMethods = true;
+    });
+
+    try {
+      final paymentMethods = await _paymentMethodService.getPaymentMethods();
+      setState(() {
+        _paymentMethods = paymentMethods;
+        _loadingPaymentMethods = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loadingPaymentMethods = false;
+      });
+      print('Error loading payment methods: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -290,6 +320,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          // Payment method selector
+          _buildPaymentMethodSelector(item),
         ],
       ),
     );
@@ -377,6 +410,84 @@ class _PreorderScreenState extends State<PreorderScreen> {
     );
   }
 
+  Widget _buildPaymentMethodSelector(OrderItem item) {
+    if (_loadingPaymentMethods) {
+      return Row(
+        children: [
+          Icon(Icons.payment, size: 16, color: Colors.grey[600]),
+          const SizedBox(width: 8),
+          const Text('Cargando métodos de pago...', style: TextStyle(fontSize: 13)),
+        ],
+      );
+    }
+
+    if (_paymentMethods.isEmpty) {
+      return Row(
+        children: [
+          Icon(Icons.payment, size: 16, color: Colors.grey[600]),
+          const SizedBox(width: 8),
+          const Text('Sin métodos de pago disponibles', style: TextStyle(fontSize: 13)),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Icon(Icons.payment, size: 16, color: Colors.grey[600]),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Container(
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey[300]!),
+              borderRadius: BorderRadius.circular(6),
+              color: Colors.grey[50],
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<pm.PaymentMethod>(
+                isExpanded: true,
+                value: item.paymentMethod,
+                hint: const Text(
+                  'Seleccionar método de pago',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
+                items: _paymentMethods.map((pm.PaymentMethod method) {
+                  return DropdownMenuItem<pm.PaymentMethod>(
+                    value: method,
+                    child: Row(
+                      children: [
+                        Text(method.typeIcon, style: const TextStyle(fontSize: 14)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            method.displayName,
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (pm.PaymentMethod? newMethod) {
+                  _updateItemPaymentMethod(item.id, newMethod);
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _updateItemPaymentMethod(String itemId, pm.PaymentMethod? paymentMethod) {
+    setState(() {
+      _orderService.updateItemPaymentMethod(itemId, paymentMethod);
+    });
+  }
+
   void _updateItemQuantity(String itemId, int newQuantity) {
     setState(() {
       _orderService.updateItemQuantity(itemId, newQuantity);
@@ -421,6 +532,39 @@ class _PreorderScreenState extends State<PreorderScreen> {
         const SnackBar(
           content: Text('No hay productos en la orden'),
           backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validate that all items have payment methods assigned
+    final itemsWithoutPayment = currentOrder.items
+        .where((item) => item.paymentMethod == null)
+        .toList();
+
+    if (itemsWithoutPayment.isNotEmpty) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Métodos de Pago Requeridos'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Los siguientes productos necesitan un método de pago:'),
+              const SizedBox(height: 8),
+              ...itemsWithoutPayment.map((item) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text('• ${item.nombre}', style: const TextStyle(fontSize: 14)),
+              )),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Entendido'),
+            ),
+          ],
         ),
       );
       return;

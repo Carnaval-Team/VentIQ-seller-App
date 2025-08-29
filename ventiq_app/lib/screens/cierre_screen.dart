@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/order.dart';
+import '../models/inventory_product.dart';
 import '../services/order_service.dart';
+import '../services/user_preferences_service.dart';
+import '../services/turno_service.dart';
+import '../services/inventory_service.dart';
 
 class CierreScreen extends StatefulWidget {
   const CierreScreen({Key? key}) : super(key: key);
@@ -15,24 +19,128 @@ class _CierreScreenState extends State<CierreScreen> {
   final _montoFinalController = TextEditingController();
   final _observacionesController = TextEditingController();
   final OrderService _orderService = OrderService();
+  final UserPreferencesService _userPrefs = UserPreferencesService();
   
   bool _isProcessing = false;
+  bool _isLoadingData = true;
+  bool _isLoadingInventory = true;
+  
+  // Inventory data
+  List<InventoryProduct> _inventoryProducts = [];
+  Map<String, TextEditingController> _quantityControllers = {};
+  
+  // Data from RPC
   double _ventasTotales = 0.0;
-  double _montoInicialCaja = 500.0; // Simulado
+  double _montoInicialCaja = 0.0;
+  double _totalEfectivo = 0.0;
+  double _totalTransferencias = 0.0;
+  double _efectivoEsperado = 0.0;
+  int _productosVendidos = 0;
+  double _ticketPromedio = 0.0;
+  double _porcentajeEfectivo = 0.0;
+  double _porcentajeOtros = 0.0;
+  
+  // Orders data
   int _ordenesAbiertas = 0;
   List<Order> _ordenesPendientes = [];
+  String _userName = 'Cargando...';
 
   @override
   void initState() {
     super.initState();
+    _loadUserData();
+    _loadDailySummary();
     _calcularDatosCierre();
+    _loadInventory();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final workerProfile = await _userPrefs.getWorkerProfile();
+      
+      setState(() {
+        _userName = '${workerProfile['nombres']} ${workerProfile['apellidos']}';
+      });
+    } catch (e) {
+      print('Error loading user data: $e');
+      setState(() {
+        _userName = 'Usuario';
+      });
+    }
+  }
+
+  Future<void> _loadDailySummary() async {
+    try {
+      setState(() {
+        _isLoadingData = true;
+      });
+
+      final turnoData = await TurnoService.getResumenTurnoKPI();
+      
+      if (turnoData != null) {
+        setState(() {
+          _ventasTotales = (turnoData['ventas_totales'] ?? 0.0).toDouble();
+          _montoInicialCaja = (turnoData['efectivo_inicial'] ?? 0.0).toDouble();
+          _totalEfectivo = (turnoData['total_efectivo'] ?? 0.0).toDouble();
+          _totalTransferencias = _ventasTotales - _totalEfectivo; // Otros medios de pago
+          _efectivoEsperado = (turnoData['efectivo_esperado'] ?? _montoInicialCaja).toDouble();
+          _productosVendidos = (turnoData['productos_vendidos'] ?? 0).toInt();
+          _ticketPromedio = (turnoData['ticket_promedio'] ?? 0.0).toDouble();
+          _porcentajeEfectivo = (turnoData['porcentaje_efectivo'] ?? 0.0).toDouble();
+          _porcentajeOtros = (turnoData['porcentaje_otros'] ?? 0.0).toDouble();
+          _isLoadingData = false;
+        });
+      } else {
+        // Fallback to default values if no data
+        setState(() {
+          _montoInicialCaja = 500.0; // Default fallback
+          _isLoadingData = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading daily summary: $e');
+      setState(() {
+        _montoInicialCaja = 500.0; // Default fallback
+        _isLoadingData = false;
+      });
+    }
   }
 
   @override
   void dispose() {
     _montoFinalController.dispose();
     _observacionesController.dispose();
+    // Dispose quantity controllers
+    for (var controller in _quantityControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
+  }
+
+  Future<void> _loadInventory() async {
+    try {
+      setState(() {
+        _isLoadingInventory = true;
+      });
+
+      final products = await InventoryService.getInventoryProducts();
+      
+      // Initialize quantity controllers for each product
+      _quantityControllers.clear();
+      for (final product in products) {
+        _quantityControllers[product.id.toString()] = TextEditingController(text: '0');
+      }
+
+      setState(() {
+        _inventoryProducts = products;
+        _isLoadingInventory = false;
+      });
+    } catch (e) {
+      print('Error loading inventory: $e');
+      setState(() {
+        _isLoadingInventory = false;
+      });
+    }
   }
 
   void _calcularDatosCierre() {
@@ -125,7 +233,7 @@ class _CierreScreenState extends State<CierreScreen> {
                     const SizedBox(height: 16),
                     _buildInfoRow('Fecha:', _formatDate(DateTime.now())),
                     _buildInfoRow('Hora:', _formatTime(DateTime.now())),
-                    _buildInfoRow('Usuario:', 'Vendedor Principal'),
+                    _buildInfoRow('Usuario:', _userName),
                   ],
                 ),
               ),
@@ -152,11 +260,43 @@ class _CierreScreenState extends State<CierreScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _buildInfoRow('Monto inicial:', '\$${_montoInicialCaja.toStringAsFixed(2)}'),
-                    _buildInfoRow('Ventas totales:', '\$${_ventasTotales.toStringAsFixed(2)}'),
-                    _buildInfoRow('Monto esperado:', '\$${montoEsperado.toStringAsFixed(2)}'),
-                    if (_ordenesAbiertas > 0) ...[
+                    
+                    if (_isLoadingData) ...[
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                        ),
+                      ),
+                    ] else ...[
+                      // Ventas y productos
+                      _buildInfoRow('Monto inicial:', '\$${_montoInicialCaja.toStringAsFixed(2)}'),
+                      _buildInfoRow('Ventas totales:', '\$${_ventasTotales.toStringAsFixed(2)}'),
+                      _buildInfoRow('Productos vendidos:', '$_productosVendidos unidades'),
+                      _buildInfoRow('Ticket promedio:', '\$${_ticketPromedio.toStringAsFixed(2)}'),
+                      
+                      const SizedBox(height: 12),
+                      const Divider(),
                       const SizedBox(height: 8),
+                      
+                      // Medios de pago
+                      const Text(
+                        'Medios de Pago',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildInfoRow('Total efectivo:', '\$${_totalEfectivo.toStringAsFixed(2)} (${_porcentajeEfectivo.toStringAsFixed(1)}%)'),
+                      _buildInfoRow('Transferencias/Otros:', '\$${_totalTransferencias.toStringAsFixed(2)} (${_porcentajeOtros.toStringAsFixed(1)}%)'),
+                      _buildInfoRow('Efectivo esperado:', '\$${_efectivoEsperado.toStringAsFixed(2)}'),
+                    ],
+                    
+                    // Órdenes pendientes warning (always show if there are pending orders)
+                    if (_ordenesAbiertas > 0) ...[
+                      const SizedBox(height: 12),
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
@@ -184,6 +324,48 @@ class _CierreScreenState extends State<CierreScreen> {
                 ),
               ),
               
+              const SizedBox(height: 20),
+
+              // Inventario de productos
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.inventory_2,
+                          color: const Color(0xFF4A90E2),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Conteo Físico de Inventario',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Ingrese la cantidad física contada para cada producto',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildInventoryList(),
+                  ],
+                ),
+              ),
+
               const SizedBox(height: 20),
               
               // Monto final en caja
@@ -488,13 +670,136 @@ class _CierreScreenState extends State<CierreScreen> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
+  Widget _buildInventoryList() {
+    if (_isLoadingInventory) {
+      return Container(
+        height: 200,
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Cargando inventario...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_inventoryProducts.isEmpty) {
+      return Container(
+        height: 200,
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.inventory_2_outlined, size: 48, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                'No hay productos en inventario',
+                style: TextStyle(color: Colors.grey, fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 300,
+      child: ListView.builder(
+        itemCount: _inventoryProducts.length,
+        itemBuilder: (context, index) {
+          final product = _inventoryProducts[index];
+          final controller = _quantityControllers[product.id.toString()]!;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Row(
+              children: [
+                // Product info
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.nombreProducto,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF1F2937),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${product.variante}: ${product.opcionVariante}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      Text(
+                        '${product.ubicacion}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Quantity input
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        'Conteo Físico',
+                        style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 4),
+                      TextFormField(
+                        controller: controller,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: InputDecoration(
+                          hintText: '0',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          isDense: true,
+                        ),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   void _crearCierre() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
     final montoFinal = double.parse(_montoFinalController.text.trim());
-    final montoEsperado = _montoInicialCaja + _ventasTotales;
+    final montoEsperado = _efectivoEsperado;
     final diferencia = montoFinal - montoEsperado;
 
     // Mostrar confirmación si hay diferencia significativa
@@ -508,14 +813,41 @@ class _CierreScreenState extends State<CierreScreen> {
     });
 
     try {
-      // Cerrar todas las órdenes pendientes
-      for (final order in _ordenesPendientes) {
-        _orderService.updateOrderStatus(order.id, OrderStatus.completada);
+      // Prepare inventory products data
+      final productos = <Map<String, dynamic>>[];
+      for (final product in _inventoryProducts) {
+        final controller = _quantityControllers[product.id.toString()];
+        final cantidad = int.tryParse(controller?.text ?? '0') ?? 0;
+        
+        if (cantidad > 0) {
+          productos.add({
+            'id_producto': product.id,
+            'id_variante': product.idVariante,
+            'id_ubicacion': product.idUbicacion,
+            'cantidad': cantidad,
+          });
+        }
       }
 
-      await Future.delayed(const Duration(seconds: 2));
+      // Call TurnoService to close the shift
+      final success = await TurnoService.cerrarTurno(
+        efectivoReal: montoFinal,
+        productos: productos,
+        observaciones: _observacionesController.text.trim().isEmpty 
+            ? null 
+            : _observacionesController.text.trim(),
+      );
 
-      _showSuccessDialog(montoFinal, diferencia);
+      if (success) {
+        // Close all pending orders locally
+        for (final order in _ordenesPendientes) {
+          _orderService.updateOrderStatus(order.id, OrderStatus.completada);
+        }
+
+        _showSuccessDialog(montoFinal, diferencia);
+      } else {
+        _showErrorMessage('Error al procesar el cierre de turno');
+      }
 
     } catch (e) {
       _showErrorMessage('Error al crear el cierre: $e');

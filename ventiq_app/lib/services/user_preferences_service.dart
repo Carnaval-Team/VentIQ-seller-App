@@ -13,6 +13,7 @@ class UserPreferencesService {
   // Seller data keys
   static const String _idTpvKey = 'id_tpv';
   static const String _idTrabajadorKey = 'id_trabajador';
+  static const String _idSellerKey = 'id_seller';
   static const String _nombresKey = 'nombres';
   static const String _apellidosKey = 'apellidos';
   static const String _idTiendaKey = 'id_tienda';
@@ -96,6 +97,18 @@ class UserPreferencesService {
     return prefs.getInt(_idTiendaKey);
   }
 
+  // Guardar ID del vendedor (desde app_dat_vendedor)
+  Future<void> saveIdSeller(int idSeller) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_idSellerKey, idSeller);
+  }
+
+  // Obtener ID del vendedor
+  Future<int?> getIdSeller() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_idSellerKey);
+  }
+
   // Obtener datos del perfil del trabajador
   Future<Map<String, dynamic?>> getWorkerProfile() async {
     final prefs = await SharedPreferences.getInstance();
@@ -106,6 +119,7 @@ class UserPreferencesService {
       'idTpv': prefs.getInt(_idTpvKey),
       'idRoll': prefs.getInt(_idRollKey),
       'idTrabajador': prefs.getInt(_idTrabajadorKey),
+      'idSeller': prefs.getInt(_idSellerKey),
     };
   }
 
@@ -123,6 +137,7 @@ class UserPreferencesService {
     await prefs.remove(_accessTokenKey);
     await prefs.remove(_idTpvKey);
     await prefs.remove(_idTrabajadorKey);
+    await prefs.remove(_idSellerKey);
     await prefs.remove(_nombresKey);
     await prefs.remove(_apellidosKey);
     await prefs.remove(_idTiendaKey);

@@ -1,5 +1,6 @@
 import '../models/order.dart';
 import '../models/product.dart';
+import '../models/payment_method.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 
@@ -89,6 +90,19 @@ class OrderService {
             .copyWith(cantidad: newQuantity);
       }
       _updateOrderTotal(_currentOrder!);
+    }
+  }
+
+  // Actualizar método de pago de un item
+  void updateItemPaymentMethod(String itemId, PaymentMethod? paymentMethod) {
+    if (_currentOrder == null) return;
+
+    final itemIndex = _currentOrder!.items.indexWhere(
+      (item) => item.id == itemId,
+    );
+    if (itemIndex != -1) {
+      _currentOrder!.items[itemIndex] = _currentOrder!.items[itemIndex]
+          .copyWith(paymentMethod: paymentMethod);
     }
   }
 
@@ -289,6 +303,33 @@ class OrderService {
     _currentOrder = null;
   }
 
+  // Obtener desglose de pagos de una venta específica
+  Future<List<Map<String, dynamic>>> getSalePayments(int operationId) async {
+    try {
+      print('=== DEBUG GET SALE PAYMENTS ===');
+      print('operationId: $operationId');
+
+      final response = await Supabase.instance.client.rpc(
+        'get_sale_payments',
+        params: {
+          'p_operacion_venta_id': operationId,
+        },
+      );
+
+      print('Respuesta get_sale_payments: $response');
+
+      if (response is List) {
+        return List<Map<String, dynamic>>.from(response);
+      } else {
+        print('Respuesta no es una lista: ${response.runtimeType}');
+        return [];
+      }
+    } catch (e) {
+      print('Error en getSalePayments: $e');
+      return [];
+    }
+  }
+
   // Registrar venta en Supabase usando fn_registrar_venta
   Future<Map<String, dynamic>> _registerSaleInSupabase(
     Order order,
@@ -374,11 +415,33 @@ class OrderService {
       print('Respuesta fn_registrar_venta: $response');
 
       if (response != null && response['status'] == 'success') {
-        return {
-          'success': true,
-          'operationId': response['operation_id'],
-          'data': response,
-        };
+        // After successful order creation, register payments
+        final operationId = response['id_operacion'] as int?;
+        if (operationId == null) {
+          return {
+            'success': false,
+            'error': 'No se recibió ID de operación válido del servidor',
+          };
+        }
+        final paymentResult = await _registerPaymentsInSupabase(order, operationId);
+        
+        if (paymentResult['success'] == true) {
+          return {
+            'success': true,
+            'operationId': operationId,
+            'data': response,
+            'paymentData': paymentResult['data'],
+          };
+        } else {
+          // Order was created but payment registration failed
+          print('Warning: Order created but payment registration failed: ${paymentResult['error']}');
+          return {
+            'success': true,
+            'operationId': operationId,
+            'data': response,
+            'paymentWarning': 'Orden creada pero falló el registro de pagos: ${paymentResult['error']}',
+          };
+        }
       } else {
         return {
           'success': false,
@@ -388,6 +451,89 @@ class OrderService {
     } catch (e) {
       print('Error en _registerSaleInSupabase: $e');
       return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // Registrar pagos en Supabase usando fn_registrar_pago_venta
+  Future<Map<String, dynamic>> _registerPaymentsInSupabase(
+    Order order,
+    int operationId,
+  ) async {
+    try {
+      print('=== DEBUG REGISTRO DE PAGOS ===');
+      print('operationId: $operationId');
+      print('order.items.length: ${order.items.length}');
+      
+      // Agrupar pagos por método de pago
+      Map<int, double> paymentsByMethod = {};
+      
+      for (final item in order.items) {
+        if (item.paymentMethod != null) {
+          final methodId = item.paymentMethod!.id;
+          final itemTotal = item.subtotal;
+          
+          paymentsByMethod[methodId] = (paymentsByMethod[methodId] ?? 0.0) + itemTotal;
+          
+          print('Item: ${item.nombre}');
+          print('Payment Method: ${item.paymentMethod!.denominacion} (ID: $methodId)');
+          print('Item Total: \$${itemTotal.toStringAsFixed(2)}');
+        } else {
+          print('Warning: Item ${item.nombre} has no payment method assigned');
+        }
+      }
+      
+      print('Payments by method: $paymentsByMethod');
+      
+      if (paymentsByMethod.isEmpty) {
+        return {
+          'success': false,
+          'error': 'No se encontraron métodos de pago asignados a los productos',
+        };
+      }
+      
+      // Preparar array de pagos para la función RPC
+      List<Map<String, dynamic>> pagos = [];
+      
+      for (final entry in paymentsByMethod.entries) {
+        pagos.add({
+          'id_medio_pago': entry.key,
+          'monto': entry.value,
+          'referencia_pago': 'Pago App Vendedor - ${DateTime.now().millisecondsSinceEpoch}',
+        });
+      }
+      
+      print('Pagos array: $pagos');
+      
+      // Llamar a fn_registrar_pago_venta
+      final response = await Supabase.instance.client.rpc(
+        'fn_registrar_pago_venta',
+        params: {
+          'p_id_operacion_venta': operationId,
+          'p_pagos': pagos,
+        },
+      );
+      
+      print('Respuesta fn_registrar_pago_venta: $response');
+      
+      if (response == true) {
+        return {
+          'success': true,
+          'data': response,
+          'paymentsRegistered': pagos.length,
+        };
+      } else {
+        return {
+          'success': false,
+          'error': 'La función fn_registrar_pago_venta retornó: $response',
+        };
+      }
+      
+    } catch (e) {
+      print('Error en _registerPaymentsInSupabase: $e');
+      return {
+        'success': false,
+        'error': 'Error al registrar pagos: ${e.toString()}',
+      };
     }
   }
 
@@ -567,6 +713,7 @@ class OrderService {
           extraContacts: '', // String vacío por defecto
           paymentMethod: 'Efectivo', // Valor por defecto
           notas: supabaseOrder['observaciones'] ?? '',
+          operationId: supabaseOrder['id_operacion'],
         );
 
         _orders.add(order);
