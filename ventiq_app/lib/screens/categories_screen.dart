@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'products_screen.dart';
+import 'barcode_scanner_screen.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../services/category_service.dart';
@@ -121,6 +122,22 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            icon: const Icon(
+              Icons.qr_code_scanner,
+              color: Colors.white,
+              size: 28,
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const BarcodeScannerScreen(),
+                ),
+              );
+            },
+            tooltip: 'Escanear código de barras',
+          ),
           Builder(
             builder: (context) => IconButton(
               icon: const Icon(Icons.menu, color: Colors.white),

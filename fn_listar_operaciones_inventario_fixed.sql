@@ -110,7 +110,7 @@ BEGIN
             o.observaciones,
             -- Datos específicos por tipo de operación
             CASE
-                WHEN o.id_tipo_operacion = (SELECT top_sub.id FROM app_nom_tipo_operacion top_sub WHERE top_sub.denominacion = 'Venta') THEN
+                WHEN o.id_tipo_operacion = (SELECT top_sub.id FROM app_nom_tipo_operacion top_sub WHERE top_sub.denominacion = 'Venta' LIMIT 1) THEN
                     (SELECT jsonb_build_object(
                         'id_tpv', tpv.id,
                         'tpv_nombre', tpv.denominacion,
@@ -122,7 +122,7 @@ BEGIN
                     LEFT JOIN app_dat_extraccion_productos ep ON ov.id_operacion = ep.id_operacion
                     WHERE ov.id_operacion = o.id
                     GROUP BY tpv.id, tpv.denominacion, ov.monto_total)
-                WHEN o.id_tipo_operacion = (SELECT top_sub.id FROM app_nom_tipo_operacion top_sub WHERE top_sub.denominacion ILIKE '%recepcion%') THEN
+                WHEN o.id_tipo_operacion = (SELECT top_sub.id FROM app_nom_tipo_operacion top_sub WHERE top_sub.denominacion ILIKE '%recepcion%' LIMIT 1) THEN
                     (SELECT jsonb_build_object(
                         'entregado_por', orp.entregado_por,
                         'recibido_por', orp.recibido_por,
@@ -133,7 +133,7 @@ BEGIN
                     LEFT JOIN app_dat_recepcion_productos rp ON orp.id_operacion = rp.id_operacion
                     WHERE orp.id_operacion = o.id
                     GROUP BY orp.entregado_por, orp.recibido_por, orp.monto_total)
-                WHEN o.id_tipo_operacion = (SELECT top_sub.id FROM app_nom_tipo_operacion top_sub WHERE top_sub.denominacion ILIKE '%extraccion%') THEN
+                WHEN o.id_tipo_operacion = (SELECT top_sub.id FROM app_nom_tipo_operacion top_sub WHERE top_sub.denominacion ILIKE '%extraccion%' LIMIT 1) THEN
                     (SELECT jsonb_build_object(
                         'motivo', oe.id_motivo_operacion,
                         'observaciones', oe.observaciones,
@@ -143,7 +143,7 @@ BEGIN
                     LEFT JOIN app_dat_extraccion_productos ep ON oe.id_operacion = ep.id_operacion
                     WHERE oe.id_operacion = o.id
                     GROUP BY oe.id_motivo_operacion, oe.observaciones)
-                WHEN o.id_tipo_operacion = (SELECT top_sub.id FROM app_nom_tipo_operacion top_sub WHERE top_sub.denominacion ILIKE '%transferencia%') THEN
+                WHEN o.id_tipo_operacion = (SELECT top_sub.id FROM app_nom_tipo_operacion top_sub WHERE top_sub.denominacion ILIKE '%transferencia%' LIMIT 1) THEN
                     (SELECT jsonb_build_object(
                         'autorizado_por', ot.autorizado_por,
                         'id_recepcion', ot.id_recepcion,
@@ -233,7 +233,20 @@ BEGIN
         COALESCE((o.datos_especificos->>'tpv_nombre')::TEXT, NULL)::TEXT,
         o.uuid::UUID,
         COALESCE(
-            (SELECT t.nombres || ' ' || t.apellidos FROM app_dat_trabajadores t WHERE t.uuid = o.uuid),
+            (SELECT t.nombres || ' ' || t.apellidos 
+             FROM app_dat_trabajadores t 
+             WHERE t.id = (
+                 SELECT DISTINCT id_trabajador FROM (
+                     SELECT v.id_trabajador FROM app_dat_vendedor v WHERE v.uuid = o.uuid
+                     UNION
+                     SELECT s.id_trabajador FROM app_dat_supervisor s WHERE s.uuid = o.uuid
+                     UNION
+                     SELECT g.id_trabajador FROM app_dat_gerente g WHERE g.uuid = o.uuid
+                     UNION
+                     SELECT al.id_trabajador FROM app_dat_almacenero al WHERE al.uuid = o.uuid
+                 ) roles
+                 LIMIT 1
+             )),
             o.usuario_email
         )::TEXT,
         o.estado::SMALLINT,

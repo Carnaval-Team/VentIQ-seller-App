@@ -23,7 +23,7 @@ class ProductService {
       print('🔍 Llamando RPC get_productos_completos_by_tienda_optimized');
       print('📍 Parámetros: idTienda=$idTienda, categoryId=$categoryId, soloDisponibles=$soloDisponibles');
 
-      // Llamar a la función RPC optimizada
+      // Llamar a la función RPC optimizada con variantes_disponibles
       final response = await _supabase.rpc(
         'get_productos_completos_by_tienda_optimized',
         params: {
@@ -267,6 +267,7 @@ class ProductService {
         multimedias: (json['multimedias'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
         etiquetas: (json['etiquetas'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
         inventario: (json['inventario'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
+        variantesDisponibles: (json['variantes_disponibles'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
       );
 
     } catch (e) {

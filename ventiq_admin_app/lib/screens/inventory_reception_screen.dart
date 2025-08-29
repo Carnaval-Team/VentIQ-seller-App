@@ -69,17 +69,18 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     if (_searchQuery.isEmpty) {
       _filteredProducts = List.from(_availableProducts);
     } else {
-      _filteredProducts = _availableProducts.where((product) {
-        return product.name.toLowerCase().contains(
-              _searchQuery.toLowerCase(),
-            ) ||
-            product.sku.toLowerCase().contains(
-              _searchQuery.toLowerCase(),
-            ) ||
-            product.brand.toLowerCase().contains(
-              _searchQuery.toLowerCase(),
-            );
-      }).toList();
+      _filteredProducts =
+          _availableProducts.where((product) {
+            return product.name.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                product.sku.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                product.brand.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                );
+          }).toList();
     }
   }
 
@@ -109,7 +110,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       setState(() => _isLoadingWarehouses = true);
       final warehouseService = WarehouseService();
       final warehouses = await warehouseService.listWarehouses();
-      
+
       // Keep warehouses with their zones for tree structure
       List<WarehouseZone> allLocations = [];
       for (final warehouse in warehouses) {
@@ -130,7 +131,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
           allLocations.add(zoneWithWarehouse);
         }
       }
-      
+
       setState(() {
         _warehouses = warehouses;
         _isLoadingWarehouses = false;
@@ -217,6 +218,42 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         throw Exception('No se encontró información del usuario');
       }
 
+      // Prepare products list with location IDs
+      final productosParaEnviar =
+          _selectedProducts.map((product) {
+            // Add selected location ID to each product
+            final productWithLocation = Map<String, dynamic>.from(product);
+            if (_selectedLocation != null) {
+              // Remove prefix ('z' for zones, 'w' for warehouses) before parsing as int
+              try {
+                String cleanId = _selectedLocation!.id;
+                // Remove 'z' or 'w' prefix if present
+                if (cleanId.startsWith('z') || cleanId.startsWith('w')) {
+                  cleanId = cleanId.substring(1);
+                }
+                print("location: ${_selectedLocation!.toJson()}");
+                print("Clean ID after removing prefix: $cleanId");
+                productWithLocation['id_ubicacion'] = int.parse(cleanId);
+              } catch (e) {
+                print(
+                  'Warning: Could not parse location ID "${_selectedLocation!.id}" as integer: $e',
+                );
+                // If the ID is not a valid integer, we might need to handle it differently
+                // For now, we'll skip adding the id_ubicacion or use a default value
+                productWithLocation['id_ubicacion'] = null;
+              }
+            }
+            return productWithLocation;
+          }).toList();
+
+      // Debug: Print products list before sending to Supabase
+      print("=== PRODUCTOS PARA ENVIAR A SUPABASE ===");
+      print("Total productos: ${productosParaEnviar.length}");
+      for (int i = 0; i < productosParaEnviar.length; i++) {
+        print("Producto ${i + 1}: ${productosParaEnviar[i]}");
+      }
+      print("==========================================");
+
       final result = await InventoryService.insertInventoryReception(
         entregadoPor: _entregadoPorController.text,
         idTienda: idTienda,
@@ -226,22 +263,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 : _totalAmount,
         motivo: _selectedMotivo?['id']?.toString() ?? '',
         observaciones: _observacionesController.text,
-        productos: _selectedProducts.map((product) {
-          // Add selected location ID to each product
-          final productWithLocation = Map<String, dynamic>.from(product);
-          if (_selectedLocation != null) {
-            // Try to parse as int, if it fails, use the string value or null
-            try {
-              productWithLocation['id_ubicacion'] = int.parse(_selectedLocation!.id);
-            } catch (e) {
-              print('Warning: Could not parse location ID "${_selectedLocation!.id}" as integer: $e');
-              // If the ID is not a valid integer, we might need to handle it differently
-              // For now, we'll skip adding the id_ubicacion or use a default value
-              productWithLocation['id_ubicacion'] = null;
-            }
-          }
-          return productWithLocation;
-        }).toList(),
+        productos: productosParaEnviar,
         recibidoPor: _recibidoPorController.text,
         uuid: userUuid,
       );
@@ -651,67 +673,68 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
-        children: _warehouses.map((warehouse) {
-          return ExpansionTile(
-            leading: Icon(
-              Icons.warehouse,
-              color: AppColors.primary,
-            ),
-            title: Text(
-              warehouse.name,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-              ),
-            ),
-            subtitle: Text(
-              warehouse.address,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 12,
-              ),
-            ),
-            children: warehouse.zones.map((zone) {
-              final isSelected = _selectedLocation?.id == zone.id;
-              return ListTile(
-                contentPadding: const EdgeInsets.only(left: 56, right: 16),
-                leading: Icon(
-                  Icons.location_on,
-                  color: isSelected ? AppColors.primary : Colors.grey,
-                  size: 20,
-                ),
+        children:
+            _warehouses.map((warehouse) {
+              return ExpansionTile(
+                leading: Icon(Icons.warehouse, color: AppColors.primary),
                 title: Text(
-                  zone.name,
-                  style: TextStyle(
-                    color: isSelected ? AppColors.primary : null,
-                    fontWeight: isSelected ? FontWeight.w600 : null,
+                  warehouse.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
                   ),
                 ),
-                subtitle: zone.code.isNotEmpty
-                    ? Text(
-                        'Código: ${zone.code}',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 11,
+                subtitle: Text(
+                  warehouse.address,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
+                children:
+                    warehouse.zones.map((zone) {
+                      final isSelected = _selectedLocation?.id == zone.id;
+                      return ListTile(
+                        contentPadding: const EdgeInsets.only(
+                          left: 56,
+                          right: 16,
                         ),
-                      )
-                    : null,
-                trailing: isSelected
-                    ? Icon(
-                        Icons.check_circle,
-                        color: AppColors.primary,
-                        size: 20,
-                      )
-                    : null,
-                onTap: () {
-                  setState(() {
-                    _selectedLocation = zone;
-                  });
-                },
+                        leading: Icon(
+                          Icons.location_on,
+                          color: isSelected ? AppColors.primary : Colors.grey,
+                          size: 20,
+                        ),
+                        title: Text(
+                          zone.name,
+                          style: TextStyle(
+                            color: isSelected ? AppColors.primary : null,
+                            fontWeight: isSelected ? FontWeight.w600 : null,
+                          ),
+                        ),
+                        subtitle:
+                            zone.code.isNotEmpty
+                                ? Text(
+                                  'Código: ${zone.code}',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 11,
+                                  ),
+                                )
+                                : null,
+                        trailing:
+                            isSelected
+                                ? Icon(
+                                  Icons.check_circle,
+                                  color: AppColors.primary,
+                                  size: 20,
+                                )
+                                : null,
+                        onTap: () {
+                          setState(() {
+                            _selectedLocation = zone;
+                          });
+                        },
+                      );
+                    }).toList(),
               );
             }).toList(),
-          );
-        }).toList(),
       ),
     );
   }
@@ -719,19 +742,20 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   String _getWarehouseName(String warehouseId) {
     final warehouse = _warehouses.firstWhere(
       (w) => w.id == warehouseId,
-      orElse: () => Warehouse(
-        id: '',
-        name: 'Almacén',
-        description: '',
-        address: '',
-        city: '',
-        country: '',
-        type: '',
-        isActive: true,
-        createdAt: DateTime.now(),
-        denominacion: 'Almacén',
-        direccion: '',
-      ),
+      orElse:
+          () => Warehouse(
+            id: '',
+            name: 'Almacén',
+            description: '',
+            address: '',
+            city: '',
+            country: '',
+            type: '',
+            isActive: true,
+            createdAt: DateTime.now(),
+            denominacion: 'Almacén',
+            direccion: '',
+          ),
     );
     return warehouse.name;
   }
@@ -744,19 +768,22 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
   String _buildVariantInfo(Map<String, dynamic> item) {
     List<String> variantParts = [];
-    
+
     // Add variant information if available
     if (item['id_variante'] != null) {
       // Try to find variant info from the original product
       final productId = item['id_producto']?.toString();
       if (productId != null) {
         try {
-          final product = _availableProducts.firstWhere((p) => p.id == productId);
-          
+          final product = _availableProducts.firstWhere(
+            (p) => p.id == productId,
+          );
+
           // Find matching variant in product inventory
           for (final inv in product.inventario) {
-            if (inv['variante'] != null && 
-                inv['variante']['id']?.toString() == item['id_variante']?.toString()) {
+            if (inv['variante'] != null &&
+                inv['variante']['id']?.toString() ==
+                    item['id_variante']?.toString()) {
               final atributo = inv['variante']['atributo']?['label'] ?? '';
               final opcion = inv['variante']['opcion']?['valor'] ?? '';
               if (atributo.isNotEmpty && opcion.isNotEmpty) {
@@ -770,18 +797,21 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         }
       }
     }
-    
+
     // Add presentation information if available
     if (item['id_presentacion'] != null) {
       final productId = item['id_producto']?.toString();
       if (productId != null) {
         try {
-          final product = _availableProducts.firstWhere((p) => p.id == productId);
-          
+          final product = _availableProducts.firstWhere(
+            (p) => p.id == productId,
+          );
+
           // Find matching presentation in product inventory
           for (final inv in product.inventario) {
-            if (inv['presentacion'] != null && 
-                inv['presentacion']['id']?.toString() == item['id_presentacion']?.toString()) {
+            if (inv['presentacion'] != null &&
+                inv['presentacion']['id']?.toString() ==
+                    item['id_presentacion']?.toString()) {
               final denominacion = inv['presentacion']['denominacion'] ?? '';
               final cantidad = inv['presentacion']['cantidad'] ?? 1;
               if (denominacion.isNotEmpty) {
@@ -795,7 +825,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         }
       }
     }
-    
+
     return variantParts.join(' | ');
   }
 }
@@ -826,26 +856,74 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   }
 
   void _initializeVariantsAndPresentations() {
-    // Extract unique variants from inventario
     final variantMap = <String, Map<String, dynamic>>{};
     final presentationMap = <String, Map<String, dynamic>>{};
 
-    for (final inventoryItem in widget.product.inventario) {
-      // Add variant if exists
-      if (inventoryItem['variante'] != null) {
-        final variant = inventoryItem['variante'];
-        final variantKey = '${variant['id']}_${variant['opcion']?['id']}';
-        if (!variantMap.containsKey(variantKey)) {
-          variantMap[variantKey] = variant;
+    // Check if inventory is empty, use variantes_disponibles instead
+    if (widget.product.inventario.isEmpty &&
+        widget.product.variantesDisponibles.isNotEmpty) {
+      print('📦 Inventario vacío, usando variantes_disponibles');
+
+      // Extract variants and presentations from variantes_disponibles
+      for (final varianteDisponible in widget.product.variantesDisponibles) {
+        // Add variant if exists
+        if (varianteDisponible['variante'] != null) {
+          final variant = varianteDisponible['variante'];
+          if (variant['opciones'] != null) {
+            final opciones = variant['opciones'] as List<dynamic>;
+            for (final opcion in opciones) {
+              final variantKey = '${variant['id']}_${opcion['id']}';
+              if (!variantMap.containsKey(variantKey)) {
+                // Create variant structure similar to inventory format
+                variantMap[variantKey] = {
+                  'id': variant['id'],
+                  'atributo': variant['atributo'],
+                  'opcion': opcion,
+                };
+              }
+            }
+          }
+        }
+
+        // Add presentations if exist
+        if (varianteDisponible['presentaciones'] != null) {
+          final presentaciones =
+              varianteDisponible['presentaciones'] as List<dynamic>;
+          for (final presentation in presentaciones) {
+            final presentationKey = presentation['id'].toString();
+            if (!presentationMap.containsKey(presentationKey)) {
+              presentationMap[presentationKey] = presentation;
+            }
+          }
         }
       }
 
-      // Add presentation if exists
-      if (inventoryItem['presentacion'] != null) {
-        final presentation = inventoryItem['presentacion'];
+      // Also add presentations from product.presentaciones as fallback
+      for (final presentation in widget.product.presentaciones) {
         final presentationKey = presentation['id'].toString();
         if (!presentationMap.containsKey(presentationKey)) {
           presentationMap[presentationKey] = presentation;
+        }
+      }
+    } else {
+      // Use existing inventory logic
+      for (final inventoryItem in widget.product.inventario) {
+        // Add variant if exists
+        if (inventoryItem['variante'] != null) {
+          final variant = inventoryItem['variante'];
+          final variantKey = '${variant['id']}_${variant['opcion']?['id']}';
+          if (!variantMap.containsKey(variantKey)) {
+            variantMap[variantKey] = variant;
+          }
+        }
+
+        // Add presentation if exists
+        if (inventoryItem['presentacion'] != null) {
+          final presentation = inventoryItem['presentacion'];
+          final presentationKey = presentation['id'].toString();
+          if (!presentationMap.containsKey(presentationKey)) {
+            presentationMap[presentationKey] = presentation;
+          }
         }
       }
     }
@@ -860,6 +938,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     if (_availablePresentations.isNotEmpty) {
       _selectedPresentation = _availablePresentations.first;
     }
+
+    print('🔍 Variantes disponibles: ${_availableVariants.length}');
+    print('🔍 Presentaciones disponibles: ${_availablePresentations.length}');
   }
 
   Map<String, dynamic>? _findMatchingInventoryItem() {
