@@ -50,11 +50,6 @@ dependencies:
   # Barcode scanner
   mobile_scanner: ^5.2.3
   
-  # PDF generation and file handling
-  pdf: ^3.10.7
-  path_provider: ^2.1.2
-  share_plus: ^7.2.2
-  
 dev_dependencies:
   flutter_test:
     sdk: flutter

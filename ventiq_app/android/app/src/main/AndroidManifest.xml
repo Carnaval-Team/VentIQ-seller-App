@@ -17,12 +17,6 @@
     <!-- Permiso para dispositivos cercanos (Android 12+) -->
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
     
-    <!-- Permisos de almacenamiento para PDF -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
-                     android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
-                     android:maxSdkVersion="32" />
-    
     <!-- Features opcionales para Bluetooth -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
