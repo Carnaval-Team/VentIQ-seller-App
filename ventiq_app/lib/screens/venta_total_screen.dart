@@ -16,7 +16,8 @@ class VentaTotalScreen extends StatefulWidget {
 class _VentaTotalScreenState extends State<VentaTotalScreen> {
   final OrderService _orderService = OrderService();
   final BluetoothPrinterService _printerService = BluetoothPrinterService();
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
   List<OrderItem> _productosVendidos = [];
   List<Order> _ordenesVendidas = [];
   double _totalVentas = 0.0;
@@ -39,22 +40,28 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     double totalDescuentos = 0.0;
 
     // Obtener solo órdenes completadas o con pago confirmado
-    final ordersVendidas = orders.where((order) => 
-      order.status == OrderStatus.completada || 
-      order.status == OrderStatus.pagoConfirmado
-    ).toList();
+    final ordersVendidas =
+        orders
+            .where(
+              (order) =>
+                  order.status == OrderStatus.completada ||
+                  order.status == OrderStatus.pagoConfirmado,
+            )
+            .toList();
 
     for (final order in ordersVendidas) {
       productosVendidos.addAll(order.items);
       total += order.total;
       totalProductos += order.totalItems;
-      
+
       // Calcular costos y descuentos estimados
       for (final item in order.items) {
-        double costoPorProducto = item.precioUnitario * 0.6; // Estimamos 60% del precio como costo
+        double costoPorProducto =
+            item.precioUnitario * 0.6; // Estimamos 60% del precio como costo
         totalCosto += costoPorProducto * item.cantidad;
-        
-        double descuentoPorProducto = item.precioUnitario * 0.1; // Estimamos 10% como descuento promedio
+
+        double descuentoPorProducto =
+            item.precioUnitario * 0.1; // Estimamos 10% como descuento promedio
         totalDescuentos += descuentoPorProducto * item.cantidad;
       }
     }
@@ -176,19 +183,25 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               ],
             ),
           ),
-          
+
           // Lista de órdenes vendidas
           Expanded(
-            child: _ordenesVendidas.isEmpty 
-                ? _buildEmptyState() 
-                : _buildOrdersList(),
+            child:
+                _ordenesVendidas.isEmpty
+                    ? _buildEmptyState()
+                    : _buildOrdersList(),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryCard(String title, String value, IconData icon, Color color) {
+  Widget _buildSummaryCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -202,10 +215,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           const SizedBox(height: 8),
           Text(
             title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
-            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 4),
@@ -228,11 +238,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.receipt_outlined,
-            size: 80,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.receipt_outlined, size: 80, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
             'No hay ventas registradas',
@@ -245,10 +251,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           const SizedBox(height: 8),
           Text(
             'Los productos vendidos aparecerán aquí',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
         ],
       ),
@@ -312,15 +315,18 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               ],
             ),
           ),
-          
+
           // Lista de órdenes
           Container(
             padding: const EdgeInsets.all(16),
             child: Column(
-              children: _ordenesVendidas.map((order) => _buildOrderItem(order)).toList(),
+              children:
+                  _ordenesVendidas
+                      .map((order) => _buildOrderItem(order))
+                      .toList(),
             ),
           ),
-          
+
           // Resumen de productos detallado
           Container(
             margin: const EdgeInsets.all(16),
@@ -373,7 +379,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               ],
             ),
           ),
-          
+
           // Total final
           Container(
             padding: const EdgeInsets.all(16),
@@ -442,29 +448,23 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 const SizedBox(height: 2),
                 Text(
                   '${order.items.length} productos',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
             ),
           ),
-          
+
           // Cliente
           Expanded(
             child: Text(
               order.buyerName ?? 'Sin nombre',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Color(0xFF1F2937),
-              ),
+              style: const TextStyle(fontSize: 12, color: Color(0xFF1F2937)),
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          
+
           // Total
           Expanded(
             child: Text(
@@ -477,7 +477,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               textAlign: TextAlign.center,
             ),
           ),
-          
+
           // Botón de imprimir
           Expanded(
             child: Center(
@@ -498,14 +498,16 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   Widget _buildDetailedProductsTable() {
     // Agrupar productos por nombre para mostrar cantidades totales
     final productosAgrupados = <String, Map<String, dynamic>>{};
-    
+
     for (final item in _productosVendidos) {
       final key = item.nombre;
       if (productosAgrupados.containsKey(key)) {
         productosAgrupados[key]!['cantidad'] += item.cantidad;
         productosAgrupados[key]!['subtotal'] += item.subtotal;
-        productosAgrupados[key]!['costo'] += (item.precioUnitario * 0.6) * item.cantidad;
-        productosAgrupados[key]!['descuento'] += (item.precioUnitario * 0.1) * item.cantidad;
+        productosAgrupados[key]!['costo'] +=
+            (item.precioUnitario * 0.6) * item.cantidad;
+        productosAgrupados[key]!['descuento'] +=
+            (item.precioUnitario * 0.1) * item.cantidad;
       } else {
         productosAgrupados[key] = {
           'item': item,
@@ -585,9 +587,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             ],
           ),
         ),
-        
+
         // Lista de productos detallada
-        ...productosFinales.map((producto) => _buildDetailedProductItem(producto)),
+        ...productosFinales.map(
+          (producto) => _buildDetailedProductItem(producto),
+        ),
       ],
     );
   }
@@ -602,9 +606,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Colors.grey[200]!),
-        ),
+        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
       ),
       child: Row(
         children: [
@@ -626,15 +628,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                 ),
                 Text(
                   '\$${item.precioUnitario.toStringAsFixed(0)} c/u',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                 ),
               ],
             ),
           ),
-          
+
           // Cantidad
           Expanded(
             child: Text(
@@ -647,7 +646,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               textAlign: TextAlign.center,
             ),
           ),
-          
+
           // Costo
           Expanded(
             child: Text(
@@ -660,7 +659,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               textAlign: TextAlign.center,
             ),
           ),
-          
+
           // Descuento
           Expanded(
             child: Text(
@@ -673,7 +672,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               textAlign: TextAlign.center,
             ),
           ),
-          
+
           // Total
           Expanded(
             child: Text(
@@ -695,7 +694,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   Future<void> _imprimirTicketIndividual(Order order) async {
     try {
       // Mostrar diálogo de confirmación
-      bool shouldPrint = await _printerService.showPrintConfirmationDialog(context, order);
+      bool shouldPrint = await _printerService.showPrintConfirmationDialog(
+        context,
+        order,
+      );
       if (!shouldPrint) return;
 
       // Mostrar diálogo de selección de dispositivo
@@ -706,23 +708,27 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Conectando e imprimiendo...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Conectando e imprimiendo...'),
+                ],
+              ),
+            ),
       );
 
       // Conectar a la impresora
       bool connected = await _printerService.connectToDevice(device);
       if (!connected) {
         Navigator.pop(context); // Cerrar diálogo de carga
-        _showErrorDialog('Error de Conexión', 'No se pudo conectar a la impresora.');
+        _showErrorDialog(
+          'Error de Conexión',
+          'No se pudo conectar a la impresora.',
+        );
         return;
       }
 
@@ -731,9 +737,15 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       Navigator.pop(context); // Cerrar diálogo de carga
 
       if (printed) {
-        _showSuccessDialog('¡Ticket Impreso!', 'El ticket se ha impreso correctamente.');
+        _showSuccessDialog(
+          '¡Ticket Impreso!',
+          'El ticket se ha impreso correctamente.',
+        );
       } else {
-        _showErrorDialog('Error de Impresión', 'No se pudo imprimir el ticket.');
+        _showErrorDialog(
+          'Error de Impresión',
+          'No se pudo imprimir el ticket.',
+        );
       }
 
       // Desconectar
@@ -747,48 +759,50 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   void _showErrorDialog(String title, String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.error, color: Colors.red),
-            const SizedBox(width: 8),
-            Text(title),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                const SizedBox(width: 8),
+                Text(title),
+              ],
+            ),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _showSuccessDialog(String title, String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.check_circle, color: const Color(0xFF10B981)),
-            const SizedBox(width: 8),
-            Text(title),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-              foregroundColor: Colors.white,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: const Color(0xFF10B981)),
+                const SizedBox(width: 8),
+                Text(title),
+              ],
             ),
-            child: const Text('OK'),
+            content: Text(message),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -807,23 +821,27 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Conectando e imprimiendo resumen...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Conectando e imprimiendo resumen...'),
+                ],
+              ),
+            ),
       );
 
       // Conectar a la impresora
       bool connected = await _printerService.connectToDevice(device);
       if (!connected) {
         Navigator.pop(context);
-        _showErrorDialog('Error de Conexión', 'No se pudo conectar a la impresora.');
+        _showErrorDialog(
+          'Error de Conexión',
+          'No se pudo conectar a la impresora.',
+        );
         return;
       }
 
@@ -832,9 +850,15 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       Navigator.pop(context);
 
       if (printed) {
-        _showSuccessDialog('¡Resumen Impreso!', 'El resumen detallado se ha impreso correctamente.');
+        _showSuccessDialog(
+          '¡Resumen Impreso!',
+          'El resumen detallado se ha impreso correctamente.',
+        );
       } else {
-        _showErrorDialog('Error de Impresión', 'No se pudo imprimir el resumen.');
+        _showErrorDialog(
+          'Error de Impresión',
+          'No se pudo imprimir el resumen.',
+        );
       }
 
       // Desconectar
@@ -847,56 +871,66 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   Future<bool> _showPrintSummaryConfirmationDialog() async {
     return await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.summarize, color: const Color(0xFF4A90E2)),
-            const SizedBox(width: 8),
-            const Text('Imprimir Resumen'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('¿Deseas imprimir el resumen detallado de productos?'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Total Productos: $_totalProductos'),
-                  Text('Total Ventas: \$${_totalVentas.toStringAsFixed(0)}'),
-                  Text('Costo Total: \$${_totalCosto.toStringAsFixed(0)}'),
-                  Text('Descuentos: \$${_totalDescuentos.toStringAsFixed(0)}'),
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: Row(
+                  children: [
+                    Icon(Icons.summarize, color: const Color(0xFF4A90E2)),
+                    const SizedBox(width: 8),
+                    const Text('Imprimir Resumen'),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '¿Deseas imprimir el resumen detallado de productos?',
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Total Productos: $_totalProductos'),
+                          Text(
+                            'Total Ventas: \$${_totalVentas.toStringAsFixed(0)}',
+                          ),
+                          Text(
+                            'Costo Total: \$${_totalCosto.toStringAsFixed(0)}',
+                          ),
+                          Text(
+                            'Descuentos: \$${_totalDescuentos.toStringAsFixed(0)}',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancelar'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(context, true),
+                    icon: const Icon(Icons.print),
+                    label: const Text('Imprimir'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4A90E2),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
                 ],
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context, true),
-            icon: const Icon(Icons.print),
-            label: const Text('Imprimir'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A90E2),
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    ) ?? false;
+        ) ??
+        false;
   }
 
   Future<bool> _printDetailedSummary() async {
@@ -904,40 +938,88 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       // Obtener información del vendedor
       final workerProfile = await _userPreferencesService.getWorkerProfile();
       final userEmail = await _userPreferencesService.getUserEmail();
-      
-      final sellerName = '${workerProfile['nombres'] ?? ''} ${workerProfile['apellidos'] ?? ''}'.trim();
+
+      final sellerName =
+          '${workerProfile['nombres'] ?? ''} ${workerProfile['apellidos'] ?? ''}'
+              .trim();
       final sellerEmail = userEmail ?? 'Sin email';
-      
+
       // Crear el contenido de impresión usando el formato ESC/POS
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
       List<int> bytes = [];
 
       // Header
-      bytes += generator.text('VENTIQ', styles: PosStyles(align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2));
-      bytes += generator.text('RESUMEN DE VENTAS', styles: PosStyles(align: PosAlign.center, bold: true));
-      bytes += generator.text('================================', styles: PosStyles(align: PosAlign.center));
+      bytes += generator.text(
+        'VENTIQ',
+        styles: PosStyles(
+          align: PosAlign.center,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+        ),
+      );
+      bytes += generator.text(
+        'RESUMEN DE VENTAS',
+        styles: PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.text(
+        '================================',
+        styles: PosStyles(align: PosAlign.center),
+      );
       bytes += generator.emptyLines(1);
 
       // Información del vendedor y fecha
       final now = DateTime.now();
-      bytes += generator.text('VENDEDOR: $sellerName', styles: PosStyles(align: PosAlign.left));
-      bytes += generator.text('EMAIL: $sellerEmail', styles: PosStyles(align: PosAlign.left));
-      bytes += generator.text('FECHA: ${_formatDateForPrint(now)}', styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text(
+        'VENDEDOR: $sellerName',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'EMAIL: $sellerEmail',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'FECHA: ${_formatDateForPrint(now)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
       bytes += generator.emptyLines(1);
 
       // Resumen general
-      bytes += generator.text('RESUMEN GENERAL:', styles: PosStyles(align: PosAlign.left, bold: true));
-      bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
-      bytes += generator.text('Total Productos: $_totalProductos', styles: PosStyles(align: PosAlign.left));
-      bytes += generator.text('Total Ventas: \$${_totalVentas.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left));
-      bytes += generator.text('Costo Total: \$${_totalCosto.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left));
-      bytes += generator.text('Descuentos: \$${_totalDescuentos.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text(
+        'RESUMEN GENERAL:',
+        styles: PosStyles(align: PosAlign.left, bold: true),
+      );
+      bytes += generator.text(
+        '--------------------------------',
+        styles: PosStyles(align: PosAlign.center),
+      );
+      bytes += generator.text(
+        'Total Productos: $_totalProductos',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'Total Ventas: \$${_totalVentas.toStringAsFixed(0)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'Costo Total: \$${_totalCosto.toStringAsFixed(0)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        'Descuentos: \$${_totalDescuentos.toStringAsFixed(0)}',
+        styles: PosStyles(align: PosAlign.left),
+      );
       bytes += generator.emptyLines(1);
 
       // Detalle de productos
-      bytes += generator.text('DETALLE POR PRODUCTO:', styles: PosStyles(align: PosAlign.left, bold: true));
-      bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
+      bytes += generator.text(
+        'DETALLE POR PRODUCTO:',
+        styles: PosStyles(align: PosAlign.left, bold: true),
+      );
+      bytes += generator.text(
+        '--------------------------------',
+        styles: PosStyles(align: PosAlign.center),
+      );
 
       // Agrupar productos
       final productosAgrupados = <String, Map<String, dynamic>>{};
@@ -946,8 +1028,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         if (productosAgrupados.containsKey(key)) {
           productosAgrupados[key]!['cantidad'] += item.cantidad;
           productosAgrupados[key]!['subtotal'] += item.subtotal;
-          productosAgrupados[key]!['costo'] += (item.precioUnitario * 0.6) * item.cantidad;
-          productosAgrupados[key]!['descuento'] += (item.precioUnitario * 0.1) * item.cantidad;
+          productosAgrupados[key]!['costo'] +=
+              (item.precioUnitario * 0.6) * item.cantidad;
+          productosAgrupados[key]!['descuento'] +=
+              (item.precioUnitario * 0.1) * item.cantidad;
         } else {
           productosAgrupados[key] = {
             'item': item,
@@ -967,21 +1051,51 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         final costo = producto['costo'] as double;
         final descuento = producto['descuento'] as double;
 
-        bytes += generator.text(item.nombre, styles: PosStyles(align: PosAlign.left, bold: true));
-        bytes += generator.text('Cantidad: $cantidad', styles: PosStyles(align: PosAlign.left));
-        bytes += generator.text('Precio Unit: \$${item.precioUnitario.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left));
-        bytes += generator.text('Costo: \$${costo.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left));
-        bytes += generator.text('Descuento: \$${descuento.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left));
-        bytes += generator.text('Total: \$${subtotal.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left, bold: true));
-        bytes += generator.text('- - - - - - - - - - - - - - - -', styles: PosStyles(align: PosAlign.center));
+        bytes += generator.text(
+          item.nombre,
+          styles: PosStyles(align: PosAlign.left, bold: true),
+        );
+        bytes += generator.text(
+          'Cantidad: $cantidad',
+          styles: PosStyles(align: PosAlign.left),
+        );
+        bytes += generator.text(
+          'Precio Unit: \$${item.precioUnitario.toStringAsFixed(0)}',
+          styles: PosStyles(align: PosAlign.left),
+        );
+        bytes += generator.text(
+          'Costo: \$${costo.toStringAsFixed(0)}',
+          styles: PosStyles(align: PosAlign.left),
+        );
+        bytes += generator.text(
+          'Descuento: \$${descuento.toStringAsFixed(0)}',
+          styles: PosStyles(align: PosAlign.left),
+        );
+        bytes += generator.text(
+          'Total: \$${subtotal.toStringAsFixed(0)}',
+          styles: PosStyles(align: PosAlign.left, bold: true),
+        );
+        bytes += generator.text(
+          '- - - - - - - - - - - - - - - -',
+          styles: PosStyles(align: PosAlign.center),
+        );
       }
 
       // Footer
       bytes += generator.emptyLines(1);
-      bytes += generator.text('TOTAL GENERAL: \$${_totalVentas.toStringAsFixed(0)}', 
-                             styles: PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
+      bytes += generator.text(
+        'TOTAL GENERAL: \$${_totalVentas.toStringAsFixed(0)}',
+        styles: PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size2,
+        ),
+      );
       bytes += generator.emptyLines(1);
-      bytes += generator.text('VENTIQ - Sistema de Ventas', styles: PosStyles(align: PosAlign.center));
+      bytes += generator.text(
+        'VENTIQ - Sistema de Ventas',
+        styles: PosStyles(align: PosAlign.center),
+      );
       bytes += generator.emptyLines(3);
       bytes += generator.cut();
 
@@ -996,9 +1110,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   String _formatDateForPrint(DateTime date) {
     return "${date.day.toString().padLeft(2, '0')}/"
-           "${date.month.toString().padLeft(2, '0')}/"
-           "${date.year} "
-           "${date.hour.toString().padLeft(2, '0')}:"
-           "${date.minute.toString().padLeft(2, '0')}";
+        "${date.month.toString().padLeft(2, '0')}/"
+        "${date.year} "
+        "${date.hour.toString().padLeft(2, '0')}:"
+        "${date.minute.toString().padLeft(2, '0')}";
   }
 }
