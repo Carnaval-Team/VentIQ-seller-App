@@ -39,10 +39,10 @@ class WarehouseService {
       final response = await _supabase.rpc(
         'listar_almacenes_acceso_usuario',
         params: {
-          'p_usuario_id': userId,
-          'p_denominacion': denominacionFilter,
-          'p_direccion': direccionFilter,
-          'p_tienda': tiendaFilter,
+          'p_uuid': userId,
+          'p_denominacion_filter': denominacionFilter,
+          'p_direccion_filter': direccionFilter,
+          'p_tienda_filter': tiendaFilter,
           'p_pagina': pagina,
           'p_por_pagina': porPagina,
         },
@@ -59,7 +59,19 @@ class WarehouseService {
       }
 
       print('🔄 Parseando respuesta...');
-      final parsedResponse = WarehousePaginationResponse.fromJson(response);
+      
+      // Check if response has success structure
+      if (response['success'] == false) {
+        throw Exception(response['message'] ?? 'Error en la consulta RPC');
+      }
+      
+      // Extract data from the response
+      final data = response['data'];
+      if (data == null) {
+        throw Exception('No se encontraron datos en la respuesta');
+      }
+      
+      final parsedResponse = WarehousePaginationResponse.fromJson(data);
       print('✅ Respuesta parseada exitosamente:');
       print('  - Almacenes: ${parsedResponse.almacenes.length}');
       print('  - Página actual: ${parsedResponse.paginacion.paginaActual}');
@@ -125,55 +137,87 @@ class WarehouseService {
     }
   }
 
-  /// Obtiene detalles completos de un almacén usando Supabase RPC
+  /// Obtiene detalles completos de un almacén usando la función listar
   Future<Warehouse> getWarehouseDetail(String id) async {
     try {
-      print('🏪 Llamando a get_detalle_almacen_completo con ID: $id');
-
+      print('🔍 Obteniendo detalle del almacén usando listar_almacenes_acceso_usuario con ID: $id');
+      
+      // Usar la función listar con filtro por ID específico
       final response = await _supabase.rpc(
-        'get_detalle_almacen_completo',
-        params: {'p_almacen_id': int.parse(id)},
+        'listar_almacenes_acceso_usuario',
+        params: {
+          'p_uuid': _supabase.auth.currentUser?.id,
+          'p_pagina': 1,
+          'p_por_pagina': 1,
+          'p_denominacion_filter': null,
+          'p_direccion_filter': null,
+          'p_tienda_filter': int.parse(id), // Filtrar por almacén específico
+        },
       );
 
-      print('📦 Respuesta de get_detalle_almacen_completo:');
-      print(response);
+      print('🔍 ===== RESPUESTA COMPLETA LISTAR =====');
+      print('🔍 Tipo de respuesta: ${response.runtimeType}');
+      print('🔍 Respuesta completa: $response');
+      print('🔍 ===================================');
 
-      if (response == null || response.isEmpty) {
-        throw Exception('No se encontró el almacén con ID: $id');
+      if (response == null || 
+          !response['success'] || 
+          response['data']['almacenes'] == null ||
+          (response['data']['almacenes'] as List).isEmpty) {
+        print('⚠️ No se encontró el almacén con ID: $id');
+        throw Exception('Almacén no encontrado');
       }
 
-      // La respuesta es un array, tomamos el primer elemento
-      final warehouseData = response[0];
+      final almacenes = response['data']['almacenes'] as List;
+      final warehouseData = almacenes.firstWhere(
+        (almacen) => almacen['id'].toString() == id,
+        orElse: () => almacenes.first,
+      );
+      
+      print('🔍 ===== WAREHOUSE DATA =====');
+      print('🔍 warehouseData completo: $warehouseData');
+      print('🔍 ===========================');
+      
+      print('🔍 Estructura de warehouseData:');
+      print('  - id: ${warehouseData['id']}');
+      print('  - denominacion: ${warehouseData['denominacion']}');
+      print('  - layouts: ${warehouseData['layouts']}');
+      print('  - layouts type: ${warehouseData['layouts'].runtimeType}');
+      print('  - condiciones: ${warehouseData['condiciones']}');
+      print('  - tienda: ${warehouseData['tienda']}');
+      print('  - roles: ${warehouseData['roles']}');
 
-      // Crear el objeto Warehouse con los datos detallados
+      // Crear el objeto Warehouse con los datos de la función listar
       final warehouse = Warehouse(
         id: warehouseData['id']?.toString() ?? id,
         name: warehouseData['denominacion'] ?? '',
         description: 'Almacén ${warehouseData['denominacion'] ?? ''}',
         address: warehouseData['direccion'] ?? '',
-        city: '', // No disponible en la respuesta
+        city: warehouseData['ubicacion'] ?? '',
         country: 'Chile',
         type: 'principal',
-        isActive: true,
-        createdAt: DateTime.now(),
+        createdAt: warehouseData['created_at'] != null 
+            ? DateTime.parse(warehouseData['created_at'])
+            : DateTime.now(),
+        zones: _parseLayoutsToZones(warehouseData['layouts']),
+        // Supabase specific fields
         denominacion: warehouseData['denominacion'] ?? '',
         direccion: warehouseData['direccion'] ?? '',
         ubicacion: warehouseData['ubicacion'],
-        tienda:
-            warehouseData['id_1'] != null
-                ? WarehouseStore(
-                  id: warehouseData['id_1']?.toString() ?? '',
-                  denominacion: warehouseData['denominacion_1'] ?? '',
-                  direccion: '',
-                )
-                : null,
+        tienda: warehouseData['tienda'] != null 
+            ? WarehouseStore(
+                id: warehouseData['tienda']['id']?.toString() ?? '',
+                denominacion: warehouseData['tienda']['denominacion'] ?? '',
+                direccion: warehouseData['tienda']['direccion'] ?? '',
+              )
+            : null,
+        roles: (warehouseData['roles'] as List<dynamic>?)?.map((r) => r.toString()).toList() ?? [],
         layouts: _parseLayouts(warehouseData['layouts']),
-        zones: _parseLayoutsToZones(warehouseData['layouts']),
-        condiciones: [],
-        roles: [],
-        almacenerosCount: 0,
-        limitesStockCount:
-            _parseStockLimits(warehouseData['limites_stock'])?.length ?? 0,
+        condiciones: (warehouseData['condiciones'] as List<dynamic>?)
+            ?.map((c) => WarehouseCondition.fromJson(c))
+            .toList() ?? [],
+        almacenerosCount: warehouseData['almaceneros_count'] ?? 0,
+        limitesStockCount: warehouseData['limites_stock_count'] ?? 0,
       );
 
       return warehouse;
@@ -186,7 +230,40 @@ class WarehouseService {
     }
   }
 
-  /// Parsea los layouts de la respuesta de Supabase
+  /// Parsea los layouts de la nueva respuesta RPC
+  List<WarehouseLayout> _parseNewLayouts(dynamic layoutsData) {
+    if (layoutsData == null) return [];
+
+    try {
+      print('🔍 Parseando layouts - tipo: ${layoutsData.runtimeType}');
+      print('🔍 Contenido layouts: $layoutsData');
+      
+      final List<dynamic> layouts = layoutsData is List 
+          ? layoutsData 
+          : [];
+
+      print('🔍 Layouts como lista: ${layouts.length} elementos');
+
+      return layouts
+          .map(
+            (layout) {
+              print('🔍 Layout individual: $layout');
+              return WarehouseLayout(
+                id: layout['layout_id']?.toString() ?? '',
+                denominacion: layout['denominacion'] ?? '',
+                tipoLayout: layout['tipo_layout'] ?? '',
+                skuCodigo: layout['sku_codigo'],
+              );
+            },
+          )
+          .toList();
+    } catch (e) {
+      print('❌ Error parsing new layouts: $e');
+      return [];
+    }
+  }
+
+  /// Parsea los layouts de la respuesta de Supabase (método legacy)
   List<WarehouseLayout> _parseLayouts(dynamic layoutsData) {
     if (layoutsData == null) return [];
 
@@ -212,7 +289,50 @@ class WarehouseService {
     }
   }
 
-  /// Convierte layouts a zones para compatibilidad con la UI existente
+  /// Convierte layouts nuevos a zones para compatibilidad con la UI existente
+  List<WarehouseZone> _parseNewLayoutsToZones(dynamic layoutsData) {
+    if (layoutsData == null) return [];
+
+    try {
+      print('🔍 Parseando layouts a zones - tipo: ${layoutsData.runtimeType}');
+      
+      final List<dynamic> layouts = layoutsData is List 
+          ? layoutsData 
+          : [];
+
+      print('🔍 Convirtiendo ${layouts.length} layouts a zones');
+
+      return layouts.map((layout) {
+        print('🔍 Layout para zone: $layout');
+        
+        final conditions = layout['condiciones'] as List<dynamic>? ?? [];
+        final conditionNames = conditions
+            .map((c) => c['condicion']?.toString() ?? '')
+            .join(', ');
+
+        print('🔍 Condiciones: $conditionNames');
+
+        return WarehouseZone(
+          id: layout['layout_id']?.toString() ?? '',
+          warehouseId: '', // Se asignará después
+          name: layout['denominacion'] ?? '',
+          code: layout['sku_codigo'] ?? '',
+          type: layout['tipo_layout'] ?? 'almacenamiento',
+          conditions: conditionNames,
+          capacity: 1000, // Valor por defecto
+          currentOccupancy: 0,
+          locations: [],
+          conditionCodes:
+              conditions.map((c) => c['condicion']?.toString() ?? '').toList(),
+        );
+      }).toList();
+    } catch (e) {
+      print('❌ Error parsing new layouts to zones: $e');
+      return [];
+    }
+  }
+
+  /// Convierte layouts a zones para compatibilidad con la UI existente (método legacy)
   List<WarehouseZone> _parseLayoutsToZones(dynamic layoutsData) {
     if (layoutsData == null) return [];
 
@@ -246,7 +366,41 @@ class WarehouseService {
     }
   }
 
-  /// Parsea los límites de stock
+  /// Parsea los límites de stock de la nueva respuesta RPC
+  List<Map<String, dynamic>>? _parseNewStockLimits(dynamic stockLimitsData) {
+    if (stockLimitsData == null) return null;
+
+    try {
+      print('🔍 Parseando stock limits - tipo: ${stockLimitsData.runtimeType}');
+      print('🔍 Contenido stock limits: $stockLimitsData');
+      
+      final List<dynamic> limits = stockLimitsData is List 
+          ? stockLimitsData 
+          : [];
+
+      print('🔍 Stock limits como lista: ${limits.length} elementos');
+
+      return limits
+          .map(
+            (limit) {
+              print('🔍 Stock limit individual: $limit');
+              return {
+                'producto_id': limit['producto_id'],
+                'producto_nombre': limit['producto_nombre'],
+                'stock_min': limit['stock_min'],
+                'stock_max': limit['stock_max'],
+                'stock_ordenar': limit['stock_ordenar'],
+              };
+            },
+          )
+          .toList();
+    } catch (e) {
+      print('❌ Error parsing new stock limits: $e');
+      return null;
+    }
+  }
+
+  /// Parsea los límites de stock (método legacy)
   List<Map<String, dynamic>>? _parseStockLimits(dynamic stockLimitsData) {
     if (stockLimitsData == null) return null;
 
@@ -411,23 +565,32 @@ class WarehouseService {
   /// Obtiene tipos de layout disponibles desde Supabase
   Future<List<Map<String, dynamic>>> getTiposLayout() async {
     try {
-      final response = await _supabase
-          .from('app_nom_tipo_layout_almacen')
-          .select('id, denominacion, sku_codigo')
-          .order('denominacion');
-
+      print('🔍 Llamando RPC fn_listar_tipos_layout_almacen');
+      
+      final response = await _supabase.rpc('fn_listar_tipos_layout_almacen');
+      
+      print('🔍 Respuesta tipos layout: $response');
+      
+      if (response == null) {
+        print('⚠️ Respuesta nula, usando datos mock');
+        return _getMockTiposLayout();
+      }
+      
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
-      print('Error obteniendo tipos de layout: $e');
-      // Fallback a datos mock
-      return [
-        {'id': 1, 'denominacion': 'Almacenamiento', 'sku_codigo': 'ALM'},
-        {'id': 2, 'denominacion': 'Recepción', 'sku_codigo': 'REC'},
-        {'id': 3, 'denominacion': 'Picking', 'sku_codigo': 'PICK'},
-        {'id': 4, 'denominacion': 'Expedición', 'sku_codigo': 'EXP'},
-        {'id': 5, 'denominacion': 'Cuarentena', 'sku_codigo': 'CUAR'},
-      ];
+      print('❌ Error obteniendo tipos layout: $e');
+      return _getMockTiposLayout();
     }
+  }
+  
+  List<Map<String, dynamic>> _getMockTiposLayout() {
+    return [
+      {'id': 1, 'denominacion': 'Almacenamiento', 'sku_codigo': 'ALM'},
+      {'id': 2, 'denominacion': 'Picking', 'sku_codigo': 'PICK'},
+      {'id': 3, 'denominacion': 'Expedición', 'sku_codigo': 'EXP'},
+      {'id': 4, 'denominacion': 'Recepción', 'sku_codigo': 'REC'},
+      {'id': 5, 'denominacion': 'Cuarentena', 'sku_codigo': 'CUAR'},
+    ];
   }
 
   /// Obtiene condiciones disponibles desde Supabase

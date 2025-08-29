@@ -48,6 +48,24 @@ class Warehouse {
   });
 
   factory Warehouse.fromJson(Map<String, dynamic> json) {
+    // Parse layouts first
+    final layouts = (json['layouts'] as List<dynamic>?)
+        ?.map((l) => WarehouseLayout.fromJson(l))
+        .toList() ?? [];
+    
+    // Convert layouts to zones for UI compatibility
+    final zones = layouts.map((layout) => WarehouseZone(
+      id: layout.id,
+      warehouseId: json['id']?.toString() ?? '',
+      name: layout.denominacion,
+      code: layout.skuCodigo ?? '',
+      type: layout.tipoLayout,
+      conditions: '',
+      capacity: 1000,
+      currentOccupancy: 0,
+      locations: [],
+    )).toList();
+    
     return Warehouse(
       id: json['id']?.toString() ?? '',
       name: json['name'] ?? json['denominacion'] ?? '',
@@ -62,18 +80,14 @@ class Warehouse {
       createdAt: json['created_at'] != null 
           ? DateTime.parse(json['created_at'])
           : DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
-      zones: (json['zones'] as List<dynamic>?)
-          ?.map((z) => WarehouseZone.fromJson(z))
-          .toList() ?? [],
+      zones: zones, // Use converted zones from layouts
       // Supabase specific fields
       denominacion: json['denominacion'] ?? '',
       direccion: json['direccion'] ?? '',
       ubicacion: json['ubicacion'],
       tienda: json['tienda'] != null ? WarehouseStore.fromJson(json['tienda']) : null,
       roles: (json['roles'] as List<dynamic>?)?.map((r) => r.toString()).toList() ?? [],
-      layouts: (json['layouts'] as List<dynamic>?)
-          ?.map((l) => WarehouseLayout.fromJson(l))
-          .toList() ?? [],
+      layouts: layouts,
       condiciones: (json['condiciones'] as List<dynamic>?)
           ?.map((c) => WarehouseCondition.fromJson(c))
           .toList() ?? [],

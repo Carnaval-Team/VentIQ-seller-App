@@ -1,0 +1,185 @@
+{
+  "respuesta_completa_get_detalle_almacen_completo": [
+    {
+      "id": 1,
+      "id_1": 1,
+      "denominacion_1": "Tienda Principal",
+      "denominacion": "Almacén Central",
+      "direccion": "Av. Principal 123",
+      "ubicacion": "Sector Norte",
+      "layouts": [
+        {
+          "layout_id": 1,
+          "tipo_layout": "Almacenamiento",
+          "layout_padre": null,
+          "denominacion": "Zona A - Productos Secos",
+          "sku_codigo": "ZA-001",
+          "condiciones": [
+            {
+              "condicion": "Seco",
+              "es_refrigerado": false,
+              "es_fragil": false,
+              "es_peligroso": false
+            },
+            {
+              "condicion": "Ventilado",
+              "es_refrigerado": false,
+              "es_fragil": false,
+              "es_peligroso": false
+            }
+          ]
+        },
+        {
+          "layout_id": 2,
+          "tipo_layout": "Refrigerado",
+          "layout_padre": null,
+          "denominacion": "Zona B - Productos Refrigerados",
+          "sku_codigo": "ZB-002",
+          "condiciones": [
+            {
+              "condicion": "Refrigerado",
+              "es_refrigerado": true,
+              "es_fragil": false,
+              "es_peligroso": false
+            }
+          ]
+        },
+        {
+          "layout_id": 3,
+          "tipo_layout": "Picking",
+          "layout_padre": "Zona A - Productos Secos",
+          "denominacion": "Área de Picking A1",
+          "sku_codigo": "PICK-A1",
+          "condiciones": [
+            {
+              "condicion": "Fragil",
+              "es_refrigerado": false,
+              "es_fragil": true,
+              "es_peligroso": false
+            }
+          ]
+        },
+        {
+          "layout_id": 4,
+          "tipo_layout": "Expedición",
+          "layout_padre": null,
+          "denominacion": "Muelle de Carga",
+          "sku_codigo": "EXP-001",
+          "condiciones": []
+        },
+        {
+          "layout_id": 5,
+          "tipo_layout": "Cuarentena",
+          "layout_padre": null,
+          "denominacion": "Zona de Cuarentena",
+          "sku_codigo": "CUAR-001",
+          "condiciones": [
+            {
+              "condicion": "Peligroso",
+              "es_refrigerado": false,
+              "es_fragil": false,
+              "es_peligroso": true
+            }
+          ]
+        }
+      ],
+      "clasificacion_abc": [
+        {
+          "layout_id": 1,
+          "layout_nombre": "Zona A - Productos Secos",
+          "clasificacion_abc": "A",
+          "fecha_desde": "2024-01-01",
+          "fecha_hasta": null
+        },
+        {
+          "layout_id": 2,
+          "layout_nombre": "Zona B - Productos Refrigerados",
+          "clasificacion_abc": "B",
+          "fecha_desde": "2024-01-01",
+          "fecha_hasta": null
+        },
+        {
+          "layout_id": 3,
+          "layout_nombre": "Área de Picking A1",
+          "clasificacion_abc": "A",
+          "fecha_desde": "2024-01-01",
+          "fecha_hasta": null
+        }
+      ],
+      "limites_stock": [
+        {
+          "producto_id": 1,
+          "producto_nombre": "Coca Cola 350ml",
+          "stock_min": 50,
+          "stock_max": 500,
+          "stock_ordenar": 200
+        },
+        {
+          "producto_id": 2,
+          "producto_nombre": "Pan Integral",
+          "stock_min": 20,
+          "stock_max": 100,
+          "stock_ordenar": 50
+        },
+        {
+          "producto_id": 3,
+          "producto_nombre": "Leche Entera 1L",
+          "stock_min": 30,
+          "stock_max": 200,
+          "stock_ordenar": 80
+        }
+      ]
+    }
+  ],
+  "estructura_esperada_por_servicio": {
+    "nota": "El servicio espera que warehouseData sea response[0], con estos campos:",
+    "campos_principales": {
+      "id": "ID del almacén",
+      "denominacion": "Nombre del almacén",
+      "direccion": "Dirección del almacén",
+      "ubicacion": "Ubicación específica",
+      "id_1": "ID de la tienda",
+      "denominacion_1": "Nombre de la tienda",
+      "direccion_1": "Dirección de la tienda"
+    },
+    "layouts": {
+      "tipo": "Array de objetos",
+      "estructura_cada_layout": {
+        "layout_id": "ID único del layout",
+        "denominacion": "Nombre del layout/zona",
+        "tipo_layout": "Tipo (Almacenamiento, Picking, etc.)",
+        "sku_codigo": "Código SKU del layout",
+        "layout_padre": "Nombre del layout padre (si existe)",
+        "condiciones": {
+          "tipo": "Array de objetos",
+          "estructura_cada_condicion": {
+            "condicion": "Nombre de la condición",
+            "es_refrigerado": "boolean",
+            "es_fragil": "boolean", 
+            "es_peligroso": "boolean"
+          }
+        }
+      }
+    },
+    "clasificacion_abc": {
+      "tipo": "Array de objetos",
+      "estructura": {
+        "layout_id": "ID del layout",
+        "layout_nombre": "Nombre del layout",
+        "clasificacion_abc": "A, B o C",
+        "fecha_desde": "Fecha de inicio",
+        "fecha_hasta": "Fecha fin (null si está activo)"
+      }
+    },
+    "limites_stock": {
+      "tipo": "Array de objetos", 
+      "estructura": {
+        "producto_id": "ID del producto",
+        "producto_nombre": "Nombre del producto",
+        "stock_min": "Stock mínimo",
+        "stock_max": "Stock máximo",
+        "stock_ordenar": "Punto de reorden"
+      }
+    }
+  }
+}

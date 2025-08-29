@@ -29,6 +29,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<void> _loadOrdersFromSupabase() async {
+    // Limpiar órdenes antes de cargar las nuevas para evitar mezclar usuarios
+    _orderService.clearAllOrders();
+    
     await _orderService.listOrdersFromSupabase();
     // Actualizar la UI después de cargar las órdenes
     if (mounted) {
