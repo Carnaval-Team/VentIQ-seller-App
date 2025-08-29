@@ -5,6 +5,7 @@ import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/bluetooth_printer_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/pdf_service.dart';
 
 class VentaTotalScreen extends StatefulWidget {
   const VentaTotalScreen({Key? key}) : super(key: key);
@@ -360,11 +361,41 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                           ),
                         ),
                       ),
-                      IconButton(
-                        onPressed: _imprimirResumenDetallado,
-                        icon: const Icon(Icons.print),
-                        color: const Color(0xFF10B981),
-                        tooltip: 'Imprimir resumen',
+                      PopupMenuButton<String>(
+                        onSelected: (value) {
+                          if (value == 'pdf') {
+                            _generarPdfResumenDetallado();
+                          } else if (value == 'print') {
+                            _imprimirResumenDetallado();
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'pdf',
+                            child: Row(
+                              children: [
+                                Icon(Icons.picture_as_pdf, color: Colors.red),
+                                SizedBox(width: 8),
+                                Text('Generar PDF'),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'print',
+                            child: Row(
+                              children: [
+                                Icon(Icons.print, color: Color(0xFF10B981)),
+                                SizedBox(width: 8),
+                                Text('Imprimir'),
+                              ],
+                            ),
+                          ),
+                        ],
+                        icon: const Icon(
+                          Icons.more_vert,
+                          color: Color(0xFF4A90E2),
+                        ),
+                        tooltip: 'Opciones de reporte',
                       ),
                     ],
                   ),
@@ -1000,5 +1031,186 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
            "${date.year} "
            "${date.hour.toString().padLeft(2, '0')}:"
            "${date.minute.toString().padLeft(2, '0')}";
+  }
+
+  // Método para generar PDF del resumen detallado
+  Future<void> _generarPdfResumenDetallado() async {
+    try {
+      // Mostrar diálogo de confirmación
+      bool shouldGenerate = await _showPdfGenerationConfirmationDialog();
+      if (!shouldGenerate) return;
+
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Generando PDF...'),
+            ],
+          ),
+        ),
+      );
+
+      // Generar el PDF
+      final filePath = await PdfService.generateSalesReportPdf(
+        productosVendidos: _productosVendidos,
+        ordenesVendidas: _ordenesVendidas,
+        totalVentas: _totalVentas,
+        totalProductos: _totalProductos,
+        totalCosto: _totalCosto,
+        totalDescuentos: _totalDescuentos,
+      );
+
+      Navigator.pop(context); // Cerrar diálogo de carga
+
+      if (filePath != null) {
+        // Mostrar diálogo de éxito con opciones
+        _showPdfSuccessDialog(filePath);
+      } else {
+        _showErrorDialog('Error de Generación', 'No se pudo generar el archivo PDF.');
+      }
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de carga si está abierto
+      _showErrorDialog('Error', 'Ocurrió un error al generar el PDF: $e');
+    }
+  }
+
+  Future<bool> _showPdfGenerationConfirmationDialog() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.picture_as_pdf, color: Colors.red),
+            const SizedBox(width: 8),
+            const Text('Generar PDF'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('¿Deseas generar un PDF del resumen detallado de productos?'),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('📊 Total Productos: $_totalProductos'),
+                  Text('💰 Total Ventas: \$${_totalVentas.toStringAsFixed(0)}'),
+                  Text('📋 Órdenes: ${_ordenesVendidas.length}'),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '📄 El PDF se guardará en tu dispositivo y podrás compartirlo.',
+                    style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.picture_as_pdf),
+            label: const Text('Generar PDF'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  void _showPdfSuccessDialog(String filePath) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: const Color(0xFF10B981)),
+            const SizedBox(width: 8),
+            const Text('¡PDF Generado!'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('El resumen detallado se ha guardado exitosamente.'),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.folder, color: Colors.green[700]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Archivo guardado en:\n${filePath.split('/').last}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green[700],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              PdfService.openPdf(filePath, context);
+            },
+            icon: const Icon(Icons.open_in_new),
+            label: const Text('Abrir'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4A90E2),
+              foregroundColor: Colors.white,
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              PdfService.sharePdf(filePath, context);
+            },
+            icon: const Icon(Icons.share),
+            label: const Text('Compartir'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
