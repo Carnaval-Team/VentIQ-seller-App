@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/openfoodfacts_service.dart';
+import 'barcode_scanner_screen.dart';
 
 class AddProductScreen extends StatefulWidget {
   const AddProductScreen({Key? key}) : super(key: key);
@@ -30,6 +32,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   // Variables de estado
   bool _isLoading = false;
   bool _isLoadingData = true;
+  bool _isLoadingOpenFoodFacts = false;
 
   // Datos para dropdowns
   List<Map<String, dynamic>> _categorias = [];
@@ -292,13 +295,60 @@ class _AddProductScreenState extends State<AddProductScreen> {
               maxLines: 2,
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _codigoBarrasController,
-              decoration: const InputDecoration(
-                labelText: 'Código de Barras',
-                hintText: 'Código de barras del producto',
-                border: OutlineInputBorder(),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _codigoBarrasController,
+                    decoration: InputDecoration(
+                      labelText: 'Código de Barras',
+                      hintText: 'Código de barras del producto',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: _isLoadingOpenFoodFacts
+                          ? const Padding(
+                              padding: EdgeInsets.all(12.0),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                ),
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: _isLoadingOpenFoodFacts ? null : _openBarcodeScanner,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.all(12),
+                    ),
+                    child: _isLoadingOpenFoodFacts
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.qr_code_scanner,
+                            size: 24,
+                          ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -857,6 +907,178 @@ class _AddProductScreenState extends State<AddProductScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: AppColors.success),
     );
+  }
+
+  Future<void> _openBarcodeScanner() async {
+    try {
+      final result = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const BarcodeScannerScreen(),
+        ),
+      );
+      
+      if (result != null && result.isNotEmpty) {
+        setState(() {
+          _codigoBarrasController.text = result;
+        });
+        
+        // Buscar producto en OpenFoodFacts
+        await _searchProductInOpenFoodFacts(result);
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error al abrir el escáner: $e');
+    }
+  }
+
+  Future<void> _searchProductInOpenFoodFacts(String barcode) async {
+    setState(() => _isLoadingOpenFoodFacts = true);
+    
+    try {
+      final response = await OpenFoodFactsService.getProductByBarcode(barcode);
+      
+      if (response.isSuccess && response.product != null) {
+        _fillFormWithOpenFoodFactsData(response.product!);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Producto encontrado: ${response.product!.bestProductName}'),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else if (response.isNotFound) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('ℹ️ Producto no encontrado en OpenFoodFacts. Código: $barcode'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ Error al buscar producto: ${response.error ?? "Error desconocido"}'),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error al consultar OpenFoodFacts: $e');
+    } finally {
+      setState(() => _isLoadingOpenFoodFacts = false);
+    }
+  }
+
+  void _fillFormWithOpenFoodFactsData(OpenFoodFactsProduct product) {
+    setState(() {
+      // Nombre del producto
+      if (product.bestProductName.isNotEmpty && product.bestProductName != 'Producto sin nombre') {
+        _denominacionController.text = product.bestProductName;
+      }
+      
+      // Nombre comercial (marca)
+      if (product.brands != null && product.brands!.isNotEmpty) {
+        _nombreComercialController.text = product.brands!;
+      }
+      
+      // Descripción
+      if (product.bestDescription.isNotEmpty) {
+        _descripcionController.text = product.bestDescription;
+      }
+      
+      // Descripción corta (usar nombre genérico o categorías)
+      String descripcionCorta = '';
+      if (product.genericNameEs != null && product.genericNameEs!.isNotEmpty) {
+        descripcionCorta = product.genericNameEs!;
+      } else if (product.genericName != null && product.genericName!.isNotEmpty) {
+        descripcionCorta = product.genericName!;
+      } else if (product.bestCategories.isNotEmpty) {
+        // Tomar la primera categoría
+        final categorias = product.bestCategories.split(',');
+        if (categorias.isNotEmpty) {
+          descripcionCorta = categorias.first.trim();
+        }
+      }
+      if (descripcionCorta.isNotEmpty) {
+        _descripcionCortaController.text = descripcionCorta;
+      }
+      
+      // Denominación corta (usar marca + nombre corto)
+      String denomCorta = '';
+      if (product.brands != null && product.brands!.isNotEmpty) {
+        final marca = product.brands!.split(',').first.trim();
+        if (product.productName != null && product.productName!.length > marca.length + 5) {
+          // Si el nombre es mucho más largo que la marca, crear versión corta
+          denomCorta = '$marca ${product.productName!.substring(0, 20)}...';
+        } else {
+          denomCorta = product.bestProductName.length > 30 
+              ? '${product.bestProductName.substring(0, 30)}...'
+              : product.bestProductName;
+        }
+      } else {
+        denomCorta = product.bestProductName.length > 30 
+            ? '${product.bestProductName.substring(0, 30)}...'
+            : product.bestProductName;
+      }
+      if (denomCorta.isNotEmpty && denomCorta != 'Producto sin nombre') {
+        _denominacionCortaController.text = denomCorta;
+      }
+      
+      // Cantidad/Unidad de medida
+      if (product.quantity != null && product.quantity!.isNotEmpty) {
+        _umController.text = product.quantity!;
+      }
+      
+      // Agregar etiquetas basadas en categorías
+      if (product.bestCategories.isNotEmpty) {
+        final categorias = product.bestCategories.split(',');
+        for (final categoria in categorias.take(3)) { // Máximo 3 etiquetas
+          final etiqueta = categoria.trim();
+          if (etiqueta.isNotEmpty && !_etiquetas.contains(etiqueta)) {
+            _etiquetas.add(etiqueta);
+          }
+        }
+      }
+      
+      // Agregar imagen si está disponible
+      if (product.bestImageUrl != null && product.bestImageUrl!.isNotEmpty) {
+        if (!_multimedias.contains(product.bestImageUrl!)) {
+          _multimedias.add(product.bestImageUrl!);
+        }
+      }
+      
+      // Configurar propiedades basadas en categorías
+      final categoriesLower = product.bestCategories.toLowerCase();
+      
+      // Es refrigerado (productos lácteos, carnes, etc.)
+      if (categoriesLower.contains('dairy') || 
+          categoriesLower.contains('meat') || 
+          categoriesLower.contains('lácteo') || 
+          categoriesLower.contains('carne') ||
+          categoriesLower.contains('yogurt') ||
+          categoriesLower.contains('cheese') ||
+          categoriesLower.contains('queso')) {
+        _esRefrigerado = true;
+      }
+      
+      // Es frágil (vidrio, huevos, etc.)
+      if (categoriesLower.contains('eggs') || 
+          categoriesLower.contains('huevo') ||
+          categoriesLower.contains('glass') ||
+          categoriesLower.contains('vidrio')) {
+        _esFragil = true;
+      }
+    });
+    
+    print('📝 Formulario rellenado con datos de OpenFoodFacts');
+    print('   - Producto: ${product.bestProductName}');
+    print('   - Marca: ${product.brands ?? "N/A"}');
+    print('   - Categorías: ${product.bestCategories}');
+    print('   - Cantidad: ${product.quantity ?? "N/A"}');
+    print('   - Etiquetas agregadas: ${_etiquetas.length}');
+    print('   - Imágenes agregadas: ${_multimedias.length}');
   }
 
   Widget _buildPresentacionesSection() {
