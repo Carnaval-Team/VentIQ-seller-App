@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/product_service.dart';
@@ -756,38 +757,72 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       // Solo incluir variantes si hay subcategorías seleccionadas (requerido por RPC)
       List<Map<String, dynamic>>? variantesData;
+      
+      print('🔍 Debug - Variantes seleccionadas: ${_selectedVariantes.length}');
+      print('🔍 Debug - Subcategorías seleccionadas: ${_selectedSubcategorias.length}');
+      
       if (_selectedVariantes.isNotEmpty && _selectedSubcategorias.isNotEmpty) {
-        variantesData =
-            _selectedVariantes
-                .map(
-                  (variante) => {
-                    'id_sub_categoria':
-                        _selectedSubcategorias
-                            .first, // Usar primera subcategoría
-                    'id_atributo': variante['id_atributo'],
-                    'opciones':
-                        variante['opciones']
-                            .map(
-                              (opcion) => {
-                                'valor': opcion['valor'],
-                                'sku_codigo':
-                                    '${_skuController.text}-${opcion['valor']}'
-                                        .replaceAll(' ', ''),
-                              },
-                            )
-                            .toList(),
-                  },
-                )
-                .toList();
+        variantesData = [];
+        
+        // Crear una variante por cada combinación de subcategoría y atributo
+        for (final subcategoriaId in _selectedSubcategorias) {
+          for (final variante in _selectedVariantes) {
+            variantesData.add({
+              'id_sub_categoria': subcategoriaId,
+              'id_atributo': variante['id_atributo'],
+              'opciones': (variante['opciones'] as List<dynamic>)
+                  .map((opcion) {
+                    final opcionMap = opcion as Map<String, dynamic>;
+                    return {
+                      'id_opcion': opcionMap['id'], // ✅ AGREGAR ID DE OPCIÓN EXISTENTE
+                      'valor': opcionMap['valor'],
+                      'sku_codigo': opcionMap['sku_codigo'] ?? 
+                          '${_skuController.text}-${opcionMap['valor']}'
+                              .replaceAll(' ', '').toUpperCase(),
+                    };
+                  })
+                  .toList(),
+            });
+          }
+        }
+        
+        print('🔧 Variantes preparadas para RPC: $variantesData');
+      } else {
+        print('⚠️ No se crearán variantes - Variantes: ${_selectedVariantes.length}, Subcategorías: ${_selectedSubcategorias.length}');
       }
 
-      // Preparar precios
-      final preciosData = [
-        {
+      // Preparar precios - incluir id_variante si hay variantes
+      final preciosData = <Map<String, dynamic>>[];
+      
+      if (_selectedVariantes.isNotEmpty && _selectedSubcategorias.isNotEmpty) {
+        // Crear precios para cada variante creada
+        final variantCount = _selectedSubcategorias.length * _selectedVariantes.length;
+        for (int i = 0; i < variantCount; i++) {
+          preciosData.add({
+            'precio_venta_cup': double.parse(_precioVentaController.text),
+            'fecha_desde': DateTime.now().toIso8601String().split('T')[0],
+            'id_variante': null, // Se asignará después de crear la variante
+          });
+        }
+      } else {
+        // Precio base sin variante
+        preciosData.add({
           'precio_venta_cup': double.parse(_precioVentaController.text),
           'fecha_desde': DateTime.now().toIso8601String().split('T')[0],
-        },
-      ];
+          'id_variante': null,
+        });
+      }
+
+      // ✅ DEBUG: Imprimir todos los datos antes de enviar
+      print('=== DATOS COMPLETOS ENVIADOS A RPC ===');
+      print('PRODUCTO DATA: ${jsonEncode(productoData)}');
+      print('SUBCATEGORIAS DATA: ${jsonEncode(subcategoriasData)}');
+      print('PRESENTACIONES DATA: ${jsonEncode(presentacionesData)}');
+      print('ETIQUETAS DATA: ${jsonEncode(etiquetasData)}');
+      print('MULTIMEDIAS DATA: ${jsonEncode(multimediasData)}');
+      print('VARIANTES DATA: ${jsonEncode(variantesData)}');
+      print('PRECIOS DATA: ${jsonEncode(preciosData)}');
+      print('=====================================');
 
       // Insertar producto
       final result = await ProductService.insertProductoCompleto(
@@ -1050,6 +1085,12 @@ class _VarianteDialogState extends State<_VarianteDialog> {
       _availableOpciones = List<Map<String, dynamic>>.from(
         atributo['app_dat_atributo_opcion'] ?? [],
       );
+      // Asegurar que cada opción tenga un sku_codigo si no lo tiene
+      for (var opcion in _availableOpciones) {
+        if (opcion['sku_codigo'] == null || opcion['sku_codigo'].isEmpty) {
+          opcion['sku_codigo'] = opcion['valor']?.toString().replaceAll(' ', '').toUpperCase() ?? '';
+        }
+      }
     });
   }
 

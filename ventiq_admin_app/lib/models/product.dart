@@ -28,6 +28,7 @@ class Product {
   final List<Map<String, dynamic>> multimedias;
   final List<String> etiquetas;
   final List<Map<String, dynamic>> inventario;
+  final List<Map<String, dynamic>> variantesDisponibles;
 
   Product({
     required this.id,
@@ -58,6 +59,7 @@ class Product {
     this.multimedias = const [],
     this.etiquetas = const [],
     this.inventario = const [],
+    this.variantesDisponibles = const [],
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -92,6 +94,7 @@ class Product {
       multimedias: (json['multimedias'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
       etiquetas: (json['etiquetas'] as List<dynamic>?)?.cast<String>() ?? [],
       inventario: (json['inventario'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
+      variantesDisponibles: (json['variantesDisponibles'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [],
     );
   }
 

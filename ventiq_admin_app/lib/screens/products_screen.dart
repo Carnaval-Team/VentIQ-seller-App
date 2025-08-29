@@ -523,7 +523,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     child: Row(
                       children: [
                         Text(
-                          '${product.variants.length} variante(s)',
+                          '${_getVariantCount(product)} variante(s)',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
@@ -766,9 +766,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            ...product.variants
-                                .map((variant) => _buildVariantCard(variant))
-                                .toList(),
+                            ..._buildVariantsList(product),
                             if (product.subcategorias.isNotEmpty) ...[
                               const SizedBox(height: 16),
                               const Text(
@@ -831,6 +829,149 @@ class _ProductsScreenState extends State<ProductsScreen> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  int _getVariantCount(Product product) {
+    // Count variants from new RPC structure (variantes_disponibles)
+    if (product.variantesDisponibles.isNotEmpty) {
+      int totalVariants = 0;
+      for (final varianteDisponible in product.variantesDisponibles) {
+        if (varianteDisponible['variante'] != null) {
+          final variant = varianteDisponible['variante'];
+          if (variant['opciones'] != null && variant['opciones'] is List) {
+            totalVariants += (variant['opciones'] as List).length;
+          } else {
+            totalVariants += 1; // Single variant
+          }
+        }
+      }
+      return totalVariants;
+    }
+    
+    // Fallback to old structure
+    return product.variants.length;
+  }
+
+  List<Widget> _buildVariantsList(Product product) {
+    List<Widget> variantWidgets = [];
+    
+    // Handle new RPC structure (variantes_disponibles)
+    if (product.variantesDisponibles.isNotEmpty) {
+      for (final varianteDisponible in product.variantesDisponibles) {
+        if (varianteDisponible['variante'] != null) {
+          final variant = varianteDisponible['variante'];
+          final atributo = variant['atributo'];
+          
+          if (variant['opciones'] != null && variant['opciones'] is List) {
+            final opciones = variant['opciones'] as List<dynamic>;
+            for (final opcion in opciones) {
+              variantWidgets.add(_buildNewVariantCard(
+                atributo: atributo,
+                opcion: opcion,
+                presentations: varianteDisponible['presentaciones'] ?? [],
+              ));
+            }
+          }
+        }
+      }
+    } else {
+      // Fallback to old structure
+      variantWidgets = product.variants
+          .map((variant) => _buildVariantCard(variant))
+          .toList();
+    }
+    
+    if (variantWidgets.isEmpty) {
+      variantWidgets.add(
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Text(
+            'No hay variantes disponibles',
+            style: TextStyle(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      );
+    }
+    
+    return variantWidgets;
+  }
+
+  Widget _buildNewVariantCard({
+    required Map<String, dynamic> atributo,
+    required Map<String, dynamic> opcion,
+    required List<dynamic> presentations,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  '${atributo['label'] ?? atributo['denominacion'] ?? 'Atributo'}: ${opcion['valor'] ?? 'Valor'}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Text(
+                'SKU: ${opcion['sku_codigo'] ?? 'N/A'}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          if (presentations.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Presentaciones:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            ...presentations.map((presentation) => Padding(
+              padding: const EdgeInsets.only(left: 8, bottom: 2),
+              child: Text(
+                '• ${presentation['presentacion'] ?? presentation['denominacion'] ?? 'Presentación'} (${presentation['cantidad'] ?? 1}x)',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textLight,
+                ),
+              ),
+            )).toList(),
+          ],
         ],
       ),
     );
