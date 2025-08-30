@@ -841,24 +841,42 @@ class _AddProductScreenState extends State<AddProductScreen> {
         print('⚠️ No se crearán variantes - Variantes: ${_selectedVariantes.length}, Subcategorías: ${_selectedSubcategorias.length}');
       }
 
-      // Preparar precios - incluir id_variante si hay variantes
+      // ✅ CORREGIDO: Preparar precios con validación y formato correcto
       final preciosData = <Map<String, dynamic>>[];
+      
+      // Validar y convertir precio
+      double precioVenta = 0.0;
+      try {
+        final precioText = _precioVentaController.text.trim();
+        if (precioText.isEmpty) {
+          throw Exception('El precio de venta no puede estar vacío');
+        }
+        precioVenta = double.parse(precioText);
+        if (precioVenta <= 0) {
+          throw Exception('El precio debe ser mayor a 0');
+        }
+      } catch (e) {
+        throw Exception('Precio inválido: ${_precioVentaController.text}');
+      }
+      
+      // Formato de fecha correcto para PostgreSQL
+      final fechaDesde = DateTime.now().toIso8601String().substring(0, 10); // YYYY-MM-DD
       
       if (_selectedVariantes.isNotEmpty && _selectedSubcategorias.isNotEmpty) {
         // Crear precios para cada variante creada
         final variantCount = _selectedSubcategorias.length * _selectedVariantes.length;
         for (int i = 0; i < variantCount; i++) {
           preciosData.add({
-            'precio_venta_cup': double.parse(_precioVentaController.text),
-            'fecha_desde': DateTime.now().toIso8601String().split('T')[0],
+            'precio_venta_cup': precioVenta, // ✅ Usar variable validada
+            'fecha_desde': fechaDesde, // ✅ Formato correcto
             'id_variante': null, // Se asignará después de crear la variante
           });
         }
       } else {
         // Precio base sin variante
         preciosData.add({
-          'precio_venta_cup': double.parse(_precioVentaController.text),
-          'fecha_desde': DateTime.now().toIso8601String().split('T')[0],
+          'precio_venta_cup': precioVenta, // ✅ Usar variable validada
+          'fecha_desde': fechaDesde, // ✅ Formato correcto
           'id_variante': null,
         });
       }

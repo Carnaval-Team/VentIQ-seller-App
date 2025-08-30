@@ -77,7 +77,7 @@ class ProductService {
       print('📦 Datos del producto: $productoData');
 
       final response = await _supabase.rpc(
-        'insert_producto_completo',
+        'insert_producto_completo_v2',
         params: {
           'producto_data': productoData,
           'subcategorias_data': subcategoriasData,

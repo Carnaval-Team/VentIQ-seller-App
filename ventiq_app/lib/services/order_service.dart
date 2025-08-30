@@ -297,10 +297,11 @@ class OrderService {
     }
   }
 
-  // Limpiar todas las órdenes (para testing)
+  // Limpiar todas las órdenes (para testing y logout)
   void clearAllOrders() {
     _orders.clear();
     _currentOrder = null;
+    print('OrderService: Todas las órdenes han sido limpiadas');
   }
 
   // Obtener desglose de pagos de una venta específica
@@ -626,12 +627,14 @@ class OrderService {
       print('=== TRANSFORMANDO ORDENES DE SUPABASE ===');
       print('Órdenes recibidas: ${supabaseOrders.length}');
 
-      // Limpiar órdenes existentes
+      // SIEMPRE limpiar órdenes existentes al cargar desde Supabase
+      // Esto evita que se mezclen órdenes de usuarios anteriores
       _orders.clear();
+      print('Órdenes locales limpiadas');
 
       // Si no hay órdenes, simplemente retornar con la lista vacía
       if (supabaseOrders.isEmpty) {
-        print('No hay órdenes para mostrar');
+        print('No hay órdenes para mostrar - lista queda vacía');
         print('===========================================');
         return;
       }

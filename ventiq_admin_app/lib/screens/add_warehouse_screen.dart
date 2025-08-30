@@ -195,26 +195,16 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
             ),
             const SizedBox(height: 16),
             
-            // Información de tienda (solo lectura)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                border: Border.all(color: AppColors.textSecondary.withOpacity(0.3)),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.store, color: AppColors.textSecondary),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Tienda: Se usará la tienda asignada al usuario',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
+            // Campo: Tienda (solo lectura)
+            TextFormField(
+              enabled: false,
+              decoration: InputDecoration(
+                labelText: 'Tienda',
+                hintText: 'Se usará la tienda asignada al usuario',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.store),
+                filled: true,
+                fillColor: AppColors.background,
               ),
             ),
           ],
@@ -256,7 +246,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
                 ElevatedButton.icon(
                   onPressed: _addLayout,
                   icon: const Icon(Icons.add),
-                  label: const Text('Agregar Layout'),
+                  label: const Text('Agregar'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
@@ -324,27 +314,35 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _condiciones.map((condicion) {
-                final isSelected = _selectedCondiciones.contains(condicion['id']);
-                return FilterChip(
-                  label: Text(condicion['denominacion']),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        _selectedCondiciones.add(condicion['id']);
-                      } else {
-                        _selectedCondiciones.remove(condicion['id']);
-                      }
-                    });
-                  },
-                  selectedColor: AppColors.primary.withOpacity(0.2),
-                  checkmarkColor: AppColors.primary,
-                );
-              }).toList(),
+            SizedBox(
+              width: double.infinity,
+              height: 60,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _condiciones.map((condicion) {
+                    final isSelected = _selectedCondiciones.contains(condicion['id']);
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: FilterChip(
+                        label: Text(condicion['denominacion']),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              _selectedCondiciones.add(condicion['id']);
+                            } else {
+                              _selectedCondiciones.remove(condicion['id']);
+                            }
+                          });
+                        },
+                        selectedColor: AppColors.primary.withOpacity(0.2),
+                        checkmarkColor: AppColors.primary,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
           ],
         ),

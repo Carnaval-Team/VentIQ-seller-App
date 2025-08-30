@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'order_service.dart';
 
 class UserPreferencesService {
   static final UserPreferencesService _instance = UserPreferencesService._internal();
@@ -143,6 +144,20 @@ class UserPreferencesService {
     await prefs.remove(_idTiendaKey);
     await prefs.remove(_idRollKey);
     await prefs.setBool(_isLoggedInKey, false);
+    
+    // Limpiar órdenes al cerrar sesión
+    await _clearOrdersOnLogout();
+  }
+  
+  // Método privado para limpiar órdenes durante logout
+  Future<void> _clearOrdersOnLogout() async {
+    try {
+      final orderService = OrderService();
+      orderService.clearAllOrders();
+      print('UserPreferencesService: Órdenes limpiadas durante logout');
+    } catch (e) {
+      print('Error limpiando órdenes durante logout: $e');
+    }
   }
 
   // Guardar versión de la app

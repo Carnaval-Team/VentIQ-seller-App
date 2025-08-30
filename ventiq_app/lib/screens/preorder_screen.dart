@@ -20,6 +20,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
   final PaymentMethodService _paymentMethodService = PaymentMethodService();
   List<pm.PaymentMethod> _paymentMethods = [];
   bool _loadingPaymentMethods = false;
+  pm.PaymentMethod? _globalPaymentMethod;
 
   @override
   void initState() {
@@ -189,6 +190,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   color: Colors.grey[600],
                 ),
               ),
+              const SizedBox(height: 8),
+              // Global payment method selector
+              _buildGlobalPaymentMethodSelector(),
             ],
           ),
         ),
@@ -579,6 +583,168 @@ class _PreorderScreenState extends State<PreorderScreen> {
     ).then((_) {
       // Refresh the screen when returning from checkout
       setState(() {});
+    });
+  }
+
+  Widget _buildGlobalPaymentMethodSelector() {
+    if (_loadingPaymentMethods) {
+      return Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.blue[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.blue[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.payment, size: 16, color: Colors.blue[600]),
+            const SizedBox(width: 8),
+            const Text(
+              'Cargando métodos de pago...',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_paymentMethods.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.orange[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning, size: 16, color: Colors.orange[600]),
+            const SizedBox(width: 8),
+            const Text(
+              'Sin métodos de pago disponibles',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4A90E2).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.payment, size: 14, color: const Color(0xFF4A90E2)),
+              const SizedBox(width: 6),
+              const Text(
+                'Aplicar método de pago a todos:',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF4A90E2),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 32,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(6),
+                    color: Colors.white,
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<pm.PaymentMethod>(
+                      isExpanded: true,
+                      value: _globalPaymentMethod,
+                      hint: const Text(
+                        'Seleccionar método para todos los productos',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                      style: const TextStyle(fontSize: 12, color: Colors.black87),
+                      items: _paymentMethods.map((pm.PaymentMethod method) {
+                        return DropdownMenuItem<pm.PaymentMethod>(
+                          value: method,
+                          child: Row(
+                            children: [
+                              Text(method.typeIcon, style: const TextStyle(fontSize: 14)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  method.displayName,
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (pm.PaymentMethod? newMethod) {
+                        _applyGlobalPaymentMethod(newMethod);
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (_globalPaymentMethod != null)
+                IconButton(
+                  onPressed: _clearGlobalPaymentMethod,
+                  icon: const Icon(Icons.clear, size: 16),
+                  color: Colors.grey[600],
+                  tooltip: 'Limpiar selección global',
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyGlobalPaymentMethod(pm.PaymentMethod? paymentMethod) {
+    if (paymentMethod == null) return;
+    
+    setState(() {
+      _globalPaymentMethod = paymentMethod;
+      
+      // Apply to all items in the current order
+      final currentOrder = _orderService.currentOrder;
+      if (currentOrder != null) {
+        for (final item in currentOrder.items) {
+          _orderService.updateItemPaymentMethod(item.id, paymentMethod);
+        }
+      }
+    });
+    
+    // Show confirmation
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Método "${paymentMethod.displayName}" aplicado a todos los productos',
+        ),
+        backgroundColor: const Color(0xFF4A90E2),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _clearGlobalPaymentMethod() {
+    setState(() {
+      _globalPaymentMethod = null;
     });
   }
 
