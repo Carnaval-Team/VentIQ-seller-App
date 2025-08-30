@@ -25,6 +25,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   final _montoTotalController = TextEditingController();
   final _searchController = TextEditingController();
 
+  // Static variables to persist field values across screen instances
+  static String _lastEntregadoPor = '';
+  static String _lastRecibidoPor = '';
+  static String _lastObservaciones = '';
+
   List<Product> _availableProducts = [];
   List<Product> _filteredProducts = [];
   List<Map<String, dynamic>> _selectedProducts = [];
@@ -45,6 +50,21 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _loadMotivoOptions();
     _loadWarehouses();
     _searchController.addListener(_onSearchChanged);
+    
+    // Load persisted values from previous entries
+    _loadPersistedValues();
+  }
+
+  void _loadPersistedValues() {
+    _entregadoPorController.text = _lastEntregadoPor;
+    _recibidoPorController.text = _lastRecibidoPor;
+    _observacionesController.text = _lastObservaciones;
+  }
+
+  void _savePersistedValues() {
+    _lastEntregadoPor = _entregadoPorController.text;
+    _lastRecibidoPor = _recibidoPorController.text;
+    _lastObservaciones = _observacionesController.text;
   }
 
   @override
@@ -270,6 +290,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
       if (mounted) {
         if (result['status'] == 'success') {
+          // Save the values for future use before showing success message
+          _savePersistedValues();
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(

@@ -1057,6 +1057,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       Navigator.pop(context); // Close loading dialog
 
       if (result['status'] == 'success') {
+        // Close the detail modal
+        Navigator.pop(context);
+        
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

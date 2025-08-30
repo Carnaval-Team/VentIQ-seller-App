@@ -291,7 +291,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: _buildKPICard(
                 title: 'Ventas Total',
                 value: '\$${_dashboardData['totalSales']?.toStringAsFixed(2) ?? '0.00'}',
-                subtitle: '+15% vs ayer',
+                subtitle: '${_dashboardData['salesChange']>=0 ?'+':'-'} ${_dashboardData['salesChange']?.toStringAsFixed(2) ?? '0.00'}% vs ayer',
                 icon: Icons.trending_up,
                 color: AppColors.success,
               ),
