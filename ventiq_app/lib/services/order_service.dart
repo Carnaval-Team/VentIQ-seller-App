@@ -365,13 +365,13 @@ class OrderService {
             final inventoryData = item.inventoryData ?? {};
 
             print('ID del producto: ${item.producto.id}');
-            print('ID de la variante (si aplica): ${item.variante?.id}');
+            print('ID de la variante (si aplica): ${inventoryData['id_variante']}');
             print('ID de la ubicación: ${inventoryData['id_ubicacion']}');
             print('Cantidad a descontar: ${item.cantidad}');
 
             return {
               'id_producto': item.producto.id,
-              'id_variante': item.variante?.id,
+              'id_variante': inventoryData['id_variante'],
               'id_opcion_variante': inventoryData['id_opcion_variante'],
               'id_ubicacion': inventoryData['id_ubicacion'],
               'id_presentacion': inventoryData['id_presentacion'],
