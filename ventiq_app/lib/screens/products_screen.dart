@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
+import '../services/user_preferences_service.dart';
 import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
 import '../widgets/bottom_navigation.dart';
@@ -23,9 +24,20 @@ class ProductsScreen extends StatefulWidget {
 
 class _ProductsScreenState extends State<ProductsScreen> {
   Map<String, List<Product>> productsBySubcategory = {};
+  Map<String, List<Product>> filteredProductsBySubcategory = {};
   bool isLoading = true;
   String? errorMessage;
   final ProductService _productService = ProductService();
+  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  
+  // Search functionality
+  bool _isSearchVisible = false;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  String _searchQuery = '';
+  
+  // Promotion data
+  Map<String, dynamic>? _promotionData;
   
   // Cache para evitar peticiones frecuentes
   static final Map<int, Map<String, List<Product>>> _productsCache = {};
@@ -35,7 +47,90 @@ class _ProductsScreenState extends State<ProductsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProducts();
+    _searchController.addListener(_onSearchChanged);
+    _loadPromotionData();
+    // Asegurar que se inicialice filteredProductsBySubcategory
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadProducts();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _loadPromotionData() async {
+    final promotionData = await _userPreferencesService.getPromotionData();
+    print('🎯 ProductsScreen: Promotion data loaded: $promotionData');
+    setState(() {
+      _promotionData = promotionData;
+    });
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text.toLowerCase();
+      _filterProducts();
+    });
+  }
+
+  void _filterProducts() {
+    if (_searchQuery.isEmpty) {
+      filteredProductsBySubcategory = Map.from(productsBySubcategory);
+    } else {
+      filteredProductsBySubcategory = {};
+      productsBySubcategory.forEach((subcategory, products) {
+        final filteredProducts = products.where((product) {
+          return product.denominacion.toLowerCase().contains(_searchQuery) ||
+                 product.descripcion?.toLowerCase().contains(_searchQuery) == true;
+        }).toList();
+        
+        if (filteredProducts.isNotEmpty) {
+          filteredProductsBySubcategory[subcategory] = filteredProducts;
+        }
+      });
+    }
+    
+    // Debug logging
+    print('🔍 Filter applied: query="$_searchQuery", total filtered products: ${filteredProductsBySubcategory.values.fold(0, (sum, list) => sum + list.length)}');
+  }
+
+  void _showSearchOverlay() {
+    setState(() {
+      _isSearchVisible = true;
+    });
+    
+    // Focus the search field
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FocusScope.of(context).requestFocus(_searchFocusNode);
+    });
+  }
+  
+  void _hideSearchOverlay() {
+    setState(() {
+      _isSearchVisible = false;
+    });
+    FocusScope.of(context).unfocus();
+  }
+  
+  void _clearSearch() {
+    setState(() {
+      _searchController.clear();
+      _searchQuery = '';
+      _filterProducts();
+    });
+  }
+  
+  void _toggleSearch() {
+    if (_isSearchVisible) {
+      _hideSearchOverlay();
+    } else {
+      _showSearchOverlay();
+    }
   }
 
   void _loadProducts({bool forceRefresh = false}) async {
@@ -47,14 +142,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
       // Verificar caché si no es refresh forzado
       if (!forceRefresh && _isCacheValid(widget.categoryId)) {
+        final cachedProducts = _productsCache[widget.categoryId]!;
         setState(() {
-          productsBySubcategory = _productsCache[widget.categoryId]!;
+          productsBySubcategory = cachedProducts;
+          filteredProductsBySubcategory = Map.from(cachedProducts);
           isLoading = false;
         });
+        _filterProducts(); // Aplicar filtro actual si existe
         return;
       }
 
+      print('🔄 Loading products for category ${widget.categoryId}');
       final products = await _productService.getProductsByCategory(widget.categoryId);
+      print('✅ Loaded ${products.values.fold(0, (sum, list) => sum + list.length)} products');
       
       // Guardar en caché
       _productsCache[widget.categoryId] = products;
@@ -62,9 +162,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
       
       setState(() {
         productsBySubcategory = products;
+        filteredProductsBySubcategory = Map.from(products);
         isLoading = false;
       });
+      
+      // Aplicar filtro actual si existe
+      _filterProducts();
+      
     } catch (e) {
+      print('❌ Error loading products: $e');
       setState(() {
         errorMessage = 'Error al cargar productos: $e';
         isLoading = false;
@@ -106,6 +212,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
         actions: [
           IconButton(
             icon: const Icon(
+              Icons.search,
+              color: Colors.white,
+              size: 28,
+            ),
+            onPressed: _toggleSearch,
+            tooltip: 'Buscar productos',
+          ),
+          IconButton(
+            icon: const Icon(
               Icons.qr_code_scanner,
               color: Colors.white,
               size: 28,
@@ -126,15 +241,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
         currentIndex: 0, // No tab selected since this is a detail screen
         onTap: _onBottomNavTap,
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFFF8F9FA),
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
-        ),
-        child: isLoading
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8F9FA),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: isLoading
             ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -185,7 +302,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       ],
                     ),
                   )
-                : productsBySubcategory.isEmpty
+                : filteredProductsBySubcategory.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -197,13 +314,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'No hay productos disponibles',
+                              _searchQuery.isNotEmpty 
+                                ? 'No se encontraron productos'
+                                : 'No hay productos disponibles',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600,
                                 color: widget.categoryColor,
                               ),
                             ),
+                            if (_searchQuery.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                'Intenta con otros términos de búsqueda',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       )
@@ -212,18 +341,109 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     color: widget.categoryColor,
                     child: ListView.builder(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      itemCount: productsBySubcategory.keys.length,
+                      itemCount: filteredProductsBySubcategory.keys.length,
                       itemBuilder: (context, index) {
-                        final subcategory = productsBySubcategory.keys.elementAt(index);
-                        final products = productsBySubcategory[subcategory]!;
+                        final subcategory = filteredProductsBySubcategory.keys.elementAt(index);
+                        final products = filteredProductsBySubcategory[subcategory]!;
                         return _SubcategorySection(
                           title: subcategory,
                           products: products,
                           categoryColor: widget.categoryColor,
+                          promotionData: _promotionData,
                         );
                       },
                     ),
                   ),
+          ),
+          // Floating search overlay
+          if (_isSearchVisible)
+            GestureDetector(
+              onTap: _hideSearchOverlay,
+              child: Container(
+                color: Colors.black.withOpacity(0.5),
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {}, // Prevent closing when tapping on the search card
+                    child: Container(
+                      margin: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(15),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.search,
+                                color: widget.categoryColor,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchController,
+                                  focusNode: _searchFocusNode,
+                                  autofocus: true,
+                                  textInputAction: TextInputAction.done,
+                                  onSubmitted: (_) => _hideSearchOverlay(),
+                                  decoration: InputDecoration(
+                                    hintText: 'Buscar productos...',
+                                    border: InputBorder.none,
+                                    hintStyle: TextStyle(
+                                      color: Colors.grey[400],
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Color(0xFF2C3E50),
+                                  ),
+                                ),
+                              ),
+                              if (_searchQuery.isNotEmpty)
+                                IconButton(
+                                  icon: const Icon(Icons.backspace_outlined),
+                                  onPressed: _clearSearch,
+                                  color: Colors.grey[600],
+                                  tooltip: 'Limpiar búsqueda',
+                                ),
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: _hideSearchOverlay,
+                                color: Colors.grey[600],
+                                tooltip: 'Cerrar búsqueda',
+                              ),
+                            ],
+                          ),
+                          if (_searchQuery.isNotEmpty) ...[
+                            const Divider(),
+                            Text(
+                              '${filteredProductsBySubcategory.values.fold(0, (sum, products) => sum + products.length)} productos encontrados',
+                              style: TextStyle(
+                                color: widget.categoryColor,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -254,11 +474,13 @@ class _SubcategorySection extends StatelessWidget {
   final String title;
   final List<Product> products;
   final Color categoryColor;
+  final Map<String, dynamic>? promotionData;
 
   const _SubcategorySection({
     required this.title,
     required this.products,
     required this.categoryColor,
+    this.promotionData,
   });
 
   @override
@@ -320,6 +542,7 @@ class _SubcategorySection extends StatelessWidget {
               child: _PlayStoreProductCard(
                 product: product,
                 categoryColor: categoryColor,
+                promotionData: promotionData,
               ),
             );
           }).toList(),
@@ -355,6 +578,7 @@ class _SubcategorySection extends StatelessWidget {
                   child: _PlayStoreProductCard(
                     product: product,
                     categoryColor: categoryColor,
+                    promotionData: promotionData,
                   ),
                 );
               }).toList(),
@@ -370,10 +594,12 @@ class _SubcategorySection extends StatelessWidget {
 class _PlayStoreProductCard extends StatefulWidget {
   final Product product;
   final Color categoryColor;
+  final Map<String, dynamic>? promotionData;
 
   const _PlayStoreProductCard({
     required this.product,
     required this.categoryColor,
+    this.promotionData,
   });
 
   @override
@@ -381,8 +607,44 @@ class _PlayStoreProductCard extends StatefulWidget {
 }
 
 class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
+  
+  double? _calculateDiscountPrice() {
+    if (widget.promotionData == null) {
+      print('🎯 No promotion data available');
+      return null;
+    }
+    
+    final valorDescuento = widget.promotionData!['valor_descuento'] as double?;
+    final tipoDescuento = widget.promotionData!['tipo_descuento'] as int?;
+    
+    print('🎯 Discount calculation: valor=$valorDescuento, tipo=$tipoDescuento');
+    
+    if (valorDescuento == null || tipoDescuento == null) {
+      print('🎯 Missing discount values');
+      return null;
+    }
+    
+    final originalPrice = widget.product.precio;
+    
+    if (tipoDescuento == 1) {
+      // Descuento porcentual
+      final discountedPrice = originalPrice - (originalPrice * valorDescuento / 100);
+      print('🎯 Percentage discount: $originalPrice -> $discountedPrice');
+      return discountedPrice;
+    } else if (tipoDescuento == 2) {
+      // Descuento fijo
+      final discountedPrice = originalPrice - valorDescuento;
+      final finalPrice = discountedPrice > 0 ? discountedPrice : 0.0;
+      print('🎯 Fixed discount: $originalPrice -> $finalPrice');
+      return finalPrice;
+    }
+    
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final discountPrice = _calculateDiscountPrice();
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -490,18 +752,48 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                   Flexible(
                     child: Row(
                       children: [
-                        Flexible(
-                          child: Text(
-                            '\$${widget.product.precio.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: widget.categoryColor,
-                              height: 1.2,
+                        if (discountPrice != null) ...[
+                          // Precio original tachado
+                          Flexible(
+                            child: Text(
+                              '\$${widget.product.precio.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                                decoration: TextDecoration.lineThrough,
+                                height: 1.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
+                          const SizedBox(width: 4),
+                          // Precio con descuento
+                          Flexible(
+                            child: Text(
+                              '\$${discountPrice.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: widget.categoryColor,
+                                height: 1.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ] else
+                          // Precio normal sin descuento
+                          Flexible(
+                            child: Text(
+                              '\$${widget.product.precio.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: widget.categoryColor,
+                                height: 1.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         const SizedBox(width: 6),
                         // Separador
                         Container(

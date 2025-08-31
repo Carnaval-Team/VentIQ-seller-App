@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'order_service.dart';
 
 class UserPreferencesService {
@@ -26,6 +27,12 @@ class UserPreferencesService {
   static const String _savedEmailKey = 'saved_email';
   static const String _savedPasswordKey = 'saved_password';
   static const String _tokenExpiryKey = 'token_expiry';
+  
+  // Promotion keys
+  static const String _promotionIdKey = 'promotion_id';
+  static const String _promotionCodeKey = 'promotion_code';
+  static const String _promotionValueKey = 'promotion_value';
+  static const String _promotionTypeKey = 'promotion_type';
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -145,6 +152,9 @@ class UserPreferencesService {
     await prefs.remove(_idRollKey);
     await prefs.setBool(_isLoggedInKey, false);
     
+    // Limpiar promociones al cerrar sesión
+    await clearPromotionData();
+    
     // Limpiar órdenes al cerrar sesión
     await _clearOrdersOnLogout();
   }
@@ -238,5 +248,95 @@ class UserPreferencesService {
     final accessToken = await getAccessToken();
     
     return isLoggedIn && hasValidToken && accessToken != null && accessToken.isNotEmpty;
+  }
+  
+  // Promotion management methods
+  Future<void> savePromotionData({
+    int? idPromocion,
+    String? codigoPromocion,
+    double? valorDescuento,
+    int? tipoDescuento,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    if (idPromocion != null) {
+      await prefs.setInt(_promotionIdKey, idPromocion);
+    } else {
+      await prefs.remove(_promotionIdKey);
+    }
+    
+    if (codigoPromocion != null) {
+      await prefs.setString(_promotionCodeKey, codigoPromocion);
+    } else {
+      await prefs.remove(_promotionCodeKey);
+    }
+    
+    if (valorDescuento != null) {
+      await prefs.setDouble(_promotionValueKey, valorDescuento);
+    } else {
+      await prefs.remove(_promotionValueKey);
+    }
+    
+    if (tipoDescuento != null) {
+      await prefs.setInt(_promotionTypeKey, tipoDescuento);
+    } else {
+      await prefs.remove(_promotionTypeKey);
+    }
+  }
+  
+  Future<Map<String, dynamic>?> getPromotionData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final idPromocion = prefs.getInt(_promotionIdKey);
+    final codigoPromocion = prefs.getString(_promotionCodeKey);
+    final valorDescuento = prefs.getDouble(_promotionValueKey);
+    final tipoDescuento = prefs.getInt(_promotionTypeKey);
+    
+    if (idPromocion != null && codigoPromocion != null) {
+      return {
+        'id_promocion': idPromocion,
+        'codigo_promocion': codigoPromocion,
+        'valor_descuento': valorDescuento,
+        'tipo_descuento': tipoDescuento, // 1 = porcentual, 2 = valor fijo
+      };
+    }
+    return null;
+  }
+  
+  Future<void> clearPromotionData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_promotionIdKey);
+    await prefs.remove(_promotionCodeKey);
+    await prefs.remove(_promotionValueKey);
+    await prefs.remove(_promotionTypeKey);
+  }
+
+  // Turno data keys
+  static const String _turnoIdKey = 'turno_id';
+  static const String _turnoDataKey = 'turno_data';
+
+  Future<void> saveTurnoData(Map<String, dynamic> turnoData) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_turnoIdKey, turnoData['id']);
+    await prefs.setString(_turnoDataKey, jsonEncode(turnoData));
+  }
+
+  Future<int?> getTurnoId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_turnoIdKey);
+  }
+
+  Future<Map<String, dynamic>?> getTurnoData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final turnoDataString = prefs.getString(_turnoDataKey);
+    if (turnoDataString != null) {
+      return jsonDecode(turnoDataString) as Map<String, dynamic>;
+    }
+    return null;
+  }
+
+  Future<void> clearTurnoData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_turnoIdKey);
+    await prefs.remove(_turnoDataKey);
   }
 }

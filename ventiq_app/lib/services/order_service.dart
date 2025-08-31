@@ -38,9 +38,12 @@ class OrderService {
     required int cantidad,
     required String ubicacionAlmacen,
     Map<String, dynamic>? inventoryData,
+    double? precioUnitario,
+    double? precioBase,
   }) {
     final order = getCurrentOrCreateOrder();
-    final precioUnitario = variante?.precio ?? producto.precio;
+    final precio = precioUnitario ?? (variante?.precio ?? producto.precio);
+    final precioOriginal = precioBase ?? (variante?.precio ?? producto.precio);
 
     // Verificar si ya existe un item similar
     final existingItemIndex = order.items.indexWhere(
@@ -64,7 +67,8 @@ class OrderService {
         producto: producto,
         variante: variante,
         cantidad: cantidad,
-        precioUnitario: precioUnitario,
+        precioUnitario: precio,
+        precioBase: precioOriginal,
         ubicacionAlmacen: ubicacionAlmacen,
         inventoryData: inventoryData,
       );
@@ -103,6 +107,9 @@ class OrderService {
     if (itemIndex != -1) {
       _currentOrder!.items[itemIndex] = _currentOrder!.items[itemIndex]
           .copyWith(paymentMethod: paymentMethod);
+      
+      // Recalcular total ya que el precio puede cambiar según el método de pago
+      _updateOrderTotal(_currentOrder!);
     }
   }
 
