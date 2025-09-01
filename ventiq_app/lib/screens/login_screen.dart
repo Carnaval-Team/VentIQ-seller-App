@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/seller_service.dart';
+import '../services/promotion_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _authService = AuthService();
   final _userPreferencesService = UserPreferencesService();
   final _sellerService = SellerService();
+  final _promotionService = PromotionService();
   bool _isLoading = false;
   bool _obscure = true;
   bool _rememberMe = false;
@@ -120,6 +122,38 @@ class _LoginScreenState extends State<LoginScreen> {
             }
             
             print('✅ Perfil completo del vendedor guardado');
+            
+            // Buscar promoción global para la tienda
+            try {
+              final globalPromotion = await _promotionService.getGlobalPromotion(idTienda);
+              if (globalPromotion != null) {
+                await _promotionService.saveGlobalPromotion(
+                  idPromocion: globalPromotion['id_promocion'],
+                  codigoPromocion: globalPromotion['codigo_promocion'],
+                  valorDescuento: globalPromotion['valor_descuento'],
+                  tipoDescuento: globalPromotion['tipo_descuento'],
+                );
+                print('🎯 Promoción global configurada para la tienda');
+              } else {
+                // Guardar null cuando no hay promoción
+                await _promotionService.saveGlobalPromotion(
+                  idPromocion: null,
+                  codigoPromocion: null,
+                  valorDescuento: null,
+                  tipoDescuento: null,
+                );
+                print('ℹ️ No hay promoción global activa - guardando null');
+              }
+            } catch (e) {
+              print('⚠️ Error obteniendo promoción global: $e');
+              // Guardar null en caso de error también
+              await _promotionService.saveGlobalPromotion(
+                idPromocion: null,
+                codigoPromocion: null,
+                valorDescuento: null,
+                tipoDescuento: null,
+              );
+            }
             
             // Login exitoso - ir al catálogo
             if (mounted) {

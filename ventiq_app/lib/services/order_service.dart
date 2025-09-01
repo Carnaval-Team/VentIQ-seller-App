@@ -38,9 +38,12 @@ class OrderService {
     required int cantidad,
     required String ubicacionAlmacen,
     Map<String, dynamic>? inventoryData,
+    double? precioUnitario,
+    double? precioBase,
   }) {
     final order = getCurrentOrCreateOrder();
-    final precioUnitario = variante?.precio ?? producto.precio;
+    final precio = precioUnitario ?? (variante?.precio ?? producto.precio);
+    final precioOriginal = precioBase ?? (variante?.precio ?? producto.precio);
 
     // Verificar si ya existe un item similar
     final existingItemIndex = order.items.indexWhere(
@@ -64,7 +67,8 @@ class OrderService {
         producto: producto,
         variante: variante,
         cantidad: cantidad,
-        precioUnitario: precioUnitario,
+        precioUnitario: precio,
+        precioBase: precioOriginal,
         ubicacionAlmacen: ubicacionAlmacen,
         inventoryData: inventoryData,
       );
@@ -103,6 +107,9 @@ class OrderService {
     if (itemIndex != -1) {
       _currentOrder!.items[itemIndex] = _currentOrder!.items[itemIndex]
           .copyWith(paymentMethod: paymentMethod);
+      
+      // Recalcular total ya que el precio puede cambiar según el método de pago
+      _updateOrderTotal(_currentOrder!);
     }
   }
 
@@ -365,13 +372,13 @@ class OrderService {
             final inventoryData = item.inventoryData ?? {};
 
             print('ID del producto: ${item.producto.id}');
-            print('ID de la variante (si aplica): ${item.variante?.id}');
+            print('ID de la variante (si aplica): ${inventoryData['id_variante']}');
             print('ID de la ubicación: ${inventoryData['id_ubicacion']}');
             print('Cantidad a descontar: ${item.cantidad}');
 
             return {
               'id_producto': item.producto.id,
-              'id_variante': item.variante?.id,
+              'id_variante': inventoryData['id_variante'],
               'id_opcion_variante': inventoryData['id_opcion_variante'],
               'id_ubicacion': inventoryData['id_ubicacion'],
               'id_presentacion': inventoryData['id_presentacion'],

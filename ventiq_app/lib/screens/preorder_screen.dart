@@ -275,7 +275,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  'Precio: \$${item.precioUnitario.toStringAsFixed(2)}',
+                  'Precio: \$${item.displayPrice.toStringAsFixed(2)}',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey[600],

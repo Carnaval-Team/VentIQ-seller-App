@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/order_service.dart';
 import '../services/product_detail_service.dart';
+import '../services/user_preferences_service.dart';
 import '../widgets/bottom_navigation.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
@@ -23,9 +24,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   int selectedQuantity = 1;
   Map<ProductVariant, int> variantQuantities = {};
   final ProductDetailService _productDetailService = ProductDetailService();
+  final UserPreferencesService _userPreferencesService = UserPreferencesService();
   Product? _detailedProduct;
   bool _isLoadingDetails = false;
   String? _errorMessage;
+  Map<String, dynamic>? _promotionData;
 
   @override
   void initState() {
@@ -36,6 +39,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     }
     // Cargar detalles completos del producto
     _loadProductDetails();
+    _loadPromotionData();
   }
 
   /// Cargar detalles completos del producto desde Supabase
@@ -68,6 +72,125 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     }
   }
 
+  void _loadPromotionData() async {
+    final promotionData = await _userPreferencesService.getPromotionData();
+    setState(() {
+      _promotionData = promotionData;
+    });
+  }
+
+  double? _calculateDiscountPrice(double originalPrice) {
+    if (_promotionData == null) return null;
+    
+    final valorDescuento = _promotionData!['valor_descuento'] as double?;
+    final tipoDescuento = _promotionData!['tipo_descuento'] as int?;
+    
+    if (valorDescuento == null || tipoDescuento == null) return null;
+    
+    if (tipoDescuento == 1) {
+      // Descuento porcentual
+      return originalPrice - (originalPrice * valorDescuento / 100);
+    } else if (tipoDescuento == 2) {
+      // Descuento fijo
+      final discountedPrice = originalPrice - valorDescuento;
+      return discountedPrice > 0 ? discountedPrice : 0.0;
+    }
+    
+    return null;
+  }
+
+  Widget _buildPriceSection(double originalPrice) {
+    final discountPrice = _calculateDiscountPrice(originalPrice);
+    
+    if (discountPrice != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Precio base: ',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                '\$${originalPrice.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Text(
+                'Precio oferta: ',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: widget.categoryColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '\$${discountPrice.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: widget.categoryColor,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    } else {
+      return Text(
+        '\$${originalPrice.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: widget.categoryColor,
+          height: 1.2,
+        ),
+      );
+    }
+  }
+
+  Widget _buildVariantPriceSection(double originalPrice) {
+    final discountPrice = _calculateDiscountPrice(originalPrice);
+    
+    if (discountPrice != null) {
+      return Text(
+        '\$${discountPrice.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: widget.categoryColor,
+          height: 1.2,
+        ),
+        overflow: TextOverflow.ellipsis,
+      );
+    } else {
+      return Text(
+        '\$${originalPrice.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: widget.categoryColor,
+          height: 1.2,
+        ),
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+  }
+
   /// Get the current product (detailed if loaded, otherwise fallback to original)
   Product get currentProduct => _detailedProduct ?? widget.product;
 
@@ -75,12 +198,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     double total = 0.0;
 
     if (currentProduct.variantes.isEmpty) {
-      // Producto sin variantes
-      total = currentProduct.precio * selectedQuantity;
+      // Producto sin variantes - usar precio con descuento si existe
+      final discountPrice = _calculateDiscountPrice(currentProduct.precio);
+      final finalPrice = discountPrice ?? currentProduct.precio;
+      total = finalPrice * selectedQuantity;
     } else {
-      // Producto con variantes
+      // Producto con variantes - usar precio con descuento si existe
       for (var entry in variantQuantities.entries) {
-        total += entry.key.precio * entry.value;
+        final discountPrice = _calculateDiscountPrice(entry.key.precio);
+        final finalPrice = discountPrice ?? entry.key.precio;
+        total += finalPrice * entry.value;
       }
     }
 
@@ -197,7 +324,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             child:
                                 currentProduct.foto != null
                                     ? Image.network(
-                                      currentProduct.foto!,
+                                      _compressImageUrl(currentProduct.foto!),
                                       fit: BoxFit.cover,
                                       errorBuilder: (
                                         context,
@@ -285,16 +412,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 8),
-                              // Precio del producto
-                              Text(
-                                '\$${currentProduct.precio.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: widget.categoryColor,
-                                  height: 1.2,
-                                ),
-                              ),
+                              // Precio del producto con descuento
+                              _buildPriceSection(currentProduct.precio),
                             ],
                           ),
                         ),
@@ -363,6 +482,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               selectedQuantity,
                               currentProduct.precio,
                               _getLocationName(currentProduct, null),
+                              isVariant: false,
                             ),
                           if (currentProduct.variantes.isNotEmpty)
                             ...variantQuantities.entries
@@ -373,6 +493,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                     entry.value,
                                     entry.key.precio,
                                     _getLocationName(currentProduct, entry.key),
+                                    isVariant: true,
                                   ),
                                 ),
                         ],
@@ -526,16 +647,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     child: Row(
                       children: [
                         Flexible(
-                          child: Text(
-                            '\$${variant.precio.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: widget.categoryColor,
-                              height: 1.2,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          child: _buildVariantPriceSection(variant.precio),
                         ),
                         const SizedBox(width: 4),
                         Container(
@@ -575,8 +687,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     String name,
     int quantity,
     double price,
-    String ubicacion,
-  ) {
+    String ubicacion, {
+    bool isVariant = false,
+  }) {
+    final discountPrice = _calculateDiscountPrice(price);
+    final finalPrice = discountPrice ?? price;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -620,7 +735,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '\$${(price * quantity).toStringAsFixed(2)}',
+                  '\$${(finalPrice * quantity).toStringAsFixed(2)}',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -652,14 +767,36 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                'Precio: \$${price.toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[700],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              discountPrice != null
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'Base: \$${price.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      Text(
+                        'Oferta: \$${finalPrice.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: widget.categoryColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    'Precio: \$${price.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
             ],
           ),
           const SizedBox(height: 12),
@@ -730,25 +867,28 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                         ),
                       ),
                     ),
-                    Container(
-                      width: 50,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        border: Border.symmetric(
-                          vertical: BorderSide(
-                            color: Colors.grey[300]!,
-                            width: 1,
+                    InkWell(
+                      onTap: () => _showQuantityDialog(name, quantity),
+                      child: Container(
+                        width: 50,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          border: Border.symmetric(
+                            vertical: BorderSide(
+                              color: Colors.grey[300]!,
+                              width: 1,
+                            ),
                           ),
                         ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          '$quantity',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+                        child: Center(
+                          child: Text(
+                            '$quantity',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1F2937),
+                            ),
                           ),
                         ),
                       ),
@@ -816,6 +956,114 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       }
     }
     return total;
+  }
+
+  void _showQuantityDialog(String productName, int currentQuantity) {
+    final TextEditingController quantityController = TextEditingController(
+      text: currentQuantity.toString(),
+    );
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(
+            'Cantidad',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: widget.categoryColor,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                productName,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: quantityController,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Cantidad deseada',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: widget.categoryColor),
+                  ),
+                ),
+                onSubmitted: (value) {
+                  _updateQuantityFromDialog(productName, value);
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                _updateQuantityFromDialog(productName, quantityController.text);
+                Navigator.of(context).pop();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: widget.categoryColor,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Confirmar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _updateQuantityFromDialog(String productName, String quantityText) {
+    final int? newQuantity = int.tryParse(quantityText);
+    if (newQuantity == null || newQuantity < 0) return;
+    
+    setState(() {
+      if (currentProduct.variantes.isEmpty) {
+        // Producto sin variantes
+        selectedQuantity = newQuantity;
+      } else {
+        // Buscar la variante correspondiente
+        for (var variant in currentProduct.variantes) {
+          if (productName.contains(variant.nombre)) {
+            variantQuantities[variant] = newQuantity;
+            break;
+          }
+        }
+      }
+    });
+  }
+
+  String _compressImageUrl(String url) {
+    if (url.contains('images.unsplash.com') || url.contains('plus.unsplash.com')) {
+      // Si ya tiene parámetros, reemplazar o agregar los de compresión
+      final uri = Uri.parse(url);
+      final params = Map<String, String>.from(uri.queryParameters);
+      
+      // Aplicar compresión
+      params['q'] = '60';
+      params['w'] = '600';
+      params['fm'] = 'webp';
+      
+      return uri.replace(queryParameters: params).toString();
+    }
+    return url;
   }
 
   // Get location name from inventory metadata
@@ -904,11 +1152,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       if (currentProduct.variantes.isEmpty) {
         // Producto sin variantes
         if (selectedQuantity > 0) {
+          final discountPrice = _calculateDiscountPrice(currentProduct.precio);
+          final finalPrice = discountPrice ?? currentProduct.precio;
+          
           orderService.addItemToCurrentOrder(
             producto: currentProduct,
             cantidad: selectedQuantity,
             ubicacionAlmacen: _getLocationName(currentProduct, null),
             inventoryData: _buildInventoryData(currentProduct, null),
+            precioUnitario: finalPrice,
+            precioBase: currentProduct.precio,
           );
           totalItemsAdded += selectedQuantity;
           addedItems.add('${currentProduct.denominacion} (x$selectedQuantity)');
@@ -922,12 +1175,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         // Producto con variantes
         for (var entry in variantQuantities.entries) {
           if (entry.value > 0) {
+            final discountPrice = _calculateDiscountPrice(entry.key.precio);
+            final finalPrice = discountPrice ?? entry.key.precio;
+            
             orderService.addItemToCurrentOrder(
               producto: currentProduct,
               variante: entry.key,
               cantidad: entry.value,
               ubicacionAlmacen: _getLocationName(currentProduct, entry.key),
               inventoryData: _buildInventoryData(currentProduct, entry.key),
+              precioUnitario: finalPrice,
+              precioBase: entry.key.precio,
             );
             totalItemsAdded += entry.value;
             addedItems.add('${entry.key.nombre} (x${entry.value})');

@@ -71,6 +71,7 @@ class OrderItem {
   final ProductVariant? variante;
   final int cantidad;
   final double precioUnitario;
+  final double? precioBase;
   final String ubicacionAlmacen;
   final Map<String, dynamic>? inventoryData;
   final PaymentMethod? paymentMethod;
@@ -81,12 +82,30 @@ class OrderItem {
     this.variante,
     required this.cantidad,
     required this.precioUnitario,
+    this.precioBase,
     required this.ubicacionAlmacen,
     this.inventoryData,
     this.paymentMethod,
   });
 
-  double get subtotal => precioUnitario * cantidad;
+  double get subtotal {
+    // Si el método de pago es efectivo (id: 1), usar precio con descuento
+    // Si no, usar precio base
+    if (paymentMethod?.id == 1) {
+      return precioUnitario * cantidad;
+    } else {
+      return (precioBase ?? precioUnitario) * cantidad;
+    }
+  }
+
+  double get displayPrice {
+    // Precio a mostrar según el método de pago
+    if (paymentMethod?.id == 1) {
+      return precioUnitario; // Precio con descuento
+    } else {
+      return precioBase ?? precioUnitario; // Precio base
+    }
+  }
 
   String get nombre {
     if (variante != null) {
@@ -101,6 +120,7 @@ class OrderItem {
     ProductVariant? variante,
     int? cantidad,
     double? precioUnitario,
+    double? precioBase,
     String? ubicacionAlmacen,
     Map<String, dynamic>? inventoryData,
     PaymentMethod? paymentMethod,
@@ -111,6 +131,7 @@ class OrderItem {
       variante: variante ?? this.variante,
       cantidad: cantidad ?? this.cantidad,
       precioUnitario: precioUnitario ?? this.precioUnitario,
+      precioBase: precioBase ?? this.precioBase,
       ubicacionAlmacen: ubicacionAlmacen ?? this.ubicacionAlmacen,
       inventoryData: inventoryData ?? this.inventoryData,
       paymentMethod: paymentMethod ?? this.paymentMethod,

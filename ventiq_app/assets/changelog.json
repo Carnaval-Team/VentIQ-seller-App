@@ -1,6 +1,53 @@
 {
   "changelogs": [
     {
+      "version": "1.2.0",
+      "date": "2024-08-30",
+      "title": "💰 Sistema de Turnos y Egresos + Precios Dinámicos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Gestión de Turnos de Caja",
+          "description": "Sistema completo para verificar turnos abiertos filtrados por TPV y estado, con almacenamiento en preferencias"
+        },
+        {
+          "type": "feature",
+          "title": "Registro de Egresos Parciales",
+          "description": "Funcionalidad para registrar salidas de efectivo con motivo, autorizador y receptor mediante RPC registrar_egreso_parcial"
+        },
+        {
+          "type": "feature",
+          "title": "Precios Dinámicos con Descuentos",
+          "description": "Sistema de doble precio: precio base y precio con descuento aplicado automáticamente para pagos en efectivo"
+        },
+        {
+          "type": "feature",
+          "title": "Edición Rápida de Cantidad",
+          "description": "Tap-to-edit en números de cantidad en pantalla de detalles de producto con diálogo de entrada numérica"
+        },
+        {
+          "type": "feature",
+          "title": "Optimización de Imágenes",
+          "description": "Compresión automática de imágenes Unsplash con parámetros de calidad, ancho y formato WebP para reducir tamaño ~70%"
+        },
+        {
+          "type": "improvement",
+          "title": "Validación de Turnos en Egreso",
+          "description": "Verificación obligatoria de turno abierto antes de permitir crear egresos, con mensajes de error informativos"
+        },
+        {
+          "type": "improvement",
+          "title": "UI Mejorada para Egresos",
+          "description": "Interfaz actualizada con campos específicos: monto, motivo, autorizador y receptor con validación completa"
+        },
+        {
+          "type": "improvement",
+          "title": "Manejo de Precios en Preórdenes",
+          "description": "Integración de precios base y con descuento en el flujo de preórdenes con recálculo dinámico según método de pago"
+        }
+      ]
+    },
+    {
       "version": "1.1.0",
       "date": "2024-08-18",
       "title": "📊 Resumen de Ventas Avanzado",

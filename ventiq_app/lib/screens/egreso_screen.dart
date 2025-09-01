@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/turno_service.dart';
+import '../services/user_preferences_service.dart';
 
 class EgresoScreen extends StatefulWidget {
   const EgresoScreen({Key? key}) : super(key: key);
@@ -11,26 +13,51 @@ class EgresoScreen extends StatefulWidget {
 class _EgresoScreenState extends State<EgresoScreen> {
   final _formKey = GlobalKey<FormState>();
   final _montoController = TextEditingController();
-  final _conceptoController = TextEditingController();
-  final _observacionesController = TextEditingController();
+  final _motivoController = TextEditingController();
+  final _nombreAutorizaController = TextEditingController();
+  final _nombreRecibeController = TextEditingController();
   bool _isProcessing = false;
-  String? _selectedCategoria;
+  bool _isLoadingTurno = true;
+  Map<String, dynamic>? _turnoAbierto;
+  String? _errorMessage;
 
-  final List<String> _categorias = [
-    'Gastos operativos',
-    'Compra de insumos',
-    'Servicios públicos',
-    'Transporte',
-    'Mantenimiento',
-    'Otros gastos',
-  ];
+  final UserPreferencesService _userPrefs = UserPreferencesService();
+
+  @override
+  void initState() {
+    super.initState();
+    _checkTurnoAbierto();
+  }
 
   @override
   void dispose() {
     _montoController.dispose();
-    _conceptoController.dispose();
-    _observacionesController.dispose();
+    _motivoController.dispose();
+    _nombreAutorizaController.dispose();
+    _nombreRecibeController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkTurnoAbierto() async {
+    try {
+      final turno = await TurnoService.getTurnoAbierto();
+      
+      setState(() {
+        _isLoadingTurno = false;
+        if (turno != null) {
+          _turnoAbierto = turno;
+          // Guardar turno en preferencias
+          _userPrefs.saveTurnoData(turno);
+        } else {
+          _errorMessage = 'No hay turno abierto para realizar egreso';
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingTurno = false;
+        _errorMessage = 'Error al verificar turno: $e';
+      });
+    }
   }
 
   @override
@@ -54,13 +81,51 @@ class _EgresoScreenState extends State<EgresoScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      body: _isLoadingTurno
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Verificando turno abierto...'),
+                ],
+              ),
+            )
+          : _errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.red[400],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _errorMessage!,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.red[600],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Volver'),
+                      ),
+                    ],
+                  ),
+                )
+              : Form(
+                  key: _formKey,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
               // Información del egreso
               Container(
                 padding: const EdgeInsets.all(16),
@@ -93,7 +158,8 @@ class _EgresoScreenState extends State<EgresoScreen> {
                     const SizedBox(height: 16),
                     _buildInfoRow('Fecha:', _formatDate(DateTime.now())),
                     _buildInfoRow('Hora:', _formatTime(DateTime.now())),
-                    _buildInfoRow('Usuario:', 'Vendedor Principal'),
+                    _buildInfoRow('Turno ID:', _turnoAbierto!['id'].toString()),
+                    _buildInfoRow('Efectivo Inicial:', '\$${_turnoAbierto!['efectivo_inicial']}'),
                   ],
                 ),
               ),
@@ -151,7 +217,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
               
               const SizedBox(height: 20),
               
-              // Categoría y concepto
+              // Motivo del egreso
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -163,7 +229,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Detalles del Egreso',
+                      'Motivo del Egreso',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -171,44 +237,10 @@ class _EgresoScreenState extends State<EgresoScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    
-                    // Categoría
-                    DropdownButtonFormField<String>(
-                      value: _selectedCategoria,
-                      decoration: InputDecoration(
-                        labelText: 'Categoría',
-                        prefixIcon: const Icon(Icons.category),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: _categorias.map((categoria) {
-                        return DropdownMenuItem(
-                          value: categoria,
-                          child: Text(categoria),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedCategoria = value;
-                        });
-                      },
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Seleccione una categoría';
-                        }
-                        return null;
-                      },
-                    ),
-                    
-                    const SizedBox(height: 12),
-                    
-                    // Concepto
                     TextFormField(
-                      controller: _conceptoController,
+                      controller: _motivoController,
                       decoration: InputDecoration(
-                        labelText: 'Concepto',
+                        labelText: 'Motivo de la entrega',
                         prefixIcon: const Icon(Icons.description),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -217,7 +249,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return 'El concepto es requerido';
+                          return 'El motivo es requerido';
                         }
                         return null;
                       },
@@ -228,7 +260,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
               
               const SizedBox(height: 20),
               
-              // Observaciones
+              // Personas involucradas
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -240,32 +272,53 @@ class _EgresoScreenState extends State<EgresoScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Observaciones',
+                      'Personas Involucradas',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF1F2937),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Opcional - Detalles adicionales del egreso',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
                     const SizedBox(height: 12),
+                    
+                    // Nombre quien autoriza
                     TextFormField(
-                      controller: _observacionesController,
-                      maxLines: 3,
+                      controller: _nombreAutorizaController,
                       decoration: InputDecoration(
-                        hintText: 'Ej: Compra de materiales para reparación...',
+                        labelText: 'Nombre quien autoriza',
+                        prefixIcon: const Icon(Icons.person_outline),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'El nombre de quien autoriza es requerido';
+                        }
+                        return null;
+                      },
+                    ),
+                    
+                    const SizedBox(height: 12),
+                    
+                    // Nombre quien recibe
+                    TextFormField(
+                      controller: _nombreRecibeController,
+                      decoration: InputDecoration(
+                        labelText: 'Nombre quien recibe',
+                        prefixIcon: const Icon(Icons.person),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'El nombre de quien recibe es requerido';
+                        }
+                        return null;
+                      },
                     ),
                   ],
                 ),
@@ -356,15 +409,27 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
     try {
       final monto = double.parse(_montoController.text.trim());
-      final concepto = _conceptoController.text.trim();
-      final observaciones = _observacionesController.text.trim();
+      final motivo = _motivoController.text.trim();
+      final nombreAutoriza = _nombreAutorizaController.text.trim();
+      final nombreRecibe = _nombreRecibeController.text.trim();
+      final idTurno = _turnoAbierto!['id'] as int;
 
-      // Aquí se implementaría la lógica para guardar el egreso
-      // Por ahora simularemos el proceso
-      await Future.delayed(const Duration(seconds: 2));
+      // Llamar a la función RPC
+      final result = await TurnoService.registrarEgresoParcial(
+        idTurno: idTurno,
+        montoEntrega: monto,
+        motivoEntrega: motivo,
+        nombreAutoriza: nombreAutoriza,
+        nombreRecibe: nombreRecibe,
+      );
 
-      // Mostrar confirmación
-      _showSuccessDialog(monto, concepto, observaciones);
+      if (result['success'] == true) {
+        // Mostrar confirmación de éxito
+        _showSuccessDialog(result);
+      } else {
+        // Mostrar error del servidor
+        _showErrorMessage(result['message'] ?? 'Error desconocido');
+      }
 
     } catch (e) {
       _showErrorMessage('Error al registrar el egreso: $e');
@@ -375,7 +440,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
     }
   }
 
-  void _showSuccessDialog(double monto, String concepto, String observaciones) {
+  void _showSuccessDialog(Map<String, dynamic> result) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -395,17 +460,15 @@ class _EgresoScreenState extends State<EgresoScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('El egreso ha sido registrado exitosamente.'),
+            Text(result['message'] ?? 'El egreso ha sido registrado exitosamente.'),
             const SizedBox(height: 12),
-            Text('Monto: \$${monto.toStringAsFixed(2)}'),
-            Text('Categoría: $_selectedCategoria'),
-            Text('Concepto: $concepto'),
+            Text('ID Egreso: ${result['egreso_id']}'),
+            Text('Monto: \$${result['monto']?.toStringAsFixed(2) ?? _montoController.text}'),
+            Text('Motivo: ${_motivoController.text}'),
+            Text('Autoriza: ${_nombreAutorizaController.text}'),
+            Text('Recibe: ${_nombreRecibeController.text}'),
             Text('Fecha: ${_formatDate(DateTime.now())}'),
             Text('Hora: ${_formatTime(DateTime.now())}'),
-            if (observaciones.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text('Observaciones: $observaciones'),
-            ],
           ],
         ),
         actions: [
