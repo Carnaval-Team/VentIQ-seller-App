@@ -724,7 +724,7 @@ class _CierreScreenState extends State<CierreScreen> {
             ),
             child: Row(
               children: [
-                // Product info
+                // Product info with current stock
                 Expanded(
                   flex: 2,
                   child: Column(
@@ -741,9 +741,30 @@ class _CierreScreenState extends State<CierreScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        '${product.variante}: ${product.opcionVariante}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      Row(
+                        children: [
+                          Text(
+                            '${product.variante}: ${product.opcionVariante}',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.blue[50],
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.blue[200]!),
+                            ),
+                            child: Text(
+                              'Stock: ${product.stockDisponible.toInt()}',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF4A90E2),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       Text(
                         '${product.ubicacion}',
@@ -753,7 +774,7 @@ class _CierreScreenState extends State<CierreScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Quantity input
+                // Quantity input (restored to original size)
                 Expanded(
                   child: Column(
                     children: [
