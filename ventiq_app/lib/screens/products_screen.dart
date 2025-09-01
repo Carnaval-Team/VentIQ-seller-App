@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
 import '../widgets/bottom_navigation.dart';
@@ -619,27 +620,18 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
     
     print('🎯 Discount calculation: valor=$valorDescuento, tipo=$tipoDescuento');
     
-    if (valorDescuento == null || tipoDescuento == null) {
-      print('🎯 Missing discount values');
-      return null;
-    }
-    
     final originalPrice = widget.product.precio;
+    final discountedPrice = PriceUtils.calculateAndRoundDiscountPrice(
+      originalPrice,
+      valorDescuento,
+      tipoDescuento,
+    );
     
-    if (tipoDescuento == 1) {
-      // Descuento porcentual
-      final discountedPrice = originalPrice - (originalPrice * valorDescuento / 100);
-      print('🎯 Percentage discount: $originalPrice -> $discountedPrice');
-      return discountedPrice;
-    } else if (tipoDescuento == 2) {
-      // Descuento fijo
-      final discountedPrice = originalPrice - valorDescuento;
-      final finalPrice = discountedPrice > 0 ? discountedPrice : 0.0;
-      print('🎯 Fixed discount: $originalPrice -> $finalPrice');
-      return finalPrice;
+    if (discountedPrice != null) {
+      print('🎯 Rounded discount price: $originalPrice -> $discountedPrice');
     }
     
-    return null;
+    return discountedPrice;
   }
 
   @override
@@ -770,7 +762,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           // Precio con descuento
                           Flexible(
                             child: Text(
-                              '\$${discountPrice.toStringAsFixed(2)}',
+                              '\$${PriceUtils.formatDiscountPrice(discountPrice)}',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,

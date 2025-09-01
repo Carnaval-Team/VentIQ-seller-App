@@ -3,6 +3,7 @@ import '../models/order.dart';
 import '../models/payment_method.dart' as pm;
 import '../services/order_service.dart';
 import '../services/payment_method_service.dart';
+import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/scrolling_text.dart';
@@ -184,7 +185,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                '${order.totalItems} producto${order.totalItems == 1 ? '' : 's'} • Total: \$${order.total.toStringAsFixed(2)}',
+                '${order.totalItems} producto${order.totalItems == 1 ? '' : 's'} • Total: \$${PriceUtils.formatDiscountPrice(order.total)}',
                 style: TextStyle(
                   fontSize: 14,
                   color: Colors.grey[600],
@@ -241,7 +242,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 ),
               ),
               Text(
-                '\$${item.subtotal.toStringAsFixed(2)}',
+                '\$${PriceUtils.formatDiscountPrice(item.subtotal)}',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -275,7 +276,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  'Precio: \$${item.displayPrice.toStringAsFixed(2)}',
+                  'Precio: \$${PriceUtils.formatDiscountPrice(item.displayPrice)}',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey[600],
@@ -359,7 +360,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 ),
               ),
               Text(
-                '\$${order.total.toStringAsFixed(2)}',
+                '\$${PriceUtils.formatDiscountPrice(order.total)}',
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
+import '../utils/price_utils.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -31,6 +32,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   
   // Discount percentages (you can make these configurable)
   static const double promoDiscountPercentage = 0.10; // 10% promo discount
+  
+  // Calculate and round promo discount
+  double get roundedPromoDiscount => PriceUtils.roundDiscountPrice(_promoDiscount);
 
   @override
   void dispose() {
@@ -216,7 +220,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                 ),
                 Text(
-                  '-\$${_promoDiscount.toStringAsFixed(2)}',
+                  '-\$${PriceUtils.formatDiscountPrice(_promoDiscount)}',
                   style: const TextStyle(
                     fontSize: 14,
                     color: Colors.green,
@@ -486,7 +490,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   style: TextStyle(fontSize: 14, color: Colors.green),
                 ),
                 Text(
-                  '-\$${_promoDiscount.toStringAsFixed(2)}',
+                  '-\$${PriceUtils.formatDiscountPrice(_promoDiscount)}',
                   style: const TextStyle(fontSize: 14, color: Colors.green),
                 ),
               ],
@@ -505,7 +509,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
               Text(
-                '\$${finalTotal.toStringAsFixed(2)}',
+                '\$${PriceUtils.formatDiscountPrice(finalTotal)}',
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -562,7 +566,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // Simple promo validation (you can make this more sophisticated)
     if (promoCode.toUpperCase() == 'DESCUENTO10' || promoCode.toUpperCase() == 'PROMO10') {
       setState(() {
-        _promoDiscount = totalAfterPromo * promoDiscountPercentage;
+        _promoDiscount = PriceUtils.roundDiscountPrice(totalAfterPromo * promoDiscountPercentage);
         _promoApplied = true;
       });
       _showSuccessMessage('¡Código promocional aplicado!');

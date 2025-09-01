@@ -3,6 +3,7 @@ import '../models/product.dart';
 import '../services/order_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
@@ -85,18 +86,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     final valorDescuento = _promotionData!['valor_descuento'] as double?;
     final tipoDescuento = _promotionData!['tipo_descuento'] as int?;
     
-    if (valorDescuento == null || tipoDescuento == null) return null;
-    
-    if (tipoDescuento == 1) {
-      // Descuento porcentual
-      return originalPrice - (originalPrice * valorDescuento / 100);
-    } else if (tipoDescuento == 2) {
-      // Descuento fijo
-      final discountedPrice = originalPrice - valorDescuento;
-      return discountedPrice > 0 ? discountedPrice : 0.0;
-    }
-    
-    return null;
+    return PriceUtils.calculateAndRoundDiscountPrice(
+      originalPrice,
+      valorDescuento,
+      tipoDescuento,
+    );
   }
 
   Widget _buildPriceSection(double originalPrice) {
@@ -138,7 +132,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 ),
               ),
               Text(
-                '\$${discountPrice.toStringAsFixed(2)}',
+                '\$${PriceUtils.formatDiscountPrice(discountPrice)}',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -168,7 +162,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     
     if (discountPrice != null) {
       return Text(
-        '\$${discountPrice.toStringAsFixed(2)}',
+        '\$${PriceUtils.formatDiscountPrice(discountPrice)}',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
@@ -780,7 +774,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                         ),
                       ),
                       Text(
-                        'Oferta: \$${finalPrice.toStringAsFixed(2)}',
+                        'Oferta: \$${PriceUtils.formatDiscountPrice(finalPrice)}',
                         style: TextStyle(
                           fontSize: 13,
                           color: widget.categoryColor,
