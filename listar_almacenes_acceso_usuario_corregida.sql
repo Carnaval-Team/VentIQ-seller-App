@@ -1,210 +1,148 @@
+
 DECLARE
-    v_total_almacenes bigint;
-    v_total_paginas integer;
-    v_resultado JSONB;
-    v_almacenes JSONB;
+  v_id_operacion BIGINT;
+  v_id_tipo_operacion BIGINT;
+  v_producto_record JSONB;
+  v_cantidad_total NUMERIC := 0;
+  v_result JSONB;
+  v_error_message TEXT;
+  v_tienda_exists BOOLEAN;
+  v_motivo_exists BOOLEAN;
 BEGIN
-    -- Verificar que el usuario existe
-    IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = p_uuid) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'message', 'Usuario no encontrado',
-            'data', '{}'::JSONB
-        );
-    END IF;
+  -- Validación de existencia de referencias
+  SELECT EXISTS(SELECT 1 FROM app_dat_tienda WHERE id = p_id_tienda) 
+  INTO v_tienda_exists;
+  
+  SELECT EXISTS(SELECT 1 FROM app_nom_motivo_extraccion WHERE id = p_id_motivo_operacion) 
+  INTO v_motivo_exists;
+  
+  IF NOT v_tienda_exists THEN
+    RAISE EXCEPTION 'La tienda con ID % no existe', p_id_tienda;
+  END IF;
+  
+  IF NOT v_motivo_exists THEN
+    RAISE EXCEPTION 'El motivo de extracción con ID % no existe', p_id_motivo_operacion;
+  END IF;
+  
+  IF jsonb_array_length(p_productos) = 0 THEN
+    RAISE EXCEPTION 'Debe incluir al menos un producto';
+  END IF;
 
-    -- Contar total de almacenes con acceso
-    SELECT COUNT(*) INTO v_total_almacenes
-    FROM app_dat_almacen a
-    JOIN app_dat_tienda t ON a.id_tienda = t.id
-    WHERE (
-        -- Verificar acceso como almacenero
-        EXISTS (
-            SELECT 1 
-            FROM app_dat_almacenero al
-            WHERE al.uuid = p_uuid 
-            AND al.id_almacen = a.id
-        )
-        OR
-        -- Verificar acceso como gerente de la tienda
-        EXISTS (
-            SELECT 1 
-            FROM app_dat_gerente g
-            WHERE g.uuid = p_uuid 
-            AND g.id_tienda = t.id
-        )
-        OR
-        -- Verificar acceso como supervisor de la tienda
-        EXISTS (
-            SELECT 1 
-            FROM app_dat_supervisor s
-            WHERE s.uuid = p_uuid 
-            AND s.id_tienda = t.id
-        )
-    )
-    AND (
-        p_denominacion_filter IS NULL OR 
-        a.denominacion ILIKE '%' || p_denominacion_filter || '%'
-    )
-    AND (
-        p_direccion_filter IS NULL OR 
-        a.direccion ILIKE '%' || p_direccion_filter || '%'
-    )
-    AND (
-        p_tienda_filter IS NULL OR 
-        a.id_tienda = p_tienda_filter
+  -- Obtener ID del tipo de operación "Extracción" (asumiendo que existe)
+  SELECT id INTO v_id_tipo_operacion 
+  FROM app_nom_tipo_operacion 
+  WHERE denominacion ILIKE '%extraccion%' OR denominacion ILIKE '%extracción%'
+  LIMIT 1;
+  
+  IF v_id_tipo_operacion IS NULL THEN
+    RAISE EXCEPTION 'No se encontró tipo de operación para extracción';
+  END IF;
+
+  -- Iniciar transacción
+  BEGIN
+    -- 1. Insertar operación principal
+    INSERT INTO app_dat_operaciones (
+      id_tipo_operacion,
+      uuid,
+      id_tienda,
+      observaciones,
+      created_at
+    ) VALUES (
+      v_id_tipo_operacion,
+      p_uuid,
+      p_id_tienda,
+      p_observaciones,
+      NOW()
+    ) RETURNING id INTO v_id_operacion;
+    
+    -- 2. Insertar detalles específicos de extracción
+    INSERT INTO app_dat_operacion_extraccion (
+      id_operacion,
+      id_motivo_operacion,
+      observaciones,
+      autorizado_por,
+      created_at
+    ) VALUES (
+      v_id_operacion,
+      p_id_motivo_operacion,
+      p_observaciones,
+      p_autorizado_por,
+      NOW()
     );
-
-    -- Calcular total de páginas
-    v_total_paginas := CASE 
-        WHEN v_total_almacenes = 0 THEN 0 
-        ELSE CEIL(v_total_almacenes::numeric / p_por_pagina) 
-    END;
-
-    -- Obtener almacenes con paginación (CORREGIDO)
-    WITH almacenes_ordenados AS (
-        SELECT 
-            a.id,
-            a.denominacion,
-            a.direccion,
-            a.ubicacion,
-            a.created_at,
-            t.id as tienda_id,
-            t.denominacion as tienda_denominacion,
-            t.direccion as tienda_direccion
-        FROM app_dat_almacen a
-        JOIN app_dat_tienda t ON a.id_tienda = t.id
-        WHERE (
-            EXISTS (
-                SELECT 1 
-                FROM app_dat_almacenero al
-                WHERE al.uuid = p_uuid 
-                AND al.id_almacen = a.id
-            )
-            OR
-            EXISTS (
-                SELECT 1 
-                FROM app_dat_gerente g
-                WHERE g.uuid = p_uuid 
-                AND g.id_tienda = t.id
-            )
-            OR
-            EXISTS (
-                SELECT 1 
-                FROM app_dat_supervisor s
-                WHERE s.uuid = p_uuid 
-                AND s.id_tienda = t.id
-            )
-        )
-        AND (
-            p_denominacion_filter IS NULL OR 
-            a.denominacion ILIKE '%' || p_denominacion_filter || '%'
-        )
-        AND (
-            p_direccion_filter IS NULL OR 
-            a.direccion ILIKE '%' || p_direccion_filter || '%'
-        )
-        AND (
-            p_tienda_filter IS NULL OR 
-            a.id_tienda = p_tienda_filter
-        )
-        ORDER BY t.denominacion, a.denominacion
-        LIMIT p_por_pagina
-        OFFSET (p_pagina - 1) * p_por_pagina
-    )
-    SELECT JSONB_AGG(
-        JSONB_BUILD_OBJECT(
-            'id', ao.id,
-            'denominacion', ao.denominacion,
-            'direccion', ao.direccion,
-            'ubicacion', ao.ubicacion,
-            'created_at', ao.created_at,
-            'tienda', JSONB_BUILD_OBJECT(
-                'id', ao.tienda_id,
-                'denominacion', ao.tienda_denominacion,
-                'direccion', ao.tienda_direccion
-            ),
-            'roles', (
-                SELECT JSONB_AGG(DISTINCT rol)
-                FROM (
-                    -- Roles específicos en este almacén
-                    SELECT 'ALMACENERO' as rol
-                    FROM app_dat_almacenero al
-                    WHERE al.uuid = p_uuid 
-                    AND al.id_almacen = ao.id
-                    UNION
-                    SELECT 'GERENTE' as rol
-                    FROM app_dat_gerente g
-                    WHERE g.uuid = p_uuid 
-                    AND g.id_tienda = ao.tienda_id
-                    UNION
-                    SELECT 'SUPERVISOR' as rol
-                    FROM app_dat_supervisor s
-                    WHERE s.uuid = p_uuid 
-                    AND s.id_tienda = ao.tienda_id
-                ) roles
-            ),
-            'layouts', (
-                SELECT JSONB_AGG(
-                    JSONB_BUILD_OBJECT(
-                        'id', la.id,
-                        'denominacion', la.denominacion,
-                        'tipo_layout', tl.denominacion,
-                        'sku_codigo', la.sku_codigo
-                    )
-                )
-                FROM app_dat_layout_almacen la
-                JOIN app_nom_tipo_layout_almacen tl ON la.id_tipo_layout = tl.id
-                WHERE la.id_almacen = ao.id
-            ),
-            'condiciones', (
-                SELECT JSONB_AGG(
-                    JSONB_BUILD_OBJECT(
-                        'id', tc.id,
-                        'denominacion', tc.denominacion
-                    )
-                )
-                FROM app_dat_layout_condiciones lc
-                JOIN app_nom_tipo_condicion tc ON lc.id_condicion = tc.id
-                WHERE lc.id_layout = ao.id
-            ),
-            'almaceneros_count', (
-                SELECT COUNT(*) 
-                FROM app_dat_almacenero al2
-                WHERE al2.id_almacen = ao.id
-            ),
-            'limites_stock_count', (
-                SELECT COUNT(*) 
-                FROM app_dat_almacen_limites alim
-                WHERE alim.id_almacen = ao.id
-            )
-        )
-    ) INTO v_almacenes
-    FROM almacenes_ordenados ao;
-
+    
+    -- 3. Insertar productos asociados (sin afectar inventario)
+    FOR v_producto_record IN SELECT * FROM jsonb_array_elements(p_productos)
+    LOOP
+      -- Validación de datos mínimos del producto
+      IF v_producto_record->>'id_producto' IS NULL OR v_producto_record->>'cantidad' IS NULL THEN
+        RAISE EXCEPTION 'Cada producto debe tener id_producto y cantidad';
+      END IF;
+      
+      -- Insertar en extracción_productos
+      INSERT INTO app_dat_extraccion_productos (
+        id_operacion,
+        id_producto,
+        id_variante,
+        id_opcion_variante,
+        id_ubicacion,
+        id_presentacion,
+        cantidad,
+        precio_unitario,
+        sku_producto,
+        sku_ubicacion,
+        created_at
+      ) VALUES (
+        v_id_operacion,
+        (v_producto_record->>'id_producto')::BIGINT,
+        NULLIF(v_producto_record->>'id_variante', '')::BIGINT,
+        NULLIF(v_producto_record->>'id_opcion_variante', '')::BIGINT,
+        NULLIF(v_producto_record->>'id_ubicacion', '')::BIGINT,
+        NULLIF(v_producto_record->>'id_presentacion', '')::BIGINT,
+        (v_producto_record->>'cantidad')::NUMERIC,
+        NULLIF(v_producto_record->>'precio_unitario', '')::NUMERIC,
+        v_producto_record->>'sku_producto',
+        v_producto_record->>'sku_ubicacion',
+        NOW()
+      );
+      
+      -- Sumar al totalizador
+      v_cantidad_total := v_cantidad_total + (v_producto_record->>'cantidad')::NUMERIC;
+    END LOOP;
+    
+    -- 4. Insertar estado inicial
+    INSERT INTO app_dat_estado_operacion (
+      id_operacion,
+      estado,
+      uuid,
+      created_at
+    ) VALUES (
+      v_id_operacion,
+      p_estado_inicial, -- Usa el parámetro de estado
+      p_uuid,
+      NOW()
+    );
+    
+    -- Confirmar transacción
+    COMMIT;
+    
     -- Construir respuesta
-    v_resultado := JSONB_BUILD_OBJECT(
-        'success', true,
-        'data', JSONB_BUILD_OBJECT(
-            'almacenes', COALESCE(v_almacenes, '[]'::JSONB),
-            'paginacion', JSONB_BUILD_OBJECT(
-                'pagina_actual', p_pagina,
-                'por_pagina', p_por_pagina,
-                'total_almacenes', v_total_almacenes,
-                'total_paginas', v_total_paginas,
-                'tiene_anterior', p_pagina > 1,
-                'tiene_siguiente', p_pagina < v_total_paginas
-            )
-        )
+    v_result := jsonb_build_object(
+      'status', 'success',
+      'id_operacion', v_id_operacion,
+      'total_productos', jsonb_array_length(p_productos),
+      'cantidad_total', v_cantidad_total,
+      'mensaje', 'Extracción registrada correctamente en estado pendiente'
     );
-
-    RETURN v_resultado;
-
-EXCEPTION
+    
+  EXCEPTION
     WHEN OTHERS THEN
-        RETURN JSONB_BUILD_OBJECT(
-            'success', false,
-            'message', 'Error al listar almacenes: ' || SQLERRM,
-            'error_code', SQLSTATE
-        );
+      ROLLBACK;
+      v_result := jsonb_build_object(
+        'status', 'error',
+        'message', 'Error al registrar extracción: ' || SQLERRM,
+        'sqlstate', SQLSTATE
+      );
+  END;
+  
+  RETURN v_result;
 END;

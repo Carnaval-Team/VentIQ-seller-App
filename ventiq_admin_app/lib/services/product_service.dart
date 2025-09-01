@@ -306,4 +306,43 @@ class ProductService {
       // Don't throw error, just log it since this is debug functionality
     }
   }
+
+  /// Elimina un producto completo y todos sus datos relacionados
+  static Future<Map<String, dynamic>> deleteProductComplete(int productId) async {
+    try {
+      print('🗑️ Eliminando producto completo ID: $productId');
+
+      final response = await _supabase.rpc(
+        'eliminar_producto_completo',
+        params: {'p_id_producto': productId},
+      );
+
+      print('📦 Respuesta eliminación: ${response.toString()}');
+
+      if (response == null) {
+        throw Exception('Respuesta nula del servidor');
+      }
+
+      // La función RPC retorna un JSON directamente
+      final result = response as Map<String, dynamic>;
+      
+      if (result['success'] == true) {
+        print('✅ Producto eliminado exitosamente');
+        print('📊 Registros eliminados: ${result['total_registros_eliminados']}');
+        print('📋 Tablas afectadas: ${result['tablas_afectadas']}');
+      } else {
+        print('❌ Error en eliminación: ${result['message']}');
+      }
+
+      return result;
+
+    } catch (e) {
+      print('❌ Error al eliminar producto: $e');
+      return {
+        'success': false,
+        'message': 'Error al eliminar producto: $e',
+        'producto_id': productId,
+      };
+    }
+  }
 }

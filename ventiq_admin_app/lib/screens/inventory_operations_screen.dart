@@ -948,6 +948,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       tipoOperacion.contains('recepcion') ||
                       tipoOperacion.contains('entrada') ||
                       tipoOperacion.contains('ingreso');
+                      bool isExtraction = tipoOperacion.contains('extracción') || 
+                      tipoOperacion.contains('extraccion') ||
+                      tipoOperacion.contains('salida');
     
     // Check for different variations of pending status
     bool isPending = estado.contains('pendiente') || 
@@ -956,10 +959,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     estado.contains('proceso');
     
     print('   - Is reception: $isReception');
+    print('   - Is extraction: $isExtraction');
     print('   - Is pending: $isPending');
-    print('   - Should show button: ${isReception && isPending}');
+    print('   - Should show button: ${(isReception || isExtraction) && isPending }');
     
-    return isReception && isPending;
+    return (isReception || isExtraction) && isPending;
   }
 
   Widget _buildCompleteButton(Map<String, dynamic> operation) {

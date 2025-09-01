@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import 'add_product_screen.dart';
 import '../widgets/admin_bottom_navigation.dart';
-import '../models/product.dart';
-import '../services/product_service.dart';
 import '../widgets/admin_drawer.dart';
 
 class ProductsScreen extends StatefulWidget {
@@ -978,55 +977,546 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   void _showEditProductDialog(Product product) {
-    _showComingSoonDialog('Editar Producto');
-  }
+    final TextEditingController priceController = TextEditingController(
+      text: product.basePrice.toString()
+    );
+    bool isUpdating = false;
 
-  void _showDeleteConfirmation(Product product) {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Eliminar Producto'),
-            content: Text(
-              '¿Estás seguro de que quieres eliminar "${product.name}"?',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text(
+            'Editar Producto',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _showComingSoonDialog('Eliminar Producto');
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.error,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Eliminar'),
-              ),
-            ],
           ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Product info (read-only)
+                _buildReadOnlyField('Nombre', product.name),
+                const SizedBox(height: 12),
+                _buildReadOnlyField('SKU', product.sku),
+                const SizedBox(height: 12),
+                _buildReadOnlyField('Categoría', product.categoryName),
+                const SizedBox(height: 12),
+                _buildReadOnlyField('Descripción', product.description),
+                const SizedBox(height: 12),
+                _buildReadOnlyField('Estado', product.isActive ? 'Activo' : 'Inactivo'),
+                const SizedBox(height: 12),
+                _buildReadOnlyField('Stock', product.tieneStock ? 'Disponible' : 'Sin Stock'),
+                const SizedBox(height: 16),
+                
+                // Editable price field
+                const Text(
+                  'Precio de Venta (CUP)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: priceController,
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    prefixText: '\$ ',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppColors.primary),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El precio es requerido';
+                    }
+                    final price = double.tryParse(value.trim());
+                    if (price == null || price <= 0) {
+                      return 'Ingrese un precio válido';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isUpdating ? null : () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: isUpdating ? null : () async {
+                final newPriceText = priceController.text.trim();
+                final newPrice = double.tryParse(newPriceText);
+                
+                if (newPrice == null || newPrice <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Ingrese un precio válido'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  return;
+                }
+
+                setState(() {
+                  isUpdating = true;
+                });
+
+                try {
+                  await _updateProductPrice(int.parse(product.id), newPrice);
+                  
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Precio actualizado exitosamente'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                    _loadProducts(); // Refresh the products list
+                  }
+                } catch (e) {
+                  setState(() {
+                    isUpdating = false;
+                  });
+                  
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error al actualizar precio: $e'),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
+              child: isUpdating 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  void _showComingSoonDialog(String feature) {
+  Widget _buildReadOnlyField(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: AppColors.textSecondary,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceVariant,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _updateProductPrice(int productId, double newPrice) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase
+          .from('app_dat_precio_venta')
+          .update({'precio_venta_cup': newPrice})
+          .eq('id_producto', productId)
+          .select();
+
+      if (response.isEmpty) {
+        throw Exception('No se encontró el producto para actualizar');
+      }
+    } catch (e) {
+      throw Exception('Error al actualizar el precio: $e');
+    }
+  }
+
+  void _showDeleteConfirmation(Product product) {
+    bool isDeleting = false;
+    
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(feature),
-            content: const Text(
-              'Esta funcionalidad se implementará próximamente con integración a Supabase.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.warning,
+                color: AppColors.error,
+                size: 28,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Eliminar Producto Completo',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.error,
+                  ),
+                ),
               ),
             ],
           ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '⚠️ OPERACIÓN IRREVERSIBLE',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.error,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Se eliminará permanentemente:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '"${product.name}"',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Esta acción eliminará TODOS los datos relacionados:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildDeletionCategory('📊 Inventario y Movimientos', [
+                  'Registros de inventario',
+                  'Extracciones de productos',
+                  'Recepciones de productos',
+                  'Control de productos',
+                  'Ajustes de inventario',
+                  'Pre-asignaciones',
+                ]),
+                _buildDeletionCategory('💰 Precios y Ventas', [
+                  'Precios de venta',
+                  'Clasificación ABC',
+                  'Márgenes comerciales',
+                ]),
+                _buildDeletionCategory('🏪 Almacén y Ubicaciones', [
+                  'Límites de almacén',
+                  'Códigos de barras',
+                ]),
+                _buildDeletionCategory('📋 Información del Producto', [
+                  'Etiquetas',
+                  'Multimedias (imágenes)',
+                  'Presentaciones',
+                  'Subcategorías',
+                  'Garantías',
+                ]),
+                _buildDeletionCategory('🎯 Marketing', [
+                  'Promociones aplicadas',
+                ]),
+                _buildDeletionCategory('🍽️ Restaurante (si aplica)', [
+                  'Recetas',
+                  'Modificaciones',
+                ]),
+                _buildDeletionCategory('💼 Contabilidad', [
+                  'Asignación de costos',
+                ]),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: AppColors.warning,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Esta operación no se puede deshacer. Asegúrate de tener un respaldo si es necesario.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isDeleting ? null : () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: isDeleting ? null : () async {
+                setState(() {
+                  isDeleting = true;
+                });
+
+                try {
+                  final result = await ProductService.deleteProductComplete(
+                    int.parse(product.id)
+                  );
+
+                  if (mounted) {
+                    Navigator.pop(context);
+                    
+                    if (result['success'] == true) {
+                      _showDeletionSuccessDialog(result);
+                      _loadProducts(); // Refresh the products list
+                    } else {
+                      _showErrorMessage(result['message'] ?? 'Error desconocido');
+                    }
+                  }
+                } catch (e) {
+                  setState(() {
+                    isDeleting = false;
+                  });
+                  
+                  if (mounted) {
+                    _showErrorMessage('Error al eliminar producto: $e');
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+              ),
+              child: isDeleting 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text('Eliminar Definitivamente'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeletionCategory(String title, List<String> items) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...items.map((item) => Padding(
+            padding: const EdgeInsets.only(left: 8, bottom: 2),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '• ',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    item,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )).toList(),
+        ],
+      ),
+    );
+  }
+
+  void _showDeletionSuccessDialog(Map<String, dynamic> result) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              Icons.check_circle,
+              color: AppColors.success,
+              size: 28,
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Producto Eliminado',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.success,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                result['message'] ?? 'Producto eliminado exitosamente',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.success.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Resumen de eliminación:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.success,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Producto: ${result['nombre_producto']}',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    Text(
+                      'Total registros eliminados: ${result['total_registros_eliminados']}',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    if (result['tablas_afectadas'] != null && 
+                        (result['tablas_afectadas'] as List).isNotEmpty) ...[
+                      Text(
+                        'Configuraciones afectadas: ${(result['tablas_afectadas'] as List).length}',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+            ),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.error,
+        duration: const Duration(seconds: 4),
+      ),
     );
   }
 

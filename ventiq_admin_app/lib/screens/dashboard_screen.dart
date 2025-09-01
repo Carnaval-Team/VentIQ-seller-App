@@ -294,6 +294,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 subtitle: '${_dashboardData['salesChange']>=0 ?'+':'-'} ${_dashboardData['salesChange']?.toStringAsFixed(2) ?? '0.00'}% vs ayer',
                 icon: Icons.trending_up,
                 color: AppColors.success,
+                onTap: () => Navigator.pushNamed(context, '/sales'),
               ),
             ),
             const SizedBox(width: 12),
@@ -342,8 +343,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String subtitle,
     required IconData icon,
     required Color color,
+    VoidCallback? onTap,
   }) {
-    return Container(
+    Widget cardContent = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -399,6 +401,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: cardContent,
+      );
+    }
+
+    return cardContent;
   }
 
   Widget _buildSalesSection() {
