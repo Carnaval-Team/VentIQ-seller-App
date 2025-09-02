@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
+import '../models/sales.dart';
 
 class ProductSalesReport {
   final int idTienda;
@@ -320,6 +321,76 @@ class SalesService {
       return productAnalysis;
     } catch (e) {
       print('Error in getProductAnalysis: $e');
+      return [];
+    }
+  }
+
+  static Future<List<SalesVendorReport>> getSalesVendorReport({
+    DateTime? fechaDesde,
+    DateTime? fechaHasta,
+    String? uuidUsuario,
+  }) async {
+    try {
+      // Get store ID from preferences
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        print('Error: No se pudo obtener el ID de tienda');
+        return [];
+      }
+
+      print('Calling fn_reporte_ventas_por_vendedor with:');
+      print('- p_id_tienda: $idTienda');
+      print('- p_fecha_desde: $fechaDesde');
+      print('- p_fecha_hasta: $fechaHasta');
+      print('- p_uuid_usuario: $uuidUsuario');
+
+      // Prepare parameters
+      final Map<String, dynamic> params = {
+        'p_id_tienda': idTienda,
+      };
+
+      if (fechaDesde != null) {
+        params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
+      }
+      if (fechaHasta != null) {
+        params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
+      }
+      // if (uuidUsuario != null) {
+      //   params['p_uuid_usuario'] = uuidUsuario;
+      // }
+
+      // Call the RPC function
+      final response = await _supabase.rpc(
+        'fn_reporte_ventas_por_vendedor',
+        params: params,
+      );
+
+      print('Response received: ${response?.length ?? 0} vendors');
+
+      if (response == null) {
+        print('No data received from fn_reporte_ventas_por_vendedor');
+        return [];
+      }
+
+      // Convert response to SalesVendorReport objects
+      final List<SalesVendorReport> reports = [];
+      for (final item in response) {
+        try {
+          final report = SalesVendorReport.fromJson(item);
+          reports.add(report);
+          print('Added vendor: ${report.nombreCompleto} - Total ventas: ${report.totalVentas} - Total dinero: \$${report.totalDineroGeneral}');
+        } catch (e) {
+          print('Error parsing sales vendor report item: $e');
+          print('Item data: $item');
+        }
+      }
+
+      print('Successfully parsed ${reports.length} sales vendor reports');
+      return reports;
+
+    } catch (e) {
+      print('Error in getSalesVendorReport: $e');
       return [];
     }
   }

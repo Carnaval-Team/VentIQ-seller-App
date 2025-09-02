@@ -152,73 +152,48 @@ class DashboardService {
     }
   }
 
-  /// Transforma las categorías a formato PieChartSectionData
-  List<PieChartSectionData> _transformCategoriesToChartData(List<dynamic> categorias) {
+  /// Transforma las categorías a formato Map para el dashboard
+  List<Map<String, dynamic>> _transformCategoriesToChartData(List<dynamic> categorias) {
     if (categorias.isEmpty) {
       // Datos por defecto si no hay categorías
       return [
-        PieChartSectionData(
-          color: const Color(0xFF9E9E9E),
-          value: 1,
-          title: 'Sin datos\n1',
-          radius: 50,
-          titleStyle: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        )
+        {
+          'name': 'Sin datos',
+          'value': 1.0,
+          'color': 0xFF9E9E9E,
+        }
       ];
     }
     
     try {
       final colors = [
-        const Color(0xFF4A90E2), // Azul VentIQ
-        const Color(0xFF10B981), // Verde
-        const Color(0xFFFF6B35), // Naranja
-        const Color(0xFFE74C3C), // Rojo
-        const Color(0xFF9B59B6), // Morado
-        const Color(0xFFF39C12), // Amarillo
-        const Color(0xFF1ABC9C), // Turquesa
-        const Color(0xFF34495E), // Gris oscuro
+        0xFF4A90E2, // Azul VentIQ
+        0xFF10B981, // Verde
+        0xFFFF6B35, // Naranja
+        0xFFE74C3C, // Rojo
+        0xFF9B59B6, // Morado
+        0xFFF39C12, // Amarillo
+        0xFF1ABC9C, // Turquesa
+        0xFF34495E, // Gris oscuro
       ];
       
-      final chartData = <PieChartSectionData>[];
+      final chartData = <Map<String, dynamic>>[];
       for (int i = 0; i < categorias.length; i++) {
         final categoria = categorias[i] as Map<String, dynamic>;
         final name = categoria['name'] ?? 'Sin nombre';
         final value = (categoria['total_product'] ?? 0).toDouble();
         
-        chartData.add(
-          PieChartSectionData(
-            color: colors[i % colors.length],
-            value: value,
-            title: '$name\n${value.toInt()}',
-            radius: 50,
-            titleStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-        );
+        chartData.add({
+          'name': name,
+          'value': value,
+          'color': colors[i % colors.length],
+        });
       }
+      
       return chartData;
     } catch (e) {
-      print('❌ Error transforming categorias to PieChartSectionData: $e');
-      return [
-        PieChartSectionData(
-          color: const Color(0xFF9E9E9E),
-          value: 1,
-          title: 'Error\n1',
-          radius: 50,
-          titleStyle: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        )
-      ];
+      print('❌ Error transforming categorias to chart data: $e');
+      return [];
     }
   }
 }

@@ -140,3 +140,71 @@ class TPV {
     );
   }
 }
+
+class SalesVendorReport {
+  final String uuidUsuario;
+  final String nombres;
+  final String apellidos;
+  final String nombreCompleto;
+  final int totalVentas;
+  final double totalProductosVendidos;
+  final double totalDineroEfectivo;
+  final double totalDineroTransferencia;
+  final double totalDineroGeneral;
+  final double totalImporteVentas;
+  final int productosDiferentesVendidos;
+  final DateTime primeraVenta;
+  final DateTime ultimaVenta;
+
+  SalesVendorReport({
+    required this.uuidUsuario,
+    required this.nombres,
+    required this.apellidos,
+    required this.nombreCompleto,
+    required this.totalVentas,
+    required this.totalProductosVendidos,
+    required this.totalDineroEfectivo,
+    required this.totalDineroTransferencia,
+    required this.totalDineroGeneral,
+    required this.totalImporteVentas,
+    required this.productosDiferentesVendidos,
+    required this.primeraVenta,
+    required this.ultimaVenta,
+  });
+
+  factory SalesVendorReport.fromJson(Map<String, dynamic> json) {
+    return SalesVendorReport(
+      uuidUsuario: json['uuid_usuario'] ?? '',
+      nombres: json['nombres'] ?? '',
+      apellidos: json['apellidos'] ?? '',
+      nombreCompleto: json['nombre_completo'] ?? '',
+      totalVentas: json['total_ventas'] ?? 0,
+      totalProductosVendidos: (json['total_productos_vendidos'] ?? 0.0).toDouble(),
+      totalDineroEfectivo: (json['total_dinero_efectivo'] ?? 0.0).toDouble(),
+      totalDineroTransferencia: (json['total_dinero_transferencia'] ?? 0.0).toDouble(),
+      totalDineroGeneral: (json['total_dinero_general'] ?? 0.0).toDouble(),
+      totalImporteVentas: (json['total_importe_ventas'] ?? 0.0).toDouble(),
+      productosDiferentesVendidos: json['productos_diferentes_vendidos'] ?? 0,
+      primeraVenta: DateTime.parse(json['primera_venta'] ?? DateTime.now().toIso8601String()),
+      ultimaVenta: DateTime.parse(json['ultima_venta'] ?? DateTime.now().toIso8601String()),
+    );
+  }
+
+  // Helper method to determine if vendor is active (has sales today)
+  bool get isActiveToday {
+    final today = DateTime.now();
+    final todayStart = DateTime(today.year, today.month, today.day);
+    return ultimaVenta.isAfter(todayStart);
+  }
+
+  // Helper method to get status based on activity
+  String get status {
+    if (isActiveToday) {
+      return 'activo';
+    } else if (ultimaVenta.isAfter(DateTime.now().subtract(const Duration(days: 7)))) {
+      return 'reciente';
+    } else {
+      return 'inactivo';
+    }
+  }
+}

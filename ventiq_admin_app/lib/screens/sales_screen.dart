@@ -18,10 +18,11 @@ class _SalesScreenState extends State<SalesScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
   List<Sale> _sales = [];
-  List<TPV> _tpvs = [];
+  List<SalesVendorReport> _vendorReports = [];
   List<ProductSalesReport> _productSalesReports = [];
   bool _isLoading = true;
   bool _isLoadingProducts = true;
+  bool _isLoadingVendors = true;
   String _selectedPeriod = 'Hoy';
   String _selectedTPV = 'Todos';
   double _totalSales = 0.0;
@@ -50,12 +51,12 @@ class _SalesScreenState extends State<SalesScreen>
     Future.delayed(const Duration(milliseconds: 800), () {
       setState(() {
         _sales = MockSalesService.getMockSales();
-        _tpvs = MockSalesService.getMockTPVs();
         _isLoading = false;
       });
     });
     
     _loadProductSalesData();
+    _loadVendorReports();
   }
 
   void _loadProductSalesData() async {
@@ -88,6 +89,30 @@ class _SalesScreenState extends State<SalesScreen>
         _isLoadingMetrics = false;
       });
       print('Error loading sales data: $e');
+    }
+  }
+
+  void _loadVendorReports() async {
+    setState(() {
+      _isLoadingVendors = true;
+    });
+
+    try {
+      final dateRange = _getDateRangeForPeriod(_selectedPeriod);
+      final reports = await SalesService.getSalesVendorReport(
+        fechaDesde: dateRange['start'],
+        fechaHasta: dateRange['end'],
+      );
+      
+      setState(() {
+        _vendorReports = reports;
+        _isLoadingVendors = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingVendors = false;
+      });
+      print('Error loading vendor reports: $e');
     }
   }
 
@@ -246,10 +271,39 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   Widget _buildTPVsTab() {
-    return ListView.builder(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      itemCount: _tpvs.length,
-      itemBuilder: (context, index) => _buildTPVCard(_tpvs[index]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPeriodSelector(),
+          const SizedBox(height: 16),
+          if (_isLoadingVendors)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(color: AppColors.primary),
+              ),
+            )
+          else if (_vendorReports.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  'No hay datos de vendedores para el período seleccionado',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _vendorReports.length,
+              itemBuilder: (context, index) => _buildVendorCard(_vendorReports[index]),
+            ),
+        ],
+      ),
     );
   }
 
@@ -611,6 +665,7 @@ class _SalesScreenState extends State<SalesScreen>
               onChanged: (value) {
                 setState(() => _selectedPeriod = value!);
                 _loadProductSalesData();
+                _loadVendorReports();
               },
             ),
           ),
@@ -619,11 +674,9 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
-  Widget _buildTPVCard(TPV tpv) {
-    final tpvSales = _sales.where((sale) => sale.tpvId == tpv.id).length;
-    final tpvTotal = _sales
-        .where((sale) => sale.tpvId == tpv.id)
-        .fold(0.0, (sum, sale) => sum + sale.total);
+  Widget _buildVendorCard(SalesVendorReport vendor) {
+    final statusColor = _getVendorStatusColor(vendor.status);
+    final statusIcon = _getVendorStatusIcon(vendor.status);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -632,34 +685,110 @@ class _SalesScreenState extends State<SalesScreen>
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: ListTile(
+      child: ExpansionTile(
         leading: CircleAvatar(
-          backgroundColor:
-              tpv.isActive
-                  ? AppColors.success.withOpacity(0.1)
-                  : AppColors.error.withOpacity(0.1),
+          backgroundColor: statusColor.withOpacity(0.1),
           child: Icon(
-            Icons.point_of_sale,
-            color: tpv.isActive ? AppColors.success : AppColors.error,
+            Icons.person,
+            color: statusColor,
           ),
         ),
         title: Text(
-          tpv.name,
+          vendor.nombreCompleto,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Tienda: ${tpv.storeName}'),
-            Text('$tpvSales ventas • \$${tpvTotal.toStringAsFixed(2)}'),
+            Text('${vendor.totalVentas} ventas • \$${vendor.totalDineroGeneral.toStringAsFixed(2)}'),
+            Text(
+              '${vendor.totalProductosVendidos.toStringAsFixed(0)} productos vendidos',
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
           ],
         ),
         trailing: Icon(
-          tpv.isActive ? Icons.check_circle : Icons.cancel,
-          color: tpv.isActive ? AppColors.success : AppColors.error,
+          statusIcon,
+          color: statusColor,
         ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _buildVendorDetailRow('Efectivo', '\$${vendor.totalDineroEfectivo.toStringAsFixed(2)}', AppColors.success),
+                _buildVendorDetailRow('Transferencia', '\$${vendor.totalDineroTransferencia.toStringAsFixed(2)}', AppColors.info),
+                _buildVendorDetailRow('Productos diferentes', '${vendor.productosDiferentesVendidos}', AppColors.primary),
+                _buildVendorDetailRow('Primera venta', _formatDateTime(vendor.primeraVenta), AppColors.textSecondary),
+                _buildVendorDetailRow('Última venta', _formatDateTime(vendor.ultimaVenta), AppColors.textSecondary),
+              ],
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildVendorDetailRow(String label, String value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getVendorStatusColor(String status) {
+    switch (status) {
+      case 'activo':
+        return AppColors.success;
+      case 'reciente':
+        return AppColors.warning;
+      case 'inactivo':
+        return AppColors.error;
+      default:
+        return AppColors.textSecondary;
+    }
+  }
+
+  IconData _getVendorStatusIcon(String status) {
+    switch (status) {
+      case 'activo':
+        return Icons.check_circle;
+      case 'reciente':
+        return Icons.schedule;
+      case 'inactivo':
+        return Icons.cancel;
+      default:
+        return Icons.help_outline;
+    }
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dateToCheck = DateTime(dateTime.year, dateTime.month, dateTime.day);
+    
+    if (dateToCheck == today) {
+      return 'Hoy ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } else if (dateToCheck == today.subtract(const Duration(days: 1))) {
+      return 'Ayer ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } else {
+      return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+    }
   }
 
 
