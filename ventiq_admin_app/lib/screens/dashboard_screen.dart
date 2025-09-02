@@ -90,7 +90,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           'lowStock': 0,
           'okStock': 0,
           'salesData': <FlSpot>[],
-          'categoryData': [{'name': 'Sin datos', 'value': 1, 'color': 0xFF9E9E9E}],
+          'categoryData': [
+            {'name': 'Sin datos', 'value': 1, 'color': 0xFF9E9E9E}
+          ],
           'period': _selectedTimeFilter,
           'lastUpdated': DateTime.now().toIso8601String(),
         };
@@ -290,8 +292,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: _buildKPICard(
                 title: 'Ventas Total',
-                value: '\$${_dashboardData['totalSales']?.toStringAsFixed(2) ?? '0.00'}',
-                subtitle: '${_dashboardData['salesChange']>=0 ?'+':'-'} ${_dashboardData['salesChange']?.toStringAsFixed(2) ?? '0.00'}% vs ayer',
+                value: '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}',
+                subtitle: '${_dashboardData['salesChange']>=0 ?'+':'-'} ${_dashboardData['salesChange']?.toStringAsFixed(2) ?? '0.00'}% ${_getPreviousPeriodLabel()}',
                 icon: Icons.trending_up,
                 color: AppColors.success,
                 onTap: () => Navigator.pushNamed(context, '/sales'),
@@ -326,7 +328,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: _buildKPICard(
                 title: 'Gastos',
                 value: '\$${_dashboardData['totalExpenses']?.toStringAsFixed(2) ?? '0.00'}',
-                subtitle: 'Este mes',
+                subtitle: _getPeriodLabel(),
                 icon: Icons.money_off,
                 color: AppColors.error,
               ),
@@ -427,101 +429,119 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(height: 12),
         Container(
-          height: 200,
-          padding: const EdgeInsets.all(16),
+          height: 230,
+          padding: const EdgeInsets.fromLTRB(0,12,12,0),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border),
           ),
-          child: LineChart(
-            LineChartData(
-              gridData: FlGridData(
-                show: true,
-                drawVerticalLine: false,
-                horizontalInterval: _getYAxisInterval(),
-                getDrawingHorizontalLine: (value) {
-                  return FlLine(
-                    color: AppColors.border,
-                    strokeWidth: 1,
-                  );
-                },
-              ),
-              titlesData: FlTitlesData(
-                show: true,
-                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 30,
-                    interval: 1,
-                    getTitlesWidget: (double value, TitleMeta meta) {
-                      return SideTitleWidget(
-                        axisSide: meta.axisSide,
-                        child: Text(
-                          _getChartLabel(value.toInt()),
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 12,
+          child: Center(
+            child: LineChart(
+              LineChartData(
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: _getYAxisInterval(),
+                  getDrawingHorizontalLine: (value) {
+                    return FlLine(
+                      color: AppColors.border,
+                      strokeWidth: 1,
+                    );
+                  },
+                ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 40,
+                      interval: _getXAxisInterval(),
+                      getTitlesWidget: (double value, TitleMeta meta) {
+                        final label = _getChartLabel(value.toInt());
+                        if (label.isEmpty) return const SizedBox.shrink();
+                        
+                        return SideTitleWidget(
+                          axisSide: meta.axisSide,
+                          child: Container(
+                            width: 35,
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              label,
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 10,
+                              ),
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.visible,
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
-                ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    interval: _getYAxisInterval(),
-                    reservedSize: 60,
-                    getTitlesWidget: (double value, TitleMeta meta) {
-                      return Text(
-                        _formatYAxisLabel(value),
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 12,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              borderData: FlBorderData(
-                show: true,
-                border: Border.all(color: AppColors.border, width: 1),
-              ),
-              minX: 0,
-              maxX: _getMaxX(),
-              minY: 0,
-              maxY: _getMaxY(),
-              lineBarsData: [
-                LineChartBarData(
-                  spots: _dashboardData['salesData'] ?? [],
-                  isCurved: true,
-                  gradient: LinearGradient(
-                    colors: [AppColors.primary, AppColors.primary.withOpacity(0.3)],
-                  ),
-                  barWidth: 3,
-                  isStrokeCapRound: true,
-                  dotData: const FlDotData(
-                    show: true,
-                  ),
-                  belowBarData: BarAreaData(
-                    show: true,
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.primary.withOpacity(0.3),
-                        AppColors.primary.withOpacity(0.1),
-                      ],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: _getYAxisInterval(),
+                      reservedSize: 60,
+                      getTitlesWidget: (double value, TitleMeta meta) {
+                        return Container(
+                          width: 55,
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Text(
+                            _formatYAxisLabel(value),
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 10,
+                            ),
+                            textAlign: TextAlign.right,
+                            overflow: TextOverflow.visible,
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
-              ],
+                borderData: FlBorderData(
+                  show: true,
+                  border: Border.all(color: AppColors.border, width: 1),
+                ),
+                minX: 0,
+                maxX: _getMaxX(),
+                minY: 0,
+                maxY: _getMaxY(),
+                clipData: FlClipData.none(),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: _dashboardData['salesData'] ?? [],
+                    isCurved: true,
+                    gradient: LinearGradient(
+                      colors: [AppColors.primary, AppColors.primary.withOpacity(0.3)],
+                    ),
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(
+                      show: true,
+                    ),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.primary.withOpacity(0.3),
+                          AppColors.primary.withOpacity(0.1),
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -530,6 +550,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildCategorySection() {
+    final categoryData = _dashboardData['categoryData'] as List<Map<String, dynamic>>? ?? [];
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -543,25 +565,84 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const SizedBox(height: 12),
         Container(
-          height: 250,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border),
           ),
-          child: PieChart(
-            PieChartData(
-              sections: _dashboardData['categoryData'] ?? [],
-              borderData: FlBorderData(show: false),
-              sectionsSpace: 2,
-              centerSpaceRadius: 60,
-              startDegreeOffset: -90,
-            ),
+          child: Row(
+            children: [
+              // Pie Chart
+              Expanded(
+                flex: 3,
+                child: SizedBox(
+                  height: 200,
+                  child: PieChart(
+                    PieChartData(
+                      sections: _buildPieSections(categoryData),
+                      borderData: FlBorderData(show: false),
+                      sectionsSpace: 2,
+                      centerSpaceRadius: 50,
+                      startDegreeOffset: -90,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Legend
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: categoryData.map((item) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: Color(item['color'] ?? 0xFF9E9E9E),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              item['name'] ?? 'Sin nombre',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
           ),
         ),
       ],
     );
+  }
+
+  List<PieChartSectionData> _buildPieSections(List<Map<String, dynamic>> categoryData) {
+    return categoryData.map((item) {
+      return PieChartSectionData(
+        color: Color(item['color'] ?? 0xFF9E9E9E),
+        value: (item['value'] ?? 0).toDouble(),
+        radius: 60,
+        showTitle: false, // No mostrar títulos en el pie
+      );
+    }).toList();
   }
 
   Widget _buildInventorySection() {
@@ -792,6 +873,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  /// Obtiene el intervalo para mostrar etiquetas en el eje X
+  double _getXAxisInterval() {
+    final maxX = _getMaxX();
+    
+    // Para evitar sobreposición de etiquetas, mostrar máximo 6-7 etiquetas
+    if (maxX <= 6) {
+      return 1; // Mostrar todas
+    } else if (maxX <= 12) {
+      return 2; // Mostrar cada 2
+    } else {
+      return (maxX / 5).ceilToDouble(); // Mostrar aproximadamente 5 etiquetas
+    }
+  }
+
   double _getMaxX() {
     switch (_selectedTimeFilter) {
       case 'Día':
@@ -831,23 +926,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double _getYAxisInterval() {
     final maxY = _getMaxY();
     
-    // Calcular intervalo dinámico para mostrar aproximadamente 5-6 etiquetas
-    if (maxY <= 100) {
+    // Calcular intervalo dinámico para mostrar máximo 10 etiquetas
+    // Dividir maxY entre 8-10 para obtener un intervalo apropiado
+    double targetInterval = maxY / 8;
+    
+    // Redondear a números "bonitos"
+    if (targetInterval <= 1) {
+      return 1;
+    } else if (targetInterval <= 2) {
+      return 2;
+    } else if (targetInterval <= 5) {
+      return 5;
+    } else if (targetInterval <= 10) {
+      return 10;
+    } else if (targetInterval <= 20) {
       return 20;
-    } else if (maxY <= 500) {
+    } else if (targetInterval <= 50) {
+      return 50;
+    } else if (targetInterval <= 100) {
       return 100;
-    } else if (maxY <= 1000) {
+    } else if (targetInterval <= 200) {
       return 200;
-    } else if (maxY <= 5000) {
+    } else if (targetInterval <= 500) {
+      return 500;
+    } else if (targetInterval <= 1000) {
       return 1000;
-    } else if (maxY <= 10000) {
+    } else if (targetInterval <= 2000) {
       return 2000;
-    } else if (maxY <= 50000) {
+    } else if (targetInterval <= 5000) {
+      return 5000;
+    } else if (targetInterval <= 10000) {
       return 10000;
-    } else if (maxY <= 100000) {
+    } else if (targetInterval <= 20000) {
       return 20000;
-    } else {
+    } else if (targetInterval <= 50000) {
       return 50000;
+    } else if (targetInterval <= 100000) {
+      return 100000;
+    } else if (targetInterval <= 200000) {
+      return 200000;
+    } else if (targetInterval <= 500000) {
+      return 500000;
+    } else if (targetInterval <= 1000000) {
+      return 1000000;
+    } else if (targetInterval <= 2000000) {
+      return 2000000;
+    } else if (targetInterval <= 5000000) {
+      return 5000000;
+    } else {
+      return 10000000;
     }
   }
 
@@ -855,11 +982,87 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (value == 0) return '0';
     
     if (value >= 1000000) {
-      return '${(value / 1000000).toStringAsFixed(1)}M';
+      // Para millones, mostrar con 1 decimal si es necesario
+      double millions = value / 1000000;
+      if (millions == millions.roundToDouble()) {
+        return '${millions.toStringAsFixed(0)}M';
+      } else {
+        return '${millions.toStringAsFixed(1)}M';
+      }
     } else if (value >= 1000) {
+      // Para miles, sin decimales
       return '${(value / 1000).toStringAsFixed(0)}K';
     } else {
       return value.toStringAsFixed(0);
+    }
+  }
+
+  /// Formatea valores de moneda para mostrar K y M para números grandes
+  String _formatCurrency(double value) {
+    if (value == 0) return '0.00';
+    
+    if (value >= 1000000) {
+      // Para millones, mostrar con 1 decimal
+      double millions = value / 1000000;
+      if (millions == millions.roundToDouble()) {
+        return '${millions.toStringAsFixed(0)}M';
+      } else {
+        return '${millions.toStringAsFixed(1)}M';
+      }
+    } else if (value >= 100000) {
+      // Para valores >= 100,000, mostrar en K sin decimales
+      return '${(value / 1000).toStringAsFixed(0)}K';
+    } else {
+      // Para valores menores, mostrar con decimales normales
+      return value.toStringAsFixed(2);
+    }
+  }
+
+  /// Obtiene la etiqueta en español para mostrar en la UI según el período seleccionado
+  String _getPeriodLabel() {
+    switch (_selectedTimeFilter) {
+      case 'Día':
+        return 'Hoy';
+      case 'Semana':
+        return 'Esta semana';
+      case '1 mes':
+        return 'Este mes';
+      case '3 meses':
+        return 'Últimos 3 meses';
+      case '6 meses':
+        return 'Últimos 6 meses';
+      case '1 año':
+        return 'Este año';
+      case '3 años':
+        return 'Últimos 3 años';
+      case '5 años':
+        return 'Últimos 5 años';
+      default:
+        return 'Este período';
+    }
+  }
+
+  /// Obtiene la etiqueta de comparación para el período anterior
+  String _getPreviousPeriodLabel() {
+    switch (_selectedTimeFilter) {
+      case 'Día':
+        return 'vs ayer';
+      case 'Semana':
+        return 'vs semana anterior';
+      case '1 mes':
+        return 'vs mes anterior';
+      case '3 meses':
+        return 'vs 3 meses anteriores';
+      case '6 meses':
+        return 'vs 6 meses anteriores';
+      case '1 año':
+        return 'vs año anterior';
+      case '3 años':
+        return 'vs 3 años anteriores';
+      case '5 años':
+        return 'vs 5 años anteriores';
+      default:
+        return 'vs período anterior';
     }
   }
 
