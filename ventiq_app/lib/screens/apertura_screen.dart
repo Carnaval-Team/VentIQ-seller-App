@@ -598,7 +598,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
       final workerProfile = await _userPrefs.getWorkerProfile();
       final userData = await _userPrefs.getUserData();
       final sellerId = await _userPrefs.getIdSeller();
-      final tpvId = await _userPrefs.getIdTpv() ?? 1;
+      final tpvId = await _userPrefs.getIdTpv();
       // Use seller ID from app_dat_vendedor
       final userUuid = userData['userId']; // Get UUID from stored user data
       // final tpvId =
@@ -640,7 +640,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         'fn_abrir_turno_tpv',
         params: {
           'p_efectivo_inicial': double.parse(_montoInicialController.text),
-          'p_id_tpv': tpvId, // Use TPV ID from app_dat_vendedor
+          'p_id_tpv': tpvId, 
           'p_id_vendedor': sellerId,
           'p_productos': productCounts,
           'p_usuario': userUuid,
