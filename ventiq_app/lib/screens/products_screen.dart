@@ -6,6 +6,7 @@ import '../utils/price_utils.dart';
 import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/sales_monitor_fab.dart';
 
 class ProductsScreen extends StatefulWidget {
   final int categoryId;
@@ -242,6 +243,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         currentIndex: 0, // No tab selected since this is a detail screen
         onTap: _onBottomNavTap,
       ),
+      floatingActionButton: const SalesMonitorFAB(),
       body: Stack(
         children: [
           Container(
@@ -508,7 +510,7 @@ class _SubcategorySection extends StatelessWidget {
                   // TODO: Navegar a ver todos los productos de esta subcategoría
                 },
                 child: const Text(
-                  'Ver más',
+                  '',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -650,7 +652,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
         );
       },
       child: Container(
-        height: 80, // Altura fija como Google Play Store
+        height: 80, // Altura aumentada para mejor separación
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -714,14 +716,14 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                     child: Text(
                       widget.product.denominacion,
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 17,
                         fontWeight: FontWeight.w500,
                         color: Color(0xFF1F2937),
-                        height: 1.0,
+                        height: 1.2,
                       ),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
+                      overflow: TextOverflow.visible,
+                      softWrap: true,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -732,11 +734,11 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey[600],
-                        height: 1.2,
+                        height: 1.4,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
+                      maxLines: 2,
+                      overflow: TextOverflow.visible,
+                      softWrap: true,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -816,12 +818,6 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                   ),
                 ],
               ),
-            ),
-            // Botón de acción (opcional, como en Play Store)
-            Icon(
-              Icons.more_vert,
-              color: Colors.grey[400],
-              size: 20,
             ),
           ],
         ),

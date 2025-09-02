@@ -4,6 +4,7 @@ import '../services/order_service.dart';
 import '../services/bluetooth_printer_service.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/sales_monitor_fab.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({Key? key}) : super(key: key);
@@ -148,6 +149,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         currentIndex: 2, // Órdenes tab
         onTap: _onBottomNavTap,
       ),
+      floatingActionButton: const SalesMonitorFAB(),
     );
   }
 

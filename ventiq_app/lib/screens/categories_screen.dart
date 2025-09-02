@@ -7,6 +7,7 @@ import '../services/category_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/changelog_service.dart';
 import '../widgets/changelog_dialog.dart';
+import '../widgets/sales_monitor_fab.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -153,6 +154,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
         currentIndex: 0, // Categorías tab
         onTap: _onBottomNavTap,
       ),
+      floatingActionButton: const SalesMonitorFAB(),
     );
   }
 
