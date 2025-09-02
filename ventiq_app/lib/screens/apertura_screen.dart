@@ -25,7 +25,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
   String _userName = 'Cargando...';
   List<InventoryProduct> _inventoryProducts = [];
   Map<String, TextEditingController> _quantityControllers = {};
-  
+
   // Previous shift data
   double _previousShiftSales = 0.0;
   double _previousShiftCash = 0.0;
@@ -102,15 +102,20 @@ class _AperturaScreenState extends State<AperturaScreen> {
       });
 
       final resumenTurno = await TurnoService.getResumenTurnoKPI();
-      
+
       if (resumenTurno != null) {
         print('🔍 Debug - Resumen Turno Data: $resumenTurno');
         setState(() {
-          _previousShiftSales = (resumenTurno['ventas_totales'] ?? 0.0).toDouble();
-          _previousShiftCash = (resumenTurno['efectivo_real'] ?? 0.0).toDouble();
-          _expectedCashFromPrevious = (resumenTurno['efectivo_esperado'] ?? 0.0).toDouble();
-          _previousShiftProducts = (resumenTurno['productos_vendidos'] ?? 0).toInt();
-          _previousShiftTicketAvg = (resumenTurno['ticket_promedio'] ?? 0.0).toDouble();
+          _previousShiftSales =
+              (resumenTurno['ventas_totales'] ?? 0.0).toDouble();
+          _previousShiftCash =
+              (resumenTurno['efectivo_real'] ?? 0.0).toDouble();
+          _expectedCashFromPrevious =
+              (resumenTurno['efectivo_esperado'] ?? 0.0).toDouble();
+          _previousShiftProducts =
+              (resumenTurno['productos_vendidos'] ?? 0).toInt();
+          _previousShiftTicketAvg =
+              (resumenTurno['ticket_promedio'] ?? 0.0).toDouble();
           _isLoadingPreviousShift = false;
         });
       } else {
@@ -488,11 +493,17 @@ class _AperturaScreenState extends State<AperturaScreen> {
                         children: [
                           Text(
                             '${product.variante}: ${product.opcionVariante}',
-                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.blue[50],
                               borderRadius: BorderRadius.circular(4),
@@ -568,9 +579,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
       final diferencia = montoInicial - _expectedCashFromPrevious;
       if (diferencia.abs() > 0) {
         final shouldContinue = await _showCashDifferenceDialog(
-          montoInicial, 
-          _expectedCashFromPrevious, 
-          diferencia
+          montoInicial,
+          _expectedCashFromPrevious,
+          diferencia,
         );
         if (!shouldContinue) {
           return;
@@ -587,10 +598,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
       final workerProfile = await _userPrefs.getWorkerProfile();
       final userData = await _userPrefs.getUserData();
       final sellerId = await _userPrefs.getIdSeller();
+      final tpvId = await _userPrefs.getIdTpv() ?? 1;
       // Use seller ID from app_dat_vendedor
       final userUuid = userData['userId']; // Get UUID from stored user data
-      final tpvId =
-          1; // Use TPV ID from app_dat_vendedor as indicated in debug output
+      // final tpvId =
+      //     1; // Use TPV ID from app_dat_vendedor as indicated in debug output
 
       print('🔍 Debug - Worker Profile: $workerProfile');
       print('🔍 Debug - TPV ID: $tpvId');
@@ -679,11 +691,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.history,
-                color: const Color(0xFF4A90E2),
-                size: 24,
-              ),
+              Icon(Icons.history, color: const Color(0xFF4A90E2), size: 24),
               const SizedBox(width: 8),
               const Text(
                 'Resumen Turno Anterior',
@@ -708,11 +716,23 @@ class _AperturaScreenState extends State<AperturaScreen> {
           else if (_previousShiftSales > 0 || _previousShiftCash > 0)
             Column(
               children: [
-                _buildInfoRow('Ventas Totales:', '\$${_previousShiftSales.toStringAsFixed(2)}'),
-                _buildInfoRow('Efectivo Final:', '\$${_previousShiftCash.toStringAsFixed(2)}'),
-                _buildInfoRow('Productos Vendidos:', _previousShiftProducts.toString()),
+                _buildInfoRow(
+                  'Ventas Totales:',
+                  '\$${_previousShiftSales.toStringAsFixed(2)}',
+                ),
+                _buildInfoRow(
+                  'Efectivo Final:',
+                  '\$${_previousShiftCash.toStringAsFixed(2)}',
+                ),
+                _buildInfoRow(
+                  'Productos Vendidos:',
+                  _previousShiftProducts.toString(),
+                ),
                 if (_previousShiftTicketAvg > 0)
-                  _buildInfoRow('Ticket Promedio:', '\$${_previousShiftTicketAvg.toStringAsFixed(2)}'),
+                  _buildInfoRow(
+                    'Ticket Promedio:',
+                    '\$${_previousShiftTicketAvg.toStringAsFixed(2)}',
+                  ),
               ],
             )
           else
@@ -724,18 +744,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.info_outline,
-                    color: Colors.grey[600],
-                    size: 20,
-                  ),
+                  Icon(Icons.info_outline, color: Colors.grey[600], size: 20),
                   const SizedBox(width: 8),
                   Text(
                     'No hay datos del turno anterior',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
                   ),
                 ],
               ),
@@ -751,87 +764,88 @@ class _AperturaScreenState extends State<AperturaScreen> {
     double diferencia,
   ) async {
     return await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.orange,
-                size: 28,
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.orange,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Diferencia de Efectivo',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              const Text(
-                'Diferencia de Efectivo',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Se detectó una diferencia entre el monto inicial y el efectivo esperado del turno anterior:',
-                style: TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  children: [
-                    _buildDialogInfoRow('Efectivo Esperado:', '\$${montoEsperado.toStringAsFixed(2)}'),
-                    _buildDialogInfoRow('Monto Inicial:', '\$${montoInicial.toStringAsFixed(2)}'),
-                    const Divider(),
-                    _buildDialogInfoRow(
-                      'Diferencia:',
-                      '${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
-                      isHighlight: true,
-                      color: diferencia >= 0 ? Colors.green : Colors.red,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Se detectó una diferencia entre el monto inicial y el efectivo esperado del turno anterior:',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
                     ),
-                  ],
+                    child: Column(
+                      children: [
+                        _buildDialogInfoRow(
+                          'Efectivo Esperado:',
+                          '\$${montoEsperado.toStringAsFixed(2)}',
+                        ),
+                        _buildDialogInfoRow(
+                          'Monto Inicial:',
+                          '\$${montoInicial.toStringAsFixed(2)}',
+                        ),
+                        const Divider(),
+                        _buildDialogInfoRow(
+                          'Diferencia:',
+                          '${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
+                          isHighlight: true,
+                          color: diferencia >= 0 ? Colors.green : Colors.red,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '¿Desea continuar con la apertura?',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '¿Desea continuar con la apertura?',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4A90E2),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Continuar'),
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text(
-                'Cancelar',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A90E2),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Continuar'),
-            ),
-          ],
-        );
-      },
-    ) ?? false;
+              ],
+            );
+          },
+        ) ??
+        false;
   }
 
   Widget _buildDialogInfoRow(
