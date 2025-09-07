@@ -3,6 +3,7 @@ import '../models/product.dart';
 import '../models/payment_method.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
+import 'turno_service.dart'; // Import TurnoService
 
 class OrderService {
   static final OrderService _instance = OrderService._internal();
@@ -107,7 +108,7 @@ class OrderService {
     if (itemIndex != -1) {
       _currentOrder!.items[itemIndex] = _currentOrder!.items[itemIndex]
           .copyWith(paymentMethod: paymentMethod);
-      
+
       // Recalcular total ya que el precio puede cambiar según el método de pago
       _updateOrderTotal(_currentOrder!);
     }
@@ -319,9 +320,7 @@ class OrderService {
 
       final response = await Supabase.instance.client.rpc(
         'get_sale_payments',
-        params: {
-          'p_operacion_venta_id': operationId,
-        },
+        params: {'p_operacion_venta_id': operationId},
       );
 
       print('Respuesta get_sale_payments: $response');
@@ -344,6 +343,17 @@ class OrderService {
     Map<String, dynamic> orderData,
   ) async {
     try {
+      // First, validate that there's an open shift
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+
+      if (turnoAbierto == null) {
+        return {
+          'success': false,
+          'error':
+              'No se puede crear una operación sin un turno abierto. Debe abrir un turno primero.',
+        };
+      }
+
       final userPrefs = UserPreferencesService();
       final userData = await userPrefs.getUserData();
 
@@ -358,6 +368,7 @@ class OrderService {
       print('idTienda (app_dat_trabajadores): $idTienda');
       print('idTpv (app_dat_vendedor): $idTpv');
       print('userId: $userId');
+      print('Turno abierto ID: ${turnoAbierto['id']}');
       print('================================================');
 
       if (idTpv == null || idTienda == null || userId == null) {
@@ -372,7 +383,9 @@ class OrderService {
             final inventoryData = item.inventoryData ?? {};
 
             print('ID del producto: ${item.producto.id}');
-            print('ID de la variante (si aplica): ${inventoryData['id_variante']}');
+            print(
+              'ID de la variante (si aplica): ${inventoryData['id_variante']}',
+            );
             print('ID de la ubicación: ${inventoryData['id_ubicacion']}');
             print('Cantidad a descontar: ${item.cantidad}');
 
@@ -431,8 +444,11 @@ class OrderService {
             'error': 'No se recibió ID de operación válido del servidor',
           };
         }
-        final paymentResult = await _registerPaymentsInSupabase(order, operationId);
-        
+        final paymentResult = await _registerPaymentsInSupabase(
+          order,
+          operationId,
+        );
+
         if (paymentResult['success'] == true) {
           return {
             'success': true,
@@ -442,12 +458,15 @@ class OrderService {
           };
         } else {
           // Order was created but payment registration failed
-          print('Warning: Order created but payment registration failed: ${paymentResult['error']}');
+          print(
+            'Warning: Order created but payment registration failed: ${paymentResult['error']}',
+          );
           return {
             'success': true,
             'operationId': operationId,
             'data': response,
-            'paymentWarning': 'Orden creada pero falló el registro de pagos: ${paymentResult['error']}',
+            'paymentWarning':
+                'Orden creada pero falló el registro de pagos: ${paymentResult['error']}',
           };
         }
       } else {
@@ -471,58 +490,60 @@ class OrderService {
       print('=== DEBUG REGISTRO DE PAGOS ===');
       print('operationId: $operationId');
       print('order.items.length: ${order.items.length}');
-      
+
       // Agrupar pagos por método de pago
       Map<int, double> paymentsByMethod = {};
-      
+
       for (final item in order.items) {
         if (item.paymentMethod != null) {
           final methodId = item.paymentMethod!.id;
           final itemTotal = item.subtotal;
-          
-          paymentsByMethod[methodId] = (paymentsByMethod[methodId] ?? 0.0) + itemTotal;
-          
+
+          paymentsByMethod[methodId] =
+              (paymentsByMethod[methodId] ?? 0.0) + itemTotal;
+
           print('Item: ${item.nombre}');
-          print('Payment Method: ${item.paymentMethod!.denominacion} (ID: $methodId)');
+          print(
+            'Payment Method: ${item.paymentMethod!.denominacion} (ID: $methodId)',
+          );
           print('Item Total: \$${itemTotal.toStringAsFixed(2)}');
         } else {
           print('Warning: Item ${item.nombre} has no payment method assigned');
         }
       }
-      
+
       print('Payments by method: $paymentsByMethod');
-      
+
       if (paymentsByMethod.isEmpty) {
         return {
           'success': false,
-          'error': 'No se encontraron métodos de pago asignados a los productos',
+          'error':
+              'No se encontraron métodos de pago asignados a los productos',
         };
       }
-      
+
       // Preparar array de pagos para la función RPC
       List<Map<String, dynamic>> pagos = [];
-      
+
       for (final entry in paymentsByMethod.entries) {
         pagos.add({
           'id_medio_pago': entry.key,
           'monto': entry.value,
-          'referencia_pago': 'Pago App Vendedor - ${DateTime.now().millisecondsSinceEpoch}',
+          'referencia_pago':
+              'Pago App Vendedor - ${DateTime.now().millisecondsSinceEpoch}',
         });
       }
-      
+
       print('Pagos array: $pagos');
-      
+
       // Llamar a fn_registrar_pago_venta
       final response = await Supabase.instance.client.rpc(
         'fn_registrar_pago_venta',
-        params: {
-          'p_id_operacion_venta': operationId,
-          'p_pagos': pagos,
-        },
+        params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
       );
-      
+
       print('Respuesta fn_registrar_pago_venta: $response');
-      
+
       if (response == true) {
         return {
           'success': true,
@@ -535,7 +556,6 @@ class OrderService {
           'error': 'La función fn_registrar_pago_venta retornó: $response',
         };
       }
-      
     } catch (e) {
       print('Error en _registerPaymentsInSupabase: $e');
       return {
@@ -556,26 +576,18 @@ class OrderService {
       final idTpv = await userPrefs.getIdTpv();
       final userId = userData['userId'];
 
-      // Configurar fechas del día actual
-      final now = DateTime.now();
-      final fechaDesde = DateTime(now.year, now.month, now.day);
-      final fechaHasta = DateTime(now.year, now.month, now.day);
-
       print('=== DEBUG PARAMETROS LISTAR ORDENES ===');
       print('idTienda: $idTienda');
       print('idTpv: $idTpv');
       print('userId: $userId');
-      print('fechaDesde: $fechaDesde');
-      print('fechaHasta: $fechaHasta');
+      print('Sin filtro de fecha - mostrando todas las órdenes');
       print('======================================');
 
-      // Preparar parámetros para listar_ordenes
+      // Preparar parámetros para listar_ordenes sin filtro de fecha
       final rpcParams = {
         'con_inventario_param': false,
-        'fecha_desde_param':
-            fechaDesde.toIso8601String().split('T')[0], // Solo fecha YYYY-MM-DD
-        'fecha_hasta_param':
-            fechaDesde.toIso8601String().split('T')[0], // Solo fecha YYYY-MM-DD
+        'fecha_desde_param': null, // Sin filtro de fecha desde
+        'fecha_hasta_param': null, // Sin filtro de fecha hasta
         'id_estado_param': null, // Todos los estados
         'id_tienda_param': idTienda,
         'id_tipo_operacion_param': null, // Todas las operaciones
@@ -588,8 +600,12 @@ class OrderService {
 
       print('=== PARAMETROS RPC listar_ordenes ===');
       print('con_inventario_param: ${rpcParams['con_inventario_param']}');
-      print('fecha_desde_param: ${rpcParams['fecha_desde_param']}');
-      print('fecha_hasta_param: ${rpcParams['fecha_hasta_param']}');
+      print(
+        'fecha_desde_param: ${rpcParams['fecha_desde_param']} (SIN FILTRO)',
+      );
+      print(
+        'fecha_hasta_param: ${rpcParams['fecha_hasta_param']} (SIN FILTRO)',
+      );
       print('id_estado_param: ${rpcParams['id_estado_param']}');
       print('id_tienda_param: ${rpcParams['id_tienda_param']}');
       print('id_tipo_operacion_param: ${rpcParams['id_tipo_operacion_param']}');
@@ -679,9 +695,12 @@ class OrderService {
               print(variantData['opcion']);
               variant = ProductVariant(
                 id: variantData['id'],
-                nombre:'(' +
-                    (variantData['atributo'] ?? '') + ' : '+
-                    (variantData['opcion'] ?? '') +')',
+                nombre:
+                    '(' +
+                    (variantData['atributo'] ?? '') +
+                    ' : ' +
+                    (variantData['opcion'] ?? '') +
+                    ')',
                 precio: (item['precio_unitario'] ?? 0.0).toDouble(),
                 cantidad: (item['cantidad'] ?? 1).toInt(),
                 descripcion: variantData['opcion'],

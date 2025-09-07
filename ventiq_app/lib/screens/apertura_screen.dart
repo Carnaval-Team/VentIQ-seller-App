@@ -22,6 +22,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
   bool _isProcessing = false;
   bool _isLoadingInventory = true;
   bool _isLoadingPreviousShift = true;
+  bool _enableProductCounting = false;
   String _userName = 'Cargando...';
   List<InventoryProduct> _inventoryProducts = [];
   Map<String, TextEditingController> _quantityControllers = {};
@@ -36,20 +37,55 @@ class _AperturaScreenState extends State<AperturaScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserData();
-    _loadInventoryProducts();
-    _loadPreviousShiftSummary();
+    _checkExistingShift();
   }
 
-  @override
-  void dispose() {
-    _montoInicialController.dispose();
-    _observacionesController.dispose();
-    // Dispose quantity controllers
-    for (var controller in _quantityControllers.values) {
-      controller.dispose();
+  Future<void> _checkExistingShift() async {
+    try {
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+
+      if (turnoAbierto != null) {
+        if (mounted) {
+          _showExistingShiftAlert();
+        }
+        return;
+      }
+
+      // If no open shift, proceed with normal initialization
+      _loadUserData();
+      _loadPreviousShiftSummary();
+    } catch (e) {
+      print('Error checking existing shift: $e');
+      // If error, proceed with normal initialization
+      _loadUserData();
+      _loadPreviousShiftSummary();
     }
-    super.dispose();
+  }
+
+  void _showExistingShiftAlert() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Turno ya abierto'),
+            content: const Text(
+              'Ya existe un turno abierto para este TPV. Debe cerrar el turno actual antes de abrir uno nuevo.',
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A90E2),
+                ),
+                child: const Text('Volver'),
+              ),
+            ],
+          ),
+    );
   }
 
   Future<void> _loadUserData() async {
@@ -68,20 +104,19 @@ class _AperturaScreenState extends State<AperturaScreen> {
   }
 
   Future<void> _loadInventoryProducts() async {
+    if (!_enableProductCounting) return;
+
     try {
       setState(() {
         _isLoadingInventory = true;
       });
 
-      final products = await InventoryService.getInventoryProducts(
-        limite: 100, // Get more products for opening inventory
-      );
+      final products = await InventoryService.getInventoryProducts(limite: 100);
 
       setState(() {
         _inventoryProducts = products;
         _isLoadingInventory = false;
 
-        // Initialize quantity controllers
         _quantityControllers.clear();
         for (var product in products) {
           _quantityControllers[product.id.toString()] = TextEditingController();
@@ -132,6 +167,16 @@ class _AperturaScreenState extends State<AperturaScreen> {
   }
 
   @override
+  void dispose() {
+    _montoInicialController.dispose();
+    _observacionesController.dispose();
+    for (var controller in _quantityControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -159,7 +204,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Información de apertura
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -198,12 +242,74 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
               const SizedBox(height: 20),
 
-              // Previous shift summary
               _buildPreviousShiftSummary(),
 
               const SizedBox(height: 20),
 
-              // Monto inicial
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.checklist,
+                          color: const Color(0xFF4A90E2),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Opciones de Apertura',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    CheckboxListTile(
+                      value: _enableProductCounting,
+                      onChanged: (bool? value) {
+                        setState(() {
+                          _enableProductCounting = value ?? false;
+                          if (_enableProductCounting) {
+                            _loadInventoryProducts();
+                          } else {
+                            _inventoryProducts.clear();
+                            _quantityControllers.clear();
+                          }
+                        });
+                      },
+                      title: const Text(
+                        'Realizar conteo físico de inventario',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      subtitle: Text(
+                        _enableProductCounting
+                            ? 'Se registrará el inventario físico durante la apertura'
+                            : 'La apertura se realizará sin conteo de productos',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      activeColor: const Color(0xFF4A90E2),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -261,49 +367,48 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
               const SizedBox(height: 20),
 
-              // Inventario de productos
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.inventory_2,
-                          color: const Color(0xFF4A90E2),
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Conteo Físico de Inventario',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+              if (_enableProductCounting)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.inventory_2,
+                            color: const Color(0xFF4A90E2),
+                            size: 20,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Ingrese la cantidad física contada para cada producto',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildInventoryList(),
-                  ],
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Conteo Físico de Inventario',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Ingrese la cantidad física contada para cada producto',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildInventoryList(),
+                    ],
+                  ),
                 ),
-              ),
 
-              const SizedBox(height: 20),
+              if (_enableProductCounting) const SizedBox(height: 20),
 
-              // Observaciones
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -349,7 +454,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
               const SizedBox(height: 30),
 
-              // Botón crear apertura
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -472,7 +576,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
             ),
             child: Row(
               children: [
-                // Product info with current stock
                 Expanded(
                   flex: 2,
                   child: Column(
@@ -528,7 +631,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Quantity input (restored to original size)
                 Expanded(
                   child: Column(
                     children: [
@@ -573,7 +675,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
       return;
     }
 
-    // Check for cash difference and show confirmation dialog
     final montoInicial = double.parse(_montoInicialController.text);
     if (_expectedCashFromPrevious > 0) {
       final diferencia = montoInicial - _expectedCashFromPrevious;
@@ -594,22 +695,17 @@ class _AperturaScreenState extends State<AperturaScreen> {
     });
 
     try {
-      // Get user data
       final workerProfile = await _userPrefs.getWorkerProfile();
       final userData = await _userPrefs.getUserData();
       final sellerId = await _userPrefs.getIdSeller();
       final tpvId = await _userPrefs.getIdTpv();
-      // Use seller ID from app_dat_vendedor
-      final userUuid = userData['userId']; // Get UUID from stored user data
-      // final tpvId =
-      //     1; // Use TPV ID from app_dat_vendedor as indicated in debug output
+      final userUuid = userData['userId'];
 
       print('🔍 Debug - Worker Profile: $workerProfile');
       print('🔍 Debug - TPV ID: $tpvId');
       print('🔍 Debug - Seller ID: $sellerId');
       print('🔍 Debug - User UUID: $userUuid');
 
-      // Validate required fields
       if (sellerId == null) {
         throw Exception(
           'ID de vendedor no encontrado en el perfil del trabajador',
@@ -619,35 +715,41 @@ class _AperturaScreenState extends State<AperturaScreen> {
         throw Exception('UUID de usuario no encontrado');
       }
 
-      // Prepare product counts
       List<Map<String, dynamic>> productCounts = [];
-      for (var product in _inventoryProducts) {
-        final controller = _quantityControllers[product.id.toString()]!;
-        final countText = controller.text.trim();
+      if (_enableProductCounting) {
+        for (var product in _inventoryProducts) {
+          final controller = _quantityControllers[product.id.toString()]!;
+          final countText = controller.text.trim();
 
-        if (countText.isNotEmpty) {
-          final count = int.tryParse(countText) ?? 0;
-          productCounts.add({
-            'id_producto': product.id,
-            'cantidad_fisica': count,
-          });
+          if (countText.isNotEmpty) {
+            final count = int.tryParse(countText) ?? 0;
+            productCounts.add({
+              'id_producto': product.id,
+              'id_ubicacion': product.idUbicacion,
+              'id_variante': product.idVariante,
+              'id_opcion_variante': product.idOpcionVariante,
+              'id_presentacion': product.idPresentacion,
+              'cantidad': count,
+            });
+          }
         }
       }
 
-      // Call Supabase RPC
+      print('📦 Productos para apertura: $productCounts'); // Debug log
+      print('📊 Total productos: ${productCounts.length}'); // Debug log
+
       final supabase = Supabase.instance.client;
       await supabase.rpc(
         'fn_abrir_turno_tpv',
         params: {
           'p_efectivo_inicial': double.parse(_montoInicialController.text),
-          'p_id_tpv': tpvId, 
+          'p_id_tpv': tpvId,
           'p_id_vendedor': sellerId,
           'p_productos': productCounts,
           'p_usuario': userUuid,
         },
       );
 
-      // Success
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -656,7 +758,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
           ),
         );
 
-        // Navigate back or to main screen
         Navigator.of(context).pop(true);
       }
     } catch (e) {

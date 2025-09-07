@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../models/payment_method.dart' as pm;
 import '../services/order_service.dart';
+import '../services/turno_service.dart';
 import '../services/payment_method_service.dart';
 import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
@@ -74,17 +75,19 @@ class _PreorderScreenState extends State<PreorderScreen> {
               tooltip: 'Limpiar orden',
             ),
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
       ),
-      body: currentOrder == null || currentOrder.items.isEmpty
-          ? _buildEmptyState()
-          : _buildOrderContent(currentOrder),
+      body:
+          currentOrder == null || currentOrder.items.isEmpty
+              ? _buildEmptyState()
+              : _buildOrderContent(currentOrder),
       endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 1, // Preorden tab
@@ -98,11 +101,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.shopping_cart_outlined,
-            size: 80,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.shopping_cart_outlined, size: 80, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
             'No hay productos en la preorden',
@@ -115,10 +114,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           const SizedBox(height: 8),
           Text(
             'Agrega productos desde el catálogo',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -148,9 +144,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
           padding: const EdgeInsets.all(16),
           decoration: const BoxDecoration(
             color: Colors.white,
-            border: Border(
-              bottom: BorderSide(color: Colors.grey, width: 0.2),
-            ),
+            border: Border(bottom: BorderSide(color: Colors.grey, width: 0.2)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,7 +161,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.orange.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
@@ -186,10 +183,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               const SizedBox(height: 8),
               Text(
                 '${order.totalItems} producto${order.totalItems == 1 ? '' : 's'} • Total: \$${PriceUtils.formatDiscountPrice(order.total)}',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               const SizedBox(height: 8),
               // Global payment method selector
@@ -264,12 +258,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 flex: 2,
                 child: ScrollingText(
                   text: item.ubicacionAlmacen,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                   maxWidth: 180, // Further increased width for longer text
-                  scrollDuration: const Duration(seconds: 4), // Slower animation
+                  scrollDuration: const Duration(
+                    seconds: 4,
+                  ), // Slower animation
                   pauseDuration: const Duration(seconds: 2), // Longer pause
                 ),
               ),
@@ -277,10 +270,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Expanded(
                 child: Text(
                   'Precio: \$${PriceUtils.formatDiscountPrice(item.displayPrice)}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -302,24 +292,35 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    onPressed: () => _updateItemQuantity(item.id, item.cantidad - 1),
+                    onPressed:
+                        () => _updateItemQuantity(item.id, item.cantidad - 1),
                     icon: const Icon(Icons.remove_circle_outline),
                     color: Colors.red,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   IconButton(
-                    onPressed: () => _updateItemQuantity(item.id, item.cantidad + 1),
+                    onPressed:
+                        () => _updateItemQuantity(item.id, item.cantidad + 1),
                     icon: const Icon(Icons.add_circle_outline),
                     color: const Color(0xFF4A90E2),
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   IconButton(
                     onPressed: () => _removeItem(item.id),
                     icon: const Icon(Icons.delete_outline),
                     color: Colors.red,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                   ),
                 ],
               ),
@@ -401,10 +402,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   ),
                   child: const Text(
                     'Enviar Orden',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -421,7 +419,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
         children: [
           Icon(Icons.payment, size: 16, color: Colors.grey[600]),
           const SizedBox(width: 8),
-          const Text('Cargando métodos de pago...', style: TextStyle(fontSize: 13)),
+          const Text(
+            'Cargando métodos de pago...',
+            style: TextStyle(fontSize: 13),
+          ),
         ],
       );
     }
@@ -431,7 +432,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
         children: [
           Icon(Icons.payment, size: 16, color: Colors.grey[600]),
           const SizedBox(width: 8),
-          const Text('Sin métodos de pago disponibles', style: TextStyle(fontSize: 13)),
+          const Text(
+            'Sin métodos de pago disponibles',
+            style: TextStyle(fontSize: 13),
+          ),
         ],
       );
     }
@@ -458,24 +462,28 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 style: const TextStyle(fontSize: 12, color: Colors.black87),
-                items: _paymentMethods.map((pm.PaymentMethod method) {
-                  return DropdownMenuItem<pm.PaymentMethod>(
-                    value: method,
-                    child: Row(
-                      children: [
-                        Text(method.typeIcon, style: const TextStyle(fontSize: 14)),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            method.displayName,
-                            style: const TextStyle(fontSize: 12),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                items:
+                    _paymentMethods.map((pm.PaymentMethod method) {
+                      return DropdownMenuItem<pm.PaymentMethod>(
+                        value: method,
+                        child: Row(
+                          children: [
+                            Text(
+                              method.typeIcon,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                method.displayName,
+                                style: const TextStyle(fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  );
-                }).toList(),
+                      );
+                    }).toList(),
                 onChanged: (pm.PaymentMethod? newMethod) {
                   _updateItemPaymentMethod(item.id, newMethod);
                 },
@@ -487,7 +495,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
     );
   }
 
-  void _updateItemPaymentMethod(String itemId, pm.PaymentMethod? paymentMethod) {
+  void _updateItemPaymentMethod(
+    String itemId,
+    pm.PaymentMethod? paymentMethod,
+  ) {
     setState(() {
       _orderService.updateItemPaymentMethod(itemId, paymentMethod);
     });
@@ -508,25 +519,28 @@ class _PreorderScreenState extends State<PreorderScreen> {
   void _showClearOrderDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancelar Orden'),
-        content: const Text('¿Estás seguro de que quieres cancelar esta orden? Se perderán todos los productos agregados.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Cancelar Orden'),
+            content: const Text(
+              '¿Estás seguro de que quieres cancelar esta orden? Se perderán todos los productos agregados.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () {
+                  _orderService.cancelCurrentOrder();
+                  Navigator.pop(context);
+                  setState(() {});
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Confirmar'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              _orderService.cancelCurrentOrder();
-              Navigator.pop(context);
-              setState(() {});
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Confirmar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -543,34 +557,41 @@ class _PreorderScreenState extends State<PreorderScreen> {
     }
 
     // Validate that all items have payment methods assigned
-    final itemsWithoutPayment = currentOrder.items
-        .where((item) => item.paymentMethod == null)
-        .toList();
+    final itemsWithoutPayment =
+        currentOrder.items.where((item) => item.paymentMethod == null).toList();
 
     if (itemsWithoutPayment.isNotEmpty) {
       showDialog(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Métodos de Pago Requeridos'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Los siguientes productos necesitan un método de pago:'),
-              const SizedBox(height: 8),
-              ...itemsWithoutPayment.map((item) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Text('• ${item.nombre}', style: const TextStyle(fontSize: 14)),
-              )),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Entendido'),
+        builder:
+            (context) => AlertDialog(
+              title: const Text('Métodos de Pago Requeridos'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Los siguientes productos necesitan un método de pago:',
+                  ),
+                  const SizedBox(height: 8),
+                  ...itemsWithoutPayment.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        '• ${item.nombre}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Entendido'),
+                ),
+              ],
             ),
-          ],
-        ),
       );
       return;
     }
@@ -674,25 +695,32 @@ class _PreorderScreenState extends State<PreorderScreen> {
                         'Seleccionar método para todos los productos',
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
-                      style: const TextStyle(fontSize: 12, color: Colors.black87),
-                      items: _paymentMethods.map((pm.PaymentMethod method) {
-                        return DropdownMenuItem<pm.PaymentMethod>(
-                          value: method,
-                          child: Row(
-                            children: [
-                              Text(method.typeIcon, style: const TextStyle(fontSize: 14)),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  method.displayName,
-                                  style: const TextStyle(fontSize: 12),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black87,
+                      ),
+                      items:
+                          _paymentMethods.map((pm.PaymentMethod method) {
+                            return DropdownMenuItem<pm.PaymentMethod>(
+                              value: method,
+                              child: Row(
+                                children: [
+                                  Text(
+                                    method.typeIcon,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      method.displayName,
+                                      style: const TextStyle(fontSize: 12),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
+                            );
+                          }).toList(),
                       onChanged: (pm.PaymentMethod? newMethod) {
                         _applyGlobalPaymentMethod(newMethod);
                       },
@@ -707,7 +735,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   icon: const Icon(Icons.clear, size: 16),
                   color: Colors.grey[600],
                   tooltip: 'Limpiar selección global',
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
                 ),
             ],
           ),
@@ -718,10 +749,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
   void _applyGlobalPaymentMethod(pm.PaymentMethod? paymentMethod) {
     if (paymentMethod == null) return;
-    
+
     setState(() {
       _globalPaymentMethod = paymentMethod;
-      
+
       // Apply to all items in the current order
       final currentOrder = _orderService.currentOrder;
       if (currentOrder != null) {
@@ -730,7 +761,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
         }
       }
     });
-    
+
     // Show confirmation
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -752,7 +783,11 @@ class _PreorderScreenState extends State<PreorderScreen> {
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Home
-        Navigator.pushNamedAndRemoveUntil(context, '/categories', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/categories',
+          (route) => false,
+        );
         break;
       case 1: // Preorden (current)
         break;

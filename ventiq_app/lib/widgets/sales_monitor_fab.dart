@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/seller_sales_service.dart';
+import '../services/turno_service.dart';
 
 class SalesMonitorFAB extends StatefulWidget {
   const SalesMonitorFAB({Key? key}) : super(key: key);
@@ -12,10 +13,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     with TickerProviderStateMixin {
   bool _isExpanded = false;
   bool _isLoading = false;
-  SellerSalesReport? _todaySales;
-  SellerSalesReport? _weekSales;
-  SellerSalesReport? _monthSales;
-  String _selectedPeriod = 'Hoy';
+  SellerSalesReport? _currentSales;
   late AnimationController _animationController;
   late Animation<double> _expandAnimation;
 
@@ -57,16 +55,10 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     });
 
     try {
-      final futures = await Future.wait([
-        SellerSalesService.getTodaySales(),
-        SellerSalesService.getThisWeekSales(),
-        SellerSalesService.getThisMonthSales(),
-      ]);
+      final salesData = await SellerSalesService.getTodaySales();
 
       setState(() {
-        _todaySales = futures[0];
-        _weekSales = futures[1];
-        _monthSales = futures[2];
+        _currentSales = salesData;
         _isLoading = false;
       });
     } catch (e) {
@@ -74,19 +66,6 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
         _isLoading = false;
       });
       print('Error loading sales data: $e');
-    }
-  }
-
-  SellerSalesReport? _getCurrentPeriodData() {
-    switch (_selectedPeriod) {
-      case 'Hoy':
-        return _todaySales;
-      case 'Esta Semana':
-        return _weekSales;
-      case 'Este Mes':
-        return _monthSales;
-      default:
-        return _todaySales;
     }
   }
 
@@ -104,7 +83,8 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
               alignment: Alignment.bottomRight,
               child: Opacity(
                 opacity: _expandAnimation.value,
-                child: _isExpanded ? _buildSalesPanel() : const SizedBox.shrink(),
+                child:
+                    _isExpanded ? _buildSalesPanel() : const SizedBox.shrink(),
               ),
             );
           },
@@ -156,11 +136,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.analytics,
-                  color: Colors.white,
-                  size: 24,
-                ),
+                const Icon(Icons.analytics, color: Colors.white, size: 24),
                 const SizedBox(width: 8),
                 const Text(
                   'Mis Ventas',
@@ -182,15 +158,13 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
               ],
             ),
           ),
-          
+
           const Divider(height: 1),
           // Contenido
           if (_isLoading)
             const Padding(
               padding: EdgeInsets.all(32),
-              child: CircularProgressIndicator(
-                color: Color(0xFF4A90E2),
-              ),
+              child: CircularProgressIndicator(color: Color(0xFF4A90E2)),
             )
           else
             _buildSalesContent(),
@@ -200,26 +174,17 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   }
 
   Widget _buildSalesContent() {
-    final salesData = _getCurrentPeriodData();
-
-    if (salesData == null) {
+    if (_currentSales == null) {
       return const Padding(
         padding: EdgeInsets.all(32),
         child: Column(
           children: [
-            Icon(
-              Icons.info_outline,
-              color: Colors.grey,
-              size: 48,
-            ),
+            Icon(Icons.info_outline, color: Colors.grey, size: 48),
             SizedBox(height: 8),
             Text(
-              'No hay ventas registradas\npara este período',
+              'No hay ventas registradas',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.grey, fontSize: 14),
             ),
           ],
         ),
@@ -236,7 +201,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
               Expanded(
                 child: _buildMetricCard(
                   'Ventas',
-                  '${salesData.totalVentas}',
+                  '${_currentSales!.totalVentas}',
                   Icons.shopping_cart,
                   const Color(0xFF10B981),
                 ),
@@ -245,7 +210,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
               Expanded(
                 child: _buildMetricCard(
                   'Total',
-                  '\$${salesData.totalDineroGeneral.toStringAsFixed(2)}',
+                  '\$${_currentSales!.totalDineroGeneral.toStringAsFixed(2)}',
                   Icons.attach_money,
                   const Color(0xFF4A90E2),
                 ),
@@ -277,7 +242,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                   children: [
                     const Text('Efectivo:', style: TextStyle(fontSize: 13)),
                     Text(
-                      '\$${salesData.totalDineroEfectivo.toStringAsFixed(2)}',
+                      '\$${_currentSales!.totalDineroEfectivo.toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -290,9 +255,12 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Transferencia:', style: TextStyle(fontSize: 13)),
+                    const Text(
+                      'Transferencia:',
+                      style: TextStyle(fontSize: 13),
+                    ),
                     Text(
-                      '\$${salesData.totalDineroTransferencia.toStringAsFixed(2)}',
+                      '\$${_currentSales!.totalDineroTransferencia.toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -307,7 +275,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                   children: [
                     const Text('Productos:', style: TextStyle(fontSize: 13)),
                     Text(
-                      '${salesData.totalProductosVendidos.toStringAsFixed(0)} uds',
+                      '${_currentSales!.totalProductosVendidos.toStringAsFixed(0)} uds',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -324,7 +292,12 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     );
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color color) {
+  Widget _buildMetricCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -344,13 +317,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
               color: color,
             ),
           ),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
-            ),
-          ),
+          Text(title, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
         ],
       ),
     );

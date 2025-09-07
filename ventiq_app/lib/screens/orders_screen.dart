@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
+import '../services/turno_service.dart';
 import '../services/bluetooth_printer_service.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
@@ -32,7 +33,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Future<void> _loadOrdersFromSupabase() async {
     // Limpiar órdenes antes de cargar las nuevas para evitar mezclar usuarios
     _orderService.clearAllOrders();
-    
+
     await _orderService.listOrdersFromSupabase();
     // Actualizar la UI después de cargar las órdenes
     if (mounted) {
@@ -63,34 +64,36 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void _filterOrders() {
     final allOrders = _orderService.orders;
     List<Order> filtered;
-    
+
     if (_searchQuery.isEmpty) {
       // Crear una nueva lista para evitar modificar la original
       filtered = List<Order>.from(allOrders);
     } else {
-      filtered = allOrders.where((order) {
-        final buyerName = order.buyerName?.toLowerCase() ?? '';
-        final buyerPhone = order.buyerPhone?.toLowerCase() ?? '';
-        return buyerName.contains(_searchQuery) || buyerPhone.contains(_searchQuery);
-      }).toList();
+      filtered =
+          allOrders.where((order) {
+            final buyerName = order.buyerName?.toLowerCase() ?? '';
+            final buyerPhone = order.buyerPhone?.toLowerCase() ?? '';
+            return buyerName.contains(_searchQuery) ||
+                buyerPhone.contains(_searchQuery);
+          }).toList();
     }
-    
+
     // Ordenar por prioridad de estado y luego por fecha
     filtered.sort((a, b) {
       final aPriority = _getStatusPriority(a.status);
       final bPriority = _getStatusPriority(b.status);
-      
+
       if (aPriority != bPriority) {
         return aPriority.compareTo(bPriority);
       }
-      
+
       // Si tienen la misma prioridad, ordenar por fecha (más recientes primero)
       return b.fechaCreacion.compareTo(a.fechaCreacion);
     });
-    
+
     _filteredOrders = filtered;
   }
-  
+
   int _getStatusPriority(OrderStatus status) {
     switch (status) {
       case OrderStatus.enviada:
@@ -125,11 +128,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
             tooltip: 'Actualizar órdenes',
           ),
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
       ),
@@ -139,7 +143,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
           children: [
             _buildSearchBar(),
             Expanded(
-              child: orders.isEmpty ? _buildEmptyState() : _buildOrdersList(orders),
+              child:
+                  orders.isEmpty
+                      ? _buildEmptyState()
+                      : _buildOrdersList(orders),
             ),
           ],
         ),
@@ -162,14 +169,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
         decoration: InputDecoration(
           hintText: 'Buscar por nombre o teléfono del cliente...',
           prefixIcon: const Icon(Icons.search, color: Color(0xFF4A90E2)),
-          suffixIcon: _searchQuery.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                  },
-                )
-              : null,
+          suffixIcon:
+              _searchQuery.isNotEmpty
+                  ? IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _searchController.clear();
+                    },
+                  )
+                  : null,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: Colors.grey[300]!),
@@ -178,7 +186,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
             borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFF4A90E2)),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
         ),
       ),
     );
@@ -189,11 +200,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.list_alt_outlined,
-            size: 80,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.list_alt_outlined, size: 80, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
             'No tienes órdenes aún',
@@ -206,10 +213,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           const SizedBox(height: 8),
           Text(
             'Crea tu primera orden desde el catálogo',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -232,12 +236,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildOrdersList(List<Order> orders) {
     if (orders.isEmpty) return _buildEmptyState();
-    
+
     // Agrupar órdenes por estado
-    final pendingOrders = orders.where((o) => _getStatusPriority(o.status) == 1).toList();
-    final paymentConfirmedOrders = orders.where((o) => _getStatusPriority(o.status) == 2).toList();
-    final completedOrders = orders.where((o) => _getStatusPriority(o.status) == 3).toList();
-    
+    final pendingOrders =
+        orders.where((o) => _getStatusPriority(o.status) == 1).toList();
+    final paymentConfirmedOrders =
+        orders.where((o) => _getStatusPriority(o.status) == 2).toList();
+    final completedOrders =
+        orders.where((o) => _getStatusPriority(o.status) == 3).toList();
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -246,24 +253,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
           _buildSectionHeader('Órdenes Pendientes', pendingOrders.length),
           ...pendingOrders.map((order) => _buildOrderCard(order)),
         ],
-        
+
         // Órdenes con pago confirmado
         if (paymentConfirmedOrders.isNotEmpty) ...[
           if (pendingOrders.isNotEmpty) const SizedBox(height: 16),
           _buildSectionHeader('Pago Confirmado', paymentConfirmedOrders.length),
           ...paymentConfirmedOrders.map((order) => _buildOrderCard(order)),
         ],
-        
+
         // Órdenes completadas/finalizadas
         if (completedOrders.isNotEmpty) ...[
-          if (pendingOrders.isNotEmpty || paymentConfirmedOrders.isNotEmpty) const SizedBox(height: 16),
+          if (pendingOrders.isNotEmpty || paymentConfirmedOrders.isNotEmpty)
+            const SizedBox(height: 16),
           _buildSectionHeader('Completadas', completedOrders.length),
           ...completedOrders.map((order) => _buildOrderCard(order)),
         ],
       ],
     );
   }
-  
+
   Widget _buildSectionHeader(String title, int count) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -300,7 +308,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildOrderCard(Order order) {
     final statusColor = _getStatusColor(order.status);
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -340,7 +348,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: statusColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
@@ -381,18 +392,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     ),
                     const SizedBox(width: 12),
                   ],
-                  Icon(
-                    Icons.access_time,
-                    size: 16,
-                    color: Colors.grey[600],
-                  ),
+                  Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Text(
                     _formatDate(order.fechaCreacion),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                   ),
                 ],
               ),
@@ -428,16 +432,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     Expanded(
                       child: Text(
                         'Productos: ${order.items.take(2).map((item) => item.nombre).join(', ')}${order.items.length > 2 ? '...' : ''}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     // Botón de impresión pequeño para órdenes con pago confirmado o completadas
-                    if (order.status == OrderStatus.pagoConfirmado || 
+                    if (order.status == OrderStatus.pagoConfirmado ||
                         order.status == OrderStatus.completada)
                       Container(
                         margin: const EdgeInsets.only(left: 8),
@@ -510,156 +511,183 @@ class _OrdersScreenState extends State<OrdersScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.5,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Detalles de ${order.id}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            maxChildSize: 0.9,
+            minChildSize: 0.5,
+            builder:
+                (context, scrollController) => Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      // Handle
+                      Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              // Content
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    // Información general
-                    _buildDetailRow('Estado:', order.status.displayName),
-                    _buildDetailRow('Fecha:', _formatDate(order.fechaCreacion)),
-                    _buildDetailRow('Total productos:', '${order.totalItems}'),
-                    _buildDetailRow('Total:', '\$${order.total.toStringAsFixed(2)}'),
-                    
-                    // Desglose de pagos
-                    if (order.operationId != null) ...[
-                      const SizedBox(height: 16),
-                      _buildPaymentBreakdown(order.operationId!),
-                    ],
-                    
-                    // Datos del cliente
-                    if (order.buyerName != null || order.buyerPhone != null) ...[
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Datos del Cliente:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (order.buyerName != null)
-                        _buildDetailRow('Nombre:', order.buyerName!),
-                      if (order.buyerPhone != null)
-                        _buildDetailRow('Teléfono:', order.buyerPhone!),
-                      if (order.extraContacts != null && order.extraContacts!.isNotEmpty)
-                        _buildDetailRow('Contactos extra:', order.extraContacts!),
-                      if (order.paymentMethod != null)
-                        _buildDetailRow('Método de pago:', order.paymentMethod!),
-                    ],
-                    
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Productos:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Lista de productos
-                    ...order.items.map((item) => Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[200]!),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.nombre,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF1F2937),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Cantidad: ${item.cantidad} • ${item.ubicacionAlmacen}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              Text(
-                                '\$${item.subtotal.toStringAsFixed(2)}',
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Detalles de ${order.id}',
                                 style: const TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.w600,
-                                  color: Color(0xFF4A90E2),
+                                  color: Color(0xFF1F2937),
                                 ),
                               ),
-                            ],
-                          ),
-                        ],
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
                       ),
-                    )),
-                    
-                    // Botones de acción
-                    const SizedBox(height: 24),
-                    _buildActionButtons(order),
-                  ],
+                      const Divider(height: 1),
+                      // Content
+                      Expanded(
+                        child: ListView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            // Información general
+                            _buildDetailRow(
+                              'Estado:',
+                              order.status.displayName,
+                            ),
+                            _buildDetailRow(
+                              'Fecha:',
+                              _formatDate(order.fechaCreacion),
+                            ),
+                            _buildDetailRow(
+                              'Total productos:',
+                              '${order.totalItems}',
+                            ),
+                            _buildDetailRow(
+                              'Total:',
+                              '\$${order.total.toStringAsFixed(2)}',
+                            ),
+
+                            // Desglose de pagos
+                            if (order.operationId != null) ...[
+                              const SizedBox(height: 16),
+                              _buildPaymentBreakdown(order.operationId!),
+                            ],
+
+                            // Datos del cliente
+                            if (order.buyerName != null ||
+                                order.buyerPhone != null) ...[
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Datos del Cliente:',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              if (order.buyerName != null)
+                                _buildDetailRow('Nombre:', order.buyerName!),
+                              if (order.buyerPhone != null)
+                                _buildDetailRow('Teléfono:', order.buyerPhone!),
+                              if (order.extraContacts != null &&
+                                  order.extraContacts!.isNotEmpty)
+                                _buildDetailRow(
+                                  'Contactos extra:',
+                                  order.extraContacts!,
+                                ),
+                              if (order.paymentMethod != null)
+                                _buildDetailRow(
+                                  'Método de pago:',
+                                  order.paymentMethod!,
+                                ),
+                            ],
+
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Productos:',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            // Lista de productos
+                            ...order.items.map(
+                              (item) => Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.grey[200]!),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.nombre,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: Color(0xFF1F2937),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Cantidad: ${item.cantidad} • ${item.ubicacionAlmacen}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                        Text(
+                                          '\$${item.subtotal.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF4A90E2),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                            // Botones de acción
+                            const SizedBox(height: 24),
+                            _buildActionButtons(order),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
 
@@ -677,9 +705,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        
+
         // Botón de imprimir (siempre disponible para órdenes con pago confirmado o completadas)
-        if (order.status == OrderStatus.pagoConfirmado || 
+        if (order.status == OrderStatus.pagoConfirmado ||
             order.status == OrderStatus.completada) ...[
           SizedBox(
             width: double.infinity,
@@ -696,9 +724,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
           const SizedBox(height: 8),
         ],
-        
+
         // Botones de gestión solo para órdenes que no estén en estado final
-        if (order.status != OrderStatus.cancelada && 
+        if (order.status != OrderStatus.cancelada &&
             order.status != OrderStatus.devuelta &&
             order.status != OrderStatus.completada) ...[
           Row(
@@ -706,13 +734,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
               // Botón Cancelar
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _showConfirmationDialog(
-                    order,
-                    OrderStatus.cancelada,
-                    'Cancelar Orden',
-                    '¿Estás seguro de que quieres cancelar esta orden?',
-                    Colors.red,
-                  ),
+                  onPressed:
+                      () => _showConfirmationDialog(
+                        order,
+                        OrderStatus.cancelada,
+                        'Cancelar Orden',
+                        '¿Estás seguro de que quieres cancelar esta orden?',
+                        Colors.red,
+                      ),
                   icon: const Icon(Icons.cancel_outlined),
                   label: const Text('Cancelar'),
                   style: OutlinedButton.styleFrom(
@@ -726,13 +755,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
               // Botón Devolver
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _showConfirmationDialog(
-                    order,
-                    OrderStatus.devuelta,
-                    'Devolver Orden',
-                    '¿Estás seguro de que quieres marcar esta orden como devuelta?',
-                    const Color(0xFFFF6B35),
-                  ),
+                  onPressed:
+                      () => _showConfirmationDialog(
+                        order,
+                        OrderStatus.devuelta,
+                        'Devolver Orden',
+                        '¿Estás seguro de que quieres marcar esta orden como devuelta?',
+                        const Color(0xFFFF6B35),
+                      ),
                   icon: const Icon(Icons.keyboard_return),
                   label: const Text('Devolver'),
                   style: OutlinedButton.styleFrom(
@@ -749,13 +779,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () => _showConfirmationDialog(
-                order,
-                OrderStatus.pagoConfirmado,
-                'Confirmar Pago',
-                '¿Confirmas que el pago de esta orden ha sido recibido?',
-                const Color(0xFF10B981),
-              ),
+              onPressed:
+                  () => _showConfirmationDialog(
+                    order,
+                    OrderStatus.pagoConfirmado,
+                    'Confirmar Pago',
+                    '¿Confirmas que el pago de esta orden ha sido recibido?',
+                    const Color(0xFF10B981),
+                  ),
               icon: const Icon(Icons.payment),
               label: const Text('Confirmar Pago'),
               style: ElevatedButton.styleFrom(
@@ -779,28 +810,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
   ) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  _updateOrderStatus(order, newStatus);
+                  Navigator.pop(context); // Cerrar diálogo
+                  Navigator.pop(context); // Cerrar modal de detalles
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Confirmar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              _updateOrderStatus(order, newStatus);
-              Navigator.pop(context); // Cerrar diálogo
-              Navigator.pop(context); // Cerrar modal de detalles
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Confirmar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -809,31 +841,32 @@ class _OrdersScreenState extends State<OrdersScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: Color(0xFF4A90E2)),
-            SizedBox(height: 16),
-            Text('Actualizando estado...'),
-          ],
-        ),
-      ),
+      builder:
+          (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                SizedBox(height: 16),
+                Text('Actualizando estado...'),
+              ],
+            ),
+          ),
     );
 
     try {
       // Llamar al servicio actualizado que ahora es async
       final result = await _orderService.updateOrderStatus(order.id, newStatus);
-      
+
       // Cerrar indicador de carga
       Navigator.pop(context);
-      
+
       if (result['success'] == true) {
         // Actualizar la UI solo si fue exitoso
         setState(() {
           _filterOrders(); // Actualizar la lista filtrada
         });
-        
+
         String statusMessage = '';
         switch (newStatus) {
           case OrderStatus.cancelada:
@@ -854,29 +887,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
           default:
             statusMessage = 'Estado actualizado correctamente';
         }
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(statusMessage),
-            backgroundColor: Colors.green,
-          ),
+          SnackBar(content: Text(statusMessage), backgroundColor: Colors.green),
         );
       } else {
         // Mostrar error si falló la actualización
         _showErrorDialog(
-          'Error al actualizar estado', 
-          result['error'] ?? 'No se pudo actualizar el estado de la orden'
+          'Error al actualizar estado',
+          result['error'] ?? 'No se pudo actualizar el estado de la orden',
         );
       }
     } catch (e) {
       // Cerrar indicador de carga si hay excepción
       Navigator.pop(context);
-      
+
       _showErrorDialog(
-        'Error de conexión', 
-        'No se pudo conectar con el servidor. Verifica tu conexión a internet.'
+        'Error de conexión',
+        'No se pudo conectar con el servidor. Verifica tu conexión a internet.',
       );
-      
+
       print('Error en _updateOrderStatus: $e');
     }
   }
@@ -967,69 +997,74 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            ...payments.map((payment) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue[200]!),
-              ),
-              child: Row(
-                children: [
-                  // Icono del método de pago
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: _getPaymentMethodColor(payment),
-                      borderRadius: BorderRadius.circular(6),
+            ...payments.map(
+              (payment) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Row(
+                  children: [
+                    // Icono del método de pago
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: _getPaymentMethodColor(payment),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Icon(
+                        _getPaymentMethodIcon(payment),
+                        size: 16,
+                        color: Colors.white,
+                      ),
                     ),
-                    child: Icon(
-                      _getPaymentMethodIcon(payment),
-                      size: 16,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Información del pago
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          payment['medio_pago_denominacion'] ?? 'Método desconocido',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF1F2937),
-                          ),
-                        ),
-                        if (payment['referencia_pago'] != null && 
-                            payment['referencia_pago'].toString().isNotEmpty) ...[
-                          const SizedBox(height: 2),
+                    const SizedBox(width: 12),
+                    // Información del pago
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            'Ref: ${payment['referencia_pago']}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
+                            payment['medio_pago_denominacion'] ??
+                                'Método desconocido',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF1F2937),
                             ),
                           ),
+                          if (payment['referencia_pago'] != null &&
+                              payment['referencia_pago']
+                                  .toString()
+                                  .isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'Ref: ${payment['referencia_pago']}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  // Monto
-                  Text(
-                    '\$${(payment['monto'] ?? 0.0).toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF4A90E2),
+                    // Monto
+                    Text(
+                      '\$${(payment['monto'] ?? 0.0).toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF4A90E2),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            )),
+            ),
           ],
         );
       },
@@ -1039,7 +1074,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Color _getPaymentMethodColor(Map<String, dynamic> payment) {
     final esEfectivo = payment['medio_pago_es_efectivo'] ?? false;
     final esDigital = payment['medio_pago_es_digital'] ?? false;
-    
+
     if (esEfectivo) {
       return Colors.green;
     } else if (esDigital) {
@@ -1052,7 +1087,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   IconData _getPaymentMethodIcon(Map<String, dynamic> payment) {
     final esEfectivo = payment['medio_pago_es_efectivo'] ?? false;
     final esDigital = payment['medio_pago_es_digital'] ?? false;
-    
+
     if (esEfectivo) {
       return Icons.payments;
     } else if (esDigital) {
@@ -1068,13 +1103,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
-          ),
+          Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
           Text(
             value,
             style: const TextStyle(
@@ -1091,7 +1120,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Home
-        Navigator.pushNamedAndRemoveUntil(context, '/categories', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/categories',
+          (route) => false,
+        );
         break;
       case 1: // Preorden
         Navigator.pushNamed(context, '/preorder');
@@ -1107,42 +1140,51 @@ class _OrdersScreenState extends State<OrdersScreen> {
   /// Mostrar diálogo de impresión después de confirmar pago
   Future<void> _showPrintDialog(Order order) async {
     print('DEBUG: Iniciando _showPrintDialog para orden ${order.id}');
-    
+
     // Mostrar diálogo de confirmación de impresión
     print('DEBUG: Mostrando diálogo de confirmación de impresión');
-    bool shouldPrint = await _printerService.showPrintConfirmationDialog(context, order);
+    bool shouldPrint = await _printerService.showPrintConfirmationDialog(
+      context,
+      order,
+    );
     print('DEBUG: Resultado del diálogo de confirmación: $shouldPrint');
-    
+
     if (!shouldPrint) return;
 
     // Mostrar diálogo de selección de impresora
-    var selectedDevice = await _printerService.showDeviceSelectionDialog(context);
-    
+    var selectedDevice = await _printerService.showDeviceSelectionDialog(
+      context,
+    );
+
     if (selectedDevice == null) return;
 
     // Mostrar diálogo de progreso
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: Color(0xFF4A90E2)),
-            SizedBox(height: 16),
-            Text('Conectando a impresora...'),
-          ],
-        ),
-      ),
+      builder:
+          (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                SizedBox(height: 16),
+                Text('Conectando a impresora...'),
+              ],
+            ),
+          ),
     );
 
     try {
       // Conectar a la impresora
       bool connected = await _printerService.connectToDevice(selectedDevice);
-      
+
       if (!connected) {
         Navigator.pop(context); // Cerrar diálogo de progreso
-        _showErrorDialog('Error de Conexión', 'No se pudo conectar a la impresora. Verifica que esté encendida y en rango.');
+        _showErrorDialog(
+          'Error de Conexión',
+          'No se pudo conectar a la impresora. Verifica que esté encendida y en rango.',
+        );
         return;
       }
 
@@ -1151,32 +1193,38 @@ class _OrdersScreenState extends State<OrdersScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Imprimiendo factura...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo factura...'),
+                ],
+              ),
+            ),
       );
 
       // Imprimir la factura
       bool printed = await _printerService.printInvoice(order);
-      
+
       Navigator.pop(context); // Cerrar diálogo de progreso
 
       if (printed) {
-        _showSuccessDialog('¡Factura Impresa!', 'La factura de la orden ${order.id} se ha impreso correctamente.');
+        _showSuccessDialog(
+          '¡Factura Impresa!',
+          'La factura de la orden ${order.id} se ha impreso correctamente.',
+        );
       } else {
-        _showErrorDialog('Error de Impresión', 'No se pudo imprimir la factura. Verifica la conexión con la impresora.');
+        _showErrorDialog(
+          'Error de Impresión',
+          'No se pudo imprimir la factura. Verifica la conexión con la impresora.',
+        );
       }
 
       // Desconectar de la impresora
       await _printerService.disconnect();
-
     } catch (e) {
       Navigator.pop(context); // Cerrar diálogo de progreso si está abierto
       _showErrorDialog('Error', 'Ocurrió un error durante la impresión: $e');
@@ -1188,22 +1236,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void _showErrorDialog(String title, String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.error, color: Colors.red),
-            SizedBox(width: 8),
-            Text(title),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Text(title),
+              ],
+            ),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -1211,26 +1260,27 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void _showSuccessDialog(String title, String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green),
-            SizedBox(width: 8),
-            Text(title),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text(title),
+              ],
             ),
-            child: const Text('¡Genial!'),
+            content: Text(message),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('¡Genial!'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -1238,35 +1288,44 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Future<void> _printOrder(Order order) async {
     try {
       // Mostrar diálogo de confirmación de impresión
-      bool shouldPrint = await _printerService.showPrintConfirmationDialog(context, order);
+      bool shouldPrint = await _printerService.showPrintConfirmationDialog(
+        context,
+        order,
+      );
       if (!shouldPrint) return;
 
       // Mostrar diálogo de selección de impresora
-      var selectedDevice = await _printerService.showDeviceSelectionDialog(context);
+      var selectedDevice = await _printerService.showDeviceSelectionDialog(
+        context,
+      );
       if (selectedDevice == null) return;
 
       // Mostrar diálogo de progreso
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Conectando a impresora...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Conectando a impresora...'),
+                ],
+              ),
+            ),
       );
 
       // Conectar a la impresora
       bool connected = await _printerService.connectToDevice(selectedDevice);
-      
+
       if (!connected) {
         Navigator.pop(context); // Cerrar diálogo de progreso
-        _showErrorDialog('Error de Conexión', 'No se pudo conectar a la impresora. Verifica que esté encendida y en rango.');
+        _showErrorDialog(
+          'Error de Conexión',
+          'No se pudo conectar a la impresora. Verifica que esté encendida y en rango.',
+        );
         return;
       }
 
@@ -1275,32 +1334,38 @@ class _OrdersScreenState extends State<OrdersScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Imprimiendo factura...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo factura...'),
+                ],
+              ),
+            ),
       );
 
       // Imprimir la factura
       bool printed = await _printerService.printInvoice(order);
-      
+
       Navigator.pop(context); // Cerrar diálogo de progreso
 
       if (printed) {
-        _showSuccessDialog('¡Factura Impresa!', 'La factura de la orden ${order.id} se ha impreso correctamente.');
+        _showSuccessDialog(
+          '¡Factura Impresa!',
+          'La factura de la orden ${order.id} se ha impreso correctamente.',
+        );
       } else {
-        _showErrorDialog('Error de Impresión', 'No se pudo imprimir la factura. Verifica la conexión con la impresora.');
+        _showErrorDialog(
+          'Error de Impresión',
+          'No se pudo imprimir la factura. Verifica la conexión con la impresora.',
+        );
       }
 
       // Desconectar de la impresora
       await _printerService.disconnect();
-
     } catch (e) {
       Navigator.pop(context); // Cerrar diálogo de progreso si está abierto
       _showErrorDialog('Error', 'Ocurrió un error durante la impresión: $e');

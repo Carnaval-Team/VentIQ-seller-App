@@ -60,7 +60,7 @@ class SellerSalesReport {
 class SellerSalesService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
-  /// Obtiene las ventas del vendedor actual para el período especificado
+  /// Obtiene las ventas del vendedor actual sin filtros de fecha
   static Future<SellerSalesReport?> getCurrentSellerSales({
     DateTime? fechaDesde,
     DateTime? fechaHasta,
@@ -73,46 +73,25 @@ class SellerSalesService {
       final userid = await userPrefs.getUserId();
       print(' id $idTienda userid $userid');
 
-      // if (workerProfile == null || workerProfile['uuid'] == null || idTienda == null) {
-      //   print('❌ No se pudo obtener UUID del vendedor o ID de tienda');
-      //   return null;
-      // }
-
-      // final uuidVendedor = workerProfile['uuid'] as String;
-
       print('🔍 Calling fn_reporte_ventas_por_vendedor for current seller:');
-      // print('- p_uuid_usuario: $uuidVendedor');
-      final today = DateTime.now();
-      final formattedDate = "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
-      
+      print('- p_uuid_usuario: $userid');
       print('- p_id_tienda: $idTienda');
-      print('- p_fecha_desde: $formattedDate');
-      print('- p_fecha_hasta: $formattedDate');
 
-      // Preparar parámetros
+      // Preparar parámetros sin fechas
       final Map<String, dynamic> params = {
         'p_uuid_usuario': userid,
         'p_id_tienda': idTienda,
       };
 
-      // final today = DateTime.now();
-      // final formattedDate = "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
-      // // if (fechaDesde != null) {
-        params['p_fecha_desde'] = '$formattedDate 00:00:00';
-      // }
-      // if (fechaHasta != null) {
-        params['p_fecha_hasta'] = '$formattedDate 23:59:59';
-      // }
-
-      // Llamar a la función RPC
+      // Llamar a la función RPC sin filtros de fecha
       final response = await _supabase.rpc(
         'fn_reporte_ventas_por_vendedor',
         params: params,
       );
 
-      print('📊 Response received: ${response?.length ?? 0} records');
+      print('📊 RPC Response: $response');
 
-      if (response == null || response.isEmpty) {
+      if (response == null || response is! List || response.isEmpty) {
         print('ℹ️ No sales data found for current seller');
         return null;
       }
@@ -191,5 +170,37 @@ class SellerSalesService {
       fechaDesde: startOfMonth,
       fechaHasta: endOfMonth,
     );
+  }
+
+  /// Obtiene las ventas del turno actual
+  static Future<SellerSalesReport?> getCurrentShiftSales(int idTurno) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      final userid = await userPrefs.getUserId();
+
+      print('🔍 Calling fn_reporte_ventas_por_vendedor for current shift:');
+      print('- p_uuid_usuario: $userid');
+      print('- p_id_tienda: $idTienda');
+      print('- p_id_turno: $idTurno');
+
+      final response = await _supabase.rpc(
+        'fn_reporte_ventas_por_vendedor',
+        params: {'p_uuid_usuario': userid, 'p_id_tienda': idTienda},
+      );
+
+      print('📊 Current shift sales response: $response');
+
+      if (response != null && response is List && response.isNotEmpty) {
+        return SellerSalesReport.fromJson(
+          response.first as Map<String, dynamic>,
+        );
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Error getting current shift sales: $e');
+      return null;
+    }
   }
 }
