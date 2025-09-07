@@ -150,7 +150,9 @@ class InventoryProduct {
     } else if (data is List<dynamic>) {
       return InventoryProduct.fromList(data);
     } else {
-      throw ArgumentError('Invalid data type for InventoryProduct.fromSupabaseRpc');
+      throw ArgumentError(
+        'Invalid data type for InventoryProduct.fromSupabaseRpc',
+      );
     }
   }
 
@@ -158,24 +160,28 @@ class InventoryProduct {
     // Parse JSON fields
     InventorySummary? summary;
     PaginationInfo? pagination;
-    
+
     if (map['resumen_inventario'] != null) {
       if (map['resumen_inventario'] is String) {
         // Parse JSON string
         final summaryJson = map['resumen_inventario'] as String;
         // Handle JSON parsing here if needed
       } else if (map['resumen_inventario'] is Map) {
-        summary = InventorySummary.fromJson(map['resumen_inventario'] as Map<String, dynamic>);
+        summary = InventorySummary.fromJson(
+          map['resumen_inventario'] as Map<String, dynamic>,
+        );
       }
     }
-    
+
     if (map['info_paginacion'] != null) {
       if (map['info_paginacion'] is String) {
         // Parse JSON string
         final paginationJson = map['info_paginacion'] as String;
         // Handle JSON parsing here if needed
       } else if (map['info_paginacion'] is Map) {
-        pagination = PaginationInfo.fromJson(map['info_paginacion'] as Map<String, dynamic>);
+        pagination = PaginationInfo.fromJson(
+          map['info_paginacion'] as Map<String, dynamic>,
+        );
       }
     }
 
@@ -203,7 +209,8 @@ class InventoryProduct {
       cantidadFinal: (map['cantidad_final'] ?? 0).toDouble(),
       stockDisponible: (map['stock_disponible'] ?? 0).toDouble(),
       stockReservado: (map['stock_reservado'] ?? 0).toDouble(),
-      stockDisponibleAjustado: (map['stock_disponible_ajustado'] ?? 0).toDouble(),
+      stockDisponibleAjustado:
+          (map['stock_disponible_ajustado'] ?? 0).toDouble(),
       esVendible: map['es_vendible'] ?? false,
       esInventariable: map['es_inventariable'] ?? false,
       precioVenta: map['precio_venta']?.toDouble(),
@@ -211,9 +218,10 @@ class InventoryProduct {
       margenActual: map['margen_actual']?.toDouble(),
       clasificacionAbc: map['clasificacion_abc'] ?? 3,
       abcDescripcion: map['abc_descripcion'] ?? 'No clasificado',
-      fechaUltimaActualizacion: map['fecha_ultima_actualizacion'] != null 
-          ? DateTime.parse(map['fecha_ultima_actualizacion']) 
-          : DateTime.now(),
+      fechaUltimaActualizacion:
+          map['fecha_ultima_actualizacion'] != null
+              ? DateTime.parse(map['fecha_ultima_actualizacion'])
+              : DateTime.now(),
       totalCount: map['total_count'] ?? 0,
       resumenInventario: summary,
       infoPaginacion: pagination,
@@ -253,14 +261,18 @@ class InventoryProduct {
       margenActual: row[28]?.toDouble(),
       clasificacionAbc: row[29] ?? 3,
       abcDescripcion: row[30] ?? 'No clasificado',
-      fechaUltimaActualizacion: DateTime.parse(row[31] ?? DateTime.now().toIso8601String()),
+      fechaUltimaActualizacion: DateTime.parse(
+        row[31] ?? DateTime.now().toIso8601String(),
+      ),
       totalCount: row[32] ?? 0,
-      resumenInventario: row.length > 33 && row[33] != null 
-          ? InventorySummary.fromJson(Map<String, dynamic>.from(row[33]))
-          : null,
-      infoPaginacion: row.length > 34 && row[34] != null 
-          ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[34]))
-          : null,
+      resumenInventario:
+          row.length > 33 && row[33] != null
+              ? InventorySummary.fromJson(Map<String, dynamic>.from(row[33]))
+              : null,
+      infoPaginacion:
+          row.length > 34 && row[34] != null
+              ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[34]))
+              : null,
     );
   }
 
@@ -281,7 +293,12 @@ class InventoryProduct {
       minStock: 10, // Virtual minimum stock
       maxStock: 100, // Virtual maximum stock
       unitCost: costoPromedio ?? 0.0,
-      abcClassification: clasificacionAbc == 1 ? 'A' : clasificacionAbc == 2 ? 'B' : 'C',
+      abcClassification:
+          clasificacionAbc == 1
+              ? 'A'
+              : clasificacionAbc == 2
+              ? 'B'
+              : 'C',
       lastMovement: fechaUltimaActualizacion,
       needsRestock: cantidadFinal <= 10,
     );
@@ -344,7 +361,9 @@ class InventoryItem {
       maxStock: json['maxStock'] ?? 0,
       unitCost: (json['unitCost'] ?? 0.0).toDouble(),
       abcClassification: json['abcClassification'] ?? 'C',
-      lastMovement: DateTime.parse(json['lastMovement'] ?? DateTime.now().toIso8601String()),
+      lastMovement: DateTime.parse(
+        json['lastMovement'] ?? DateTime.now().toIso8601String(),
+      ),
       needsRestock: json['needsRestock'] ?? false,
     );
   }
@@ -408,7 +427,9 @@ class InventoryMovement {
       reason: json['reason'] ?? '',
       userId: json['userId'] ?? '',
       userName: json['userName'] ?? '',
-      timestamp: DateTime.parse(json['timestamp'] ?? DateTime.now().toIso8601String()),
+      timestamp: DateTime.parse(
+        json['timestamp'] ?? DateTime.now().toIso8601String(),
+      ),
       fromWarehouse: json['fromWarehouse'],
       toWarehouse: json['toWarehouse'],
       reference: json['reference'],
@@ -438,9 +459,114 @@ class InventoryResponse {
   final InventorySummary? summary;
   final PaginationInfo? pagination;
 
-  InventoryResponse({
-    required this.products,
-    this.summary,
-    this.pagination,
+  InventoryResponse({required this.products, this.summary, this.pagination});
+}
+
+// Model for inventory summary by user from fn_inventario_resumen_por_usuario
+class InventorySummaryByUser {
+  final int idProducto;
+  final String productoNombre;
+  final int? idVariante;
+  final String varianteValor;
+  final int? idOpcionVariante;
+  final String opcionVarianteValor;
+  final double cantidadTotalEnUnidadesBase;
+  final double cantidadTotalEnAlmacen;
+  final int zonasDiferentes;
+  final int presentacionesDiferentes;
+
+  InventorySummaryByUser({
+    required this.idProducto,
+    required this.productoNombre,
+    this.idVariante,
+    required this.varianteValor,
+    this.idOpcionVariante,
+    required this.opcionVarianteValor,
+    required this.cantidadTotalEnUnidadesBase,
+    required this.cantidadTotalEnAlmacen,
+    required this.zonasDiferentes,
+    required this.presentacionesDiferentes,
   });
+
+  // Helper methods for UI display
+  bool get hasVariant => idVariante != null && varianteValor != 'N/A';
+  bool get hasOptionVariant =>
+      idOpcionVariante != null && opcionVarianteValor != 'N/A';
+  bool get hasMultipleLocations => zonasDiferentes > 1;
+  bool get hasMultiplePresentations => presentacionesDiferentes > 1;
+
+  String get variantDisplay {
+    if (!hasVariant && !hasOptionVariant) return '';
+    if (hasVariant && hasOptionVariant) {
+      return '$varianteValor → $opcionVarianteValor';
+    }
+    if (hasVariant) return varianteValor;
+    if (hasOptionVariant) return opcionVarianteValor;
+    return '';
+  }
+
+  // Virtual fields for stock level calculation
+  String get stockLevel {
+    if (cantidadTotalEnAlmacen <= 0) return 'Sin Stock';
+    if (cantidadTotalEnAlmacen <= 10) return 'Stock Bajo';
+    return 'Stock OK';
+  }
+
+  Color get stockLevelColor {
+    switch (stockLevel) {
+      case 'Sin Stock':
+        return const Color(0xFFDC2626); // Red
+      case 'Stock Bajo':
+        return const Color(0xFFF59E0B); // Orange
+      default:
+        return const Color(0xFF10B981); // Green
+    }
+  }
+
+  factory InventorySummaryByUser.fromMap(Map<String, dynamic> map) {
+    return InventorySummaryByUser(
+      idProducto: map['id_producto'] ?? 0,
+      productoNombre: map['producto_nombre'] ?? '',
+      idVariante: map['id_variante'],
+      varianteValor: map['variante_valor'] ?? 'N/A',
+      idOpcionVariante: map['id_opcion_variante'],
+      opcionVarianteValor: map['opcion_variante_valor'] ?? 'N/A',
+      cantidadTotalEnUnidadesBase:
+          (map['cantidad_total_en_unidades_base'] ?? 0).toDouble(),
+      cantidadTotalEnAlmacen:
+          (map['cantidad_total_en_almacen'] ?? 0).toDouble(),
+      zonasDiferentes: map['zonas_diferentes'] ?? 0,
+      presentacionesDiferentes: map['presentaciones_diferentes'] ?? 0,
+    );
+  }
+
+  factory InventorySummaryByUser.fromJson(Map<String, dynamic> json) {
+    return InventorySummaryByUser(
+      idProducto: json['prod_id'] ?? 0,
+      productoNombre: json['prod_nombre'] ?? '',
+      idVariante: json['variante_id'],
+      varianteValor: json['variante_valor'] ?? 'N/A',
+      idOpcionVariante: json['opcion_variante_id'],
+      opcionVarianteValor: json['opcion_variante_valor'] ?? 'N/A',
+      cantidadTotalEnUnidadesBase: (json['cant_unidades_base'] ?? 0).toDouble(),
+      cantidadTotalEnAlmacen: (json['cant_almacen_total'] ?? 0).toDouble(),
+      zonasDiferentes: (json['zonas_count'] ?? 0).toInt(),
+      presentacionesDiferentes: (json['presentaciones_count'] ?? 1).toInt(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id_producto': idProducto,
+      'producto_nombre': productoNombre,
+      'id_variante': idVariante,
+      'variante_valor': varianteValor,
+      'id_opcion_variante': idOpcionVariante,
+      'opcion_variante_valor': opcionVarianteValor,
+      'cantidad_total_en_unidades_base': cantidadTotalEnUnidadesBase,
+      'cantidad_total_en_almacen': cantidadTotalEnAlmacen,
+      'zonas_diferentes': zonasDiferentes,
+      'presentaciones_diferentes': presentacionesDiferentes,
+    };
+  }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/inventory.dart';
 import '../services/inventory_service.dart';
+import '../widgets/inventory_summary_card.dart';
 import 'inventory_reception_screen.dart';
 
 class InventoryStockScreen extends StatefulWidget {
@@ -15,12 +16,14 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   List<InventoryProduct> _inventoryProducts = [];
+  List<InventorySummaryByUser> _inventorySummaries = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
   String _selectedWarehouse = 'Todos';
   int? _selectedWarehouseId;
   String _stockFilter = 'Todos';
   String _errorMessage = '';
+  bool _isDetailedView = false; // Toggle between summary and detailed view
 
   // Pagination and summary data
   int _currentPage = 1;
@@ -29,23 +32,19 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   PaginationInfo? _paginationInfo;
   final ScrollController _scrollController = ScrollController();
 
-  // Selection mode for extraction
-  bool _isSelectionMode = false;
-  Set<String> _selectedProducts = <String>{};
-  List<Map<String, dynamic>> _motivoExtraccionOptions = [];
-
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_scrollListener);
     _loadInventoryData();
-    _loadMotivoExtraccionOptions();
   }
 
   void _scrollListener() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
-      _loadNextPage();
+      if (_isDetailedView) {
+        _loadNextPage();
+      }
     }
   }
 
@@ -63,68 +62,85 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         _errorMessage = '';
         _currentPage = 1;
         _inventoryProducts.clear();
+        _inventorySummaries.clear();
       });
     }
 
     try {
-      // Load inventory products with pagination
-      final response = await InventoryService.getInventoryProducts(
-        idAlmacen: _selectedWarehouseId,
-        busqueda: _searchQuery.isEmpty ? null : _searchQuery,
-        mostrarSinStock: _stockFilter != 'Sin Stock',
-        conStockMinimo: _stockFilter == 'Stock Bajo' ? true : null,
-        pagina: _currentPage,
-      );
+      if (_isDetailedView) {
+        print('🔍 Loading detailed inventory view...');
+        // Load detailed inventory products with pagination
+        final response = await InventoryService.getInventoryProducts(
+          idAlmacen: _selectedWarehouseId,
+          busqueda: _searchQuery.isEmpty ? null : _searchQuery,
+          mostrarSinStock: _stockFilter != 'Sin Stock',
+          conStockMinimo: _stockFilter == 'Stock Bajo' ? true : null,
+          pagina: _currentPage,
+        );
 
-      setState(() {
-        if (reset) {
-          _inventoryProducts = response.products;
-        } else {
-          _inventoryProducts.addAll(response.products);
+        setState(() {
+          if (reset) {
+            _inventoryProducts = response.products;
+          } else {
+            _inventoryProducts.addAll(response.products);
+          }
+          _inventorySummary = response.summary;
+          _paginationInfo = response.pagination;
+          _hasNextPage = response.pagination?.tieneSiguiente ?? false;
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+
+        print(
+          '✅ Loaded ${response.products.length} products (page $_currentPage)',
+        );
+      } else {
+        print('🔍 Loading inventory summary view...');
+        // Load inventory summary by user
+        final summaries = await InventoryService.getInventorySummaryByUser();
+
+        print('📦 Received ${summaries.length} summaries from service');
+        for (int i = 0; i < summaries.length && i < 3; i++) {
+          final summary = summaries[i];
+          print(
+            '📋 Summary $i: ${summary.productoNombre} (ID: ${summary.idProducto}) - ${summary.cantidadTotalEnAlmacen} units',
+          );
         }
-        _inventorySummary = response.summary;
-        _paginationInfo = response.pagination;
-        _hasNextPage = response.pagination?.tieneSiguiente ?? false;
-        _isLoading = false;
-        _isLoadingMore = false;
-      });
 
-      print(
-        '✅ Loaded ${response.products.length} products (page $_currentPage)',
-      );
-      print(
-        '📊 Summary: ${_inventorySummary?.totalInventario} total, ${_inventorySummary?.totalSinStock} sin stock',
-      );
+        setState(() {
+          _inventorySummaries = summaries;
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+
+        print('✅ Loaded ${summaries.length} inventory summaries');
+        print(
+          '🔍 State updated - _inventorySummaries length: ${_inventorySummaries.length}',
+        );
+      }
     } catch (e) {
       print('❌ Error loading inventory data: $e');
       setState(() {
+        _errorMessage = e.toString();
         _isLoading = false;
         _isLoadingMore = false;
-        _errorMessage = 'Error al cargar inventario: $e';
       });
     }
   }
 
-  void _loadNextPage() async {
+  Future<void> _loadNextPage() async {
     if (_isLoadingMore || !_hasNextPage) return;
 
-    setState(() {
-      _isLoadingMore = true;
-      _currentPage++;
-    });
-
+    setState(() => _isLoadingMore = true);
+    _currentPage++;
     _loadInventoryData(reset: false);
   }
 
-  Future<void> _loadMotivoExtraccionOptions() async {
-    try {
-      final options = await InventoryService.getMotivoExtraccionOptions();
-      setState(() {
-        _motivoExtraccionOptions = options;
-      });
-    } catch (e) {
-      print('Error loading motivo extracción options: $e');
-    }
+  void _toggleView() {
+    setState(() {
+      _isDetailedView = !_isDetailedView;
+    });
+    _loadInventoryData();
   }
 
   @override
@@ -137,27 +153,140 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       return _buildErrorState();
     }
 
-    final filteredItems = _getFilteredInventoryItems();
-
     return Column(
       children: [
         _buildSearchAndFilters(),
-        _buildInventorySummary(),
-        Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(16),
-            itemCount: filteredItems.length + (_isLoadingMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (index == filteredItems.length) {
-                return _buildLoadingMoreIndicator();
-              }
-              return _buildInventoryCard(filteredItems[index]);
-            },
-          ),
-        ),
+        _buildViewToggle(),
+        if (_isDetailedView) ...[
+          _buildInventorySummary(),
+          Expanded(child: _buildDetailedInventoryList()),
+        ] else ...[
+          Expanded(child: _buildSummaryInventoryList()),
+        ],
       ],
     );
+  }
+
+  Widget _buildViewToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.white,
+      child: Row(
+        children: [
+          Text(
+            'Vista:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment<bool>(
+                  value: false,
+                  label: Text('Resumen'),
+                  icon: Icon(Icons.view_list, size: 18),
+                ),
+                ButtonSegment<bool>(
+                  value: true,
+                  label: Text('Detallado'),
+                  icon: Icon(Icons.view_module, size: 18),
+                ),
+              ],
+              selected: {_isDetailedView},
+              onSelectionChanged: (Set<bool> newSelection) {
+                _toggleView();
+              },
+              style: SegmentedButton.styleFrom(
+                backgroundColor: AppColors.background,
+                foregroundColor: AppColors.textSecondary,
+                selectedBackgroundColor: AppColors.primary,
+                selectedForegroundColor: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryInventoryList() {
+    final filteredSummaries = _getFilteredInventorySummaries();
+
+    return InventorySummaryList(
+      summaries: filteredSummaries,
+      isLoading: _isLoading,
+      errorMessage: _errorMessage.isNotEmpty ? _errorMessage : null,
+      onRetry: () => _loadInventoryData(),
+      onItemTap: (summary) => _showInventorySummaryDetails(summary),
+    );
+  }
+
+  Widget _buildDetailedInventoryList() {
+    final filteredItems = _getFilteredInventoryItems();
+
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(16),
+      itemCount: filteredItems.length + (_isLoadingMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == filteredItems.length) {
+          return _buildLoadingMoreIndicator();
+        }
+        return _buildInventoryCard(filteredItems[index]);
+      },
+    );
+  }
+
+  List<InventorySummaryByUser> _getFilteredInventorySummaries() {
+    List<InventorySummaryByUser> filtered = List.from(_inventorySummaries);
+
+    // Apply search filter
+    if (_searchQuery.isNotEmpty) {
+      filtered =
+          filtered.where((summary) {
+            return summary.productoNombre.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                summary.variantDisplay.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                );
+          }).toList();
+    }
+
+    // Apply stock filter
+    switch (_stockFilter) {
+      case 'Sin Stock':
+        filtered =
+            filtered
+                .where((summary) => summary.cantidadTotalEnAlmacen <= 0)
+                .toList();
+        break;
+      case 'Stock Bajo':
+        filtered =
+            filtered
+                .where(
+                  (summary) =>
+                      summary.cantidadTotalEnAlmacen > 0 &&
+                      summary.cantidadTotalEnAlmacen <= 10,
+                )
+                .toList();
+        break;
+      case 'Stock OK':
+        filtered =
+            filtered
+                .where((summary) => summary.cantidadTotalEnAlmacen > 10)
+                .toList();
+        break;
+      case 'Todos':
+      default:
+        break;
+    }
+
+    return filtered;
   }
 
   Widget _buildLoadingState() {
@@ -289,6 +418,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                       }).toList(),
                   onChanged: (value) {
                     setState(() => _stockFilter = value!);
+                    _loadInventoryData();
                   },
                 ),
               ),
@@ -388,37 +518,19 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
 
   Widget _buildInventoryCard(InventoryProduct item) {
     final stockStatus = _getStockStatus(item.stockDisponible.toInt());
-    final isSelected = _selectedProducts.contains(item.id.toString());
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.white,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isSelected ? AppColors.primary : AppColors.border,
-          width: isSelected ? 2 : 1,
-        ),
+        border: Border.all(color: AppColors.border, width: 1),
       ),
       child: ListTile(
-        leading:
-            _isSelectionMode
-                ? Checkbox(
-                  value: isSelected,
-                  onChanged: (bool? value) {
-                    setState(() {
-                      if (value == true) {
-                        _selectedProducts.add(item.id.toString());
-                      } else {
-                        _selectedProducts.remove(item.id.toString());
-                      }
-                    });
-                  },
-                )
-                : CircleAvatar(
-                  backgroundColor: stockStatus.color.withOpacity(0.1),
-                  child: Icon(Icons.inventory_2, color: stockStatus.color),
-                ),
+        leading: CircleAvatar(
+          backgroundColor: stockStatus.color.withOpacity(0.1),
+          child: Icon(Icons.inventory_2, color: stockStatus.color),
+        ),
         title: Text(
           item.nombreProducto,
           style: const TextStyle(fontWeight: FontWeight.bold),
@@ -447,27 +559,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
             ),
           ],
         ),
-        onTap: () {
-          if (_isSelectionMode) {
-            setState(() {
-              if (isSelected) {
-                _selectedProducts.remove(item.id.toString());
-              } else {
-                _selectedProducts.add(item.id.toString());
-              }
-            });
-          } else {
-            _showInventoryProductDetails(item);
-          }
-        },
-        onLongPress: () {
-          if (!_isSelectionMode) {
-            setState(() {
-              _isSelectionMode = true;
-              _selectedProducts.add(item.id.toString());
-            });
-          }
-        },
+        onTap: () => _showInventoryProductDetails(item),
       ),
     );
   }
@@ -530,6 +622,75 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     }
   }
 
+  Widget _buildDetailSection(
+    String title,
+    IconData icon,
+    List<Widget> children,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: AppColors.primary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showInventoryProductDetails(InventoryProduct item) {
     showDialog(
       context: context,
@@ -543,7 +704,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
               constraints: BoxConstraints(
                 maxHeight: MediaQuery.of(context).size.height * 0.8,
               ),
-              padding: EdgeInsets.all(24),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -552,18 +713,18 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                   Row(
                     children: [
                       Container(
-                        padding: EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           color: AppColors.primary.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Icon(
+                        child: const Icon(
                           Icons.inventory_2,
                           color: AppColors.primary,
                           size: 24,
                         ),
                       ),
-                      SizedBox(width: 12),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -577,8 +738,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                               ),
                             ),
                             Text(
-                              'SKU: ${item.skuProducto}',
-                              style: TextStyle(
+                              '${item.variante} ${item.opcionVariante}',
+                              style: const TextStyle(
                                 fontSize: 14,
                                 color: AppColors.textSecondary,
                               ),
@@ -588,11 +749,14 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                       ),
                       IconButton(
                         onPressed: () => Navigator.of(context).pop(),
-                        icon: Icon(Icons.close, color: AppColors.textSecondary),
+                        icon: const Icon(
+                          Icons.close,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
-                  SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
                   // Content
                   Expanded(
@@ -603,7 +767,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                           // Stock Status Card
                           Container(
                             width: double.infinity,
-                            padding: EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: item.stockLevelColor.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
@@ -621,8 +785,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                       color: item.stockLevelColor,
                                       size: 20,
                                     ),
-                                    SizedBox(width: 8),
-                                    Text(
+                                    const SizedBox(width: 8),
+                                    const Text(
                                       'Estado de Stock',
                                       style: TextStyle(
                                         fontSize: 16,
@@ -632,7 +796,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                     ),
                                   ],
                                 ),
-                                SizedBox(height: 12),
+                                const SizedBox(height: 12),
                                 Row(
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
@@ -641,7 +805,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Text(
+                                        const Text(
                                           'Stock Actual',
                                           style: TextStyle(
                                             fontSize: 12,
@@ -659,7 +823,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                       ],
                                     ),
                                     Container(
-                                      padding: EdgeInsets.symmetric(
+                                      padding: const EdgeInsets.symmetric(
                                         horizontal: 12,
                                         vertical: 4,
                                       ),
@@ -669,7 +833,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                       ),
                                       child: Text(
                                         item.stockLevel,
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 12,
                                           fontWeight: FontWeight.w600,
@@ -681,7 +845,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                               ],
                             ),
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
 
                           // Product Information
                           _buildDetailSection(
@@ -712,7 +876,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                               ),
                             ],
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
 
                           // Location Information
                           _buildDetailSection(
@@ -724,7 +888,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                               _buildDetailRow('Ubicación', item.ubicacion),
                             ],
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
 
                           // Stock Details
                           _buildDetailSection(
@@ -755,27 +919,27 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                   ),
 
                   // Actions
-                  SizedBox(height: 24),
+                  const SizedBox(height: 24),
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () => Navigator.of(context).pop(),
-                          icon: Icon(Icons.swap_horiz, size: 18),
-                          label: Text('Transferir'),
+                          icon: const Icon(Icons.swap_horiz, size: 18),
+                          label: const Text('Transferir'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.primary,
-                            side: BorderSide(color: AppColors.primary),
-                            padding: EdgeInsets.symmetric(vertical: 12),
+                            side: const BorderSide(color: AppColors.primary),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                         ),
                       ),
-                      SizedBox(width: 12),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: () => Navigator.of(context).pop(),
-                          icon: Icon(Icons.close, size: 18),
-                          label: Text('Cerrar'),
+                          icon: const Icon(Icons.close, size: 18),
+                          label: const Text('Cerrar'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
@@ -791,113 +955,229 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     );
   }
 
-  Widget _buildDetailSection(
-    String title,
-    IconData icon,
-    List<Widget> children,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: AppColors.primary, size: 20),
-            SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+  void _showInventorySummaryDetails(InventorySummaryByUser summary) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.9,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.8,
+              ),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.inventory_2,
+                          color: AppColors.primary,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              summary.productoNombre,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            if (summary.variantDisplay.isNotEmpty)
+                              Text(
+                                summary.variantDisplay,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(
+                          Icons.close,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Content
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Stock Status Card
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: summary.stockLevelColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: summary.stockLevelColor.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.inventory,
+                                      color: summary.stockLevelColor,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Resumen de Stock',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Total en Almacén',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${summary.cantidadTotalEnAlmacen.toStringAsFixed(0)} unidades',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: summary.stockLevelColor,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: summary.stockLevelColor,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        summary.stockLevel,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Distribution Information
+                          _buildDetailSection(
+                            'Distribución',
+                            Icons.location_on_outlined,
+                            [
+                              _buildDetailRow(
+                                'Zonas diferentes',
+                                '${summary.zonasDiferentes}',
+                              ),
+                              _buildDetailRow(
+                                'Presentaciones diferentes',
+                                '${summary.presentacionesDiferentes}',
+                              ),
+                              _buildDetailRow(
+                                'Unidades base totales',
+                                '${summary.cantidadTotalEnUnidadesBase.toStringAsFixed(1)}',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Actions
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            setState(() {
+                              _isDetailedView = true;
+                              _searchQuery = summary.productoNombre;
+                              _searchController.text = summary.productoNombre;
+                            });
+                            _loadInventoryData();
+                          },
+                          icon: const Icon(Icons.visibility, size: 18),
+                          label: const Text('Ver Detalles'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close, size: 18),
+                          label: const Text('Cerrar'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-        SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: children,
-          ),
-        ),
-      ],
     );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Métodos para exponer funcionalidad al padre
-  bool get isSelectionMode => _isSelectionMode;
-  Set<String> get selectedProducts => _selectedProducts;
-
-  void exitSelectionMode() {
-    setState(() {
-      _isSelectionMode = false;
-      _selectedProducts.clear();
-    });
-  }
-
-  void refreshData() {
-    _loadInventoryData();
-  }
-
-  void showMultiExtractionDialog() {
-    // Implementar diálogo de extracción múltiple
-    // Por ahora, solo mostrar un mensaje
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Extracción múltiple: ${_selectedProducts.length} productos seleccionados',
-        ),
-        backgroundColor: AppColors.primary,
-      ),
-    );
-  }
-
-  void showInventoryReceptionDialog() {
-    Navigator.of(context)
-        .push(
-          MaterialPageRoute(
-            builder: (context) => InventoryReceptionScreen(),
-            fullscreenDialog: true,
-          ),
-        )
-        .then((_) {
-          // Refresh inventory after reception
-          _loadInventoryData();
-        });
   }
 }

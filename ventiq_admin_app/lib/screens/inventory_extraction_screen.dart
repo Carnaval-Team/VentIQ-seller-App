@@ -76,6 +76,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                 _selectedSourceLocation?.id != null
                     ? int.tryParse(_selectedSourceLocation!.id)
                     : null,
+            warehouseName: _selectedWarehouseName,
             onAdd: (productData) {
               setState(() {
                 _selectedProducts.add(productData);
@@ -330,7 +331,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
 
       final result = await InventoryService.insertCompleteExtraction(
         autorizadoPor: _autorizadoPorController.text.trim(),
-        estadoInicial: 2, // 2 = Confirmado (completed immediately)
+        estadoInicial: 1, // 2 = Confirmado (completed immediately)
         idMotivoOperacion: _selectedMotivo!['id'],
         idTienda: idTienda,
         observaciones: _observacionesController.text.trim(),
@@ -348,6 +349,10 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
       // Complete the operation after successful extraction
       if (operationId != null) {
         try {
+          print('🔄 Iniciando completar operación...');
+          print('📊 ID Operación: $operationId');
+          print('👤 UUID Usuario: $userUuid');
+
           final completeResult = await InventoryService.completeOperation(
             idOperacion: operationId,
             comentario:
@@ -355,17 +360,26 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
             uuid: userUuid,
           );
 
+          print('📋 Resultado completeOperation: $completeResult');
+
           if (completeResult['status'] == 'success') {
             print('✅ Operación completada exitosamente');
+            print(
+              '📊 Productos afectados: ${completeResult['productos_afectados']}',
+            );
           } else {
             print(
               '⚠️ Advertencia al completar operación: ${completeResult['message']}',
             );
+            print('🔍 Detalles del error: $completeResult');
           }
-        } catch (completeError) {
-          print('⚠️ Error al completar operación: $completeError');
+        } catch (completeError, stackTrace) {
+          print('❌ Error al completar operación: $completeError');
+          print('📍 StackTrace completo: $stackTrace');
           // Don't throw here - extraction was successful, completion is secondary
         }
+      } else {
+        print('⚠️ No se obtuvo ID de operación para completar');
       }
 
       if (mounted) {
@@ -734,57 +748,26 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                           0.7,
                                         ),
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    Row(
-                                      children: [
-                                        Text(
-                                          'Cant: ${product['cantidad']}',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: AppColors.warning
-                                                .withOpacity(0.6),
+                                    if (product['nombreAlmacen'] != null &&
+                                        product['nombreZona'] != null)
+                                      Text(
+                                        '${product['nombreAlmacen']} - ${product['nombreZona']}',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: AppColors.warning.withOpacity(
+                                            0.5,
                                           ),
                                         ),
-                                        if (product['presentacion'] != null &&
-                                            product['presentacion']
-                                                .toString()
-                                                .isNotEmpty) ...[
-                                          Text(
-                                            ' • ',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: AppColors.warning
-                                                  .withOpacity(0.6),
-                                            ),
-                                          ),
-                                          Text(
-                                            '${product['presentacion']}',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: AppColors.warning
-                                                  .withOpacity(0.6),
-                                            ),
-                                          ),
-                                        ],
-                                        Text(
-                                          ' • ',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: AppColors.warning
-                                                .withOpacity(0.6),
-                                          ),
+                                      ),
+                                    Text(
+                                      'Cant: ${product['cantidad']} • N/A',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: AppColors.warning.withOpacity(
+                                          0.5,
                                         ),
-                                        Text(
-                                          '${product['zona_nombre'] ?? 'N/A'}',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: AppColors.warning
-                                                .withOpacity(0.6),
-                                          ),
-                                        ),
-                                      ],
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -1285,12 +1268,14 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
 class _ProductQuantityDialog extends StatefulWidget {
   final InventoryProduct product;
   final int? sourceLayoutId;
+  final String? warehouseName;
   final Function(Map<String, dynamic>) onAdd;
 
   const _ProductQuantityDialog({
     required this.product,
     required this.sourceLayoutId,
     required this.onAdd,
+    this.warehouseName,
   });
 
   @override
@@ -1566,10 +1551,14 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
               'precio_unitario': widget.product.precioVenta ?? 0.0,
               'sku_producto': widget.product.skuProducto,
               'sku_ubicacion': widget.product.ubicacion,
+              // Display names for UI
               'nombreProducto': widget.product.nombreProducto,
               'variante': widget.product.variante,
               'opcionVariante': widget.product.opcionVariante,
               'presentacion': widget.product.presentacion,
+              // Zone information for display
+              'nombreZona': widget.product.ubicacion,
+              'nombreAlmacen': widget.warehouseName ?? 'Almacén',
             };
 
             widget.onAdd(productData);

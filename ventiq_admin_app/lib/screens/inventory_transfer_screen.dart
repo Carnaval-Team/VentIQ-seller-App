@@ -353,25 +353,91 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
       print('📥 Resultado de la transferencia: $result');
 
-      if (mounted) {
-        if (result['status'] == 'success') {
-          // Save the values for future use before showing success message
-          _savePersistedValues();
+      // Complete both operations automatically if transfer was successful
+      if (result['status'] == 'success') {
+        final idExtraccion = result['id_extraccion'];
+        final idRecepcion = result['id_recepcion'];
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                result['message'] ?? 'Transferencia registrada exitosamente',
-              ),
-              backgroundColor: AppColors.success,
-            ),
-          );
-          Navigator.pop(context);
+        if (idExtraccion != null && idRecepcion != null) {
+          try {
+            print('🔄 Completando operación de extracción...');
+            print('📊 ID Extracción: $idExtraccion');
+
+            final completeExtractionResult =
+                await InventoryService.completeOperation(
+                  idOperacion: idExtraccion,
+                  comentario:
+                      'Extracción de transferencia completada automáticamente - ${_observacionesController.text.trim()}',
+                  uuid: userUuid,
+                );
+
+            print(
+              '📋 Resultado completeOperation (extracción): $completeExtractionResult',
+            );
+
+            if (completeExtractionResult['status'] == 'success') {
+              print('✅ Extracción completada exitosamente');
+              print(
+                '📊 Productos afectados (extracción): ${completeExtractionResult['productos_afectados']}',
+              );
+            } else {
+              print(
+                '⚠️ Advertencia al completar extracción: ${completeExtractionResult['message']}',
+              );
+            }
+
+            print('🔄 Completando operación de recepción...');
+            print('📊 ID Recepción: $idRecepcion');
+
+            final completeReceptionResult =
+                await InventoryService.completeOperation(
+                  idOperacion: idRecepcion,
+                  comentario:
+                      'Recepción de transferencia completada automáticamente - ${_observacionesController.text.trim()}',
+                  uuid: userUuid,
+                );
+
+            print(
+              '📋 Resultado completeOperation (recepción): $completeReceptionResult',
+            );
+
+            if (completeReceptionResult['status'] == 'success') {
+              print('✅ Recepción completada exitosamente');
+              print(
+                '📊 Productos afectados (recepción): ${completeReceptionResult['productos_afectados']}',
+              );
+            } else {
+              print(
+                '⚠️ Advertencia al completar recepción: ${completeReceptionResult['message']}',
+              );
+            }
+          } catch (completeError, stackTrace) {
+            print(
+              '❌ Error al completar operaciones de transferencia: $completeError',
+            );
+            print('📍 StackTrace completo: $stackTrace');
+            // Don't throw here - transfer was successful, completion is secondary
+          }
         } else {
-          throw Exception(
-            result['message'] ?? 'Error desconocido en la transferencia',
-          );
+          print('⚠️ No se obtuvieron IDs de operaciones para completar');
         }
+
+        // Save the values for future use before showing success message
+        _savePersistedValues();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['message'] ?? 'Transferencia registrada exitosamente',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        Navigator.pop(context);
+      } else {
+        throw Exception(
+          result['message'] ?? 'Error desconocido en la transferencia',
+        );
       }
     } catch (e) {
       print('❌ Error en _submitTransfer: $e');
@@ -388,429 +454,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         setState(() => _isLoading = false);
       }
     }
-  }
-
-  void _showTransferConfirmation() {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text(
-              'Confirmar Transferencia',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Resumen de la transferencia:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Source location
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.location_on,
-                        color: AppColors.primary,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Origen:',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                            Text(
-                              _selectedSourceLocation?.name ??
-                                  'No seleccionado',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Destination location
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.location_on,
-                        color: AppColors.success,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Destino:',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                            Text(
-                              _selectedDestinationLocation?.name ??
-                                  'No seleccionado',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Products detailed list
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.inventory_2,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Productos a transferir (${_selectedProducts.length}):',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Lista de productos
-                        ...(_selectedProducts.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final product = entry.value;
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: Colors.grey.withOpacity(0.2),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Nombre del producto
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 20,
-                                      height: 20,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          '${index + 1}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        product['nombre_producto'] ??
-                                            'Producto sin nombre',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-
-                                // Detalles del producto
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 28),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      // Cantidad
-                                      Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.numbers,
-                                            size: 14,
-                                            color: Colors.grey,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'Cantidad: ${product['cantidad']?.toString() ?? '0'}',
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
-                                              color: Colors.black87,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-
-                                      // Variante (si existe)
-                                      if (product['variante_nombre'] != null &&
-                                          product['variante_nombre']
-                                              .toString()
-                                              .isNotEmpty &&
-                                          product['variante_nombre'] !=
-                                              'Sin variante') ...[
-                                        const SizedBox(height: 2),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.category,
-                                              size: 14,
-                                              color: Colors.grey,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                'Variante: ${product['variante_nombre']}',
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.black54,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-
-                                      // Opción de variante (si existe)
-                                      if (product['opcion_variante_nombre'] !=
-                                              null &&
-                                          product['opcion_variante_nombre']
-                                              .toString()
-                                              .isNotEmpty &&
-                                          product['opcion_variante_nombre'] !=
-                                              'Única') ...[
-                                        const SizedBox(height: 2),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.tune,
-                                              size: 14,
-                                              color: Colors.grey,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                'Opción: ${product['opcion_variante_nombre']}',
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.black54,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-
-                                      // Presentación (si existe)
-                                      if (product['presentacion_nombre'] !=
-                                              null &&
-                                          product['presentacion_nombre']
-                                              .toString()
-                                              .isNotEmpty) ...[
-                                        const SizedBox(height: 2),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.inventory,
-                                              size: 14,
-                                              color: Colors.grey,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                'Presentación: ${product['presentacion_nombre']}',
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.black54,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-
-                                      // Stock disponible (si existe)
-                                      if (product['stock_disponible'] !=
-                                          null) ...[
-                                        const SizedBox(height: 2),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.warehouse,
-                                              size: 14,
-                                              color: Colors.green,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              'Stock origen: ${product['stock_disponible']?.toString() ?? '0'}',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.green,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList()),
-
-                        // Resumen total
-                        const Divider(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Total de productos:',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '${_selectedProducts.length}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.primary,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Cantidad total:',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.success.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '${_selectedProducts.fold<double>(0, (sum, p) => sum + (p['cantidad'] ?? 0)).toInt()}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.success,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Authorized by
-                  if (_autorizadoPorController.text.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Icon(Icons.person, color: AppColors.primary, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Autorizado por:',
-                                style: TextStyle(fontWeight: FontWeight.w500),
-                              ),
-                              Text(_autorizadoPorController.text),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-
-                  const SizedBox(height: 16),
-                  const Text(
-                    '¿Desea proceder con la transferencia?',
-                    style: TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _submitTransfer();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Confirmar Transferencia'),
-              ),
-            ],
-          ),
-    );
   }
 
   /// Extract warehouse ID from location object
@@ -1182,7 +825,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _isLoading ? null : _showTransferConfirmation,
+              onPressed: _isLoading ? null : _submitTransfer,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -1432,151 +1075,155 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('Agregar ${widget.product.name}'),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Información del producto
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.blue, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.product.name,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        if (widget.product.sku.isNotEmpty)
-                          Text(
-                            'SKU: ${widget.product.sku}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Selector de variantes/presentaciones
-            if (_isLoadingVariants)
-              const CircularProgressIndicator()
-            else if (_availableVariants.isNotEmpty) ...[
-              DropdownButtonFormField<Map<String, dynamic>>(
-                value: _selectedVariant,
-                decoration: const InputDecoration(
-                  labelText: 'Variante / Presentación',
-                  border: OutlineInputBorder(),
-                  helperText: 'Seleccione la variante específica a transferir',
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Información del producto
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
                 ),
-                items:
-                    _availableVariants.map((variant) {
-                      return DropdownMenuItem(
-                        value: variant,
-                        child: Text(_buildVariantDisplayName(variant)),
-                      );
-                    }).toList(),
-                onChanged: _onVariantChanged,
-                validator:
-                    (value) => value == null ? 'Seleccione una variante' : null,
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.product.name,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          if (widget.product.sku.isNotEmpty)
+                            Text(
+                              'SKU: ${widget.product.sku}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
-            ],
 
-            // Campo de cantidad con validación
-            TextFormField(
-              controller: _quantityController,
-              decoration: InputDecoration(
-                labelText: 'Cantidad',
-                border: const OutlineInputBorder(),
-                helperText:
-                    _maxAvailableStock > 0
-                        ? 'Máximo disponible: ${_maxAvailableStock.toInt()}'
-                        : 'Sin stock disponible',
-                helperStyle: TextStyle(
-                  color: _maxAvailableStock > 0 ? Colors.green : Colors.red,
-                  fontWeight: FontWeight.w500,
+              // Selector de variantes/presentaciones
+              if (_isLoadingVariants)
+                const CircularProgressIndicator()
+              else if (_availableVariants.isNotEmpty) ...[
+                DropdownButtonFormField<Map<String, dynamic>>(
+                  value: _selectedVariant,
+                  decoration: const InputDecoration(
+                    labelText: 'Variante / Presentación',
+                    border: OutlineInputBorder(),
+                    helperText:
+                        'Seleccione la variante específica a transferir',
+                  ),
+                  items:
+                      _availableVariants.map((variant) {
+                        return DropdownMenuItem(
+                          value: variant,
+                          child: Text(_buildVariantDisplayName(variant)),
+                        );
+                      }).toList(),
+                  onChanged: _onVariantChanged,
+                  validator:
+                      (value) =>
+                          value == null ? 'Seleccione una variante' : null,
                 ),
+                const SizedBox(height: 16),
+              ],
+
+              // Campo de cantidad con validación
+              TextFormField(
+                controller: _quantityController,
+                decoration: InputDecoration(
+                  labelText: 'Cantidad',
+                  border: const OutlineInputBorder(),
+                  helperText:
+                      _maxAvailableStock > 0
+                          ? 'Máximo disponible: ${_maxAvailableStock.toInt()}'
+                          : 'Sin stock disponible',
+                  helperStyle: TextStyle(
+                    color: _maxAvailableStock > 0 ? Colors.green : Colors.red,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value?.isEmpty == true) return 'Campo requerido';
+                  final quantity = double.tryParse(value!);
+                  if (quantity == null || quantity <= 0) {
+                    return 'Ingrese una cantidad válida';
+                  }
+                  if (quantity > _maxAvailableStock) {
+                    return 'Cantidad excede el stock disponible (${_maxAvailableStock.toInt()})';
+                  }
+                  return null;
+                },
               ),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value?.isEmpty == true) return 'Campo requerido';
-                final quantity = double.tryParse(value!);
-                if (quantity == null || quantity <= 0) {
-                  return 'Ingrese una cantidad válida';
-                }
-                if (quantity > _maxAvailableStock) {
-                  return 'Cantidad excede el stock disponible (${_maxAvailableStock.toInt()})';
-                }
-                return null;
-              },
-            ),
 
-            // Información adicional del stock
-            if (_selectedVariant != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Stock disponible:',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        Text(
-                          '${_selectedVariant!['stock_disponible'].toInt()}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_selectedVariant!['stock_reservado'] > 0)
+              // Información adicional del stock
+              if (_selectedVariant != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            'Stock reservado:',
+                            'Stock disponible:',
                             style: TextStyle(fontSize: 12),
                           ),
                           Text(
-                            '${_selectedVariant!['stock_reservado'].toInt()}',
+                            '${_selectedVariant!['stock_disponible'].toInt()}',
                             style: const TextStyle(
                               fontSize: 12,
-                              color: Colors.orange,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
                             ),
                           ),
                         ],
                       ),
-                  ],
+                      if (_selectedVariant!['stock_reservado'] > 0)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Stock reservado:',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            Text(
+                              '${_selectedVariant!['stock_reservado'].toInt()}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
       actions: [

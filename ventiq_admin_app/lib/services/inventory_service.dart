@@ -421,7 +421,15 @@ class InventoryService {
       print('📋 Paso 1: Creando operación de extracción (Tipo 7)...');
 
       final extractionProducts =
-          productos.map((p) => {...p, 'id_layout': idLayoutOrigen}).toList();
+          productos
+              .map(
+                (p) => {
+                  ...p,
+                  'id_ubicacion':
+                      idLayoutOrigen, // Add missing id_ubicacion parameter
+                },
+              )
+              .toList();
 
       final extractionResult = await insertCompleteExtraction(
         autorizadoPor: autorizadoPor,
@@ -453,7 +461,8 @@ class InventoryService {
                   'id_opcion_variante': p['id_opcion_variante'],
                   'cantidad': p['cantidad'],
                   'precio_unitario': p['precio_unitario'] ?? 0.0,
-                  'id_layout': idLayoutDestino,
+                  'id_ubicacion':
+                      idLayoutDestino, // Fix: use id_ubicacion instead of id_layout
                   'id_motivo_operacion':
                       2, // ID correcto para entrada por transferencia
                 },
@@ -487,32 +496,59 @@ class InventoryService {
       if (estadoInicial == 2) {
         print('📋 Paso 3: Confirmando transferencia automáticamente...');
 
-        // Confirm extraction
-        final confirmExtractionResult = await _supabase.rpc(
-          'fn_registrar_cambio_estado_operacion',
-          params: {
-            'p_id_operacion': idExtraccion,
-            'p_nuevo_estado': 2, // Confirmado
-            'p_comentario': 'Transferencia confirmada automáticamente',
-            'p_uuid': userUuid,
-          },
+        // Complete extraction operation (accounting for inventory out)
+        print('📤 Contabilizando extracción...');
+        final completeExtractionResult = await completeOperation(
+          idOperacion: idExtraccion,
+          comentario:
+              'Extracción de transferencia completada automáticamente - $observaciones',
+          uuid: userUuid,
         );
 
-        // Confirm reception
-        final confirmReceptionResult = await _supabase.rpc(
-          'fn_registrar_cambio_estado_operacion',
-          params: {
-            'p_id_operacion': idRecepcion,
-            'p_nuevo_estado': 2, // Confirmado
-            'p_comentario': 'Transferencia confirmada automáticamente',
-            'p_uuid': userUuid,
-          },
+        print(
+          '📋 Resultado completeOperation (extracción): $completeExtractionResult',
         );
 
-        if (confirmExtractionResult['status'] != 'success' ||
-            confirmReceptionResult['status'] != 'success') {
+        if (completeExtractionResult['status'] != 'success') {
           print(
-            '⚠️ Advertencia: Error al confirmar operaciones automáticamente',
+            '⚠️ Error al completar extracción: ${completeExtractionResult['message']}',
+          );
+        } else {
+          print('✅ Extracción completada exitosamente');
+          print(
+            '📊 Productos afectados (extracción): ${completeExtractionResult['productos_afectados']}',
+          );
+        }
+
+        // Complete reception operation (accounting for inventory in)
+        print('📥 Contabilizando recepción...');
+        final completeReceptionResult = await completeOperation(
+          idOperacion: idRecepcion,
+          comentario:
+              'Recepción de transferencia completada automáticamente - $observaciones',
+          uuid: userUuid,
+        );
+
+        print(
+          '📋 Resultado completeOperation (recepción): $completeReceptionResult',
+        );
+
+        if (completeReceptionResult['status'] != 'success') {
+          print(
+            '⚠️ Error al completar recepción: ${completeReceptionResult['message']}',
+          );
+        } else {
+          print('✅ Recepción completada exitosamente');
+          print(
+            '📊 Productos afectados (recepción): ${completeReceptionResult['productos_afectados']}',
+          );
+        }
+
+        // Check if both operations completed successfully
+        if (completeExtractionResult['status'] != 'success' ||
+            completeReceptionResult['status'] != 'success') {
+          print(
+            '⚠️ Advertencia: Error al completar operaciones automáticamente',
           );
         }
       }
@@ -615,43 +651,6 @@ class InventoryService {
     }
   }
 
-  /// Get pending transfers that need confirmation
-  static Future<List<Map<String, dynamic>>> getPendingTransfers() async {
-    try {
-      print('🔍 Obteniendo transferencias pendientes...');
-
-      final idTienda = await _prefsService.getIdTienda();
-      if (idTienda == null) {
-        throw Exception('No se encontró el ID de tienda');
-      }
-
-      final response = await _supabase
-          .from('app_dat_operacion')
-          .select('''
-            id,
-            tipo_operacion,
-            estado,
-            autorizado_por,
-            observaciones,
-            created_at,
-            app_dat_operacion_transferencia!inner(
-              id_extraccion,
-              id_recepcion
-            )
-          ''')
-          .eq('id_tienda', idTienda)
-          .eq('tipo_operacion', 19) // ID correcto para transferencia
-          .eq('estado', 1) // Pendiente
-          .order('created_at', ascending: false);
-
-      print('✅ Transferencias pendientes obtenidas: ${response.length}');
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      print('❌ Error al obtener transferencias pendientes: $e');
-      return [];
-    }
-  }
-
   /// Get available zones/locations for a warehouse
   static Future<List<Map<String, dynamic>>> getWarehouseZones(
     int idAlmacen,
@@ -695,53 +694,6 @@ class InventoryService {
     } catch (e) {
       print('❌ Error al obtener productos de zona: $e');
       return [];
-    }
-  }
-
-  /// Get current USD price from reception table
-  static Future<double> getCurrentProductPrice({
-    required int idProducto,
-    int? idVariante,
-    int? idOpcionVariante,
-  }) async {
-    try {
-      print('💰 Obteniendo precio actual del producto $idProducto');
-
-      // Build the query with conditions
-      var query = _supabase
-          .from('app_dat_recepcion_productos')
-          .select('precio_unitario')
-          .eq('id_producto', idProducto);
-
-      // Add variant conditions if they exist
-      if (idVariante != null) {
-        query = query.eq('id_variante', idVariante);
-      } else {
-        query = query.isFilter('id_variante', null);
-      }
-
-      if (idOpcionVariante != null) {
-        query = query.eq('id_opcion_variante', idOpcionVariante);
-      } else {
-        query = query.isFilter('id_opcion_variante', null);
-      }
-
-      // Get the most recent price
-      final response = await query
-          .order('created_at', ascending: false)
-          .limit(1);
-
-      if (response.isNotEmpty && response[0]['precio_unitario'] != null) {
-        final price = (response[0]['precio_unitario'] as num).toDouble();
-        print('✅ Precio actual encontrado: \$${price.toStringAsFixed(2)} USD');
-        return price;
-      }
-
-      print('⚠️ No se encontró precio para el producto');
-      return 0.0;
-    } catch (e) {
-      print('❌ Error al obtener precio actual: $e');
-      return 0.0;
     }
   }
 
@@ -839,25 +791,28 @@ class InventoryService {
   }) async {
     try {
       print('🔄 Completando operación $idOperacion...');
+      print('📝 Comentario: $comentario');
+      print('👤 UUID: $uuid');
 
       final response = await _supabase.rpc(
         'fn_contabilizar_operacion',
         params: {
-          'p_id_operacion': idOperacion,
-          'p_comentario': comentario,
-          'p_uuid': uuid,
+          'p_id_operacion': idOperacion, // Ensure it's an integer
+          'p_comentario': comentario.trim(), // Clean string
+          'p_uuid': uuid.trim(), // Clean string
         },
       );
 
-      print('✅ Operación completada: $response');
+      print('✅ Respuesta completeOperation: $response');
 
       if (response == null) {
         throw Exception('No se recibió respuesta del servidor');
       }
 
       return response as Map<String, dynamic>;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al completar operación: $e');
+      print('📍 StackTrace: $stackTrace');
       rethrow;
     }
   }
@@ -945,6 +900,101 @@ class InventoryService {
     } catch (e) {
       print('❌ Error obteniendo variantes del producto: $e');
       return [];
+    }
+  }
+
+  /// Get inventory summary by user using fn_inventario_resumen_por_usuario RPC
+  /// Returns aggregated inventory data with product names, variants, and location/presentation counts
+  static Future<List<InventorySummaryByUser>>
+  getInventorySummaryByUser() async {
+    try {
+      print('🔍 InventoryService: Getting inventory summary by user...');
+
+      final response = await _supabase.rpc('fn_inventario_resumen_por_usuario');
+
+      print('📦 Raw response type: ${response.runtimeType}');
+      print('📦 Response length: ${response?.length ?? 0}');
+      print('📦 Raw response data: $response');
+
+      if (response == null) {
+        print('❌ Response is null');
+        return [];
+      }
+
+      if (response is! List) {
+        print('❌ Response is not a List, got: ${response.runtimeType}');
+        return [];
+      }
+
+      final List<dynamic> responseList = response as List<dynamic>;
+      print('📋 Processing ${responseList.length} items from response');
+
+      final List<InventorySummaryByUser> summaries = [];
+
+      for (int i = 0; i < responseList.length; i++) {
+        final item = responseList[i];
+        print('🔍 Processing item $i: $item');
+        print('🔍 Item type: ${item.runtimeType}');
+
+        if (item is Map<String, dynamic>) {
+          print('🔍 Item keys: ${item.keys.toList()}');
+          print('🔍 Item values: ${item.values.toList()}');
+
+          // Log each field individually
+          print(
+            '  - id_producto: ${item['id_producto']} (${item['id_producto'].runtimeType})',
+          );
+          print(
+            '  - producto_nombre: ${item['producto_nombre']} (${item['producto_nombre'].runtimeType})',
+          );
+          print(
+            '  - variante: ${item['variante']} (${item['variante'].runtimeType})',
+          );
+          print(
+            '  - opcion_variante: ${item['opcion_variante']} (${item['opcion_variante'].runtimeType})',
+          );
+          print(
+            '  - cantidad_total_en_almacen: ${item['cantidad_total_en_almacen']} (${item['cantidad_total_en_almacen'].runtimeType})',
+          );
+          print(
+            '  - zonas_diferentes: ${item['zonas_diferentes']} (${item['zonas_diferentes'].runtimeType})',
+          );
+          print(
+            '  - presentaciones_diferentes: ${item['presentaciones_diferentes']} (${item['presentaciones_diferentes'].runtimeType})',
+          );
+          print(
+            '  - cantidad_total_en_unidades_base: ${item['cantidad_total_en_unidades_base']} (${item['cantidad_total_en_unidades_base'].runtimeType})',
+          );
+
+          try {
+            final summary = InventorySummaryByUser.fromJson(item);
+            print(
+              '✅ Successfully created InventorySummaryByUser: ${summary.productoNombre} - ${summary.cantidadTotalEnAlmacen} units',
+            );
+            summaries.add(summary);
+          } catch (e, stackTrace) {
+            print('❌ Error creating InventorySummaryByUser from item $i: $e');
+            print('❌ Stack trace: $stackTrace');
+            print('❌ Failed item data: $item');
+          }
+        } else {
+          print('❌ Item $i is not a Map, got: ${item.runtimeType}');
+        }
+      }
+
+      print('✅ Successfully processed ${summaries.length} inventory summaries');
+      for (int i = 0; i < summaries.length; i++) {
+        final summary = summaries[i];
+        print(
+          '📋 Summary $i: ${summary.productoNombre} (ID: ${summary.idProducto}) - ${summary.cantidadTotalEnAlmacen} units, ${summary.zonasDiferentes} zones, ${summary.presentacionesDiferentes} presentations',
+        );
+      }
+
+      return summaries;
+    } catch (e, stackTrace) {
+      print('❌ Error in getInventorySummaryByUser: $e');
+      print('❌ Stack trace: $stackTrace');
+      rethrow;
     }
   }
 }
