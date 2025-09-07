@@ -35,10 +35,7 @@ class InventoryService {
     try {
       print('🔍 Obteniendo opciones de motivo de extracción...');
 
-      final response = await _supabase
-          .from('app_nom_motivo_extraccion')
-          .select('id, denominacion, descripcion')
-          .order('denominacion');
+      final response = await _supabase.rpc('fn_listar_motivos_extraccion');
 
       print('✅ Opciones de motivo extracción obtenidas: ${response.length}');
       print('📋 Datos: $response');
@@ -51,28 +48,43 @@ class InventoryService {
         return [
           {
             'id': 1,
-            'denominacion': 'Venta',
-            'descripcion': 'Extracción por venta',
+            'denominacion': 'Producto dañado',
+            'descripcion': 'Producto con daños físicos',
           },
           {
             'id': 2,
-            'denominacion': 'Merma',
-            'descripcion': 'Extracción por merma',
+            'denominacion': 'Producto vencido',
+            'descripcion': 'Producto fuera de fecha de vencimiento',
           },
           {
             'id': 3,
-            'denominacion': 'Robo',
-            'descripcion': 'Extracción por robo',
+            'denominacion': 'Devolución cliente',
+            'descripcion': 'Producto devuelto por el cliente',
           },
           {
             'id': 4,
-            'denominacion': 'Vencimiento',
-            'descripcion': 'Extracción por vencimiento',
+            'denominacion': 'Ajuste de inventario',
+            'descripcion': 'Corrección de diferencias de inventario',
           },
           {
             'id': 5,
-            'denominacion': 'Transferencia',
-            'descripcion': 'Extracción por transferencia',
+            'denominacion': 'Transferencia a otra tienda',
+            'descripcion': 'Movimiento entre tiendas',
+          },
+          {
+            'id': 6,
+            'denominacion': 'Muestra promocional',
+            'descripcion': 'Producto usado para promoción',
+          },
+          {
+            'id': 7,
+            'denominacion': 'Uso interno',
+            'descripcion': 'Consumo interno de la empresa',
+          },
+          {
+            'id': 8,
+            'denominacion': 'Pérdida/robo',
+            'descripcion': 'Producto perdido o robado',
           },
         ];
       }
@@ -86,24 +98,43 @@ class InventoryService {
       return [
         {
           'id': 1,
-          'denominacion': 'Venta',
-          'descripcion': 'Extracción por venta',
+          'denominacion': 'Producto dañado',
+          'descripcion': 'Producto con daños físicos',
         },
         {
           'id': 2,
-          'denominacion': 'Merma',
-          'descripcion': 'Extracción por merma',
+          'denominacion': 'Producto vencido',
+          'descripcion': 'Producto fuera de fecha de vencimiento',
         },
-        {'id': 3, 'denominacion': 'Robo', 'descripcion': 'Extracción por robo'},
+        {
+          'id': 3,
+          'denominacion': 'Devolución cliente',
+          'descripcion': 'Producto devuelto por el cliente',
+        },
         {
           'id': 4,
-          'denominacion': 'Vencimiento',
-          'descripcion': 'Extracción por vencimiento',
+          'denominacion': 'Ajuste de inventario',
+          'descripcion': 'Corrección de diferencias de inventario',
         },
         {
           'id': 5,
-          'denominacion': 'Transferencia',
-          'descripcion': 'Extracción por transferencia',
+          'denominacion': 'Transferencia a otra tienda',
+          'descripcion': 'Movimiento entre tiendas',
+        },
+        {
+          'id': 6,
+          'denominacion': 'Muestra promocional',
+          'descripcion': 'Producto usado para promoción',
+        },
+        {
+          'id': 7,
+          'denominacion': 'Uso interno',
+          'descripcion': 'Consumo interno de la empresa',
+        },
+        {
+          'id': 8,
+          'denominacion': 'Pérdida/robo',
+          'descripcion': 'Producto perdido o robado',
         },
       ];
     }
@@ -343,75 +374,6 @@ class InventoryService {
       );
     } catch (e) {
       print('❌ Error in getInventoryProducts: $e');
-      rethrow;
-    }
-  }
-
-  /// Get warehouses for the current store
-  static Future<List<Warehouse>> getWarehouses() async {
-    try {
-      print('🏪 InventoryService: Getting warehouses...');
-
-      // Get store ID from preferences
-      final idTienda = await _prefsService.getIdTienda();
-      print('📍 Store ID for warehouses: $idTienda');
-
-      if (idTienda == null) {
-        throw Exception('No se encontró el ID de tienda en las preferencias');
-      }
-
-      // Query app_dat_almacen table with store filter
-      final response = await _supabase
-          .from('app_dat_almacen')
-          .select('*')
-          .eq('id_tienda', idTienda);
-
-      print('🏬 Warehouses response: ${response.length} warehouses found');
-
-      final List<Warehouse> warehouses = [];
-      for (final warehouseData in response) {
-        try {
-          // Convert to Warehouse model (adapt to existing structure)
-          final warehouse = Warehouse(
-            id: warehouseData['id']?.toString() ?? '',
-            name: warehouseData['denominacion'] ?? 'Almacén sin nombre',
-            description: warehouseData['descripcion'] ?? 'Almacén de productos',
-            address: warehouseData['direccion'] ?? '',
-            city: warehouseData['ciudad'] ?? 'Sin especificar',
-            country: warehouseData['pais'] ?? 'Chile',
-            latitude: warehouseData['latitud']?.toDouble(),
-            longitude: warehouseData['longitud']?.toDouble(),
-            type: warehouseData['tipo'] ?? 'principal',
-            isActive: warehouseData['activo'] ?? true,
-            createdAt:
-                warehouseData['created_at'] != null
-                    ? DateTime.parse(warehouseData['created_at'])
-                    : DateTime.now(),
-            zones: [], // Will be populated separately if needed
-            // Supabase specific fields
-            denominacion: warehouseData['denominacion'] ?? '',
-            direccion: warehouseData['direccion'] ?? '',
-            ubicacion: warehouseData['ubicacion'],
-            tienda: null, // Will be populated if needed
-            roles: [],
-            layouts: [],
-            condiciones: [],
-            almacenerosCount: 0,
-            limitesStockCount: 0,
-          );
-
-          warehouses.add(warehouse);
-          print('🏪 Warehouse: ${warehouse.name}');
-        } catch (e) {
-          print('❌ Error parsing warehouse: $e');
-          print('🔍 Warehouse data: $warehouseData');
-        }
-      }
-
-      print('✅ Successfully loaded ${warehouses.length} warehouses');
-      return warehouses;
-    } catch (e) {
-      print('❌ Error in getWarehouses: $e');
       rethrow;
     }
   }

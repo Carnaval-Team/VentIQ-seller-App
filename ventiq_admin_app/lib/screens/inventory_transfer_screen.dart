@@ -464,27 +464,306 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
 
-                  // Products summary
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.inventory_2,
-                        color: AppColors.primary,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Productos: ${_selectedProducts.length}',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ],
+                  // Products detailed list
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.inventory_2,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Productos a transferir (${_selectedProducts.length}):',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Lista de productos
+                        ...(_selectedProducts.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final product = entry.value;
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: Colors.grey.withOpacity(0.2),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Nombre del producto
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 20,
+                                      height: 20,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          '${index + 1}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        product['nombre_producto'] ??
+                                            'Producto sin nombre',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+
+                                // Detalles del producto
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 28),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      // Cantidad
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.numbers,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Cantidad: ${product['cantidad']?.toString() ?? '0'}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+
+                                      // Variante (si existe)
+                                      if (product['variante_nombre'] != null &&
+                                          product['variante_nombre']
+                                              .toString()
+                                              .isNotEmpty &&
+                                          product['variante_nombre'] !=
+                                              'Sin variante') ...[
+                                        const SizedBox(height: 2),
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.category,
+                                              size: 14,
+                                              color: Colors.grey,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                'Variante: ${product['variante_nombre']}',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black54,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+
+                                      // Opción de variante (si existe)
+                                      if (product['opcion_variante_nombre'] !=
+                                              null &&
+                                          product['opcion_variante_nombre']
+                                              .toString()
+                                              .isNotEmpty &&
+                                          product['opcion_variante_nombre'] !=
+                                              'Única') ...[
+                                        const SizedBox(height: 2),
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.tune,
+                                              size: 14,
+                                              color: Colors.grey,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                'Opción: ${product['opcion_variante_nombre']}',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black54,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+
+                                      // Presentación (si existe)
+                                      if (product['presentacion_nombre'] !=
+                                              null &&
+                                          product['presentacion_nombre']
+                                              .toString()
+                                              .isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.inventory,
+                                              size: 14,
+                                              color: Colors.grey,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                'Presentación: ${product['presentacion_nombre']}',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black54,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+
+                                      // Stock disponible (si existe)
+                                      if (product['stock_disponible'] !=
+                                          null) ...[
+                                        const SizedBox(height: 2),
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.warehouse,
+                                              size: 14,
+                                              color: Colors.green,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Stock origen: ${product['stock_disponible']?.toString() ?? '0'}',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.green,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList()),
+
+                        // Resumen total
+                        const Divider(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Total de productos:',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${_selectedProducts.length}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Cantidad total:',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${_selectedProducts.fold<double>(0, (sum, p) => sum + (p['cantidad'] ?? 0)).toInt()}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.success,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
 
                   // Authorized by
                   if (_autorizadoPorController.text.isNotEmpty) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 16),
                     Row(
                       children: [
                         Icon(Icons.person, color: AppColors.primary, size: 20),
@@ -906,7 +1185,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               onPressed: _isLoading ? null : _showTransferConfirmation,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                foregroundColor: Colors.white,
               ),
               child:
                   _isLoading

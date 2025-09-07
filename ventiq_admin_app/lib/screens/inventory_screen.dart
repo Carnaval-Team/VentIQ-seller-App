@@ -7,6 +7,7 @@ import 'inventory_operations_screen.dart';
 import 'inventory_warehouse_screen.dart';
 import 'inventory_stock_screen.dart';
 import 'inventory_transfer_screen.dart';
+import 'inventory_extraction_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -62,15 +63,95 @@ class _InventoryScreenState extends State<InventoryScreen>
   }
 
   void _showFabOptions() {
-    final currentTab = _tabController.index;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder:
+          (context) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle bar
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: 12, bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
 
-    if (currentTab == 0) {
-      // Stock tab - show reception option
-      _navigateToReception();
-    } else if (currentTab == 1) {
-      // Warehouse tab - show transfer option
-      _navigateToTransfer();
-    }
+                // Title
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 20),
+                  child: Text(
+                    'Opciones de Inventario',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+
+                // Menu options
+                _buildMenuOption(
+                  icon: Icons.input,
+                  title: 'Recepción de Productos',
+                  subtitle: 'Registrar entrada de mercancía',
+                  color: const Color(0xFF10B981),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _navigateToReception();
+                  },
+                ),
+
+                _buildMenuOption(
+                  icon: Icons.swap_horiz,
+                  title: 'Transferencia entre Almacenes',
+                  subtitle: 'Mover productos entre ubicaciones',
+                  color: const Color(0xFF4A90E2),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _navigateToTransfer();
+                  },
+                ),
+
+                _buildMenuOption(
+                  icon: Icons.output,
+                  title: 'Extracción de Productos',
+                  subtitle: 'Registrar salida de mercancía',
+                  color: const Color(0xFFEF4444),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _navigateToExtraction();
+                  },
+                ),
+
+                _buildMenuOption(
+                  icon: Icons.filter_list,
+                  title: 'Filtro de Búsqueda',
+                  subtitle: 'Filtrar y buscar productos',
+                  color: const Color(0xFF8B5CF6),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showSearchFilter();
+                  },
+                ),
+
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+    );
   }
 
   void _navigateToReception() {
@@ -87,37 +168,73 @@ class _InventoryScreenState extends State<InventoryScreen>
     );
   }
 
+  void _navigateToExtraction() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const InventoryExtractionScreen(),
+      ),
+    );
+  }
+
+  void _showSearchFilter() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Filtro de Búsqueda'),
+            content: const Text(
+              'La funcionalidad de filtro avanzado estará disponible próximamente.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Widget _buildMenuOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      leading: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: color, size: 24),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(color: Colors.grey[600], fontSize: 14),
+      ),
+      onTap: onTap,
+    );
+  }
+
   Widget? _buildFloatingActionButton() {
-    final currentTab = _tabController.index;
-
-    // Only show FAB for Stock (0) and Warehouse (1) tabs
-    if (currentTab == 0 || currentTab == 1) {
-      IconData icon;
-      String tooltip;
-      Color backgroundColor;
-
-      if (currentTab == 0) {
-        // Stock tab - Reception
-        icon = Icons.input;
-        tooltip = 'Registrar Recepción';
-        backgroundColor = const Color(0xFF10B981); // Green
-      } else {
-        // Warehouse tab - Transfer
-        icon = Icons.swap_horiz;
-        tooltip = 'Registrar Transferencia';
-        backgroundColor = const Color(0xFF4A90E2); // Blue
-      }
-
-      return FloatingActionButton(
-        onPressed: _showFabOptions,
-        backgroundColor: backgroundColor,
-        foregroundColor: Colors.white,
-        tooltip: tooltip,
-        child: Icon(icon),
-      );
-    }
-
-    return null;
+    // Show FAB on all tabs now
+    return FloatingActionButton(
+      onPressed: _showFabOptions,
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
+      tooltip: 'Opciones de Inventario',
+      child: const Icon(Icons.add),
+    );
   }
 
   @override
