@@ -1,7 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/inventory.dart';
 import '../models/warehouse.dart';
+import '../models/transfer_order.dart';
 import 'user_preferences_service.dart';
+import 'transfer_service.dart';
 
 class InventoryService {
   static final InventoryService _instance = InventoryService._internal();
@@ -162,6 +164,7 @@ class InventoryService {
   }
 
   /// Get inventory operations using fn_listar_operaciones RPC with pagination and filters
+  /// Now includes global transfer operations from TransferService
   static Future<Map<String, dynamic>> getInventoryOperations({
     String? busqueda,
     DateTime? fechaDesde,
@@ -184,6 +187,7 @@ class InventoryService {
         throw Exception('No se encontró información del usuario o tienda');
       }
 
+      // Get regular inventory operations
       final response = await _supabase.rpc(
         'fn_listar_operaciones_inventario_re',
         params: {
@@ -412,32 +416,324 @@ class InventoryService {
     }
   }
 
-  /// Get inventory products with warehouse filter
-  static Future<InventoryResponse> getInventoryByWarehouse(
-    int warehouseId, {
-    int pagina = 1,
+  /// Unified transfer function between layouts
+  /// Creates extraction and reception operations to handle inventory movements
+  static Future<Map<String, dynamic>> transferBetweenLayouts({
+    required int idLayoutOrigen,
+    required int idLayoutDestino,
+    required List<Map<String, dynamic>> productos,
+    required String autorizadoPor,
+    required String observaciones,
+    int estadoInicial = 1, // 1 = Pendiente, 2 = Confirmado
   }) async {
-    return getInventoryProducts(idAlmacen: warehouseId, pagina: pagina);
+    try {
+      print('🔄 Iniciando transferencia entre layouts...');
+      print(
+        '📦 Layout origen: $idLayoutOrigen → Layout destino: $idLayoutDestino',
+      );
+      print('📦 Productos a transferir: ${productos.length}');
+
+      final userUuid = await _prefsService.getUserId();
+
+      // Obtener ID de tienda desde usuario autenticado
+      final userData = await _prefsService.getUserData();
+      final idTienda = userData['idTienda'] as int?;
+
+      if (userUuid == null || idTienda == null) {
+        throw Exception(
+          'No se encontró información del usuario o tienda autenticada',
+        );
+      }
+
+      print('👤 Usuario UUID: $userUuid');
+      print('🏪 ID Tienda (desde usuario): $idTienda');
+
+      // Validate required fields in productos
+      for (var producto in productos) {
+        if (producto['id_producto'] == null || producto['cantidad'] == null) {
+          throw Exception('Cada producto debe tener: id_producto y cantidad');
+        }
+      }
+
+      // Step 1: Create extraction operation (ID 7 - salida de almacén origen)
+      print('📋 Paso 1: Creando operación de extracción (Tipo 7)...');
+
+      final extractionProducts =
+          productos.map((p) => {...p, 'id_layout': idLayoutOrigen}).toList();
+
+      final extractionResult = await insertCompleteExtraction(
+        autorizadoPor: autorizadoPor,
+        estadoInicial: estadoInicial,
+        idMotivoOperacion:
+            7, // ID correcto para salida de almacén por transferencia
+        idTienda: idTienda,
+        observaciones: 'Extracción para transferencia: $observaciones',
+        productos: extractionProducts,
+        uuid: userUuid,
+      );
+
+      if (extractionResult['status'] != 'success') {
+        throw Exception('Error en extracción: ${extractionResult['message']}');
+      }
+
+      final idExtraccion = extractionResult['id_operacion'];
+      print('✅ Extracción creada con ID: $idExtraccion');
+
+      // Step 2: Create reception operation (ID 8 - entrada por transferencia)
+      print('📋 Paso 2: Creando operación de recepción (Tipo 8)...');
+
+      final receptionProducts =
+          productos
+              .map(
+                (p) => {
+                  'id_producto': p['id_producto'],
+                  'id_variante': p['id_variante'],
+                  'id_opcion_variante': p['id_opcion_variante'],
+                  'cantidad': p['cantidad'],
+                  'precio_unitario': p['precio_unitario'] ?? 0.0,
+                  'id_layout': idLayoutDestino,
+                  'id_motivo_operacion':
+                      2, // ID correcto para entrada por transferencia
+                },
+              )
+              .toList();
+
+      final receptionResult = await insertInventoryReception(
+        entregadoPor: autorizadoPor,
+        idTienda: idTienda,
+        montoTotal: receptionProducts.fold<double>(
+          0.0,
+          (sum, p) =>
+              sum +
+              ((p['cantidad'] as double) * (p['precio_unitario'] as double)),
+        ),
+        motivo: 2, // ID del motivo de recepción por transferencia
+        observaciones: 'Transferencia: $observaciones',
+        productos: receptionProducts,
+        recibidoPor: autorizadoPor,
+        uuid: userUuid,
+      );
+
+      if (receptionResult['status'] != 'success') {
+        throw Exception('Error en recepción: ${receptionResult['message']}');
+      }
+
+      final idRecepcion = receptionResult['id_operacion'];
+      print('✅ Recepción creada con ID: $idRecepcion');
+
+      // Step 3: If estadoInicial is 2 (confirmed), complete the operations immediately
+      if (estadoInicial == 2) {
+        print('📋 Paso 3: Confirmando transferencia automáticamente...');
+
+        // Confirm extraction
+        final confirmExtractionResult = await _supabase.rpc(
+          'fn_registrar_cambio_estado_operacion',
+          params: {
+            'p_id_operacion': idExtraccion,
+            'p_nuevo_estado': 2, // Confirmado
+            'p_comentario': 'Transferencia confirmada automáticamente',
+            'p_uuid': userUuid,
+          },
+        );
+
+        // Confirm reception
+        final confirmReceptionResult = await _supabase.rpc(
+          'fn_registrar_cambio_estado_operacion',
+          params: {
+            'p_id_operacion': idRecepcion,
+            'p_nuevo_estado': 2, // Confirmado
+            'p_comentario': 'Transferencia confirmada automáticamente',
+            'p_uuid': userUuid,
+          },
+        );
+
+        if (confirmExtractionResult['status'] != 'success' ||
+            confirmReceptionResult['status'] != 'success') {
+          print(
+            '⚠️ Advertencia: Error al confirmar operaciones automáticamente',
+          );
+        }
+      }
+
+      print('✅ Transferencia completada exitosamente');
+      return {
+        'status': 'success',
+        'message': 'Transferencia entre layouts completada exitosamente',
+        'id_extraccion': idExtraccion,
+        'id_recepcion': idRecepcion,
+        'total_productos': productos.length,
+        'estado': estadoInicial == 2 ? 'confirmado' : 'pendiente',
+      };
+    } catch (e) {
+      print('❌ Error en transferencia: $e');
+      return {'status': 'error', 'message': 'Error en transferencia: $e'};
+    }
   }
 
-  /// Search inventory products
-  static Future<InventoryResponse> searchInventoryProducts(
-    String query, {
-    int pagina = 1,
+  /// Confirm a pending transfer and account for inventory movements
+  static Future<Map<String, dynamic>> confirmTransfer({
+    required int idOperacionGeneral,
+    required String comentario,
+    required String uuid,
   }) async {
-    return getInventoryProducts(busqueda: query, pagina: pagina);
+    try {
+      print('🔄 Confirmando transferencia $idOperacionGeneral...');
+
+      // Get the linked extraction and reception operations
+      final operationsResponse =
+          await _supabase
+              .from('app_dat_operacion_transferencia')
+              .select('id_extraccion, id_recepcion')
+              .eq('id_operacion_general', idOperacionGeneral)
+              .single();
+
+      if (operationsResponse.isEmpty) {
+        throw Exception(
+          'No se encontraron operaciones vinculadas a la transferencia',
+        );
+      }
+
+      final idExtraccion = operationsResponse['id_extraccion'];
+      final idRecepcion = operationsResponse['id_recepcion'];
+
+      // Complete extraction operation (accounting for inventory out)
+      print('📤 Contabilizando extracción...');
+      final extractionComplete = await completeOperation(
+        idOperacion: idExtraccion,
+        comentario: 'Confirmación de transferencia - Salida: $comentario',
+        uuid: uuid,
+      );
+
+      if (extractionComplete['status'] != 'success') {
+        throw Exception(
+          'Error al contabilizar extracción: ${extractionComplete['message']}',
+        );
+      }
+
+      // Complete reception operation (accounting for inventory in)
+      print('📥 Contabilizando recepción...');
+      final receptionComplete = await completeOperation(
+        idOperacion: idRecepcion,
+        comentario: 'Confirmación de transferencia - Entrada: $comentario',
+        uuid: uuid,
+      );
+
+      if (receptionComplete['status'] != 'success') {
+        throw Exception(
+          'Error al contabilizar recepción: ${receptionComplete['message']}',
+        );
+      }
+
+      // Update general operation status to confirmed
+      print('✅ Actualizando estado de operación general...');
+      await _supabase.rpc(
+        'fn_actualizar_estado_operacion',
+        params: {
+          'p_id_operacion': idOperacionGeneral,
+          'p_nuevo_estado': 2, // Confirmado
+          'p_comentario': comentario,
+          'p_uuid': uuid,
+        },
+      );
+
+      print('✅ Transferencia confirmada y contabilizada exitosamente');
+      return {
+        'status': 'success',
+        'message': 'Transferencia confirmada y contabilizada exitosamente',
+        'id_operacion_general': idOperacionGeneral,
+        'id_extraccion': idExtraccion,
+        'id_recepcion': idRecepcion,
+      };
+    } catch (e) {
+      print('❌ Error al confirmar transferencia: $e');
+      return {
+        'status': 'error',
+        'message': 'Error al confirmar transferencia: $e',
+      };
+    }
   }
 
-  /// Get products with low stock
-  static Future<InventoryResponse> getLowStockProducts({int pagina = 1}) async {
-    return getInventoryProducts(conStockMinimo: true, pagina: pagina);
+  /// Get pending transfers that need confirmation
+  static Future<List<Map<String, dynamic>>> getPendingTransfers() async {
+    try {
+      print('🔍 Obteniendo transferencias pendientes...');
+
+      final idTienda = await _prefsService.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró el ID de tienda');
+      }
+
+      final response = await _supabase
+          .from('app_dat_operacion')
+          .select('''
+            id,
+            tipo_operacion,
+            estado,
+            autorizado_por,
+            observaciones,
+            created_at,
+            app_dat_operacion_transferencia!inner(
+              id_extraccion,
+              id_recepcion
+            )
+          ''')
+          .eq('id_tienda', idTienda)
+          .eq('tipo_operacion', 19) // ID correcto para transferencia
+          .eq('estado', 1) // Pendiente
+          .order('created_at', ascending: false);
+
+      print('✅ Transferencias pendientes obtenidas: ${response.length}');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error al obtener transferencias pendientes: $e');
+      return [];
+    }
   }
 
-  /// Get products without stock
-  static Future<InventoryResponse> getOutOfStockProducts({
-    int pagina = 1,
+  /// Get available zones/locations for a warehouse
+  static Future<List<Map<String, dynamic>>> getWarehouseZones(
+    int idAlmacen,
+  ) async {
+    try {
+      print('🔍 Obteniendo zonas del almacén $idAlmacen...');
+
+      final response = await _supabase
+          .from('app_dat_layout_almacen')
+          .select('id, denominacion, codigo, tipo, abc, capacidad')
+          .eq('id_almacen', idAlmacen)
+          .eq('activo', true)
+          .order('denominacion');
+
+      print('✅ Zonas obtenidas: ${response.length}');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error al obtener zonas: $e');
+      return [];
+    }
+  }
+
+  /// Get products in a specific zone
+  static Future<List<InventoryProduct>> getZoneProducts({
+    required int idAlmacen,
+    required int idUbicacion,
   }) async {
-    return getInventoryProducts(mostrarSinStock: false, pagina: pagina);
+    try {
+      print(
+        '🔍 Obteniendo productos de la zona $idUbicacion en almacén $idAlmacen...',
+      );
+
+      final response = await getInventoryProducts(
+        idAlmacen: idAlmacen,
+        idUbicacion: idUbicacion,
+        mostrarSinStock: false, // Only show products with stock
+      );
+
+      print('✅ Productos en zona obtenidos: ${response.products.length}');
+      return response.products;
+    } catch (e) {
+      print('❌ Error al obtener productos de zona: $e');
+      return [];
+    }
   }
 
   /// Get current USD price from reception table
@@ -448,7 +744,7 @@ class InventoryService {
   }) async {
     try {
       print('💰 Obteniendo precio actual del producto $idProducto');
-      
+
       // Build the query with conditions
       var query = _supabase
           .from('app_dat_recepcion_productos')
@@ -472,16 +768,15 @@ class InventoryService {
       final response = await query
           .order('created_at', ascending: false)
           .limit(1);
-      
+
       if (response.isNotEmpty && response[0]['precio_unitario'] != null) {
         final price = (response[0]['precio_unitario'] as num).toDouble();
         print('✅ Precio actual encontrado: \$${price.toStringAsFixed(2)} USD');
         return price;
       }
-      
+
       print('⚠️ No se encontró precio para el producto');
       return 0.0;
-      
     } catch (e) {
       print('❌ Error al obtener precio actual: $e');
       return 0.0;
@@ -496,8 +791,10 @@ class InventoryService {
     required double nuevoPrecio,
   }) async {
     try {
-      print('💰 Actualizando precio del producto $idProducto a \$${nuevoPrecio.toStringAsFixed(2)} USD');
-      
+      print(
+        '💰 Actualizando precio del producto $idProducto a \$${nuevoPrecio.toStringAsFixed(2)} USD',
+      );
+
       // Build the update query with conditions
       var query = _supabase
           .from('app_dat_recepcion_productos')
@@ -519,9 +816,8 @@ class InventoryService {
 
       // Execute the update
       await query;
-      
+
       print('✅ Precio actualizado exitosamente');
-      
     } catch (e) {
       print('❌ Error al actualizar precio: $e');
       throw Exception('Error al actualizar precio: $e');
@@ -533,7 +829,7 @@ class InventoryService {
     required String entregadoPor,
     required int idTienda,
     required double montoTotal,
-    required String motivo,
+    required int motivo,
     required String observaciones,
     required List<Map<String, dynamic>> productos,
     required String recibidoPor,
@@ -601,6 +897,92 @@ class InventoryService {
     } catch (e) {
       print('❌ Error al completar operación: $e');
       rethrow;
+    }
+  }
+
+  /// Get product variants and presentations available in a specific location
+  /// Returns detailed information about stock availability for each variant/presentation
+  static Future<List<Map<String, dynamic>>> getProductVariantsInLocation({
+    required int idProducto,
+    required int idLayout,
+  }) async {
+    try {
+      print(
+        '🔍 Obteniendo variantes del producto $idProducto en layout $idLayout...',
+      );
+
+      final response = await _supabase.rpc(
+        'fn_listar_inventario_productos_paged',
+        params: {
+          'p_id_producto': idProducto,
+          'p_id_layout': idLayout,
+          'p_mostrar_sin_stock': false, // Solo con stock
+          'p_page': 1,
+          'p_page_size': 100, // Suficiente para todas las variantes
+        },
+      );
+
+      if (response == null) {
+        print('⚠️ Respuesta nula del RPC');
+        return [];
+      }
+
+      final data = response['data'] as List<dynamic>? ?? [];
+      print('📦 Encontradas ${data.length} variantes con stock');
+
+      final variants =
+          data.map<Map<String, dynamic>>((item) {
+            final stockDisponible = (item['stock_disponible'] ?? 0).toDouble();
+
+            return {
+              'id_producto': item['id_producto'] ?? idProducto,
+              'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
+              'sku_producto': item['sku_producto'] ?? '',
+
+              // Información de variante
+              'id_variante': item['id_variante'],
+              'variante_nombre': item['variante'] ?? 'Sin variante',
+              'id_opcion_variante': item['id_opcion_variante'],
+              'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
+
+              // Información de presentación
+              'id_presentacion': item['id_presentacion'],
+              'presentacion_nombre': item['um'] ?? 'UN',
+              'presentacion_codigo': item['um_codigo'] ?? 'UN',
+
+              // Stock disponible
+              'stock_disponible': stockDisponible,
+              'stock_reservado': (item['stock_reservado'] ?? 0).toDouble(),
+              'stock_actual': (item['stock_actual'] ?? 0).toDouble(),
+
+              // Información adicional
+              'precio_unitario': (item['precio_venta'] ?? 0).toDouble(),
+              'id_layout': idLayout,
+
+              // Clave única para identificar esta combinación específica
+              'variant_key':
+                  '${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
+            };
+          }).toList();
+
+      // Agrupar por variante y opción para mejor organización
+      final groupedVariants = <String, List<Map<String, dynamic>>>{};
+      for (final variant in variants) {
+        final key =
+            '${variant['id_variante']}_${variant['id_opcion_variante']}';
+        groupedVariants[key] ??= [];
+        groupedVariants[key]!.add(variant);
+      }
+
+      print('📊 Variantes agrupadas: ${groupedVariants.keys.length} grupos');
+      for (final entry in groupedVariants.entries) {
+        print('   ${entry.key}: ${entry.value.length} presentaciones');
+      }
+
+      return variants;
+    } catch (e) {
+      print('❌ Error obteniendo variantes del producto: $e');
+      return [];
     }
   }
 }

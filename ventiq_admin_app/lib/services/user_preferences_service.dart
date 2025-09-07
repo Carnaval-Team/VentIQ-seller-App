@@ -1,7 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class UserPreferencesService {
-  static final UserPreferencesService _instance = UserPreferencesService._internal();
+  static final UserPreferencesService _instance =
+      UserPreferencesService._internal();
   factory UserPreferencesService() => _instance;
   UserPreferencesService._internal();
 
@@ -9,13 +10,13 @@ class UserPreferencesService {
   static const String _userEmailKey = 'user_email';
   static const String _accessTokenKey = 'access_token';
   static const String _isLoggedInKey = 'is_logged_in';
-  
+
   // Admin user data keys
   static const String _adminNameKey = 'admin_name';
   static const String _adminRoleKey = 'admin_role';
   static const String _appVersionKey = 'app_version';
   static const String _idTiendaKey = 'id_tienda';
-  
+
   // Remember me keys
   static const String _rememberMeKey = 'remember_me';
   static const String _savedEmailKey = 'saved_email';
@@ -36,7 +37,7 @@ class UserPreferencesService {
     await prefs.setString(_userEmailKey, email);
     await prefs.setString(_accessTokenKey, accessToken);
     await prefs.setBool(_isLoggedInKey, true);
-    
+
     if (adminName != null) {
       await prefs.setString(_adminNameKey, adminName);
     }
@@ -46,9 +47,10 @@ class UserPreferencesService {
     if (idTienda != null) {
       await prefs.setInt(_idTiendaKey, idTienda);
     }
-    
+
     // Set token expiry (24 hours from now)
-    final expiryTime = DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch;
+    final expiryTime =
+        DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch;
     await prefs.setInt(_tokenExpiryKey, expiryTime);
   }
 
@@ -136,7 +138,7 @@ class UserPreferencesService {
       'idTienda': prefs.getInt(_idTiendaKey),
     };
   }
-  
+
   // Remember Me functionality
   Future<void> saveCredentials(String email, String password) async {
     final prefs = await SharedPreferences.getInstance();
@@ -144,14 +146,14 @@ class UserPreferencesService {
     await prefs.setString(_savedPasswordKey, password);
     await prefs.setBool(_rememberMeKey, true);
   }
-  
+
   Future<void> clearSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_savedEmailKey);
     await prefs.remove(_savedPasswordKey);
     await prefs.setBool(_rememberMeKey, false);
   }
-  
+
   Future<Map<String, String?>> getSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -159,27 +161,41 @@ class UserPreferencesService {
       'password': prefs.getString(_savedPasswordKey),
     };
   }
-  
+
   Future<bool> shouldRememberMe() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_rememberMeKey) ?? false;
   }
-  
+
   // Token validation
   Future<bool> isTokenValid() async {
     final prefs = await SharedPreferences.getInstance();
     final expiryTime = prefs.getInt(_tokenExpiryKey);
     if (expiryTime == null) return false;
-    
+
     final now = DateTime.now().millisecondsSinceEpoch;
     return now < expiryTime;
   }
-  
+
   Future<bool> hasValidSession() async {
     final isLoggedIn = await this.isLoggedIn();
     final hasValidToken = await isTokenValid();
     final accessToken = await getAccessToken();
-    
-    return isLoggedIn && hasValidToken && accessToken != null && accessToken.isNotEmpty;
+
+    return isLoggedIn &&
+        hasValidToken &&
+        accessToken != null &&
+        accessToken.isNotEmpty;
+  }
+
+  // Get admin profile data for role-based access control
+  Future<Map<String, dynamic>> getAdminProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'name': prefs.getString(_adminNameKey) ?? 'Admin',
+      'role': prefs.getString(_adminRoleKey) ?? 'trabajador',
+      'email': prefs.getString(_userEmailKey) ?? '',
+      'idTienda': prefs.getInt(_idTiendaKey),
+    };
   }
 }

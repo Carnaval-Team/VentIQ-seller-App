@@ -281,7 +281,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             _montoTotalController.text.isNotEmpty
                 ? double.parse(_montoTotalController.text)
                 : _totalAmount,
-        motivo: _selectedMotivo?['id']?.toString() ?? '',
+        motivo: _selectedMotivo?['id'] ?? '',
         observaciones: _observacionesController.text,
         productos: productosParaEnviar,
         recibidoPor: _recibidoPorController.text,

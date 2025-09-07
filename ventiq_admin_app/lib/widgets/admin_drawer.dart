@@ -10,8 +10,55 @@ class AdminDrawer extends StatefulWidget {
 }
 
 class _AdminDrawerState extends State<AdminDrawer> {
-  String _userName = 'Administrador';
-  String _userEmail = 'admin@ventiq.com';
+  String _userName = '';
+  String _userEmail = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final userPrefs = UserPreferencesService();
+
+      print('=== DEBUG ADMIN DRAWER USER DATA ===');
+
+      // Obtener perfil del administrador
+      final adminProfile = await userPrefs.getAdminProfile();
+      print('Admin Profile: $adminProfile');
+
+      final name = adminProfile['name'] as String?;
+      final role = adminProfile['role'] as String?;
+      final email = adminProfile['email'] as String?;
+
+      print('Name: $name');
+      print('Role: $role');
+      print('Email: $email');
+
+      String displayName = name ?? 'Administrador';
+      String displayEmail = email ?? 'admin@ventiq.com';
+
+      print('Display Name: $displayName');
+      print('Display Email: $displayEmail');
+      print('===================================');
+
+      setState(() {
+        _userName = displayName;
+        _userEmail = displayEmail;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading admin user data: $e');
+      setState(() {
+        _userName = 'Administrador';
+        _userEmail = 'admin@ventiq.com';
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +92,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            _userName,
+                            _isLoading ? 'Cargando...' : _userName,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -56,7 +103,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _userEmail,
+                            _isLoading ? 'Cargando...' : _userEmail,
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 12,
@@ -278,23 +325,19 @@ class _AdminDrawerState extends State<AdminDrawer> {
   Future<void> _performLogout(BuildContext context) async {
     try {
       final userPrefs = UserPreferencesService();
-      
+
       // Limpiar datos del usuario pero mantener credenciales si "recordar" está activo
       final shouldRemember = await userPrefs.shouldRememberMe();
       if (!shouldRemember) {
         await userPrefs.clearSavedCredentials();
       }
-      
+
       // Limpiar datos de sesión
       await userPrefs.clearUserData();
-      
+
       // Navegar al login y limpiar stack de navegación
       if (context.mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/login',
-          (route) => false,
-        );
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
       }
     } catch (e) {
       // Mostrar error si algo falla
@@ -321,15 +364,16 @@ class _AdminDrawerState extends State<AdminDrawer> {
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: isLogout 
-              ? Colors.red.withOpacity(0.1) 
-              : AppColors.primary.withOpacity(0.1),
+          color:
+              isLogout
+                  ? Colors.red.withOpacity(0.1)
+                  : AppColors.primary.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(
-          icon, 
-          color: isLogout ? Colors.red : AppColors.primary, 
-          size: 24
+          icon,
+          color: isLogout ? Colors.red : AppColors.primary,
+          size: 24,
         ),
       ),
       title: Text(
@@ -343,8 +387,8 @@ class _AdminDrawerState extends State<AdminDrawer> {
       subtitle: Text(
         subtitle,
         style: TextStyle(
-          fontSize: 12, 
-          color: isLogout ? Colors.red[400] : Colors.grey[600]
+          fontSize: 12,
+          color: isLogout ? Colors.red[400] : Colors.grey[600],
         ),
       ),
       onTap: onTap,

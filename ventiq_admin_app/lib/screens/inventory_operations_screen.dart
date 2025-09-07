@@ -7,18 +7,19 @@ class InventoryOperationsScreen extends StatefulWidget {
   const InventoryOperationsScreen({super.key});
 
   @override
-  State<InventoryOperationsScreen> createState() => _InventoryOperationsScreenState();
+  State<InventoryOperationsScreen> createState() =>
+      _InventoryOperationsScreenState();
 }
 
 class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   final _searchController = TextEditingController();
-  
+
   List<Map<String, dynamic>> _operations = [];
   bool _isLoading = true;
   String _searchQuery = '';
   DateTime? _fechaDesde;
   DateTime? _fechaHasta;
-  
+
   // Pagination
   int _currentPage = 1;
   int _totalCount = 0;
@@ -57,7 +58,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   Future<void> _loadOperations() async {
     try {
       setState(() => _isLoading = true);
-      
+
       final result = await InventoryService.getInventoryOperations(
         busqueda: _searchQuery.isEmpty ? null : _searchQuery,
         fechaDesde: _fechaDesde,
@@ -67,8 +68,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       );
 
       setState(() {
-        _operations = result['operations'] ??[];
-        _totalCount = result['totalCount'] ??0;
+        _operations = result['operations'] ?? [];
+        _totalCount = result['totalCount'] ?? 0;
         _hasNextPage = (_currentPage * _itemsPerPage) < _totalCount;
         _isLoading = false;
       });
@@ -87,159 +88,173 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        maxChildSize: 0.7,
-        minChildSize: 0.3,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Seleccionar Rango de Fechas',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
-                        ),
-                      ),
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.5,
+            maxChildSize: 0.7,
+            minChildSize: 0.3,
+            builder:
+                (context, scrollController) => Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              // Content
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    // Inline Date Range Picker
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey[300]!),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Theme(
-                        data: Theme.of(context).copyWith(
-                          colorScheme: Theme.of(context).colorScheme.copyWith(
-                            primary: const Color(0xFF4A90E2),
-                            onPrimary: Colors.white,
-                          ),
-                        ),
-                        child: CalendarDatePicker(
-                          initialDate: _fechaDesde ?? DateTime.now(),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime.now(),
-                          onDateChanged: (date) async {
-                            // First date selected, now select end date
-                            final endDate = await _selectEndDate(date);
-                            if (endDate != null) {
-                              Navigator.pop(context);
-                              setState(() {
-                                _fechaDesde = date;
-                                _fechaHasta = endDate;
-                              });
-                              _currentPage = 1;
-                              _loadOperations();
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // Current selection display
-                    if (_fechaDesde != null && _fechaHasta != null) ...[
+                  ),
+                  child: Column(
+                    children: [
+                      // Handle
                       Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        width: 40,
+                        height: 4,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A90E2).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      ),
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              'Rango seleccionado:',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.grey[600],
+                            const Expanded(
+                              child: Text(
+                                'Seleccionar Rango de Fechas',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
-                              ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
-                    ],
-                    
-                    const SizedBox(height: 12),
-                    
-                    // Clear filter button
-                    if (_fechaDesde != null || _fechaHasta != null)
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            _clearDateFilter();
-                          },
-                          icon: const Icon(Icons.clear),
-                          label: const Text('Limpiar Filtro'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                            side: const BorderSide(color: Colors.red),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                      const Divider(height: 1),
+                      // Content
+                      Expanded(
+                        child: ListView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            // Inline Date Range Picker
+                            Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey[300]!),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Theme(
+                                data: Theme.of(context).copyWith(
+                                  colorScheme: Theme.of(
+                                    context,
+                                  ).colorScheme.copyWith(
+                                    primary: const Color(0xFF4A90E2),
+                                    onPrimary: Colors.white,
+                                  ),
+                                ),
+                                child: CalendarDatePicker(
+                                  initialDate: _fechaDesde ?? DateTime.now(),
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now(),
+                                  onDateChanged: (date) async {
+                                    // First date selected, now select end date
+                                    final endDate = await _selectEndDate(date);
+                                    if (endDate != null) {
+                                      Navigator.pop(context);
+                                      setState(() {
+                                        _fechaDesde = date;
+                                        _fechaHasta = endDate;
+                                      });
+                                      _currentPage = 1;
+                                      _loadOperations();
+                                    }
+                                  },
+                                ),
+                              ),
                             ),
-                          ),
+
+                            const SizedBox(height: 16),
+
+                            // Current selection display
+                            if (_fechaDesde != null && _fechaHasta != null) ...[
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF4A90E2,
+                                  ).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFF4A90E2,
+                                    ).withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Rango seleccionado:',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1F2937),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+
+                            const SizedBox(height: 12),
+
+                            // Clear filter button
+                            if (_fechaDesde != null || _fechaHasta != null)
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _clearDateFilter();
+                                  },
+                                  icon: const Icon(Icons.clear),
+                                  label: const Text('Limpiar Filtro'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                    side: const BorderSide(color: Colors.red),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
 
@@ -290,11 +305,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Column(
-        children: [
-          _buildFilters(),
-          _buildOperationsList(),
-          _buildPagination(),
-        ],
+        children: [_buildFilters(), _buildOperationsList(), _buildPagination()],
       ),
     );
   }
@@ -325,39 +336,46 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
               ),
             ),
           ),
           const SizedBox(width: 12),
-          
+
           // Compact date filter icon
           Container(
             decoration: BoxDecoration(
-              color: _fechaDesde != null && _fechaHasta != null 
-                  ? const Color(0xFF4A90E2).withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.1),
+              color:
+                  _fechaDesde != null && _fechaHasta != null
+                      ? const Color(0xFF4A90E2).withOpacity(0.1)
+                      : Colors.grey.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: _fechaDesde != null && _fechaHasta != null 
-                    ? const Color(0xFF4A90E2)
-                    : Colors.grey.withOpacity(0.3),
+                color:
+                    _fechaDesde != null && _fechaHasta != null
+                        ? const Color(0xFF4A90E2)
+                        : Colors.grey.withOpacity(0.3),
               ),
             ),
             child: IconButton(
               onPressed: _showDateRangeDialog,
               icon: Icon(
                 Icons.date_range,
-                color: _fechaDesde != null && _fechaHasta != null 
-                    ? const Color(0xFF4A90E2)
-                    : Colors.grey[600],
+                color:
+                    _fechaDesde != null && _fechaHasta != null
+                        ? const Color(0xFF4A90E2)
+                        : Colors.grey[600],
               ),
-              tooltip: _fechaDesde != null && _fechaHasta != null
-                  ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
-                  : 'Seleccionar rango de fechas',
+              tooltip:
+                  _fechaDesde != null && _fechaHasta != null
+                      ? '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}'
+                      : 'Seleccionar rango de fechas',
             ),
           ),
-          
+
           // Clear filter button
           if (_fechaDesde != null || _fechaHasta != null) ...[
             const SizedBox(width: 8),
@@ -381,27 +399,32 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Widget _buildOperationsList() {
     return Expanded(
-      child: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _operations.isEmpty
+      child:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _operations.isEmpty
               ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text('No se encontraron operaciones'),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _operations.length,
-                  itemBuilder: (context, index) {
-                    final operation = _operations[index];
-                    return _buildOperationCard(operation);
-                  },
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.inventory_2_outlined,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 16),
+                    Text('No se encontraron operaciones'),
+                  ],
                 ),
+              )
+              : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _operations.length,
+                itemBuilder: (context, index) {
+                  final operation = _operations[index];
+                  return _buildOperationCard(operation);
+                },
+              ),
     );
   }
 
@@ -416,7 +439,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     // Determine operation type icon and color
     IconData operationIcon;
     Color operationColor;
-    
+
     if (tipoOperacion.toLowerCase().contains('recepcion')) {
       operationIcon = Icons.input;
       operationColor = Colors.green;
@@ -426,6 +449,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     } else if (tipoOperacion.toLowerCase().contains('venta')) {
       operationIcon = Icons.shopping_cart;
       operationColor = Colors.blue;
+    } else if (tipoOperacion.toLowerCase().contains('apertura de caja')) {
+      operationIcon = Icons.point_of_sale;
+      operationColor = Colors.green;
+    } else if (tipoOperacion.toLowerCase().contains('cierre de caja')) {
+      operationIcon = Icons.point_of_sale;
+      operationColor = Colors.orange;
     } else {
       operationIcon = Icons.swap_horiz;
       operationColor = Colors.purple;
@@ -474,7 +503,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: _getStatusColor(estadoNombre).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
@@ -499,12 +531,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       children: [
                         Text(
                           'Fecha: ${_formatDateTime(fecha)}',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
                         ),
                         if (observaciones.isNotEmpty)
                           Text(
                             observaciones,
-                            style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -524,10 +562,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                         ),
                       Text(
                         '$cantidadItems items',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
                       ),
                     ],
                   ),
@@ -603,101 +638,134 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     operation.forEach((key, value) {
       print('   $key: $value');
     });
-    
+
+    // Check if this is a cash register opening operation
+    final tipoOperacion =
+        operation['tipo_operacion_nombre']?.toString().toLowerCase() ?? '';
+    if (tipoOperacion.contains('cierre de caja') ||
+        tipoOperacion.contains('cierre')) {
+      _showCashRegisterOpeningDialog(operation);
+      return;
+    }
+
+    // Show regular operation details for other types
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.5,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Operación #${operation['id']}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            maxChildSize: 0.9,
+            minChildSize: 0.5,
+            builder:
+                (context, scrollController) => Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      // Handle
+                      Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              // Content
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    // Información general
-                    _buildModalDetailRow('Tipo:', operation['tipo_operacion_nombre'] ?? 'N/A'),
-                    _buildModalDetailRow('Estado:', operation['estado_nombre'] ?? 'N/A'),
-                    _buildModalDetailRow('Fecha:', _formatDateTime(DateTime.parse(operation['created_at']))),
-                    _buildModalDetailRow('Total:', '\$${_calculateTotalPrice(operation).toStringAsFixed(2)}'),
-                    _buildModalDetailRow('Items:', '${_calculateTotalItems(operation)}'),
-                    if (operation['observaciones']?.isNotEmpty == true)
-                      _buildModalDetailRow('Observaciones:', operation['observaciones']),
-                    
-                    // Show specific details based on operation type
-                    if (operation['detalles'] != null) ...[
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Detalles específicos:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1F2937),
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Operación #${operation['id']}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      _buildFormattedDetails(operation['detalles']),
+                      const Divider(height: 1),
+                      // Content
+                      Expanded(
+                        child: ListView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            // Información general
+                            _buildModalDetailRow(
+                              'Tipo:',
+                              operation['tipo_operacion_nombre'] ?? 'N/A',
+                            ),
+                            _buildModalDetailRow(
+                              'Estado:',
+                              operation['estado_nombre'] ?? 'N/A',
+                            ),
+                            _buildModalDetailRow(
+                              'Fecha:',
+                              _formatDateTime(
+                                DateTime.parse(operation['created_at']),
+                              ),
+                            ),
+                            _buildModalDetailRow(
+                              'Total:',
+                              '\$${_calculateTotalPrice(operation).toStringAsFixed(2)}',
+                            ),
+                            _buildModalDetailRow(
+                              'Items:',
+                              '${_calculateTotalItems(operation)}',
+                            ),
+                            if (operation['observaciones']?.isNotEmpty == true)
+                              _buildModalDetailRow(
+                                'Observaciones:',
+                                operation['observaciones'],
+                              ),
+
+                            // Show specific details based on operation type
+                            if (operation['detalles'] != null) ...[
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Detalles específicos:',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _buildFormattedDetails(operation['detalles']),
+                            ],
+
+                            // Show completion button for pending reception operations
+                            if (_shouldShowCompleteButton(operation)) ...[
+                              const SizedBox(height: 24),
+                              _buildCompleteButton(operation),
+                            ],
+                          ],
+                        ),
+                      ),
                     ],
-                    
-                    // Show completion button for pending reception operations
-                    if (_shouldShowCompleteButton(operation)) ...[
-                      const SizedBox(height: 24),
-                      _buildCompleteButton(operation),
-                    ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
-
 
   Widget _buildModalDetailRow(String label, String value) {
     return Padding(
@@ -741,32 +809,38 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Widget _buildFormattedDetails(dynamic detalles) {
     if (detalles == null) return const Text('Sin detalles específicos');
-    
+
     if (detalles is Map<String, dynamic>) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (detalles['detalles_especificos'] != null) ...[
-            const Text('Información específica:', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text(
+              'Información específica:',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 4),
             _buildSpecificDetails(detalles['detalles_especificos']),
             const SizedBox(height: 12),
           ],
           if (detalles['items'] != null && detalles['items'] is List) ...[
-            const Text('Productos:', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text(
+              'Productos:',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             _buildProductsList(detalles['items']),
           ],
         ],
       );
     }
-    
+
     return Text(detalles.toString());
   }
 
   Widget _buildSpecificDetails(dynamic especificos) {
     if (especificos == null) return const Text('Sin información específica');
-    
+
     if (especificos is Map<String, dynamic>) {
       return Container(
         padding: const EdgeInsets.all(12),
@@ -777,101 +851,172 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: especificos.entries.map((entry) {
-            String label = _formatFieldLabel(entry.key);
-            String value = _formatFieldValue(entry.value);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 120,
-                    child: Text(
-                      '$label:',
-                      style: const TextStyle(fontWeight: FontWeight.w500),
-                    ),
+          children:
+              especificos.entries.map((entry) {
+                String label = _formatFieldLabel(entry.key);
+                String value = _formatFieldValue(entry.value);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 120,
+                        child: Text(
+                          '$label:',
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      Expanded(child: Text(value)),
+                    ],
                   ),
-                  Expanded(child: Text(value)),
-                ],
-              ),
-            );
-          }).toList(),
+                );
+              }).toList(),
         ),
       );
     }
-    
+
     return Text(especificos.toString());
   }
 
   Widget _buildProductsList(List<dynamic> items) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[300]!),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: items.asMap().entries.map((entry) {
-          int index = entry.key;
-          Map<String, dynamic> item = entry.value;
-          
-          return Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: index > 0 ? Border(top: BorderSide(color: Colors.grey[200]!)) : null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.inventory_2, color: const Color(0xFF4A90E2), size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Productos Contados (${items.length})',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1F2937),
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item['producto_nombre'] ?? 'Producto sin nombre',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text('Cantidad: ${item['cantidad'] ?? 0}'),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey[300]!),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            children:
+                items.asMap().entries.map((entry) {
+                  int index = entry.key;
+                  Map<String, dynamic> item = entry.value;
+
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border:
+                          index > 0
+                              ? Border(
+                                top: BorderSide(color: Colors.grey[200]!),
+                              )
+                              : null,
                     ),
-                    Expanded(
-                      child: Text('Precio: \$${(item['precio_unitario']?.toDouble() ?? 0.0).toStringAsFixed(2)}'),
+                    child: Row(
+                      children: [
+                        // Product info
+                        Expanded(
+                          flex: 3,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item['nombre_producto'] ??
+                                    item['producto'] ??
+                                    'Producto',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (item['variante'] != null ||
+                                  item['opcion_variante'] != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${item['variante'] ?? ''}: ${item['opcion_variante'] ?? ''}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                              if (item['sku'] != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  'SKU: ${item['sku']}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[500],
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Quantity counted
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4A90E2).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: const Color(0xFF4A90E2).withOpacity(0.3),
+                            ),
+                          ),
+                          child: Text(
+                            '${item['cantidad_fisica'] ?? item['cantidad'] ?? 0}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF4A90E2),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                if (item['presentacion'] != null || item['variante'] != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (item['presentacion'] != null)
-                        Expanded(child: Text('Presentación: ${item['presentacion']}')),
-                      if (item['variante'] != null)
-                        Expanded(child: Text('Variante: ${item['variante']}')),
-                    ],
-                  ),
-                ],
-                if (item['opcion_variante'] != null) ...[
-                  const SizedBox(height: 4),
-                  Text('Opción: ${item['opcion_variante']}'),
-                ],
-              ],
-            ),
-          );
-        }).toList(),
-      ),
+                  );
+                }).toList(),
+          ),
+        ),
+      ],
     );
   }
 
   String _formatFieldLabel(String key) {
     switch (key) {
-      case 'id_tpv': return 'TPV';
-      case 'tpv_nombre': return 'Nombre TPV';
-      case 'total': return 'Total';
-      case 'cantidad_items': return 'Cantidad Items';
-      case 'id_proveedor': return 'Proveedor';
-      case 'proveedor_nombre': return 'Nombre Proveedor';
-      case 'motivo': return 'Motivo';
-      case 'recibido_por': return 'Recibido por';
-      default: return key.replaceAll('_', ' ').toUpperCase();
+      case 'id_tpv':
+        return 'TPV';
+      case 'tpv_nombre':
+        return 'Nombre TPV';
+      case 'total':
+        return 'Total';
+      case 'cantidad_items':
+        return 'Cantidad Items';
+      case 'id_proveedor':
+        return 'Proveedor';
+      case 'proveedor_nombre':
+        return 'Nombre Proveedor';
+      case 'motivo':
+        return 'Motivo';
+      case 'recibido_por':
+        return 'Recibido por';
+      default:
+        return key.replaceAll('_', ' ').toUpperCase();
     }
   }
 
@@ -885,7 +1030,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   // Helper methods to calculate dynamic totals from products
   int _calculateTotalItems(Map<String, dynamic> operation) {
     try {
-      if (operation['detalles'] != null && operation['detalles'] is Map<String, dynamic>) {
+      if (operation['detalles'] != null &&
+          operation['detalles'] is Map<String, dynamic>) {
         final detalles = operation['detalles'] as Map<String, dynamic>;
         if (detalles['items'] != null && detalles['items'] is List) {
           final items = detalles['items'] as List<dynamic>;
@@ -894,9 +1040,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             if (item is Map<String, dynamic>) {
               final cantidad = item['cantidad'];
               if (cantidad != null) {
-                final cantidadNum = (cantidad is int) ? cantidad : 
-                                  (cantidad is double) ? cantidad.toInt() : 
-                                  int.tryParse(cantidad.toString()) ?? 0;
+                final cantidadNum =
+                    (cantidad is int)
+                        ? cantidad
+                        : (cantidad is double)
+                        ? cantidad.toInt()
+                        : int.tryParse(cantidad.toString()) ?? 0;
                 totalItems += cantidadNum;
               }
             }
@@ -913,13 +1062,18 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   double _calculateTotalPrice(Map<String, dynamic> operation) {
     try {
-      if (operation['detalles'] != null && operation['detalles'] is Map<String, dynamic>) {
+      if (operation['detalles'] != null &&
+          operation['detalles'] is Map<String, dynamic>) {
         final detalles = operation['detalles'] as Map<String, dynamic>;
-        if (detalles['detalles_especificos'] != null && detalles['detalles_especificos'] is Map<String, dynamic>) {
-          final especificos = detalles['detalles_especificos'] as Map<String, dynamic>;
+        if (detalles['detalles_especificos'] != null &&
+            detalles['detalles_especificos'] is Map<String, dynamic>) {
+          final especificos =
+              detalles['detalles_especificos'] as Map<String, dynamic>;
           final montoTotal = especificos['monto_total'];
           if (montoTotal != null) {
-            return (montoTotal is double) ? montoTotal : double.tryParse(montoTotal.toString()) ?? 0.0;
+            return (montoTotal is double)
+                ? montoTotal
+                : double.tryParse(montoTotal.toString()) ?? 0.0;
           }
         }
       }
@@ -932,9 +1086,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   bool _shouldShowCompleteButton(Map<String, dynamic> operation) {
     // Show complete button for reception operations that are pending
-    String tipoOperacion = operation['tipo_operacion_nombre']?.toString().toLowerCase() ?? '';
+    String tipoOperacion =
+        operation['tipo_operacion_nombre']?.toString().toLowerCase() ?? '';
     String estado = operation['estado_nombre']?.toString().toLowerCase() ?? '';
-    
+
     // Debug logging
     print('🔍 Checking completion button for operation:');
     print('   - ID: ${operation['id']}');
@@ -942,27 +1097,32 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     print('   - Estado: "$estado"');
     print('   - Contains recepción: ${tipoOperacion.contains('recepción')}');
     print('   - Contains pendiente: ${estado.contains('pendiente')}');
-    
+
     // Check for different variations of the operation type
-    bool isReception = tipoOperacion.contains('recepción') || 
-                      tipoOperacion.contains('recepcion') ||
-                      tipoOperacion.contains('entrada') ||
-                      tipoOperacion.contains('ingreso');
-                      bool isExtraction = tipoOperacion.contains('extracción') || 
-                      tipoOperacion.contains('extraccion') ||
-                      tipoOperacion.contains('salida');
-    
+    bool isReception =
+        tipoOperacion.contains('recepción') ||
+        tipoOperacion.contains('recepcion') ||
+        tipoOperacion.contains('entrada') ||
+        tipoOperacion.contains('ingreso');
+    bool isExtraction =
+        tipoOperacion.contains('extracción') ||
+        tipoOperacion.contains('extraccion') ||
+        tipoOperacion.contains('salida');
+
     // Check for different variations of pending status
-    bool isPending = estado.contains('pendiente') || 
-                    estado.contains('pending') ||
-                    estado.contains('en proceso') ||
-                    estado.contains('proceso');
-    
+    bool isPending =
+        estado.contains('pendiente') ||
+        estado.contains('pending') ||
+        estado.contains('en proceso') ||
+        estado.contains('proceso');
+
     print('   - Is reception: $isReception');
     print('   - Is extraction: $isExtraction');
     print('   - Is pending: $isPending');
-    print('   - Should show button: ${(isReception || isExtraction) && isPending }');
-    
+    print(
+      '   - Should show button: ${(isReception || isExtraction) && isPending}',
+    );
+
     return (isReception || isExtraction) && isPending;
   }
 
@@ -984,60 +1144,68 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   void _showCompleteOperationDialog(Map<String, dynamic> operation) {
     final commentController = TextEditingController();
-    
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Completar Operación'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('¿Está seguro de completar la operación #${operation['id']}?'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: commentController,
-              decoration: const InputDecoration(
-                labelText: 'Comentario (opcional)',
-                hintText: 'Ingrese un comentario sobre la operación',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Completar Operación'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '¿Está seguro de completar la operación #${operation['id']}?',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: commentController,
+                  decoration: const InputDecoration(
+                    labelText: 'Comentario (opcional)',
+                    hintText: 'Ingrese un comentario sobre la operación',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed:
+                    () => _completeOperation(operation, commentController.text),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                child: const Text('Completar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => _completeOperation(operation, commentController.text),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('Completar'),
-          ),
-        ],
-      ),
     );
   }
 
-  Future<void> _completeOperation(Map<String, dynamic> operation, String comment) async {
+  Future<void> _completeOperation(
+    Map<String, dynamic> operation,
+    String comment,
+  ) async {
     try {
       Navigator.pop(context); // Close dialog
-      
+
       // Show loading
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Completando operación...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 16),
+                  Text('Completando operación...'),
+                ],
+              ),
+            ),
       );
 
       // Get user UUID from preferences
@@ -1051,10 +1219,14 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (operationId == null) {
         throw Exception('ID de operación no válido');
       }
-      
+
       final result = await InventoryService.completeOperation(
-        idOperacion: operationId is int ? operationId : int.parse(operationId.toString()),
-        comentario: comment.isEmpty ? 'Operación completada desde la app' : comment,
+        idOperacion:
+            operationId is int
+                ? operationId
+                : int.parse(operationId.toString()),
+        comentario:
+            comment.isEmpty ? 'Operación completada desde la app' : comment,
         uuid: userUuid,
       );
 
@@ -1063,35 +1235,452 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       if (result['status'] == 'success') {
         // Close the detail modal
         Navigator.pop(context);
-        
+
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['mensaje'] ?? 'Operación completada exitosamente'),
+            content: Text(
+              result['mensaje'] ?? 'Operación completada exitosamente',
+            ),
             backgroundColor: Colors.green,
           ),
         );
-        
+
         // Refresh the operations list
         _loadOperations();
       } else {
         // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message'] ?? 'Error al completar la operación'),
+            content: Text(
+              result['message'] ?? 'Error al completar la operación',
+            ),
             backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
       Navigator.pop(context); // Close loading dialog if still open
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _showCashRegisterOpeningDialog(
+    Map<String, dynamic> operation,
+  ) async {
+    // Check user role for access control
+    final userRole = await _getUserRole();
+    final hasAccess = _hasAccessToOpeningDetails(userRole);
+
+    if (!hasAccess) {
+      _showAccessDeniedDialog();
+      return;
+    }
+
+    // Debug: Print detailed operation data for cash register opening
+    print('🔍 CASH REGISTER OPENING - Full Operation Details:');
+    print('================================================');
+    operation.forEach((key, value) {
+      if (value is Map) {
+        print('   $key: {');
+        (value as Map).forEach((subKey, subValue) {
+          print('      $subKey: $subValue');
+        });
+        print('   }');
+      } else if (value is List) {
+        print('   $key: [');
+        for (int i = 0; i < (value as List).length; i++) {
+          print('      [$i]: ${value[i]}');
+        }
+        print('   ]');
+      } else {
+        print('   $key: $value');
+      }
+    });
+    print('================================================');
+
+    // Debug: Print specific detalles structure
+    if (operation['detalles'] != null) {
+      print('🔍 DETALLES Structure:');
+      print('----------------------');
+      final detalles = operation['detalles'];
+      if (detalles is Map<String, dynamic>) {
+        detalles.forEach((key, value) {
+          if (key == 'items' && value is List) {
+            print('   items: [${value.length} items]');
+            for (int i = 0; i < value.length; i++) {
+              print('      Item $i: ${value[i]}');
+            }
+          } else if (key == 'detalles_especificos' && value is Map) {
+            print('   detalles_especificos: {');
+            (value as Map).forEach((subKey, subValue) {
+              print('      $subKey: $subValue');
+            });
+            print('   }');
+          } else {
+            print('   $key: $value');
+          }
+        });
+      } else {
+        print('   detalles is not a Map: $detalles');
+      }
+      print('----------------------');
+    } else {
+      print('🔍 No detalles found in operation');
+    }
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4A90E2).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.point_of_sale,
+                    color: Color(0xFF4A90E2),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Detalles de Apertura de Caja',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Operation ID and Status
+                  _buildOpeningDetailRow(
+                    'ID Operación:',
+                    '#${operation['id']}',
+                    Icons.tag,
+                  ),
+                  _buildOpeningDetailRow(
+                    'Estado:',
+                    operation['estado_nombre'] ?? 'N/A',
+                    Icons.info_outline,
+                    valueColor: _getStatusColor(
+                      operation['estado_nombre'] ?? '',
+                    ),
+                  ),
+                  _buildOpeningDetailRow(
+                    'Fecha y Hora:',
+                    _formatDateTime(DateTime.parse(operation['created_at'])),
+                    Icons.schedule,
+                  ),
+                  _buildOpeningDetailRow(
+                    'Vendedor:',
+                    operation['usuario_email'] ?? 'N/A',
+                    Icons.person,
+                  ),
+
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 16),
+
+                  // Cash Register Details
+                  const Text(
+                    'Información de la Apertura',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1F2937),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Extract cash details from operation data
+                  if (operation['detalles'] != null) ...[
+                    _buildCashRegisterDetails(operation['detalles']),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.grey[600],
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'No hay detalles específicos disponibles',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Show product list if available
+                  if (operation['detalles'] != null &&
+                      operation['detalles']['items'] != null &&
+                      operation['detalles']['items'] is List &&
+                      (operation['detalles']['items'] as List).isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _buildProductsList(operation['detalles']['items']),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Widget _buildOpeningDetailRow(
+    String label,
+    String value,
+    IconData icon, {
+    Color? valueColor,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: Colors.grey[600]),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[600],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: valueColor ?? const Color(0xFF1F2937),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCashRegisterDetails(dynamic detalles) {
+    if (detalles == null) {
+      return const Text('Sin detalles de apertura');
+    }
+
+    if (detalles is Map<String, dynamic>) {
+      final especificos =
+          detalles['detalles_especificos'] as Map<String, dynamic>?;
+
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.green[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.green[200]!),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Cash amount
+            if (especificos?['efectivo_inicial'] != null) ...[
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.green[100],
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(
+                      Icons.attach_money,
+                      color: Colors.green,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Efectivo Inicial',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        '\$${especificos!['efectivo_inicial'].toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // TPV and User info
+            if (especificos?['id_tpv'] != null) ...[
+              _buildCashDetailItem(
+                'TPV ID:',
+                especificos!['id_tpv'].toString(),
+                Icons.point_of_sale,
+              ),
+            ],
+            if (especificos?['usuario'] != null) ...[
+              _buildCashDetailItem(
+                'Usuario:',
+                especificos!['usuario'].toString(),
+                Icons.person,
+              ),
+            ],
+
+            // Product count if available
+            if (detalles['items'] != null && detalles['items'] is List) ...[
+              const SizedBox(height: 8),
+              _buildCashDetailItem(
+                'Productos Contados:',
+                '${(detalles['items'] as List).length} items',
+                Icons.inventory_2,
+              ),
+            ],
+          ],
         ),
       );
     }
+
+    return Text(detalles.toString());
+  }
+
+  Widget _buildCashDetailItem(String label, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: Colors.grey[600]),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1F2937),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String> _getUserRole() async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final adminProfile = await userPrefs.getAdminProfile();
+      return adminProfile['role'] ?? 'trabajador';
+    } catch (e) {
+      print('Error getting user role: $e');
+      return 'trabajador'; // Default role
+    }
+  }
+
+  bool _hasAccessToOpeningDetails(String role) {
+    // Allow access for managers, supervisors, and warehouse staff
+    final allowedRoles = ['gerente', 'supervisor', 'almacenero'];
+    return allowedRoles.contains(role.toLowerCase());
+  }
+
+  void _showAccessDeniedDialog() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.lock_outline, color: Colors.red, size: 24),
+                const SizedBox(width: 8),
+                const Text(
+                  'Acceso Denegado',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.red,
+                  ),
+                ),
+              ],
+            ),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No tienes permisos para ver los detalles de apertura de caja.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Solo los gerentes, supervisores y almaceneros pueden acceder a esta información.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+    );
   }
 }
