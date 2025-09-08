@@ -2,73 +2,75 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/payment_method.dart';
 
 class PaymentMethodService {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  static final SupabaseClient _supabase = Supabase.instance.client;
 
-  /// Fetches all active payment methods from app_nom_medio_pago table
-  Future<List<PaymentMethod>> getPaymentMethods() async {
+  /// Obtiene todos los medios de pago activos
+  static Future<List<PaymentMethod>> getActivePaymentMethods() async {
     try {
-      print('PaymentMethodService: Fetching payment methods from app_nom_medio_pago');
-      
+      print('🔍 Fetching active payment methods...');
+
       final response = await _supabase
           .from('app_nom_medio_pago')
           .select('*')
           .eq('es_activo', true)
-          .order('denominacion');
+          .order('denominacion', ascending: true);
 
-      print('PaymentMethodService: Response received: ${response.length} payment methods');
+      print('📊 Payment methods response: $response');
 
-      final List<PaymentMethod> paymentMethods = [];
-      
-      for (final item in response) {
-        try {
-          final paymentMethod = PaymentMethod.fromJson(item);
-          paymentMethods.add(paymentMethod);
-          print('PaymentMethodService: Added payment method: ${paymentMethod.denominacion} (ID: ${paymentMethod.id})');
-        } catch (e) {
-          print('PaymentMethodService: Error parsing payment method: $e');
-          print('PaymentMethodService: Item data: $item');
-        }
+      if (response.isNotEmpty) {
+        final paymentMethods =
+            response
+                .map<PaymentMethod>((item) => PaymentMethod.fromJson(item))
+                .toList();
+
+        print('✅ Found ${paymentMethods.length} active payment methods');
+        return paymentMethods;
       }
 
-      print('PaymentMethodService: Successfully loaded ${paymentMethods.length} payment methods');
-      return paymentMethods;
-      
+      print('⚠️ No active payment methods found');
+      return [];
     } catch (e) {
-      print('PaymentMethodService: Error fetching payment methods: $e');
-      
-      // Return fallback payment methods in case of error
-      return [
-        PaymentMethod(
-          id: 1,
-          denominacion: 'Efectivo',
-          descripcion: 'Pago en efectivo',
-          esDigital: false,
-          esEfectivo: true,
-          esActivo: true,
-        ),
-        PaymentMethod(
-          id: 2,
-          denominacion: 'Transferencia',
-          descripcion: 'Transferencia bancaria',
-          esDigital: true,
-          esEfectivo: false,
-          esActivo: true,
-        ),
-      ];
+      print('❌ Error fetching payment methods: $e');
+      return [];
     }
   }
 
-  /// Gets a specific payment method by ID
-  Future<PaymentMethod?> getPaymentMethodById(int id) async {
+  /// Obtiene un medio de pago específico por ID
+  static Future<PaymentMethod?> getPaymentMethodById(int id) async {
     try {
-      final paymentMethods = await getPaymentMethods();
-      return paymentMethods.firstWhere(
-        (pm) => pm.id == id,
-        orElse: () => throw Exception('Payment method not found'),
-      );
-    } catch (e) {
-      print('PaymentMethodService: Error getting payment method by ID $id: $e');
+      print('🔍 Fetching payment method with ID: $id');
+
+      final response =
+          await _supabase
+              .from('app_nom_medio_pago')
+              .select('*')
+              .eq('id', id)
+              .eq('es_activo', true)
+              .single();
+
+      print('📊 Payment method response: $response');
+
+      if (response != null) {
+        final paymentMethod = PaymentMethod.fromJson(response);
+        print('✅ Found payment method: ${paymentMethod.denominacion}');
+        return paymentMethod;
+      }
+
       return null;
+    } catch (e) {
+      print('❌ Error fetching payment method by ID: $e');
+      return null;
+    }
+  }
+
+  /// Valida si un medio de pago existe y está activo
+  static Future<bool> isValidPaymentMethod(int id) async {
+    try {
+      final paymentMethod = await getPaymentMethodById(id);
+      return paymentMethod != null && paymentMethod.esActivo;
+    } catch (e) {
+      print('❌ Error validating payment method: $e');
+      return false;
     }
   }
 }

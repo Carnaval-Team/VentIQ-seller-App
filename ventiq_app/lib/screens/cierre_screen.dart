@@ -33,6 +33,10 @@ class _CierreScreenState extends State<CierreScreen> {
 
   // Expenses data
   List<Expense> _expenses = [];
+  double _totalEgresos = 0.0; // Total de todos los egresos
+  double _egresosEfectivo = 0.0; // Solo egresos en efectivo (no digitales)
+  double _egresosTransferencias =
+      0.0; // Solo egresos por transferencias/digitales
 
   // Data from RPC
   double _ventasTotales = 0.0;
@@ -40,7 +44,6 @@ class _CierreScreenState extends State<CierreScreen> {
   double _totalEfectivo = 0.0;
   double _totalTransferencias = 0.0;
   double _efectivoEsperado = 0.0;
-  double _totalEgresos = 0.0; // New variable to store total expenses
   int _productosVendidos = 0;
   double _ticketPromedio = 0.0;
   double _porcentajeEfectivo = 0.0;
@@ -57,6 +60,8 @@ class _CierreScreenState extends State<CierreScreen> {
   int _ordenesAbiertas = 0;
   List<Order> _ordenesPendientes = [];
   String _userName = 'Cargando...';
+  bool _manejaInventario =
+      false; // Nueva variable para controlar si mostrar inventario
 
   @override
   void initState() {
@@ -119,9 +124,6 @@ class _CierreScreenState extends State<CierreScreen> {
               _ventasTotales - _totalEfectivo; // Otros medios de pago
           _efectivoEsperado =
               (turnoData['efectivo_esperado'] ?? _montoInicialCaja).toDouble();
-          _totalEgresos =
-              (turnoData['total_egresos_parciales'] ?? 0.0)
-                  .toDouble(); // Updated field name
           _productosVendidos = (turnoData['productos_vendidos'] ?? 0).toInt();
           _ticketPromedio = (turnoData['ticket_promedio'] ?? 0.0).toDouble();
           _porcentajeEfectivo =
@@ -136,6 +138,9 @@ class _CierreScreenState extends State<CierreScreen> {
           _diferenciaAjustada =
               (turnoData['diferencia_ajustada'] ?? 0.0).toDouble();
           _isLoadingData = false;
+          _manejaInventario =
+              turnoAbierto['maneja_inventario'] ??
+              false; // Cargar valor de maneja_inventario
         });
       } else {
         // Fallback to default values if no data
@@ -222,17 +227,29 @@ class _CierreScreenState extends State<CierreScreen> {
         _isLoadingExpenses = true;
       });
 
-      final expenses = await TurnoService.getEgresosForCurrentShift();
+      final expenses = await TurnoService.getEgresosEnriquecidos();
 
-      // Calculate total expenses
+      // Calculate total expenses and separate by payment type
       double total = 0.0;
+      double efectivo = 0.0;
+      double transferencias = 0.0;
+
       for (final expense in expenses) {
         total += expense.montoEntrega;
+        // Si esDigital es false explícitamente, es efectivo
+        // Si esDigital es true o null, considerarlo como transferencia/digital
+        if (expense.esDigital == false) {
+          efectivo += expense.montoEntrega;
+        } else {
+          transferencias += expense.montoEntrega;
+        }
       }
 
       setState(() {
         _expenses = expenses;
         _totalEgresos = total;
+        _egresosEfectivo = efectivo;
+        _egresosTransferencias = transferencias;
         _isLoadingExpenses = false;
       });
     } catch (e) {
@@ -281,8 +298,8 @@ class _CierreScreenState extends State<CierreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Calcular monto esperado considerando solo efectivo
-    final montoEsperado = _montoInicialCaja + _totalEfectivo - _totalEgresos;
+    // Calcular monto esperado considerando solo egresos en efectivo
+    final montoEsperado = _montoInicialCaja + _totalEfectivo - _egresosEfectivo;
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -425,24 +442,47 @@ class _CierreScreenState extends State<CierreScreen> {
                         '\$${_totalTransferencias.toStringAsFixed(2)} (${_porcentajeOtros.toStringAsFixed(1)}%)',
                       ),
                       _buildInfoRow(
-                        'Efectivo esperado:',
+                        'Efectivo esperado inicial:',
                         '\$${_efectivoEsperado.toStringAsFixed(2)}',
                       ),
+                      _buildInfoRow(
+                        'Efectivo esperado final:',
+                        '\$${montoEsperado.toStringAsFixed(2)}',
+                      ),
 
-                      // Show total expenses if there are any
+                      // Show expenses breakdown if there are any
                       if (_totalEgresos > 0) ...[
                         const SizedBox(height: 8),
+                        const Divider(),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Egresos del Turno',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        _buildInfoRow(
+                          'Egresos en efectivo:',
+                          '-\$${_egresosEfectivo.toStringAsFixed(2)}',
+                          isNegative: true,
+                        ),
+                        _buildInfoRow(
+                          'Egresos digitales:',
+                          '-\$${_egresosTransferencias.toStringAsFixed(2)}',
+                          isNegative: true,
+                        ),
                         _buildInfoRow(
                           'Total egresos:',
                           '-\$${_totalEgresos.toStringAsFixed(2)}',
                           isNegative: true,
                         ),
-                        _buildInfoRow(
-                          'Efectivo real ajustado:',
-                          '\$${_efectivoRealAjustado.toStringAsFixed(2)}',
-                        ),
+                        const SizedBox(height: 8),
+                        const Divider(),
+                        const SizedBox(height: 8),
                       ],
-
                       // Show conciliation status
                       if (_conciliacionEstado.isNotEmpty) ...[
                         const SizedBox(height: 12),
@@ -580,44 +620,46 @@ class _CierreScreenState extends State<CierreScreen> {
               const SizedBox(height: 20),
 
               // Inventario de productos
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.inventory_2,
-                          color: const Color(0xFF4A90E2),
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Conteo Físico de Inventario',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+              if (_manejaInventario) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.inventory_2,
+                            color: const Color(0xFF4A90E2),
+                            size: 20,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Ingrese la cantidad física contada para cada producto',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildInventoryList(),
-                  ],
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Conteo Físico de Inventario',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1F2937),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Ingrese la cantidad física contada para cada producto',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildInventoryList(),
+                    ],
+                  ),
                 ),
-              ),
+              ],
 
               const SizedBox(height: 20),
 
@@ -1159,6 +1201,24 @@ class _CierreScreenState extends State<CierreScreen> {
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                     const SizedBox(width: 16),
+                    Icon(Icons.payment, size: 12, color: Colors.grey[600]),
+                    const SizedBox(width: 4),
+                    Text(
+                      expense.medioPago ?? 'N/A',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            expense.medioPago == 'Efectivo'
+                                ? Colors.green[700]
+                                : Colors.blue[700],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
                     Icon(Icons.person, size: 12, color: Colors.grey[600]),
                     const SizedBox(width: 4),
                     Expanded(
@@ -1207,7 +1267,7 @@ class _CierreScreenState extends State<CierreScreen> {
     }
 
     final montoFinal = double.parse(_montoFinalController.text.trim());
-    final montoEsperado = _efectivoEsperado;
+    final montoEsperado = _montoInicialCaja + _totalEfectivo - _egresosEfectivo;
     final diferencia = montoFinal - montoEsperado;
 
     // Mostrar confirmación si hay diferencia significativa

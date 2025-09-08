@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class PaymentMethod {
   final int id;
   final String denominacion;
@@ -38,10 +40,10 @@ class PaymentMethod {
   }
 
   String get displayName => denominacion;
-  
-  String get typeIcon {
-    if (esEfectivo) return '💵';
-    if (esDigital) return '💳';
-    return '💰';
+
+  IconData get typeIcon {
+    if (esEfectivo) return Icons.payments;
+    if (esDigital) return Icons.credit_card;
+    return Icons.account_balance_wallet;
   }
 }

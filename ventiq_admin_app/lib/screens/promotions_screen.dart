@@ -320,6 +320,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
           Row(
             children: [
               Expanded(
+                flex: 2,
                 child: DropdownButtonFormField<String>(
                   value: _selectedType,
                   decoration: InputDecoration(
@@ -328,19 +329,24 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                      horizontal: 8,
+                      vertical: 6,
                     ),
+                    isDense: true,
                   ),
                   items: [
                     const DropdownMenuItem<String>(
                       value: null,
-                      child: Text('Todos los tipos'),
+                      child: Text('Todos', overflow: TextOverflow.ellipsis),
                     ),
                     ..._promotionTypes.map(
                       (type) => DropdownMenuItem<String>(
                         value: type.id,
-                        child: Text(type.denominacion),
+                        child: Text(
+                          type.denominacion,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14),
+                        ),
                       ),
                     ),
                   ],
@@ -354,6 +360,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
               ),
               const SizedBox(width: 8),
               Expanded(
+                flex: 1,
                 child: DropdownButtonFormField<bool>(
                   value: _selectedStatus,
                   decoration: InputDecoration(
@@ -362,16 +369,23 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                      horizontal: 8,
+                      vertical: 6,
                     ),
+                    isDense: true,
                   ),
                   items: const [
-                    DropdownMenuItem<bool>(value: null, child: Text('Todos')),
-                    DropdownMenuItem<bool>(value: true, child: Text('Activas')),
+                    DropdownMenuItem<bool>(
+                      value: null,
+                      child: Text('Todos', overflow: TextOverflow.ellipsis),
+                    ),
+                    DropdownMenuItem<bool>(
+                      value: true,
+                      child: Text('Activas', overflow: TextOverflow.ellipsis),
+                    ),
                     DropdownMenuItem<bool>(
                       value: false,
-                      child: Text('Inactivas'),
+                      child: Text('Inactivas', overflow: TextOverflow.ellipsis),
                     ),
                   ],
                   onChanged: (value) {
@@ -424,8 +438,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   }
 
   Widget _buildPromotionCard(Promotion promotion) {
-    final isExpired = promotion.fechaFin.isBefore(DateTime.now());
-    final isActive = promotion.estado && !isExpired;
+    final isExpired = !promotion.isActive;
+    final isActive = promotion.isActive;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -443,25 +457,84 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          promotion.nombre,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                promotion.nombre,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            _buildStatusChip(isActive, isExpired),
+                          ],
                         ),
                         const SizedBox(height: 4),
                         Text(
                           promotion.codigoPromocion,
                           style: TextStyle(
+                            fontSize: 14,
                             color: Colors.grey[600],
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                        if (promotion.descripcion != null &&
+                            promotion.descripcion!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              promotion.descripcion!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        // Mostrar advertencia si es promoción con recargo
+                        if (promotion.isChargePromotion)
+                          Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.1),
+                              border: Border.all(
+                                color: Colors.orange,
+                                width: 1,
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.warning,
+                                  color: Colors.orange,
+                                  size: 14,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    'Aumenta precios de venta',
+                                    style: TextStyle(
+                                      color: Colors.orange[800],
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                  _buildStatusChip(isActive, isExpired),
                   PopupMenuButton<String>(
                     onSelected: (value) {
                       switch (value) {
@@ -538,7 +611,8 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                   const SizedBox(width: 8),
                   _buildInfoChip(
                     Icons.calendar_today,
-                    DateFormat('dd/MM/yyyy').format(promotion.fechaFin),
+                    promotion
+                        .expirationText, // Usa el nuevo getter que maneja fecha_fin null
                   ),
                   const SizedBox(width: 8),
                   if (promotion.limiteUsos != null)

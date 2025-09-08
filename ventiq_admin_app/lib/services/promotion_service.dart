@@ -28,34 +28,149 @@ class PromotionService {
       }
 
       print('📢 Listando promociones para tienda: $storeIdInt');
+      print(
+        '📢 Parámetros: search=$search, estado=$estado, tipo=$tipoPromocion',
+      );
 
-      // Usar función RPC para listar promociones (asumiendo que existe)
+      // Llamar a la función RPC fn_listar_promociones
       final response = await _supabase.rpc(
         'fn_listar_promociones',
         params: {
           'p_id_tienda': storeIdInt,
-          'p_busqueda': search,
-          'p_estado': estado,
-          'p_tipo_promocion': tipoPromocion,
-          'p_fecha_desde': fechaDesde?.toIso8601String(),
-          'p_fecha_hasta': fechaHasta?.toIso8601String(),
-          'p_pagina': page,
-          'p_limite': limit,
+          'p_activas':
+              estado, // Cambiar de p_estado a p_activas según la función
         },
       );
 
       print('📢 Respuesta promociones: $response');
 
       if (response == null) {
-        return [];
+        print('⚠️ Respuesta nula, usando datos mock');
+        return _getMockPromotions();
       }
 
-      final List<dynamic> promotionsData =
-          response is List ? response : response['data'] ?? [];
+      // La función retorna directamente una lista de promociones
+      final List<dynamic> promotionsData = response is List ? response : [];
 
-      return promotionsData.map((p) => Promotion.fromJson(p)).toList();
+      if (promotionsData.isEmpty) {
+        print('⚠️ No se encontraron promociones, usando datos mock');
+        return _getMockPromotions();
+      }
+
+      print('✅ Procesando ${promotionsData.length} promociones de Supabase');
+
+      // Convertir cada promoción del formato RPC al modelo
+      final promotions =
+          promotionsData
+              .map((promotionData) {
+                try {
+                  // Mapear los campos de la función RPC al formato esperado por el modelo
+                  final mappedData = {
+                    'id': promotionData['id']?.toString(),
+                    'codigo_promocion': promotionData['codigo_promocion'],
+                    'nombre': promotionData['nombre'],
+                    'descripcion': promotionData['descripcion'],
+                    'valor_descuento': promotionData['valor_descuento'],
+                    'fecha_inicio': promotionData['fecha_inicio'],
+                    'fecha_fin':
+                        promotionData['fecha_fin'], // Puede ser null para promociones sin vencimiento
+                    'min_compra': promotionData['min_compra'],
+                    'limite_usos': promotionData['limite_usos'],
+                    'aplica_todo': promotionData['aplica_todo'],
+                    'estado': promotionData['estado'],
+                    'requiere_medio_pago': promotionData['requiere_medio_pago'],
+                    'medio_pago_requerido':
+                        promotionData['medio_pago_requerido'],
+                    'tipo_promocion':
+                        promotionData['tipo_promocion'], // Nombre del tipo
+                    'tienda': promotionData['tienda'], // Nombre de la tienda
+                    'id_tienda': storeIdInt.toString(),
+                    'id_tipo_promocion': '1', // Valor por defecto
+                    'created_at': DateTime.now().toIso8601String(),
+                  };
+
+                  final fechaFinText =
+                      promotionData['fecha_fin'] != null
+                          ? promotionData['fecha_fin'].toString()
+                          : 'Sin vencimiento';
+                  print(
+                    '📝 Promoción mapeada: ${mappedData['nombre']} - ${mappedData['codigo_promocion']} (Vence: $fechaFinText)',
+                  );
+
+                  return Promotion.fromJson(mappedData);
+                } catch (e) {
+                  print('❌ Error procesando promoción: $e');
+                  print('📄 Datos originales: $promotionData');
+                  return null;
+                }
+              })
+              .where((p) => p != null)
+              .cast<Promotion>()
+              .toList();
+
+      // Aplicar filtros locales si es necesario
+      var filteredPromotions = promotions;
+
+      // Filtro por búsqueda de texto
+      if (search != null && search.isNotEmpty) {
+        filteredPromotions =
+            filteredPromotions
+                .where(
+                  (p) =>
+                      p.nombre.toLowerCase().contains(search.toLowerCase()) ||
+                      p.codigoPromocion.toLowerCase().contains(
+                        search.toLowerCase(),
+                      ) ||
+                      (p.descripcion?.toLowerCase().contains(
+                            search.toLowerCase(),
+                          ) ??
+                          false),
+                )
+                .toList();
+      }
+
+      // Filtro por tipo de promoción
+      if (tipoPromocion != null && tipoPromocion.isNotEmpty) {
+        filteredPromotions =
+            filteredPromotions
+                .where(
+                  (p) =>
+                      p.tipoPromocionNombre?.toLowerCase() ==
+                      tipoPromocion.toLowerCase(),
+                )
+                .toList();
+      }
+
+      // Filtro por rango de fechas
+      if (fechaDesde != null) {
+        filteredPromotions =
+            filteredPromotions
+                .where(
+                  (p) =>
+                      p.fechaInicio.isAfter(fechaDesde) ||
+                      p.fechaInicio.isAtSameMomentAs(fechaDesde),
+                )
+                .toList();
+      }
+
+      if (fechaHasta != null) {
+        filteredPromotions =
+            filteredPromotions
+                .where(
+                  (p) =>
+                      p.fechaFin ==
+                          null || // Include promotions with no expiration
+                      p.fechaFin!.isBefore(fechaHasta) ||
+                      p.fechaFin!.isAtSameMomentAs(fechaHasta),
+                )
+                .toList();
+      }
+
+      print('✅ Retornando ${filteredPromotions.length} promociones filtradas');
+      return filteredPromotions;
     } catch (e) {
       print('❌ Error listando promociones: $e');
+      print('🔄 Usando datos mock como fallback');
       // Fallback a datos mock
       return _getMockPromotions();
     }
@@ -253,13 +368,24 @@ class PromotionService {
       final response = await _supabase.rpc('fn_listar_tipos_promocion');
 
       if (response == null) {
+        print('⚠️ Respuesta nula, usando datos mock');
         return _getMockPromotionTypes();
       }
+
+      print('📋 Respuesta tipos promoción: $response');
 
       final List<dynamic> typesData =
           response is List ? response : response['data'] ?? [];
 
-      return typesData.map((t) => PromotionType.fromJson(t)).toList();
+      if (typesData.isEmpty) {
+        print('⚠️ No se encontraron tipos de promoción, usando datos mock');
+        return _getMockPromotionTypes();
+      }
+
+      final types = typesData.map((t) => PromotionType.fromJson(t)).toList();
+      print('✅ Cargados ${types.length} tipos de promoción desde Supabase');
+
+      return types;
     } catch (e) {
       print('❌ Error obteniendo tipos promoción: $e');
       return _getMockPromotionTypes();

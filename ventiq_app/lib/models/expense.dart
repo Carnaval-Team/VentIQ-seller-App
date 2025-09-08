@@ -5,9 +5,10 @@ class Expense {
   final String nombreRecibe;
   final String nombreAutoriza;
   final DateTime fechaEntrega;
+  final int? idMedioPago;
   final int turnoEstado;
-  final String turnoAbiertoPor;
-  final String? turnoCerradoPor;
+  final String? medioPago; // Nombre del medio de pago (se enriquece después)
+  final bool? esDigital; // Se enriquece después
 
   Expense({
     required this.idEgreso,
@@ -16,9 +17,10 @@ class Expense {
     required this.nombreRecibe,
     required this.nombreAutoriza,
     required this.fechaEntrega,
+    this.idMedioPago,
     required this.turnoEstado,
-    required this.turnoAbiertoPor,
-    this.turnoCerradoPor,
+    this.medioPago,
+    this.esDigital,
   });
 
   factory Expense.fromJson(Map<String, dynamic> json) {
@@ -29,9 +31,26 @@ class Expense {
       nombreRecibe: json['nombre_recibe'] ?? '',
       nombreAutoriza: json['nombre_autoriza'] ?? '',
       fechaEntrega: DateTime.parse(json['fecha_entrega']),
+      idMedioPago: json['id_medio_pago'],
       turnoEstado: json['turno_estado'] ?? 0,
-      turnoAbiertoPor: json['turno_abierto_por'] ?? '',
-      turnoCerradoPor: json['turno_cerrado_por'],
+      medioPago: json['medio_pago'],
+      esDigital: json['es_digital'],
+    );
+  }
+
+  // Método para crear una copia con datos enriquecidos
+  Expense copyWith({String? medioPago, bool? esDigital}) {
+    return Expense(
+      idEgreso: idEgreso,
+      montoEntrega: montoEntrega,
+      motivoEntrega: motivoEntrega,
+      nombreRecibe: nombreRecibe,
+      nombreAutoriza: nombreAutoriza,
+      fechaEntrega: fechaEntrega,
+      idMedioPago: idMedioPago,
+      turnoEstado: turnoEstado,
+      medioPago: medioPago ?? this.medioPago,
+      esDigital: esDigital ?? this.esDigital,
     );
   }
 
@@ -43,9 +62,10 @@ class Expense {
       'nombre_recibe': nombreRecibe,
       'nombre_autoriza': nombreAutoriza,
       'fecha_entrega': fechaEntrega.toIso8601String(),
+      'id_medio_pago': idMedioPago,
       'turno_estado': turnoEstado,
-      'turno_abierto_por': turnoAbiertoPor,
-      'turno_cerrado_por': turnoCerradoPor,
+      'medio_pago': medioPago,
+      'es_digital': esDigital,
     };
   }
 

@@ -74,7 +74,8 @@ class PromotionValidator {
       );
     }
 
-    if (now.isAfter(promotion.fechaFin)) {
+    // Check expiration only if fechaFin is not null (permanent promotions don't expire)
+    if (promotion.fechaFin != null && now.isAfter(promotion.fechaFin!)) {
       return PromotionValidationResult(
         valida: false,
         mensaje: 'La promoción ha expirado',

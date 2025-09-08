@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/turno_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/payment_method_service.dart';
+import '../models/payment_method.dart';
 
 class EgresoScreen extends StatefulWidget {
   const EgresoScreen({Key? key}) : super(key: key);
@@ -18,8 +20,11 @@ class _EgresoScreenState extends State<EgresoScreen> {
   final _nombreRecibeController = TextEditingController();
   bool _isProcessing = false;
   bool _isLoadingTurno = true;
+  bool _isLoadingPaymentMethods = true;
   Map<String, dynamic>? _turnoAbierto;
   String? _errorMessage;
+  List<PaymentMethod> _paymentMethods = [];
+  PaymentMethod? _selectedPaymentMethod;
 
   final UserPreferencesService _userPrefs = UserPreferencesService();
 
@@ -27,6 +32,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
   void initState() {
     super.initState();
     _checkTurnoAbierto();
+    _loadPaymentMethods();
   }
 
   @override
@@ -41,7 +47,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
   Future<void> _checkTurnoAbierto() async {
     try {
       final turno = await TurnoService.getTurnoAbierto();
-      
+
       setState(() {
         _isLoadingTurno = false;
         if (turno != null) {
@@ -57,6 +63,27 @@ class _EgresoScreenState extends State<EgresoScreen> {
         _isLoadingTurno = false;
         _errorMessage = 'Error al verificar turno: $e';
       });
+    }
+  }
+
+  Future<void> _loadPaymentMethods() async {
+    try {
+      final paymentMethods =
+          await PaymentMethodService.getActivePaymentMethods();
+
+      setState(() {
+        _paymentMethods = paymentMethods;
+        _isLoadingPaymentMethods = false;
+        // Set default payment method (first one, usually "Efectivo")
+        if (paymentMethods.isNotEmpty) {
+          _selectedPaymentMethod = paymentMethods.first;
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingPaymentMethods = false;
+      });
+      print('Error loading payment methods: $e');
     }
   }
 
@@ -81,286 +108,403 @@ class _EgresoScreenState extends State<EgresoScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: _isLoadingTurno
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Verificando turno abierto...'),
-                ],
-              ),
-            )
-          : _errorMessage != null
+      body:
+          _isLoadingTurno
+              ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Verificando turno abierto...'),
+                  ],
+                ),
+              )
+              : _errorMessage != null
               ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
+                    const SizedBox(height: 16),
+                    Text(
+                      _errorMessage!,
+                      style: TextStyle(fontSize: 16, color: Colors.red[600]),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Volver'),
+                    ),
+                  ],
+                ),
+              )
+              : Form(
+                key: _formKey,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 64,
-                        color: Colors.red[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.red[600],
+                      // Información del egreso
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
                         ),
-                        textAlign: TextAlign.center,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.money_off,
+                                  color: Colors.red[600],
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Registro de Egreso',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF1F2937),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildInfoRow(
+                              'Fecha:',
+                              _formatDate(DateTime.now()),
+                            ),
+                            _buildInfoRow('Hora:', _formatTime(DateTime.now())),
+                            _buildInfoRow(
+                              'Turno ID:',
+                              _turnoAbierto!['id'].toString(),
+                            ),
+                            _buildInfoRow(
+                              'Efectivo Inicial:',
+                              '\$${_turnoAbierto!['efectivo_inicial']}',
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 24),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Volver'),
+
+                      const SizedBox(height: 20),
+
+                      // Monto del egreso
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Monto del Egreso',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _montoController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d+\.?\d{0,2}'),
+                                ),
+                              ],
+                              decoration: InputDecoration(
+                                labelText: 'Monto (\$)',
+                                prefixIcon: Icon(
+                                  Icons.attach_money,
+                                  color: Colors.red[600],
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'El monto es requerido';
+                                }
+                                final monto = double.tryParse(value);
+                                if (monto == null || monto <= 0) {
+                                  return 'Ingrese un monto válido mayor a 0';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Motivo del egreso
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Motivo del Egreso',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _motivoController,
+                              decoration: InputDecoration(
+                                labelText: 'Motivo de la entrega',
+                                prefixIcon: const Icon(Icons.description),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'El motivo es requerido';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Medio de pago
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Medio de Pago',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (_isLoadingPaymentMethods)
+                              const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(16.0),
+                                  child: CircularProgressIndicator(),
+                                ),
+                              )
+                            else if (_paymentMethods.isEmpty)
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  'No hay métodos de pago disponibles',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              )
+                            else
+                              DropdownButtonFormField<PaymentMethod>(
+                                value: _selectedPaymentMethod,
+                                decoration: InputDecoration(
+                                  labelText: 'Seleccionar método de pago',
+                                  prefixIcon: Icon(
+                                    Icons.payment,
+                                    color: Colors.red[600],
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                ),
+                                items:
+                                    _paymentMethods.map((PaymentMethod method) {
+                                      return DropdownMenuItem<PaymentMethod>(
+                                        value: method,
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              method.typeIcon,
+                                              size: 20,
+                                              color: Colors.grey[600],
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(method.displayName),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                onChanged: (PaymentMethod? newValue) {
+                                  setState(() {
+                                    _selectedPaymentMethod = newValue;
+                                  });
+                                },
+                                validator: (value) {
+                                  if (value == null) {
+                                    return 'Debe seleccionar un método de pago';
+                                  }
+                                  return null;
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Personas involucradas
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Personas Involucradas',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Nombre quien autoriza
+                            TextFormField(
+                              controller: _nombreAutorizaController,
+                              decoration: InputDecoration(
+                                labelText: 'Nombre quien autoriza',
+                                prefixIcon: const Icon(Icons.person_outline),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'El nombre de quien autoriza es requerido';
+                                }
+                                return null;
+                              },
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Nombre quien recibe
+                            TextFormField(
+                              controller: _nombreRecibeController,
+                              decoration: InputDecoration(
+                                labelText: 'Nombre quien recibe',
+                                prefixIcon: const Icon(Icons.person),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'El nombre de quien recibe es requerido';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 30),
+
+                      // Botón registrar egreso
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _isProcessing ? null : _registrarEgreso,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red[600],
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child:
+                              _isProcessing
+                                  ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                  : const Text(
+                                    'Registrar Egreso',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                        ),
                       ),
                     ],
                   ),
-                )
-              : Form(
-                  key: _formKey,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-              // Información del egreso
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.money_off,
-                          color: Colors.red[600],
-                          size: 24,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Registro de Egreso',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildInfoRow('Fecha:', _formatDate(DateTime.now())),
-                    _buildInfoRow('Hora:', _formatTime(DateTime.now())),
-                    _buildInfoRow('Turno ID:', _turnoAbierto!['id'].toString()),
-                    _buildInfoRow('Efectivo Inicial:', '\$${_turnoAbierto!['efectivo_inicial']}'),
-                  ],
                 ),
               ),
-              
-              const SizedBox(height: 20),
-              
-              // Monto del egreso
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Monto del Egreso',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _montoController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-                      ],
-                      decoration: InputDecoration(
-                        labelText: 'Monto (\$)',
-                        prefixIcon: Icon(Icons.attach_money, color: Colors.red[600]),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'El monto es requerido';
-                        }
-                        final monto = double.tryParse(value);
-                        if (monto == null || monto <= 0) {
-                          return 'Ingrese un monto válido mayor a 0';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 20),
-              
-              // Motivo del egreso
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Motivo del Egreso',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _motivoController,
-                      decoration: InputDecoration(
-                        labelText: 'Motivo de la entrega',
-                        prefixIcon: const Icon(Icons.description),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'El motivo es requerido';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 20),
-              
-              // Personas involucradas
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Personas Involucradas',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Nombre quien autoriza
-                    TextFormField(
-                      controller: _nombreAutorizaController,
-                      decoration: InputDecoration(
-                        labelText: 'Nombre quien autoriza',
-                        prefixIcon: const Icon(Icons.person_outline),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'El nombre de quien autoriza es requerido';
-                        }
-                        return null;
-                      },
-                    ),
-                    
-                    const SizedBox(height: 12),
-                    
-                    // Nombre quien recibe
-                    TextFormField(
-                      controller: _nombreRecibeController,
-                      decoration: InputDecoration(
-                        labelText: 'Nombre quien recibe',
-                        prefixIcon: const Icon(Icons.person),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'El nombre de quien recibe es requerido';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 30),
-              
-              // Botón registrar egreso
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isProcessing ? null : _registrarEgreso,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red[600],
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: _isProcessing
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Text(
-                          'Registrar Egreso',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -370,13 +514,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
-          ),
+          Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
           Text(
             value,
             style: const TextStyle(
@@ -421,6 +559,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
         motivoEntrega: motivo,
         nombreAutoriza: nombreAutoriza,
         nombreRecibe: nombreRecibe,
+        idMedioPago: _selectedPaymentMethod?.id,
       );
 
       if (result['success'] == true) {
@@ -430,7 +569,6 @@ class _EgresoScreenState extends State<EgresoScreen> {
         // Mostrar error del servidor
         _showErrorMessage(result['message'] ?? 'Error desconocido');
       }
-
     } catch (e) {
       _showErrorMessage('Error al registrar el egreso: $e');
     } finally {
@@ -444,55 +582,54 @@ class _EgresoScreenState extends State<EgresoScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              Icons.check_circle,
-              color: Colors.green,
-              size: 24,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 24),
+                const SizedBox(width: 8),
+                const Text('Egreso Registrado'),
+              ],
             ),
-            const SizedBox(width: 8),
-            const Text('Egreso Registrado'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(result['message'] ?? 'El egreso ha sido registrado exitosamente.'),
-            const SizedBox(height: 12),
-            Text('ID Egreso: ${result['egreso_id']}'),
-            Text('Monto: \$${result['monto']?.toStringAsFixed(2) ?? _montoController.text}'),
-            Text('Motivo: ${_motivoController.text}'),
-            Text('Autoriza: ${_nombreAutorizaController.text}'),
-            Text('Recibe: ${_nombreRecibeController.text}'),
-            Text('Fecha: ${_formatDate(DateTime.now())}'),
-            Text('Hora: ${_formatTime(DateTime.now())}'),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context); // Cerrar diálogo
-              Navigator.pop(context); // Volver a pantalla anterior
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A90E2),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  result['message'] ??
+                      'El egreso ha sido registrado exitosamente.',
+                ),
+                const SizedBox(height: 12),
+                Text('ID Egreso: ${result['egreso_id']}'),
+                Text(
+                  'Monto: \$${result['monto']?.toStringAsFixed(2) ?? _montoController.text}',
+                ),
+                Text('Motivo: ${_motivoController.text}'),
+                Text('Autoriza: ${_nombreAutorizaController.text}'),
+                Text('Recibe: ${_nombreRecibeController.text}'),
+                Text('Fecha: ${_formatDate(DateTime.now())}'),
+                Text('Hora: ${_formatTime(DateTime.now())}'),
+              ],
             ),
-            child: const Text('Continuar'),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context); // Cerrar diálogo
+                  Navigator.pop(context); // Volver a pantalla anterior
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A90E2),
+                ),
+                child: const Text('Continuar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _showErrorMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 }

@@ -112,7 +112,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isExpired = _promotion.fechaFin.isBefore(DateTime.now());
+    final isExpired = _promotion.fechaFin?.isBefore(DateTime.now()) ?? false;
     final isActive = _promotion.estado && !isExpired;
 
     return Scaffold(
@@ -176,6 +176,90 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                     children: [
                       _buildStatusCard(isActive, isExpired),
                       const SizedBox(height: 16),
+                      // Mostrar advertencia si es promoción con recargo
+                      if (_promotion.isChargePromotion)
+                        Card(
+                          color: Colors.orange.withOpacity(0.1),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: Colors.orange,
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.warning,
+                                      color: Colors.orange,
+                                      size: 32,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'PROMOCIÓN CON RECARGO',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.orange[800],
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            _promotion.chargeWarningMessage,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.orange[700],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.info,
+                                        color: Colors.orange,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Esta promoción aplicará un recargo adicional al precio base de los productos, resultando en un aumento del precio final de venta.',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.orange[600],
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (_promotion.isChargePromotion)
+                        const SizedBox(height: 16),
                       _buildBasicInfoCard(),
                       const SizedBox(height: 16),
                       _buildDiscountInfoCard(),
@@ -350,7 +434,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
   Widget _buildDateRangeCard() {
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
     final now = DateTime.now();
-    final daysRemaining = _promotion.fechaFin.difference(now).inDays;
+    final daysRemaining = _promotion.fechaFin?.difference(now).inDays;
 
     return Card(
       child: Padding(
@@ -360,44 +444,66 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.date_range, color: AppColors.primary),
+                Icon(Icons.date_range, color: AppColors.primary),
                 const SizedBox(width: 8),
                 const Text(
-                  'Vigencia',
+                  'Período de Vigencia',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            _buildInfoRow(
-              'Fecha inicio',
-              dateFormat.format(_promotion.fechaInicio),
+            _buildDateInfo(
+              'Fecha de Inicio',
+              _promotion.fechaInicio,
+              dateFormat,
             ),
-            _buildInfoRow('Fecha fin', dateFormat.format(_promotion.fechaFin)),
             const SizedBox(height: 8),
+            _buildDateInfo('Fecha de Fin', _promotion.fechaFin, dateFormat),
+            const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color:
-                    daysRemaining > 0
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.red.withOpacity(0.1),
+                    _promotion.fechaFin == null
+                        ? Colors.blue.withOpacity(0.1)
+                        : (daysRemaining != null && daysRemaining >= 0
+                            ? Colors.green.withOpacity(0.1)
+                            : Colors.red.withOpacity(0.1)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 children: [
                   Icon(
-                    daysRemaining > 0 ? Icons.schedule : Icons.warning,
-                    color: daysRemaining > 0 ? Colors.green : Colors.red,
+                    _promotion.fechaFin == null
+                        ? Icons.all_inclusive
+                        : (daysRemaining != null && daysRemaining >= 0
+                            ? Icons.check_circle
+                            : Icons.warning),
+                    color:
+                        _promotion.fechaFin == null
+                            ? Colors.blue
+                            : (daysRemaining != null && daysRemaining >= 0
+                                ? Colors.green
+                                : Colors.red),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    daysRemaining > 0
-                        ? 'Faltan $daysRemaining días para vencer'
-                        : 'Promoción vencida hace ${-daysRemaining} días',
-                    style: TextStyle(
-                      color: daysRemaining > 0 ? Colors.green : Colors.red,
-                      fontWeight: FontWeight.w500,
+                  Expanded(
+                    child: Text(
+                      _promotion.fechaFin == null
+                          ? 'Esta promoción no tiene fecha de vencimiento'
+                          : (daysRemaining != null && daysRemaining >= 0
+                              ? 'Faltan $daysRemaining días para que expire'
+                              : 'Esta promoción ha expirado hace ${daysRemaining?.abs()} días'),
+                      style: TextStyle(
+                        color:
+                            _promotion.fechaFin == null
+                                ? Colors.blue[700]
+                                : (daysRemaining != null && daysRemaining >= 0
+                                    ? Colors.green[700]
+                                    : Colors.red[700]),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],
@@ -580,6 +686,33 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
           Expanded(
             child: Text(
               value,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateInfo(String label, DateTime? date, DateFormat dateFormat) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[600],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              date != null ? dateFormat.format(date) : 'No especificado',
               style: const TextStyle(fontWeight: FontWeight.w500),
             ),
           ),

@@ -19,15 +19,87 @@ class PreorderScreen extends StatefulWidget {
 
 class _PreorderScreenState extends State<PreorderScreen> {
   final OrderService _orderService = OrderService();
-  final PaymentMethodService _paymentMethodService = PaymentMethodService();
   List<pm.PaymentMethod> _paymentMethods = [];
   bool _loadingPaymentMethods = false;
+  bool _checkingShift = true;
+  bool _hasOpenShift = false;
   pm.PaymentMethod? _globalPaymentMethod;
 
   @override
   void initState() {
     super.initState();
-    _loadPaymentMethods();
+    _checkOpenShift();
+  }
+
+  Future<void> _checkOpenShift() async {
+    try {
+      setState(() {
+        _checkingShift = true;
+      });
+
+      final hasShift = await TurnoService.hasOpenShift();
+
+      setState(() {
+        _hasOpenShift = hasShift;
+        _checkingShift = false;
+      });
+
+      if (_hasOpenShift) {
+        _loadPaymentMethods();
+      } else {
+        _showNoShiftDialog();
+      }
+    } catch (e) {
+      print('Error checking shift: $e');
+      setState(() {
+        _checkingShift = false;
+        _hasOpenShift = false;
+      });
+      _showNoShiftDialog();
+    }
+  }
+
+  void _showNoShiftDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.orange,
+                  size: 28,
+                ),
+                const SizedBox(width: 8),
+                const Text('Turno Requerido'),
+              ],
+            ),
+            content: const Text(
+              'Debe tener un turno abierto para crear órdenes. Por favor, vaya a la sección de Apertura para abrir un turno.',
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pushReplacementNamed(context, '/apertura');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A90E2),
+                ),
+                child: const Text('Ir a Apertura'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                child: const Text('Volver'),
+              ),
+            ],
+          ),
+    );
   }
 
   Future<void> _loadPaymentMethods() async {
@@ -36,7 +108,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
     });
 
     try {
-      final paymentMethods = await _paymentMethodService.getPaymentMethods();
+      final paymentMethods =
+          await PaymentMethodService.getActivePaymentMethods();
       setState(() {
         _paymentMethods = paymentMethods;
         _loadingPaymentMethods = false;
@@ -51,6 +124,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_checkingShift) {
+      return Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (!_hasOpenShift) {
+      return Scaffold(body: Center(child: Text('No tiene un turno abierto')));
+    }
+
     final currentOrder = _orderService.currentOrder;
 
     return Scaffold(
@@ -468,9 +549,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                         value: method,
                         child: Row(
                           children: [
-                            Text(
+                            Icon(
                               method.typeIcon,
-                              style: const TextStyle(fontSize: 14),
+                              size: 16,
+                              color: Colors.grey[600],
                             ),
                             const SizedBox(width: 6),
                             Expanded(
@@ -705,9 +787,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
                               value: method,
                               child: Row(
                                 children: [
-                                  Text(
+                                  Icon(
                                     method.typeIcon,
-                                    style: const TextStyle(fontSize: 14),
+                                    size: 16,
+                                    color: Colors.grey[600],
                                   ),
                                   const SizedBox(width: 6),
                                   Expanded(

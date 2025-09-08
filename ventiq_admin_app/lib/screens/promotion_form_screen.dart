@@ -302,14 +302,11 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
               decoration: const InputDecoration(
                 labelText: 'Nombre de la promoción *',
                 border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.campaign),
+                prefixIcon: Icon(Icons.title),
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return 'El nombre es requerido';
-                }
-                if (value.trim().length < 3) {
-                  return 'El nombre debe tener al menos 3 caracteres';
+                  return 'El nombre es obligatorio';
                 }
                 return null;
               },
@@ -318,35 +315,27 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
             TextFormField(
               controller: _descripcionController,
               decoration: const InputDecoration(
-                labelText: 'Descripción',
+                labelText: 'Descripción (opcional)',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.description),
               ),
               maxLines: 3,
-              maxLength: 500,
             ),
             const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
+                  flex: 2,
                   child: TextFormField(
                     controller: _codigoController,
                     decoration: const InputDecoration(
-                      labelText: 'Código promocional *',
+                      labelText: 'Código de promoción *',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.qr_code),
                     ),
-                    textCapitalization: TextCapitalization.characters,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[A-Z0-9]')),
-                      LengthLimitingTextInputFormatter(20),
-                    ],
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
-                        return 'El código es requerido';
-                      }
-                      if (value.trim().length < 4) {
-                        return 'El código debe tener al menos 4 caracteres';
+                        return 'El código es obligatorio';
                       }
                       return null;
                     },
@@ -393,10 +382,59 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                 return null;
               },
             ),
+            // Mostrar advertencia si es promoción con recargo
+            if (_selectedTipoPromocion != null &&
+                _isChargePromotionType(_selectedTipoPromocion!))
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  border: Border.all(color: Colors.orange, width: 1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning, color: Colors.orange, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '⚠️ Esta promoción aumentará el precio de venta de los productos afectados',
+                        style: TextStyle(
+                          color: Colors.orange[800],
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  // Método helper para detectar tipos de promoción con recargo
+  bool _isChargePromotionType(String tipoPromocionId) {
+    // Verificar por ID
+    if (tipoPromocionId == '8' || tipoPromocionId == '9') {
+      return true;
+    }
+
+    // Verificar por denominación
+    final tipoPromocion = widget.promotionTypes.firstWhere(
+      (type) => type.id == tipoPromocionId,
+      orElse:
+          () => PromotionType(
+            id: '',
+            denominacion: '',
+            createdAt: DateTime.now(),
+          ),
+    );
+
+    return tipoPromocion.denominacion.toLowerCase().contains('recargo');
   }
 
   Widget _buildDiscountSection() {

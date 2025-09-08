@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 class Promotion {
   final String id;
   final String idTienda;
@@ -8,11 +10,15 @@ class Promotion {
   final double valorDescuento;
   final double? minCompra;
   final DateTime fechaInicio;
-  final DateTime fechaFin;
+  final DateTime? fechaFin;
   final bool estado;
   final bool aplicaTodo;
   final int? limiteUsos;
   final int? usosActuales;
+  final bool? requiereMedioPago;
+  final String? medioPagoRequerido;
+  final String? tipoPromocionNombre;
+  final String? tiendaNombre;
   final DateTime createdAt;
   final PromotionType? tipoPromocion;
   final Store? tienda;
@@ -29,11 +35,15 @@ class Promotion {
     required this.valorDescuento,
     this.minCompra,
     required this.fechaInicio,
-    required this.fechaFin,
+    this.fechaFin,
     this.estado = true,
     this.aplicaTodo = false,
     this.limiteUsos,
     this.usosActuales = 0,
+    this.requiereMedioPago,
+    this.medioPagoRequerido,
+    this.tipoPromocionNombre,
+    this.tiendaNombre,
     required this.createdAt,
     this.tipoPromocion,
     this.tienda,
@@ -41,10 +51,13 @@ class Promotion {
     this.usos = const [],
   });
 
-  bool get isActive =>
-      estado &&
-      DateTime.now().isAfter(fechaInicio) &&
-      DateTime.now().isBefore(fechaFin);
+  bool get isActive {
+    final now = DateTime.now();
+    if (!estado) return false;
+    if (now.isBefore(fechaInicio)) return false;
+    if (fechaFin != null && now.isAfter(fechaFin!)) return false;
+    return true;
+  }
 
   bool get hasUsageLimit => limiteUsos != null;
 
@@ -54,12 +67,45 @@ class Promotion {
   double get usagePercentage =>
       hasUsageLimit ? ((usosActuales ?? 0) / (limiteUsos ?? 1)) * 100 : 0.0;
 
+  bool get hasExpirationDate => fechaFin != null;
+
   String get statusText {
     if (!estado) return 'Inactiva';
     if (DateTime.now().isBefore(fechaInicio)) return 'Programada';
-    if (DateTime.now().isAfter(fechaFin)) return 'Vencida';
+    if (fechaFin != null && DateTime.now().isAfter(fechaFin!)) return 'Vencida';
     if (isUsageLimitReached) return 'Límite alcanzado';
     return 'Activa';
+  }
+
+  String get expirationText {
+    if (fechaFin == null) return 'No vence';
+    return DateFormat('dd/MM/yyyy').format(fechaFin!);
+  }
+
+  bool get isChargePromotion {
+    // Verificar por ID de tipo de promoción
+    if (idTipoPromocion == '8' || idTipoPromocion == '9') {
+      return true;
+    }
+
+    // Verificar por denominación del tipo de promoción
+    final denominacion = (tipoPromocionNombre ?? '').toLowerCase();
+    if (denominacion.contains('recargo')) {
+      return true;
+    }
+
+    // Verificar por denominación del objeto tipo promoción
+    final tipoPromocionDenominacion =
+        (tipoPromocion?.denominacion ?? '').toLowerCase();
+    if (tipoPromocionDenominacion.contains('recargo')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  String get chargeWarningMessage {
+    return '⚠️ Esta promoción aumentará el precio de venta de los productos afectados';
   }
 
   factory Promotion.fromJson(Map<String, dynamic> json) {
@@ -77,22 +123,38 @@ class Promotion {
               ? DateTime.parse(json['fecha_inicio'])
               : DateTime.now(),
       fechaFin:
-          json['fecha_fin'] != null
-              ? DateTime.parse(json['fecha_fin'])
-              : DateTime.now().add(const Duration(days: 30)),
+          json['fecha_fin'] != null ? DateTime.parse(json['fecha_fin']) : null,
       estado: json['estado'] ?? true,
       aplicaTodo: json['aplica_todo'] ?? false,
       limiteUsos: json['limite_usos'],
       usosActuales: json['usos_actuales'] ?? 0,
+      requiereMedioPago: json['requiere_medio_pago'],
+      medioPagoRequerido: json['medio_pago_requerido'],
+      tipoPromocionNombre: json['tipo_promocion'],
+      tiendaNombre: json['tienda'],
       createdAt:
           json['created_at'] != null
               ? DateTime.parse(json['created_at'])
               : DateTime.now(),
       tipoPromocion:
-          json['tipo_promocion'] != null
-              ? PromotionType.fromJson(json['tipo_promocion'])
-              : null,
-      tienda: json['tienda'] != null ? Store.fromJson(json['tienda']) : null,
+          json['tipo_promocion_obj'] != null
+              ? PromotionType.fromJson(json['tipo_promocion_obj'])
+              : (json['tipo_promocion'] != null
+                  ? PromotionType(
+                    id: json['id_tipo_promocion']?.toString() ?? '',
+                    denominacion: json['tipo_promocion'] ?? '',
+                    createdAt: DateTime.now(),
+                  )
+                  : null),
+      tienda:
+          json['tienda_obj'] != null
+              ? Store.fromJson(json['tienda_obj'])
+              : (json['tienda'] != null
+                  ? Store(
+                    id: json['id_tienda']?.toString() ?? '',
+                    denominacion: json['tienda'] ?? '',
+                  )
+                  : null),
       productos:
           (json['productos'] as List<dynamic>?)
               ?.map((p) => PromotionProduct.fromJson(p))
@@ -117,14 +179,18 @@ class Promotion {
       'valor_descuento': valorDescuento,
       'min_compra': minCompra,
       'fecha_inicio': fechaInicio.toIso8601String(),
-      'fecha_fin': fechaFin.toIso8601String(),
+      'fecha_fin': fechaFin?.toIso8601String(),
       'estado': estado,
       'aplica_todo': aplicaTodo,
       'limite_usos': limiteUsos,
       'usos_actuales': usosActuales,
+      'requiere_medio_pago': requiereMedioPago,
+      'medio_pago_requerido': medioPagoRequerido,
+      'tipo_promocion': tipoPromocionNombre,
+      'tienda': tiendaNombre,
       'created_at': createdAt.toIso8601String(),
-      'tipo_promocion': tipoPromocion?.toJson(),
-      'tienda': tienda?.toJson(),
+      'tipo_promocion_obj': tipoPromocion?.toJson(),
+      'tienda_obj': tienda?.toJson(),
       'productos': productos.map((p) => p.toJson()).toList(),
       'usos': usos.map((u) => u.toJson()).toList(),
     };
@@ -145,6 +211,10 @@ class Promotion {
     bool? aplicaTodo,
     int? limiteUsos,
     int? usosActuales,
+    bool? requiereMedioPago,
+    String? medioPagoRequerido,
+    String? tipoPromocionNombre,
+    String? tiendaNombre,
     DateTime? createdAt,
     PromotionType? tipoPromocion,
     Store? tienda,
@@ -166,6 +236,10 @@ class Promotion {
       aplicaTodo: aplicaTodo ?? this.aplicaTodo,
       limiteUsos: limiteUsos ?? this.limiteUsos,
       usosActuales: usosActuales ?? this.usosActuales,
+      requiereMedioPago: requiereMedioPago ?? this.requiereMedioPago,
+      medioPagoRequerido: medioPagoRequerido ?? this.medioPagoRequerido,
+      tipoPromocionNombre: tipoPromocionNombre ?? this.tipoPromocionNombre,
+      tiendaNombre: tiendaNombre ?? this.tiendaNombre,
       createdAt: createdAt ?? this.createdAt,
       tipoPromocion: tipoPromocion ?? this.tipoPromocion,
       tienda: tienda ?? this.tienda,

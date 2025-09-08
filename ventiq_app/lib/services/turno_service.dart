@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import '../models/expense.dart';
+import 'payment_method_service.dart';
 
 class TurnoService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -19,9 +20,7 @@ class TurnoService {
 
       final response = await _supabase.rpc(
         'fn_resumen_turno_kpi',
-        params: {
-          'p_id_tpv': idTpv,
-          'p_id_vendedor': idSeller},
+        params: {'p_id_tpv': idTpv, 'p_id_vendedor': idSeller},
       );
 
       print('📊 RPC Response: $response');
@@ -63,18 +62,27 @@ class TurnoService {
     try {
       final workerProfile = await _userPrefs.getWorkerProfile();
       final idTpv = workerProfile['idTpv'];
+      final idSeller = await _userPrefs.getIdSeller();
 
       if (idTpv == null) {
         print('❌ Missing TPV ID');
         return null;
       }
 
-      print('🔍 Searching for open shift with TPV ID: $idTpv');
+      if (idSeller == null) {
+        print('❌ Missing Seller ID');
+        return null;
+      }
+
+      print(
+        '🔍 Searching for open shift with TPV ID: $idTpv and Seller ID: $idSeller',
+      );
 
       final response = await _supabase
           .from('app_dat_caja_turno')
           .select('*')
           .eq('id_tpv', idTpv)
+          .eq('id_vendedor', idSeller)
           .eq('estado', 1)
           .order('fecha_apertura', ascending: false)
           .limit(1);
@@ -83,11 +91,13 @@ class TurnoService {
 
       if (response.isNotEmpty) {
         final turno = response.first as Map<String, dynamic>;
-        print('✅ Found open shift: ${turno['id']}');
+        print(
+          '✅ Found open shift: ${turno['id']} for TPV: $idTpv, Seller: $idSeller',
+        );
         return turno;
       }
 
-      print('⚠️ No open shift found');
+      print('⚠️ No open shift found for TPV: $idTpv, Seller: $idSeller');
       return null;
     } catch (e) {
       print('❌ Error getting open shift: $e');
@@ -101,27 +111,30 @@ class TurnoService {
     required String motivoEntrega,
     required String nombreAutoriza,
     required String nombreRecibe,
+    int? idMedioPago,
   }) async {
     try {
-      print('🔄 Calling registrar_egreso_parcial with:');
+      print('🔄 Calling registrar_egreso_parcial_v2 with:');
       print('  - ID Turno: $idTurno');
       print('  - Monto: $montoEntrega');
       print('  - Motivo: $motivoEntrega');
       print('  - Autoriza: $nombreAutoriza');
       print('  - Recibe: $nombreRecibe');
+      print('  - ID Medio Pago: $idMedioPago');
 
       final response = await _supabase.rpc(
-        'registrar_egreso_parcial',
+        'registrar_egreso_parcial_v2',
         params: {
           'p_id_turno': idTurno,
           'p_monto_entrega': montoEntrega,
           'p_motivo_entrega': motivoEntrega,
           'p_nombre_autoriza': nombreAutoriza,
           'p_nombre_recibe': nombreRecibe,
+          'p_id_medio_pago': idMedioPago,
         },
       );
 
-      print('✅ registrar_egreso_parcial response: $response');
+      print('✅ registrar_egreso_parcial_v2 response: $response');
 
       if (response != null && response is Map<String, dynamic>) {
         return response;
@@ -159,19 +172,20 @@ class TurnoService {
       }
 
       print('🔄 Calling fn_cerrar_turno_tpv with:');
+      print('  - ID TPV: $idTpv');
       print('  - Efectivo real: $efectivoReal');
-      print('  - TPV ID: $idTpv');
       print('  - Usuario: $userUuid');
       print('  - Productos: ${productos.length} items');
+      print('  - Observaciones: $observaciones');
 
       final response = await _supabase.rpc(
         'fn_cerrar_turno_tpv',
         params: {
-          'p_efectivo_real': efectivoReal,
           'p_id_tpv': idTpv,
-          'p_observaciones': observaciones,
-          'p_productos': productos,
+          'p_efectivo_real': efectivoReal,
           'p_usuario': userUuid,
+          'p_productos': productos.isNotEmpty ? productos : null,
+          'p_observaciones': observaciones,
         },
       );
 
@@ -185,7 +199,7 @@ class TurnoService {
 
   static Future<List<Expense>> getEgresosPorTurno(int idTurno) async {
     try {
-      print('🔍 Calling egresos_por_turno_especifico with ID: $idTurno');
+      print('🔍 Calling egresos_por_turno with ID: $idTurno');
 
       final response = await _supabase.rpc(
         'egresos_por_turno',
@@ -197,14 +211,14 @@ class TurnoService {
       if (response != null && response is List) {
         return response
             .map<Expense>(
-              (expense) => Expense.fromJson(expense as Map<String, dynamic>),
+              (item) => Expense.fromJson(item as Map<String, dynamic>),
             )
             .toList();
       }
 
       return [];
     } catch (e) {
-      print('❌ Error getting expenses for shift: $e');
+      print('❌ Error getting expenses for turno $idTurno: $e');
       return [];
     }
   }
@@ -224,6 +238,132 @@ class TurnoService {
     } catch (e) {
       print('❌ Error getting expenses for current shift: $e');
       return [];
+    }
+  }
+
+  /// Obtiene los egresos del turno actual enriquecidos con información de métodos de pago
+  static Future<List<Expense>> getEgresosEnriquecidos() async {
+    try {
+      // Get expenses for current shift
+      final expenses = await getEgresosForCurrentShift();
+
+      if (expenses.isEmpty) {
+        return expenses;
+      }
+
+      // Get payment methods to enrich the data
+      final paymentMethods =
+          await PaymentMethodService.getActivePaymentMethods();
+
+      // Create maps for quick lookup
+      final paymentMethodMap = <int, String>{};
+      final paymentMethodDigitalMap = <int, bool>{};
+
+      for (final method in paymentMethods) {
+        paymentMethodMap[method.id] = method.denominacion;
+        paymentMethodDigitalMap[method.id] = method.esDigital;
+      }
+
+      // Enrich expenses with payment method names and digital flag
+      final enrichedExpenses = <Expense>[];
+
+      for (final expense in expenses) {
+        if (expense.idMedioPago != null &&
+            paymentMethodMap.containsKey(expense.idMedioPago)) {
+          final methodName = paymentMethodMap[expense.idMedioPago!];
+          final isDigital =
+              paymentMethodDigitalMap[expense.idMedioPago!] ?? false;
+
+          // Create enriched expense with payment method data
+          final enrichedExpense = expense.copyWith(
+            medioPago: methodName,
+            esDigital: isDigital,
+          );
+
+          enrichedExpenses.add(enrichedExpense);
+
+          print(
+            '💰 Expense ${expense.idEgreso} enriched with payment method: $methodName (Digital: $isDigital)',
+          );
+        } else {
+          // Add expense without enrichment if no payment method found
+          enrichedExpenses.add(expense);
+          print(
+            '⚠️ Expense ${expense.idEgreso} has no valid payment method (ID: ${expense.idMedioPago})',
+          );
+        }
+      }
+
+      return enrichedExpenses;
+    } catch (e) {
+      print('❌ Error getting enriched expenses: $e');
+      return [];
+    }
+  }
+
+  /// Registra apertura de turno usando la nueva función v2 con manejo de inventario
+  static Future<Map<String, dynamic>> registrarAperturaTurno({
+    required double efectivoInicial,
+    required int idTpv,
+    required int idVendedor,
+    required String usuario,
+    required bool manejaInventario,
+    List<Map<String, dynamic>>? productos,
+  }) async {
+    try {
+      print('🔄 Calling registrar_apertura_turno_v2 with:');
+      print('  - Efectivo inicial: $efectivoInicial');
+      print('  - ID TPV: $idTpv');
+      print('  - ID Vendedor: $idVendedor');
+      print('  - Usuario: $usuario');
+      print('  - Maneja inventario: $manejaInventario');
+      print('  - Productos: ${productos?.length ?? 0} items');
+
+      final response = await _supabase.rpc(
+        'registrar_apertura_turno_v2',
+        params: {
+          'p_efectivo_inicial': efectivoInicial,
+          'p_id_tpv': idTpv,
+          'p_id_vendedor': idVendedor,
+          'p_usuario': usuario,
+          'p_maneja_inventario': manejaInventario,
+          'p_productos': productos,
+        },
+      );
+
+      print('✅ registrar_apertura_turno_v2 response: $response');
+
+      if (response != null) {
+        return {
+          'success': true,
+          'message': 'Apertura registrada exitosamente',
+          'operacion_id': response,
+        };
+      }
+
+      return {
+        'success': false,
+        'message': 'Respuesta inválida del servidor',
+        'operacion_id': null,
+      };
+    } catch (e) {
+      print('❌ Error in registrarAperturaTurno: $e');
+      return {
+        'success': false,
+        'message': 'Error al registrar la apertura: $e',
+        'operacion_id': null,
+      };
+    }
+  }
+
+  /// Valida si el vendedor tiene un turno abierto
+  static Future<bool> hasOpenShift() async {
+    try {
+      final turnoAbierto = await getTurnoAbierto();
+      return turnoAbierto != null;
+    } catch (e) {
+      print('❌ Error checking open shift: $e');
+      return false;
     }
   }
 }

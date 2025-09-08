@@ -23,6 +23,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
   bool _isLoadingInventory = true;
   bool _isLoadingPreviousShift = true;
   bool _enableProductCounting = false;
+  bool _manejaInventario = false;
   String _userName = 'Cargando...';
   List<InventoryProduct> _inventoryProducts = [];
   Map<String, TextEditingController> _quantityControllers = {};
@@ -275,6 +276,30 @@ class _AperturaScreenState extends State<AperturaScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
+                    CheckboxListTile(
+                      value: _manejaInventario,
+                      onChanged: (bool? value) {
+                        setState(() {
+                          _manejaInventario = value ?? false;
+                        });
+                      },
+                      title: const Text(
+                        'Manejar inventario en este turno',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      subtitle: Text(
+                        _manejaInventario
+                            ? 'Este turno será responsable del control de inventario'
+                            : 'Este turno no manejará inventario (solo ventas)',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      activeColor: const Color(0xFF4A90E2),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    const SizedBox(height: 8),
                     CheckboxListTile(
                       value: _enableProductCounting,
                       onChanged: (bool? value) {
@@ -707,10 +732,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
       print('🔍 Debug - User UUID: $userUuid');
 
       if (sellerId == null) {
-        throw Exception(
-          'ID de vendedor no encontrado en el perfil del trabajador',
-        );
+        throw Exception('ID de vendedor no encontrado');
       }
+
+      if (tpvId == null) {
+        throw Exception('ID de TPV no encontrado');
+      }
+
       if (userUuid == null) {
         throw Exception('UUID de usuario no encontrado');
       }
@@ -735,30 +763,38 @@ class _AperturaScreenState extends State<AperturaScreen> {
         }
       }
 
-      print('📦 Productos para apertura: $productCounts'); // Debug log
-      print('📊 Total productos: ${productCounts.length}'); // Debug log
+      print('📦 Productos para apertura: $productCounts');
+      print('📊 Total productos: ${productCounts.length}');
 
-      final supabase = Supabase.instance.client;
-      await supabase.rpc(
-        'fn_abrir_turno_tpv',
-        params: {
-          'p_efectivo_inicial': double.parse(_montoInicialController.text),
-          'p_id_tpv': tpvId,
-          'p_id_vendedor': sellerId,
-          'p_productos': productCounts,
-          'p_usuario': userUuid,
-        },
+      // Usar el nuevo método del TurnoService
+      final result = await TurnoService.registrarAperturaTurno(
+        efectivoInicial: double.parse(_montoInicialController.text),
+        idTpv: tpvId,
+        idVendedor: sellerId,
+        usuario: userUuid,
+        manejaInventario: _manejaInventario,
+        productos: productCounts.isNotEmpty ? productCounts : null,
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Apertura creada exitosamente'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        Navigator.of(context).pop(true);
+        if (result['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result['message'] ?? 'Apertura creada exitosamente',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.of(context).pop(true);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message'] ?? 'Error desconocido'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } catch (e) {
       print('Error creando apertura: $e');
