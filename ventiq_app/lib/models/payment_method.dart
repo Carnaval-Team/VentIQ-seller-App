@@ -46,4 +46,13 @@ class PaymentMethod {
     if (esDigital) return Icons.credit_card;
     return Icons.account_balance_wallet;
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is PaymentMethod && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 }

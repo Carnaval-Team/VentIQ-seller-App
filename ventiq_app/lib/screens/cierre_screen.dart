@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../models/inventory_product.dart';
 import '../models/expense.dart';
@@ -110,40 +111,71 @@ class _CierreScreenState extends State<CierreScreen> {
         return;
       }
 
-      final idTurno = turnoAbierto['id'] as int;
-      final turnoData = await TurnoService.getResumenTurnoPorId(idTurno);
+      // Use the new fn_resumen_diario_cierre function
+      final userPrefs = UserPreferencesService();
+      final idTpv = await userPrefs.getIdTpv();
+      final userID = await userPrefs.getUserId();
 
-      if (turnoData != null) {
-        print('📊 Turno Data Response: $turnoData'); // Debug log
-
-        setState(() {
-          _ventasTotales = (turnoData['ventas_totales'] ?? 0.0).toDouble();
-          _montoInicialCaja = (turnoData['efectivo_inicial'] ?? 0.0).toDouble();
-          _totalEfectivo = (turnoData['efectivo_real'] ?? 0.0).toDouble();
-          _totalTransferencias =
-              _ventasTotales - _totalEfectivo; // Otros medios de pago
-          _efectivoEsperado =
-              (turnoData['efectivo_esperado'] ?? _montoInicialCaja).toDouble();
-          _productosVendidos = (turnoData['productos_vendidos'] ?? 0).toInt();
-          _ticketPromedio = (turnoData['ticket_promedio'] ?? 0.0).toDouble();
-          _porcentajeEfectivo =
-              (turnoData['porcentaje_efectivo'] ?? 0.0).toDouble();
-          _porcentajeOtros = (turnoData['porcentaje_otros'] ?? 0.0).toDouble();
-          _operacionesTotales = (turnoData['operaciones_totales'] ?? 0).toInt();
-          _operacionesPorHora =
-              (turnoData['operaciones_por_hora'] ?? 0.0).toDouble();
-          _conciliacionEstado = turnoData['conciliacion_estado'] ?? '';
-          _efectivoRealAjustado =
-              (turnoData['efectivo_real_ajustado'] ?? 0.0).toDouble();
-          _diferenciaAjustada =
-              (turnoData['diferencia_ajustada'] ?? 0.0).toDouble();
-          _isLoadingData = false;
-          _manejaInventario =
-              turnoAbierto['maneja_inventario'] ??
-              false; // Cargar valor de maneja_inventario
-        });
+      if (idTpv != null) {
+        print('🧪 Loading daily summary with fn_resumen_diario_cierre - TPV: $idTpv');
+        
+        final resumenCierre = await Supabase.instance.client.rpc(
+          'fn_resumen_diario_cierre',
+          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
+        );
+        
+        print('📈 Resumen Cierre Response: $resumenCierre');
+        
+        if (resumenCierre != null && resumenCierre is List && resumenCierre.isNotEmpty) {
+          final data = resumenCierre[0];
+          
+          setState(() {
+            // Map fields according to your specifications
+            _montoInicialCaja = (data['efectivo_inicial'] ?? 0.0).toDouble();
+            _ventasTotales = (data['ventas_totales'] ?? 0.0).toDouble();
+            _productosVendidos = (data['productos_vendidos'] ?? 0).toInt();
+            _ticketPromedio = (data['ticket_promedio'] ?? 0.0).toDouble();
+            _operacionesTotales = (data['operaciones_totales'] ?? 0).toInt();
+            _operacionesPorHora = (data['operaciones_por_hora'] ?? 0.0).toDouble();
+            
+            // Payment methods mapping
+            _totalEfectivo = (data['efectivo_real'] ?? 0.0).toDouble();
+            _totalTransferencias = _ventasTotales - _totalEfectivo;
+            _porcentajeEfectivo = (data['porcentaje_efectivo'] ?? 0.0).toDouble();
+            _porcentajeOtros = (data['porcentaje_otros'] ?? 0.0).toDouble();
+            
+            // Expected cash amounts
+            _efectivoEsperado = (data['efectivo_esperado'] ?? 0.0).toDouble();
+            
+            // Additional fields
+            _conciliacionEstado = data['conciliacion_estado'] ?? '';
+            _efectivoRealAjustado = (data['efectivo_real_ajustado'] ?? 0.0).toDouble();
+            _diferenciaAjustada = (data['diferencia_ajustada'] ?? 0.0).toDouble();
+            
+            _isLoadingData = false;
+            _manejaInventario = turnoAbierto['maneja_inventario'] ?? false;
+          });
+          
+          print('💰 Mapped Data:');
+          print('  - Monto inicial: $_montoInicialCaja');
+          print('  - Ventas totales: $_ventasTotales');
+          print('  - Productos vendidos: $_productosVendidos');
+          print('  - Ticket promedio: $_ticketPromedio');
+          print('  - Operaciones totales: $_operacionesTotales');
+          print('  - Operaciones por hora: $_operacionesPorHora');
+          print('  - Total efectivo: $_totalEfectivo');
+          print('  - Transferencias/otros: $_totalTransferencias');
+          print('  - Estado conciliación: $_conciliacionEstado');
+          
+        } else {
+          // Fallback to default values if no data
+          setState(() {
+            _montoInicialCaja = 500.0; // Default fallback
+            _isLoadingData = false;
+          });
+        }
       } else {
-        // Fallback to default values if no data
+        // Fallback if no TPV ID
         setState(() {
           _montoInicialCaja = 500.0; // Default fallback
           _isLoadingData = false;
@@ -298,8 +330,8 @@ class _CierreScreenState extends State<CierreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Calcular monto esperado considerando solo egresos en efectivo
-    final montoEsperado = _montoInicialCaja + _totalEfectivo - _egresosEfectivo;
+    // Calcular efectivo esperado final (efectivo_esperado - egresos en efectivo)
+    final montoEsperado = _efectivoEsperado - _egresosEfectivo;
 
     return Scaffold(
       backgroundColor: Colors.grey[50],

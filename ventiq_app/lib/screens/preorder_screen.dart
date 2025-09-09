@@ -496,43 +496,92 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
   Widget _buildPaymentMethodSelector(OrderItem item) {
     if (_loadingPaymentMethods) {
-      return Row(
-        children: [
-          Icon(Icons.payment, size: 16, color: Colors.grey[600]),
-          const SizedBox(width: 8),
-          const Text(
-            'Cargando métodos de pago...',
-            style: TextStyle(fontSize: 13),
-          ),
-        ],
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.blue[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.blue[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.payment, size: 18, color: Colors.blue[600]),
+            const SizedBox(width: 10),
+            const Text(
+              'Cargando métodos de pago...',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
       );
     }
 
     if (_paymentMethods.isEmpty) {
-      return Row(
-        children: [
-          Icon(Icons.payment, size: 16, color: Colors.grey[600]),
-          const SizedBox(width: 8),
-          const Text(
-            'Sin métodos de pago disponibles',
-            style: TextStyle(fontSize: 13),
-          ),
-        ],
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning, size: 18, color: Colors.orange[600]),
+            const SizedBox(width: 10),
+            const Text(
+              'Sin métodos de pago disponibles',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
       );
     }
 
-    return Row(
-      children: [
-        Icon(Icons.payment, size: 16, color: Colors.grey[600]),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Container(
-            height: 32,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+    // Highlight if no payment method is selected
+    final bool hasPaymentMethod = item.paymentMethod != null;
+    final Color borderColor = hasPaymentMethod 
+        ? const Color(0xFF10B981) 
+        : Colors.red[300]!;
+    final Color backgroundColor = hasPaymentMethod 
+        ? const Color(0xFF10B981).withOpacity(0.05)
+        : Colors.red[50]!;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                hasPaymentMethod ? Icons.check_circle : Icons.payment,
+                size: 18,
+                color: hasPaymentMethod ? const Color(0xFF10B981) : Colors.red[600],
+              ),
+              const SizedBox(width: 8),
+              Text(
+                hasPaymentMethod ? 'Método de pago asignado:' : 'Método de pago requerido:',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: hasPaymentMethod ? const Color(0xFF10B981) : Colors.red[700],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(6),
-              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.white,
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<pm.PaymentMethod>(
@@ -540,40 +589,39 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 value: item.paymentMethod,
                 hint: const Text(
                   'Seleccionar método de pago',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
                 ),
-                style: const TextStyle(fontSize: 12, color: Colors.black87),
-                items:
-                    _paymentMethods.map((pm.PaymentMethod method) {
-                      return DropdownMenuItem<pm.PaymentMethod>(
-                        value: method,
-                        child: Row(
-                          children: [
-                            Icon(
-                              method.typeIcon,
-                              size: 16,
-                              color: Colors.grey[600],
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                method.displayName,
-                                style: const TextStyle(fontSize: 12),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
+                style: const TextStyle(fontSize: 14, color: Colors.black87),
+                items: _paymentMethods.map((pm.PaymentMethod method) {
+                  return DropdownMenuItem<pm.PaymentMethod>(
+                    value: method,
+                    child: Row(
+                      children: [
+                        Icon(
+                          method.typeIcon,
+                          size: 18,
+                          color: Colors.grey[600],
                         ),
-                      );
-                    }).toList(),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            method.displayName,
+                            style: const TextStyle(fontSize: 14),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
                 onChanged: (pm.PaymentMethod? newMethod) {
                   _updateItemPaymentMethod(item.id, newMethod);
                 },
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -734,97 +782,148 @@ class _PreorderScreenState extends State<PreorderScreen> {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF4A90E2).withOpacity(0.1),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+        color: const Color(0xFF4A90E2).withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3), width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.payment, size: 14, color: const Color(0xFF4A90E2)),
-              const SizedBox(width: 6),
-              const Text(
-                'Aplicar método de pago a todos:',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF4A90E2),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A90E2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(
+                  Icons.payment,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Aplicar método de pago a todos los productos',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF4A90E2),
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 32,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(6),
-                    color: Colors.white,
+          const SizedBox(height: 12),
+          Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.4), width: 1.5),
+              borderRadius: BorderRadius.circular(10),
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF4A90E2).withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<pm.PaymentMethod>(
+                isExpanded: true,
+                value: _globalPaymentMethod,
+                hint: const Text(
+                  'Seleccionar método para aplicar a todos',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                    fontWeight: FontWeight.w500,
                   ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<pm.PaymentMethod>(
-                      isExpanded: true,
-                      value: _globalPaymentMethod,
-                      hint: const Text(
-                        'Seleccionar método para todos los productos',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black87,
-                      ),
-                      items:
-                          _paymentMethods.map((pm.PaymentMethod method) {
-                            return DropdownMenuItem<pm.PaymentMethod>(
-                              value: method,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    method.typeIcon,
-                                    size: 16,
-                                    color: Colors.grey[600],
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      method.displayName,
-                                      style: const TextStyle(fontSize: 12),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                      onChanged: (pm.PaymentMethod? newMethod) {
-                        _applyGlobalPaymentMethod(newMethod);
-                      },
+                ),
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w500,
+                ),
+                items: _paymentMethods.map((pm.PaymentMethod method) {
+                  return DropdownMenuItem<pm.PaymentMethod>(
+                    value: method,
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Icon(
+                            method.typeIcon,
+                            size: 18,
+                            color: const Color(0xFF4A90E2),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            method.displayName,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (pm.PaymentMethod? newMethod) {
+                  _applyGlobalPaymentMethod(newMethod);
+                },
+              ),
+            ),
+          ),
+          if (_globalPaymentMethod != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.check_circle,
+                  size: 16,
+                  color: const Color(0xFF10B981),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Método "${_globalPaymentMethod!.displayName}" seleccionado',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF10B981),
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              if (_globalPaymentMethod != null)
-                IconButton(
+                TextButton(
                   onPressed: _clearGlobalPaymentMethod,
-                  icon: const Icon(Icons.clear, size: 16),
-                  color: Colors.grey[600],
-                  tooltip: 'Limpiar selección global',
-                  constraints: const BoxConstraints(
-                    minWidth: 28,
-                    minHeight: 28,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.grey[600],
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  child: const Text(
+                    'Limpiar',
+                    style: TextStyle(fontSize: 12),
                   ),
                 ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );

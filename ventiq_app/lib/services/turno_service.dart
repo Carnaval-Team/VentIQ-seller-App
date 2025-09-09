@@ -18,6 +18,7 @@ class TurnoService {
       print('  - ID TPV: $idTpv');
       print('  - ID Vendedor: $idSeller');
 
+      // aqui van las dos variables
       final response = await _supabase.rpc(
         'fn_resumen_turno_kpi',
         params: {'p_id_tpv': idTpv, 'p_id_vendedor': idSeller},
@@ -37,7 +38,36 @@ class TurnoService {
   }
 
   static Future<Map<String, dynamic>?> getResumenTurnoPorId(int idTurno) async {
+    //prueba
     try {
+      // Probar la nueva función de resumen diario para cierre
+      final userPrefs = UserPreferencesService();
+      final idTpv = await userPrefs.getIdTpv();
+      final userID = await userPrefs.getUserId();
+      if (idTpv != null) {
+        print('🧪 Testing fn_resumen_diario_cierre with TPV: $idTpv');
+
+        final resumenCierre = await _supabase.rpc(
+          'fn_resumen_diario_cierre',
+          params: {'id_tpv_param': idTpv,'id_usuario_param':userID},
+        );
+
+        print('📈 Resumen Cierre Response: $resumenCierre');
+
+        if (resumenCierre != null &&
+            resumenCierre is List &&
+            resumenCierre.isNotEmpty) {
+          final data = resumenCierre[0];
+          print('💰 Ventas Totales: ${data['ventas_totales']}');
+          print('💵 Efectivo Inicial: ${data['efectivo_inicial']}');
+          print('💸 Efectivo Real: ${data['efectivo_real']}');
+          print('📊 Productos Vendidos: ${data['productos_vendidos']}');
+          print('🎯 Ticket Promedio: ${data['ticket_promedio']}');
+          print('📋 Operaciones Totales: ${data['operaciones_totales']}');
+          print('⚖️ Estado Conciliación: ${data['conciliacion_estado']}');
+          print('🕐 Horas Transcurridas: ${data['horas_transcurridas']}');
+        }
+      }
       print('🔍 Calling fn_resumen_turno_por_id with ID: $idTurno');
 
       final response = await _supabase.rpc(
@@ -84,7 +114,7 @@ class TurnoService {
           .eq('id_tpv', idTpv)
           .eq('id_vendedor', idSeller)
           .eq('estado', 1)
-          .order('fecha_apertura', ascending: false)
+          .order('fecha_apertura', ascending: false, nullsFirst: false)
           .limit(1);
 
       print('📊 Open shift query response: $response');
