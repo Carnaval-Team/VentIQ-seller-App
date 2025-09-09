@@ -1,10 +1,12 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/promotion.dart';
 import '../services/user_preferences_service.dart';
+import '../services/store_selector_service.dart';
 
 class PromotionService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _prefsService = UserPreferencesService();
+  final StoreSelectorService _storeSelectorService = StoreSelectorService();
 
   /// Lista promociones con filtros y paginación
   Future<List<Promotion>> listPromotions({
@@ -19,10 +21,9 @@ class PromotionService {
   }) async {
     try {
       // Obtener ID de tienda del usuario si no se especifica
-      final storeIdInt =
-          idTienda != null
-              ? int.tryParse(idTienda)
-              : await _prefsService.getIdTienda();
+      final storeIdInt = idTienda != null
+          ? int.tryParse(idTienda)
+          : await _storeSelectorService.getSelectedStoreId();
       if (storeIdInt == null) {
         throw Exception('No se encontró ID de tienda del usuario');
       }
@@ -218,30 +219,60 @@ class PromotionService {
   Future<Promotion> createPromotion(Map<String, dynamic> promotionData) async {
     try {
       final userId = await _prefsService.getUserId();
-      if (userId == null) {
-        throw Exception('No se encontró ID de usuario');
+      final storeId = await _storeSelectorService.getSelectedStoreId();
+      
+      if (userId == null || storeId == null) {
+        throw Exception('No se encontraron datos de usuario o tienda');
       }
+
+      // Obtener UUID del usuario autenticado desde Supabase
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        throw Exception('Usuario no autenticado');
+      }
+      final userUuid = user.id;
 
       print('📢 Creando promoción: $promotionData');
 
-      // Usar función RPC para crear promoción
+      // Preparar parámetros según la estructura de fn_insertar_promocion
+      final params = {
+        'p_uuid_usuario': userUuid,
+        'p_id_tienda': storeId,
+        'p_id_tipo_promocion': promotionData['id_tipo_promocion'],
+        'p_codigo_promocion': promotionData['codigo_promocion'],
+        'p_nombre': promotionData['nombre'],
+        'p_descripcion': promotionData['descripcion'],
+        'p_valor_descuento': promotionData['valor_descuento'],
+        'p_fecha_inicio': promotionData['fecha_inicio'],
+        'p_fecha_fin': promotionData['fecha_fin'],
+        'p_min_compra': promotionData['min_compra'],
+        'p_limite_usos': promotionData['limite_usos'],
+        'p_aplica_todo': promotionData['aplica_todo'],
+        'p_requiere_medio_pago': promotionData['requiere_medio_pago'] ?? false,
+        'p_id_medio_pago_requerido': promotionData['id_medio_pago_requerido'],
+        'p_id_campana': null, // Por defecto null, se puede agregar al formulario más adelante
+      };
+
+      print('📢 Parámetros para fn_insertar_promocion: $params');
+
       final response = await _supabase.rpc(
-        'fn_crear_promocion_completa',
-        params: {
-          'p_promocion_data': promotionData,
-          'p_productos_data': promotionData['productos'] ?? [],
-          'p_usuario_creador': userId,
-        },
+        'fn_insertar_promocion',
+        params: params,
       );
 
-      print('✅ Promoción creada: $response');
+      print('✅ Respuesta de creación: $response');
 
-      if (response == null || response['success'] != true) {
-        throw Exception(response?['message'] ?? 'Error al crear promoción');
+      if (response == null) {
+        throw Exception('No se recibió respuesta del servidor');
       }
 
-      // Obtener la promoción creada
-      final promotionId = response['data']['id_promocion'];
+      // La función retorna un objeto JSON con success, id y message
+      if (response['success'] != true) {
+        throw Exception(response['message'] ?? 'Error al crear promoción');
+      }
+
+      // Obtener la promoción creada usando el ID retornado
+      final promotionId = response['id'];
       return await getPromotionById(promotionId.toString());
     } catch (e) {
       print('❌ Error creando promoción: $e');
@@ -261,20 +292,61 @@ class PromotionService {
       }
 
       print('📝 Actualizando promoción: $promotionId');
+      print('📝 Datos a actualizar: $promotionData');
+
+      // Preparar parámetros según la estructura exacta de fn_actualizar_promocion
+      final params = <String, dynamic>{};
+      
+      // Solo agregar parámetros que no sean null para usar COALESCE correctamente
+      if (promotionData['nombre'] != null) {
+        params['p_nombre'] = promotionData['nombre'];
+      }
+      if (promotionData['descripcion'] != null) {
+        params['p_descripcion'] = promotionData['descripcion'];
+      }
+      if (promotionData['valor_descuento'] != null) {
+        params['p_valor_descuento'] = promotionData['valor_descuento'];
+      }
+      if (promotionData['fecha_inicio'] != null) {
+        params['p_fecha_inicio'] = promotionData['fecha_inicio'];
+      }
+      if (promotionData['fecha_fin'] != null) {
+        params['p_fecha_fin'] = promotionData['fecha_fin'];
+      }
+      if (promotionData['min_compra'] != null) {
+        params['p_min_compra'] = promotionData['min_compra'];
+      }
+      if (promotionData['limite_usos'] != null) {
+        params['p_limite_usos'] = promotionData['limite_usos'];
+      }
+      if (promotionData['aplica_todo'] != null) {
+        params['p_aplica_todo'] = promotionData['aplica_todo'];
+      }
+      if (promotionData['estado'] != null) {
+        params['p_estado'] = promotionData['estado'];
+      }
+      if (promotionData['requiere_medio_pago'] != null) {
+        params['p_requiere_medio_pago'] = promotionData['requiere_medio_pago'];
+      }
+      if (promotionData['id_medio_pago_requerido'] != null) {
+        params['p_id_medio_pago_requerido'] = promotionData['id_medio_pago_requerido'];
+      }
+      
+      // El ID es obligatorio
+      params['p_id'] = int.parse(promotionId);
+
+      print('📝 Parámetros para RPC: $params');
 
       final response = await _supabase.rpc(
         'fn_actualizar_promocion',
-        params: {
-          'p_id_promocion': int.parse(promotionId),
-          'p_promocion_data': promotionData,
-          'p_usuario_modificador': userId,
-        },
+        params: params,
       );
 
-      if (response == null || response['success'] != true) {
-        throw Exception(
-          response?['message'] ?? 'Error al actualizar promoción',
-        );
+      print('📝 Respuesta de actualización: $response');
+
+      // La función retorna un booleano (FOUND), no un objeto con success
+      if (response != true) {
+        throw Exception('No se pudo actualizar la promoción');
       }
 
       return await getPromotionById(promotionId);
@@ -399,10 +471,9 @@ class PromotionService {
     DateTime? fechaHasta,
   }) async {
     try {
-      final storeIdInt =
-          idTienda != null
-              ? int.tryParse(idTienda)
-              : await _prefsService.getIdTienda();
+      final storeIdInt = idTienda != null
+          ? int.tryParse(idTienda)
+          : await _storeSelectorService.getSelectedStoreId();
       if (storeIdInt == null) {
         throw Exception('No se encontró ID de tienda');
       }

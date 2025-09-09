@@ -199,12 +199,12 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 _buildDrawerItem(
                   context,
-                  icon: Icons.local_offer,
-                  title: 'Promociones',
-                  subtitle: 'Marketing y ofertas',
+                  icon: Icons.campaign,
+                  title: 'Marketing',
+                  subtitle: 'Campañas y promociones',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, '/promotions');
+                    Navigator.pushNamed(context, '/marketing-dashboard');
                   },
                 ),
                 const Divider(height: 1),

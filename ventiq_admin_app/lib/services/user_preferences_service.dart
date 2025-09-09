@@ -84,8 +84,14 @@ class UserPreferencesService {
     return prefs.getString(_adminRoleKey);
   }
 
-  // Obtener ID de tienda del supervisor
+  // Obtener ID de tienda del supervisor (compatibilidad con código existente)
   Future<int?> getIdTienda() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_idTiendaKey);
+  }
+
+  // Obtener ID de tienda específico (método tradicional)
+  Future<int?> getStoredIdTienda() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_idTiendaKey);
   }
