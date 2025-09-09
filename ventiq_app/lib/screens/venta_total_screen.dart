@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/bluetooth_printer_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/turno_service.dart';
 
 class VentaTotalScreen extends StatefulWidget {
   const VentaTotalScreen({Key? key}) : super(key: key);
@@ -22,8 +24,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   List<Order> _ordenesVendidas = [];
   double _totalVentas = 0.0;
   int _totalProductos = 0;
-  double _totalCosto = 0.0;
-  double _totalDescuentos = 0.0;
+  double _totalEgresado = 0.0; // Cambio: era _totalCosto
+  double _totalEfectivoReal = 0.0; // Cambio: era _totalDescuentos
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -31,49 +34,115 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     _calcularVentaTotal();
   }
 
-  void _calcularVentaTotal() {
-    final orders = _orderService.orders;
-    final productosVendidos = <OrderItem>[];
-    double total = 0.0;
-    int totalProductos = 0;
-    double totalCosto = 0.0;
-    double totalDescuentos = 0.0;
-
-    // Obtener solo órdenes completadas o con pago confirmado
-    final ordersVendidas =
-        orders
-            .where(
-              (order) =>
-                  order.status == OrderStatus.completada ||
-                  order.status == OrderStatus.pagoConfirmado,
-            )
-            .toList();
-
-    for (final order in ordersVendidas) {
-      productosVendidos.addAll(order.items);
-      total += order.total;
-      totalProductos += order.totalItems;
-
-      // Calcular costos y descuentos estimados
-      for (final item in order.items) {
-        double costoPorProducto =
-            item.precioUnitario * 0.6; // Estimamos 60% del precio como costo
-        totalCosto += costoPorProducto * item.cantidad;
-
-        double descuentoPorProducto =
-            item.precioUnitario * 0.1; // Estimamos 10% como descuento promedio
-        totalDescuentos += descuentoPorProducto * item.cantidad;
-      }
-    }
-
+  Future<void> _calcularVentaTotal() async {
     setState(() {
-      _productosVendidos = productosVendidos;
-      _ordenesVendidas = ordersVendidas;
-      _totalVentas = total;
-      _totalProductos = totalProductos;
-      _totalCosto = totalCosto;
-      _totalDescuentos = totalDescuentos;
+      _isLoading = true;
     });
+
+    try {
+      // Primero cargar las órdenes desde Supabase
+      _orderService.clearAllOrders();
+      await _orderService.listOrdersFromSupabase();
+
+      // Obtener datos del turno abierto
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+      if (turnoAbierto == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Obtener preferencias del usuario
+      final userPrefs = UserPreferencesService();
+      final idTpv = await userPrefs.getIdTpv();
+      final userID = await userPrefs.getUserId();
+
+      if (idTpv != null) {
+        // Llamar a la función de resumen diario
+        final resumenCierre = await Supabase.instance.client.rpc(
+          'fn_resumen_diario_cierre',
+          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
+        );
+
+        if (resumenCierre != null && resumenCierre is List && resumenCierre.isNotEmpty) {
+          final data = resumenCierre[0];
+
+          // Obtener órdenes locales para productos vendidos (ahora ya cargadas)
+          final orders = _orderService.orders;
+          final productosVendidos = <OrderItem>[];
+          final ordenesVendidas = <Order>[];
+
+          for (final order in orders) {
+            if (order.status == OrderStatus.completada) {
+              ordenesVendidas.add(order);
+              for (final item in order.items) {
+                productosVendidos.add(item);
+              }
+            }
+          }
+
+          setState(() {
+            _productosVendidos = productosVendidos;
+            _ordenesVendidas = ordenesVendidas;
+            // Usar ventas_totales de la función
+            _totalVentas = (data['ventas_totales'] ?? 0.0).toDouble();
+            _totalProductos = (data['productos_vendidos'] ?? 0).toInt();
+
+            // Calcular egresado: ventas_totales - efectivo_real + egresos
+            final ventasTotales = (data['ventas_totales'] ?? 0.0).toDouble();
+            final efectivoReal = (data['efectivo_real'] ?? 0.0).toDouble();
+            final egresos = (data['egresos_efectivo'] ?? 0.0).toDouble();
+            _totalEgresado = ventasTotales - efectivoReal + egresos;
+
+            // Efectivo real: efectivo_esperado - egresos
+            final efectivoEsperado = (data['efectivo_esperado'] ?? 0.0).toDouble();
+            _totalEfectivoReal = efectivoEsperado - egresos;
+
+            _isLoading = false;
+          });
+
+          print('DEBUG - Venta Total Screen Data:');
+          print('Ventas Totales: $_totalVentas');
+          print('Productos Vendidos: $_totalProductos');
+          print('Órdenes cargadas: ${orders.length}');
+          print('Órdenes completadas: ${ordenesVendidas.length}');
+          print('Productos vendidos: ${productosVendidos.length}');
+          print('Total Egresado: $_totalEgresado');
+          print('Efectivo Real: $_totalEfectivoReal');
+        }
+      }
+    } catch (e) {
+      print('Error al calcular venta total: $e');
+      // Fallback a cálculo local con las órdenes ya cargadas
+      final orders = _orderService.orders;
+      final productosVendidos = <OrderItem>[];
+      final ordenesVendidas = <Order>[];
+      double totalVentas = 0.0;
+      int totalProductos = 0;
+
+      for (final order in orders) {
+        if (order.status == OrderStatus.completada) {
+          ordenesVendidas.add(order);
+          totalVentas += order.total;
+
+          for (final item in order.items) {
+            productosVendidos.add(item);
+            totalProductos += item.cantidad;
+          }
+        }
+      }
+
+      setState(() {
+        _productosVendidos = productosVendidos;
+        _ordenesVendidas = ordenesVendidas;
+        _totalVentas = totalVentas;
+        _totalProductos = totalProductos;
+        _totalEgresado = 0.0;
+        _totalEfectivoReal = 0.0;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -163,8 +232,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   children: [
                     Expanded(
                       child: _buildSummaryCard(
-                        'Costo Total',
-                        '\$${_totalCosto.toStringAsFixed(0)}',
+                        'Total Egresado',
+                        '\$${_totalEgresado.toStringAsFixed(0)}',
                         Icons.money_off,
                         Colors.orange,
                       ),
@@ -172,10 +241,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _buildSummaryCard(
-                        'Descuentos',
-                        '\$${_totalDescuentos.toStringAsFixed(0)}',
-                        Icons.discount,
-                        Colors.red,
+                        'Efectivo Real',
+                        '\$${_totalEfectivoReal.toStringAsFixed(0)}',
+                        Icons.account_balance_wallet,
+                        Colors.green,
                       ),
                     ),
                   ],
@@ -186,8 +255,18 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
           // Lista de órdenes vendidas
           Expanded(
-            child:
-                _ordenesVendidas.isEmpty
+            child: _isLoading
+                ? const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Cargando datos de ventas...'),
+                      ],
+                    ),
+                  )
+                : _ordenesVendidas.isEmpty
                     ? _buildEmptyState()
                     : _buildOrdersList(),
           ),
@@ -903,10 +982,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                             'Total Ventas: \$${_totalVentas.toStringAsFixed(0)}',
                           ),
                           Text(
-                            'Costo Total: \$${_totalCosto.toStringAsFixed(0)}',
+                            'Total Egresado: \$${_totalEgresado.toStringAsFixed(0)}',
                           ),
                           Text(
-                            'Descuentos: \$${_totalDescuentos.toStringAsFixed(0)}',
+                            'Efectivo Real: \$${_totalEfectivoReal.toStringAsFixed(0)}',
                           ),
                         ],
                       ),
@@ -1002,11 +1081,11 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Costo Total: \$${_totalCosto.toStringAsFixed(0)}',
+        'Total Egresado: \$${_totalEgresado.toStringAsFixed(0)}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.text(
-        'Descuentos: \$${_totalDescuentos.toStringAsFixed(0)}',
+        'Efectivo Real: \$${_totalEfectivoReal.toStringAsFixed(0)}',
         styles: PosStyles(align: PosAlign.left),
       );
       bytes += generator.emptyLines(1);
