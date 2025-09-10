@@ -24,6 +24,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   ProductVariant? selectedVariant;
   int selectedQuantity = 1;
   Map<ProductVariant, int> variantQuantities = {};
+  Map<String, List<ProductVariant>> locationGroups = {}; // Group variants by location
   final ProductDetailService _productDetailService = ProductDetailService();
   final UserPreferencesService _userPreferencesService = UserPreferencesService();
   Product? _detailedProduct;
@@ -38,6 +39,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     for (var variant in widget.product.variantes) {
       variantQuantities[variant] = 0;
     }
+    // Group variants by location
+    _groupVariantsByLocation(widget.product.variantes);
     // Cargar detalles completos del producto
     _loadProductDetails();
     _loadPromotionData();
@@ -61,6 +64,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
         // Reinicializar cantidades de variantes con los nuevos datos
         variantQuantities.clear();
+        locationGroups.clear();
+        
+        // Group variants by warehouse location
+        _groupVariantsByLocation(detailedProduct.variantes);
+        
         for (var variant in detailedProduct.variantes) {
           variantQuantities[variant] = 0;
         }
@@ -414,10 +422,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    // Sección de variantes
+                    // Sección de ubicaciones (agrupadas por almacén-ubicación)
                     if (currentProduct.variantes.isNotEmpty) ...[
                       Text(
-                        'VARIANTES:',
+                        'UBICACIONES:',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -425,27 +433,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           letterSpacing: 0.5,
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      // Grid de variantes (2 columnas, estilo listado de productos)
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              childAspectRatio:
-                                  3.5, // Para hacer cards más horizontales
-                              crossAxisSpacing: 8,
-                              mainAxisSpacing: 8,
-                            ),
-                        itemCount: currentProduct.variantes.length,
-                        itemBuilder: (context, index) {
-                          final variant = currentProduct.variantes[index];
-                          final isSelected = variantQuantities[variant]! > 0;
-                          return _buildVariantProductCard(variant, isSelected);
-                        },
-                      ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 8),
+                      // Lista de ubicaciones con variantes agrupadas
+                      ...locationGroups.entries.map((locationEntry) {
+                        return _buildLocationGroup(
+                          locationEntry.key,
+                          locationEntry.value,
+                        );
+                      }).toList(),
+                      const SizedBox(height: 16),
                     ],
                     // Productos seleccionados
                     Container(
@@ -567,110 +563,196 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     );
   }
 
-  // Método para construir cards de variantes estilo listado de productos (2 columnas)
-  Widget _buildVariantProductCard(ProductVariant variant, bool isSelected) {
-    int currentQuantity = variantQuantities[variant] ?? 0;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          if (currentQuantity == 0) {
-            variantQuantities[variant] = 1;
-          } else {
-            variantQuantities[variant] = 0;
-          }
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color:
-              isSelected ? widget.categoryColor.withOpacity(0.1) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? widget.categoryColor : Colors.grey[300]!,
-            width: isSelected ? 2 : 1,
+  // Método para construir grupo de ubicación con sus variantes
+  Widget _buildLocationGroup(String locationName, List<ProductVariant> variants) {
+    final totalStock = _getLocationStock(variants);
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
           ),
-        ),
-        child: Row(
-          children: [
-            // Imagen pequeña de la variante (como en el listado de productos)
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(6),
-                color: Colors.grey[100],
-                border: Border.all(color: Colors.grey[300]!, width: 1),
-              ),
-              child: const Icon(
-                Icons.inventory_2,
-                color: Colors.grey,
-                size: 20,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header de la ubicación
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: widget.categoryColor.withOpacity(0.1),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(7),
+                topRight: Radius.circular(7),
               ),
             ),
-            const SizedBox(width: 8),
-            // Información de la variante
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Nombre de la variante
-                  Flexible(
-                    child: Text(
+            child: Row(
+              children: [
+                Icon(
+                  Icons.location_on,
+                  color: widget.categoryColor,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    locationName,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: widget.categoryColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: widget.categoryColor.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '$totalStock',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: widget.categoryColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Lista de variantes en esta ubicación
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              children: variants.map((variant) {
+                final isSelected = variantQuantities[variant]! > 0;
+                return _buildLocationVariantCard(variant, isSelected);
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Método para construir card de variante dentro de una ubicación
+  Widget _buildLocationVariantCard(ProductVariant variant, bool isSelected) {
+    int currentQuantity = variantQuantities[variant] ?? 0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            if (currentQuantity == 0) {
+              variantQuantities[variant] = 1;
+            } else {
+              variantQuantities[variant] = 0;
+            }
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: isSelected ? widget.categoryColor.withOpacity(0.1) : Colors.grey[50],
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: isSelected ? widget.categoryColor : Colors.grey[300]!,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              // Imagen pequeña de la variante
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  color: Colors.grey[100],
+                  border: Border.all(color: Colors.grey[300]!, width: 1),
+                ),
+                child: const Icon(
+                  Icons.inventory_2,
+                  color: Colors.grey,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Información de la variante
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Nombre de la variante
+                    Text(
                       variant.nombre,
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color:
-                            isSelected
-                                ? widget.categoryColor
-                                : const Color(0xFF1F2937),
-                        height: 1.2,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected ? widget.categoryColor : const Color(0xFF1F2937),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      softWrap: false,
                     ),
-                  ),
-                  const SizedBox(height: 1),
-                  // Precio y stock
-                  Flexible(
-                    child: Row(
+                    const SizedBox(height: 2),
+                    // Precio y stock
+                    Row(
                       children: [
-                        Flexible(
-                          child: _buildVariantPriceSection(variant.precio),
-                        ),
-                        const SizedBox(width: 4),
+                        _buildVariantPriceSection(variant.precio),
+                        const SizedBox(width: 6),
                         Container(
-                          width: 2,
-                          height: 2,
+                          width: 3,
+                          height: 3,
                           decoration: BoxDecoration(
                             color: Colors.grey[400],
                             shape: BoxShape.circle,
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            'Stock: ${variant.cantidad}',
-                            style: TextStyle(
-                              fontSize: 9,
-                              color: Colors.grey[600],
-                              height: 1.2,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                        const SizedBox(width: 6),
+                        Text(
+                          'Stock: ${variant.cantidad}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+              // Indicador de selección
+              if (isSelected)
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: widget.categoryColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check,
+                    color: Colors.white,
+                    size: 12,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -1042,6 +1124,51 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         }
       }
     });
+  }
+
+  /// Group variants by warehouse location (almacen_nombre - ubicacion_nombre)
+  void _groupVariantsByLocation(List<ProductVariant> variants) {
+    locationGroups.clear();
+    
+    for (var variant in variants) {
+      String locationKey = _getLocationKey(variant);
+      
+      if (locationGroups.containsKey(locationKey)) {
+        locationGroups[locationKey]!.add(variant);
+      } else {
+        locationGroups[locationKey] = [variant];
+      }
+    }
+    
+    print('🏪 Grupos de ubicación creados: ${locationGroups.keys.toList()}');
+    for (var entry in locationGroups.entries) {
+      print('   ${entry.key}: ${entry.value.length} variantes');
+    }
+  }
+  
+  /// Get location key from variant's inventory metadata
+  String _getLocationKey(ProductVariant variant) {
+    final metadata = variant.inventoryMetadata;
+    if (metadata != null) {
+      final almacenNombre = metadata['almacen_nombre'] as String?;
+      final ubicacionNombre = metadata['ubicacion_nombre'] as String?;
+      
+      if (almacenNombre != null && ubicacionNombre != null) {
+        return '$almacenNombre - $ubicacionNombre';
+      } else if (almacenNombre != null) {
+        return almacenNombre;
+      } else if (ubicacionNombre != null) {
+        return ubicacionNombre;
+      }
+    }
+    
+    // Fallback for variants without location metadata
+    return 'Ubicación no especificada';
+  }
+  
+  /// Get total stock for a location group
+  int _getLocationStock(List<ProductVariant> variants) {
+    return variants.fold(0, (sum, variant) => sum + variant.cantidad);
   }
 
   String _compressImageUrl(String url) {

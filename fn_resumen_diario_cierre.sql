@@ -44,12 +44,18 @@ DECLARE
     v_horas_transcurridas NUMERIC := 0;
     v_total_efectivo NUMERIC := 0;
     v_total_otros NUMERIC := 0;
+    v_fecha_inicio TIMESTAMPTZ;
+    v_fecha_fin TIMESTAMPTZ;
 BEGIN
     -- Establecer contexto
     SET search_path = public;
     
     -- Obtener el usuario autenticado
     v_uuid_usuario := COALESCE(id_usuario_param, auth.uid());
+    
+    -- Establecer filtros de fecha diaria (00:00:00 a 23:59:59)
+    v_fecha_inicio := DATE_TRUNC('day', NOW());
+    v_fecha_fin := DATE_TRUNC('day', NOW()) + INTERVAL '1 day' - INTERVAL '1 second';
     
     -- Verificar permisos
     PERFORM check_user_has_access_to_any_tienda();
@@ -102,7 +108,9 @@ BEGIN
     JOIN app_dat_extraccion_productos ep ON o.id = ep.id_operacion
     JOIN app_dat_estado_operacion eo ON o.id = eo.id_operacion
     WHERE ov.id_tpv = id_tpv_param
-      AND o.created_at >= v_turno_abierto.fecha_apertura
+      AND o.uuid = v_uuid_usuario -- Filtro por usuario
+      AND o.created_at >= GREATEST(v_turno_abierto.fecha_apertura, v_fecha_inicio)
+      AND o.created_at <= v_fecha_fin -- Filtro diario hasta 23:59:59
       AND eo.estado IN (2) -- Solo operaciones completadas
       AND eo.id = (SELECT MAX(id) FROM app_dat_estado_operacion WHERE id_operacion = o.id);
     
@@ -118,7 +126,9 @@ BEGIN
     JOIN app_dat_pago_venta pv ON ov.id_operacion = pv.id_operacion_venta
     JOIN app_dat_estado_operacion eo ON o.id = eo.id_operacion
     WHERE ov.id_tpv = id_tpv_param
-      AND o.created_at >= v_turno_abierto.fecha_apertura
+      AND o.uuid = v_uuid_usuario -- Filtro por usuario
+      AND o.created_at >= GREATEST(v_turno_abierto.fecha_apertura, v_fecha_inicio)
+      AND o.created_at <= v_fecha_fin -- Filtro diario hasta 23:59:59
       AND eo.estado IN (2) -- Solo operaciones completadas
       AND eo.id = (SELECT MAX(id) FROM app_dat_estado_operacion WHERE id_operacion = o.id);
     

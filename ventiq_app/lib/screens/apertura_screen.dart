@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/inventory_product.dart';
-import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 
@@ -20,13 +17,10 @@ class _AperturaScreenState extends State<AperturaScreen> {
   final UserPreferencesService _userPrefs = UserPreferencesService();
 
   bool _isProcessing = false;
-  bool _isLoadingInventory = true;
   bool _isLoadingPreviousShift = true;
-  bool _enableProductCounting = false;
-  bool _manejaInventario = false;
+  // Inventory options are now hardcoded to false
+  final bool _manejaInventario = false;
   String _userName = 'Cargando...';
-  List<InventoryProduct> _inventoryProducts = [];
-  Map<String, TextEditingController> _quantityControllers = {};
 
   // Previous shift data
   double _previousShiftSales = 0.0;
@@ -104,32 +98,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
     }
   }
 
-  Future<void> _loadInventoryProducts() async {
-    if (!_enableProductCounting) return;
-
-    try {
-      setState(() {
-        _isLoadingInventory = true;
-      });
-
-      final products = await InventoryService.getInventoryProducts(limite: 100);
-
-      setState(() {
-        _inventoryProducts = products;
-        _isLoadingInventory = false;
-
-        _quantityControllers.clear();
-        for (var product in products) {
-          _quantityControllers[product.id.toString()] = TextEditingController();
-        }
-      });
-    } catch (e) {
-      print('Error loading inventory: $e');
-      setState(() {
-        _isLoadingInventory = false;
-      });
-    }
-  }
+  // Inventory loading removed since inventory management is disabled
 
   Future<void> _loadPreviousShiftSummary() async {
     try {
@@ -171,9 +140,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
   void dispose() {
     _montoInicialController.dispose();
     _observacionesController.dispose();
-    for (var controller in _quantityControllers.values) {
-      controller.dispose();
-    }
     super.dispose();
   }
 
@@ -257,77 +223,101 @@ class _AperturaScreenState extends State<AperturaScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.checklist,
-                          color: const Color(0xFF4A90E2),
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Opciones de Apertura',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1F2937),
+                    // Row(
+                      // children: [
+                      //   Icon(
+                      //     Icons.checklist,
+                      //     color: const Color(0xFF4A90E2),
+                      //     size: 20,
+                      //   ),
+                      //   const SizedBox(width: 8),
+                      //   const Text(
+                      //     'Opciones de Apertura',
+                      //     style: TextStyle(
+                      //       fontSize: 16,
+                      //       fontWeight: FontWeight.w600,
+                      //       color: Color(0xFF1F2937),
+                      //     ),
+                      //   ),
+                      // ],
+                    //),
+                    // const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue[200]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                color: const Color(0xFF4A90E2),
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Opciones de Inventario',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF4A90E2),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    CheckboxListTile(
-                      value: _manejaInventario,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          _manejaInventario = value ?? false;
-                        });
-                      },
-                      title: const Text(
-                        'Manejar inventario en este turno',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
+                          const SizedBox(height: 12),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                '1. ',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  'Este turno no manejará inventario (solo ventas)',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                '2. ',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  'La apertura se realizará sin conteo de productos',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      subtitle: Text(
-                        _manejaInventario
-                            ? 'Este turno será responsable del control de inventario'
-                            : 'Este turno no manejará inventario (solo ventas)',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                      activeColor: const Color(0xFF4A90E2),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: 8),
-                    CheckboxListTile(
-                      value: _enableProductCounting,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          _enableProductCounting = value ?? false;
-                          if (_enableProductCounting) {
-                            _loadInventoryProducts();
-                          } else {
-                            _inventoryProducts.clear();
-                            _quantityControllers.clear();
-                          }
-                        });
-                      },
-                      title: const Text(
-                        'Realizar conteo físico de inventario',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      subtitle: Text(
-                        _enableProductCounting
-                            ? 'Se registrará el inventario físico durante la apertura'
-                            : 'La apertura se realizará sin conteo de productos',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                      activeColor: const Color(0xFF4A90E2),
-                      contentPadding: EdgeInsets.zero,
                     ),
                   ],
                 ),
@@ -392,47 +382,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
               const SizedBox(height: 20),
 
-              if (_enableProductCounting)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.inventory_2,
-                            color: const Color(0xFF4A90E2),
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Conteo Físico de Inventario',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1F2937),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Ingrese la cantidad física contada para cada producto',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                      const SizedBox(height: 16),
-                      _buildInventoryList(),
-                    ],
-                  ),
-                ),
-
-              if (_enableProductCounting) const SizedBox(height: 20),
+              // Inventory counting section removed since it's disabled
 
               Container(
                 padding: const EdgeInsets.all(16),
@@ -547,153 +497,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
-  Widget _buildInventoryList() {
-    if (_isLoadingInventory) {
-      return Container(
-        height: 200,
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Cargando inventario...'),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_inventoryProducts.isEmpty) {
-      return Container(
-        height: 200,
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.inventory_2_outlined, size: 48, color: Colors.grey),
-              SizedBox(height: 16),
-              Text(
-                'No hay productos en inventario',
-                style: TextStyle(color: Colors.grey, fontSize: 16),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      height: 300,
-      child: ListView.builder(
-        itemCount: _inventoryProducts.length,
-        itemBuilder: (context, index) {
-          final product = _inventoryProducts[index];
-          final controller = _quantityControllers[product.id.toString()]!;
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        product.nombreProducto,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF1F2937),
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Text(
-                            '${product.variante}: ${product.opcionVariante}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.blue[50],
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.blue[200]!),
-                            ),
-                            child: Text(
-                              'Stock: ${product.stockDisponible.toInt()}',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF4A90E2),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        '${product.ubicacion}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        'Conteo Físico',
-                        style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-                      ),
-                      const SizedBox(height: 4),
-                      TextFormField(
-                        controller: controller,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: InputDecoration(
-                          hintText: '0',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 8,
-                          ),
-                          isDense: true,
-                        ),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
+  // Inventory list method removed since inventory management is disabled
 
   void _crearApertura() async {
     if (!_formKey.currentState!.validate()) {
@@ -743,27 +547,10 @@ class _AperturaScreenState extends State<AperturaScreen> {
         throw Exception('UUID de usuario no encontrado');
       }
 
-      List<Map<String, dynamic>> productCounts = [];
-      if (_enableProductCounting) {
-        for (var product in _inventoryProducts) {
-          final controller = _quantityControllers[product.id.toString()]!;
-          final countText = controller.text.trim();
-
-          if (countText.isNotEmpty) {
-            final count = int.tryParse(countText) ?? 0;
-            productCounts.add({
-              'id_producto': product.id,
-              'id_ubicacion': product.idUbicacion,
-              'id_variante': product.idVariante,
-              'id_opcion_variante': product.idOpcionVariante,
-              'id_presentacion': product.idPresentacion,
-              'cantidad': count,
-            });
-          }
-        }
-      }
-
-      print('📦 Productos para apertura: $productCounts');
+      // No product counting since inventory management is disabled
+      final List<Map<String, dynamic>> productCounts = [];
+      
+      print('📦 Productos para apertura: $productCounts (inventario deshabilitado)');
       print('📊 Total productos: ${productCounts.length}');
 
       // Usar el nuevo método del TurnoService
@@ -773,7 +560,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         idVendedor: sellerId,
         usuario: userUuid,
         manejaInventario: _manejaInventario,
-        productos: productCounts.isNotEmpty ? productCounts : null,
+        productos: null, // Always null since inventory is disabled
       );
 
       if (mounted) {
