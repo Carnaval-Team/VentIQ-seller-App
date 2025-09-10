@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
 import '../models/promotion.dart';
 import '../services/promotion_service.dart';
+import '../widgets/marketing_menu_widget.dart';
 import 'promotion_form_screen.dart';
 
 class PromotionDetailScreen extends StatefulWidget {
@@ -121,6 +122,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
+          const MarketingMenuWidget(),
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed: () => _navigateToEdit(),
@@ -721,23 +723,28 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
     );
   }
 
-  void _navigateToEdit() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (context) => PromotionFormScreen(
+  void _navigateToEdit() async {
+    try {
+      // Load fresh promotion types for editing
+      final promotionTypes = await _promotionService.getPromotionTypes();
+      
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PromotionFormScreen(
               promotion: _promotion,
-              promotionTypes:
-                  [
-                    _promotion.tipoPromocion,
-                  ].whereType<PromotionType>().toList(),
+              promotionTypes: promotionTypes,
             ),
-      ),
-    ).then((result) {
-      if (result == true) {
-        _refreshPromotion();
+          ),
+        ).then((result) {
+          if (result == true) {
+            _refreshPromotion();
+          }
+        });
       }
-    });
+    } catch (e) {
+      _showErrorSnackBar('Error al cargar datos del formulario: $e');
+    }
   }
 }

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
 import '../models/promotion.dart';
 import '../services/promotion_service.dart';
+import '../widgets/marketing_menu_widget.dart';
 
 class PromotionFormScreen extends StatefulWidget {
   final Promotion? promotion;
@@ -39,16 +40,28 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
   bool _aplicaTodo = true;
   bool _isLoading = false;
   bool _isEditing = false;
+  bool _isLoadingTypes = false;
+  
+  // Menu data
+  List<PromotionType> _promotionTypes = [];
+  String? _loadingError;
 
   @override
   void initState() {
     super.initState();
     _isEditing = widget.promotion != null;
+    _promotionTypes = widget.promotionTypes;
+    
     if (_isEditing) {
       _populateForm();
     } else {
       _fechaInicio = DateTime.now();
       _fechaFin = DateTime.now().add(const Duration(days: 30));
+    }
+    
+    // Load promotion types if not provided or if we need fresh data
+    if (_promotionTypes.isEmpty || _isEditing) {
+      _loadPromotionTypes();
     }
   }
 
@@ -76,6 +89,32 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     _fechaFin = promotion.fechaFin;
     _estado = promotion.estado;
     _aplicaTodo = promotion.aplicaTodo;
+    
+    print('📝 Formulario poblado con datos de promoción: ${promotion.nombre}');
+    print('📝 Tipo de promoción seleccionado: $_selectedTipoPromocion');
+  }
+
+  Future<void> _loadPromotionTypes() async {
+    setState(() {
+      _isLoadingTypes = true;
+      _loadingError = null;
+    });
+
+    try {
+      final types = await _promotionService.getPromotionTypes();
+      setState(() {
+        _promotionTypes = types;
+        _isLoadingTypes = false;
+      });
+      print('✅ Cargados ${types.length} tipos de promoción');
+    } catch (e) {
+      setState(() {
+        _isLoadingTypes = false;
+        _loadingError = 'Error al cargar tipos de promoción: $e';
+      });
+      print('❌ Error cargando tipos de promoción: $e');
+      _showErrorSnackBar('Error al cargar tipos de promoción: $e');
+    }
   }
 
   Future<void> _generateCode() async {
@@ -145,15 +184,28 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
       return;
     }
 
-    if (_fechaInicio == null || _fechaFin == null) {
-      _showErrorSnackBar('Debe seleccionar fechas de inicio y fin');
+    // Validaciones adicionales
+    if (_selectedTipoPromocion == null) {
+      _showErrorSnackBar('Debe seleccionar un tipo de promoción');
       return;
     }
 
-    if (_fechaFin!.isBefore(_fechaInicio!)) {
+    if (_fechaInicio == null) {
+      _showErrorSnackBar('Debe seleccionar la fecha de inicio');
+      return;
+    }
+
+    if (_fechaFin != null && _fechaFin!.isBefore(_fechaInicio!)) {
       _showErrorSnackBar(
         'La fecha de fin debe ser posterior a la fecha de inicio',
       );
+      return;
+    }
+
+    // Validar que el tipo de promoción existe en la lista cargada
+    final tipoExists = _promotionTypes.any((type) => type.id == _selectedTipoPromocion);
+    if (!tipoExists) {
+      _showErrorSnackBar('El tipo de promoción seleccionado no es válido');
       return;
     }
 
@@ -176,14 +228,19 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                 ? null
                 : double.parse(_minCompraController.text),
         'fecha_inicio': _fechaInicio!.toIso8601String(),
-        'fecha_fin': _fechaFin!.toIso8601String(),
+        'fecha_fin': _fechaFin?.toIso8601String(),
         'estado': _estado,
         'aplica_todo': _aplicaTodo,
         'limite_usos':
             _limiteUsosController.text.isEmpty
                 ? null
                 : int.parse(_limiteUsosController.text),
+        // Campos adicionales para la función de actualización
+        'requiere_medio_pago': false, // Por defecto false
+        'id_medio_pago_requerido': null, // Por defecto null
       };
+
+      print('💾 Guardando promoción con datos: $promotionData');
 
       if (_isEditing) {
         await _promotionService.updatePromotion(
@@ -228,6 +285,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
+          const MarketingMenuWidget(),
           if (_isLoading)
             const Center(
               child: Padding(
@@ -354,64 +412,136 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedTipoPromocion,
-              decoration: const InputDecoration(
-                labelText: 'Tipo de promoción *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.category),
-              ),
-              items:
-                  widget.promotionTypes
-                      .map(
-                        (type) => DropdownMenuItem<String>(
-                          value: type.id,
-                          child: Text(type.denominacion),
-                        ),
-                      )
-                      .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedTipoPromocion = value;
-                });
-              },
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Debe seleccionar un tipo de promoción';
-                }
-                return null;
-              },
-            ),
-            // Mostrar advertencia si es promoción con recargo
-            if (_selectedTipoPromocion != null &&
-                _isChargePromotionType(_selectedTipoPromocion!))
-              Container(
-                margin: const EdgeInsets.only(top: 12),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  border: Border.all(color: Colors.orange, width: 1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning, color: Colors.orange, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '⚠️ Esta promoción aumentará el precio de venta de los productos afectados',
-                        style: TextStyle(
-                          color: Colors.orange[800],
-                          fontWeight: FontWeight.w500,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            _buildPromotionTypeDropdown(),
+            _buildChargePromotionWarning(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPromotionTypeDropdown() {
+    if (_isLoadingTypes) {
+      return Container(
+        height: 56,
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: const Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 8),
+              Text('Cargando tipos de promoción...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_loadingError != null) {
+      return Column(
+        children: [
+          Container(
+            height: 56,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.red),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error, color: Colors.red, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _loadingError!,
+                      style: const TextStyle(color: Colors.red, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton.icon(
+            onPressed: _loadPromotionTypes,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return DropdownButtonFormField<String>(
+      value: _selectedTipoPromocion,
+      decoration: const InputDecoration(
+        labelText: 'Tipo de promoción *',
+        border: OutlineInputBorder(),
+        prefixIcon: Icon(Icons.category),
+      ),
+      items: _promotionTypes
+          .map(
+            (type) => DropdownMenuItem<String>(
+              value: type.id,
+              child: Text(type.denominacion),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        setState(() {
+          _selectedTipoPromocion = value;
+        });
+      },
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Debe seleccionar un tipo de promoción';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildChargePromotionWarning() {
+    if (_selectedTipoPromocion == null || !_isChargePromotionType(_selectedTipoPromocion!)) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.1),
+        border: Border.all(color: Colors.orange, width: 1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning, color: Colors.orange, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '⚠️ Esta promoción aumentará el precio de venta de los productos afectados',
+              style: TextStyle(
+                color: Colors.orange[800],
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -424,14 +554,13 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     }
 
     // Verificar por denominación
-    final tipoPromocion = widget.promotionTypes.firstWhere(
+    final tipoPromocion = _promotionTypes.firstWhere(
       (type) => type.id == tipoPromocionId,
-      orElse:
-          () => PromotionType(
-            id: '',
-            denominacion: '',
-            createdAt: DateTime.now(),
-          ),
+      orElse: () => PromotionType(
+        id: '',
+        denominacion: '',
+        createdAt: DateTime.now(),
+      ),
     );
 
     return tipoPromocion.denominacion.toLowerCase().contains('recargo');
@@ -557,31 +686,52 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: InkWell(
-                    onTap: () => _selectDate(context, false),
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Fecha de fin *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.event),
-                      ),
-                      child: Text(
-                        _fechaFin != null
-                            ? dateFormat.format(_fechaFin!)
-                            : 'Seleccionar fecha',
-                        style: TextStyle(
-                          color:
-                              _fechaFin != null
-                                  ? Colors.black87
-                                  : Colors.grey[600],
+                  child: Column(
+                    children: [
+                      InkWell(
+                        onTap: () => _selectDate(context, false),
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Fecha de fin (opcional)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.event),
+                          ),
+                          child: Text(
+                            _fechaFin != null
+                                ? dateFormat.format(_fechaFin!)
+                                : 'Sin vencimiento',
+                            style: TextStyle(
+                              color:
+                                  _fechaFin != null
+                                      ? Colors.black87
+                                      : Colors.grey[600],
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      if (_fechaFin != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _fechaFin = null;
+                              });
+                            },
+                            icon: const Icon(Icons.clear, size: 16),
+                            label: const Text('Sin vencimiento', style: TextStyle(fontSize: 12)),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.grey[600],
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],
             ),
-            if (_fechaInicio != null && _fechaFin != null) ...[
+            if (_fechaInicio != null) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -594,7 +744,9 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                     const Icon(Icons.info, color: AppColors.primary, size: 16),
                     const SizedBox(width: 8),
                     Text(
-                      'Duración: ${_fechaFin!.difference(_fechaInicio!).inDays} días',
+                      _fechaFin != null 
+                          ? 'Duración: ${_fechaFin!.difference(_fechaInicio!).inDays} días'
+                          : 'Promoción sin fecha de vencimiento',
                       style: const TextStyle(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w500,

@@ -7,13 +7,19 @@ import 'screens/products_screen.dart';
 import 'screens/categories_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/sales_screen.dart';
+import 'screens/promotions_screen.dart';
+import 'screens/marketing_dashboard_screen.dart';
+import 'screens/analytics_screen.dart';
+import 'screens/campaigns_screen.dart';
+import 'screens/communications_screen.dart';
+import 'screens/segments_screen.dart';
+import 'screens/loyalty_screen.dart';
 import 'screens/financial_screen.dart';
 import 'screens/customers_screen.dart';
 import 'screens/workers_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/warehouse_screen.dart';
 import 'screens/add_warehouse_screen.dart';
-import 'screens/promotions_screen.dart';
 import 'services/auth_service.dart';
 
 void main() async {
@@ -80,6 +86,12 @@ class MyApp extends StatelessWidget {
         '/warehouse': (context) => const WarehouseScreen(),
         '/add-warehouse': (context) => const AddWarehouseScreen(),
         '/promotions': (context) => const PromotionsScreen(),
+        '/marketing-dashboard': (context) => const MarketingDashboardScreen(),
+        '/analytics': (context) => const AnalyticsScreen(),
+        '/campaigns': (context) => const CampaignsScreen(),
+        '/communications': (context) => const CommunicationsScreen(),
+        '/segments': (context) => const SegmentsScreen(),
+        '/loyalty': (context) => const LoyaltyScreen(),
       },
     );
   }

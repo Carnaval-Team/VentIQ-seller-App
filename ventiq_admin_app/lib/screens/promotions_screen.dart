@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
 import '../models/promotion.dart';
 import '../services/promotion_service.dart';
+import '../widgets/marketing_menu_widget.dart';
+import '../widgets/store_selector_widget.dart';
 import 'promotion_detail_screen.dart';
 import 'promotion_form_screen.dart';
 
@@ -202,20 +203,17 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Promociones y Marketing'),
+        title: const Text('Promociones'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.analytics),
-            onPressed: () => _showStatsDialog(),
-          ),
+        actions: const [
+          AppBarStoreSelectorWidget(),
+          MarketingMenuWidget(),
         ],
       ),
       body: Column(
         children: [
           _buildStatsCards(),
-          _buildFilters(),
           Expanded(
             child:
                 _isLoading
@@ -224,11 +222,7 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _navigateToPromotionForm(),
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton: _buildFloatingActionButtons(),
     );
   }
 
@@ -297,106 +291,144 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
     );
   }
 
-  Widget _buildFilters() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        children: [
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Buscar promociones...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
+  Widget _buildFloatingActionButtons() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FloatingActionButton(
+          onPressed: () => _showFiltersDialog(),
+          backgroundColor: Colors.grey[700],
+          heroTag: "filters",
+          child: const Icon(Icons.filter_list, color: Colors.white),
+        ),
+        const SizedBox(height: 10),
+        FloatingActionButton(
+          onPressed: () => _navigateToPromotionForm(),
+          backgroundColor: AppColors.primary,
+          heroTag: "add",
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
+      ],
+    );
+  }
+
+  void _showFiltersDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Filtros de Búsqueda'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                flex: 2,
-                child: DropdownButtonFormField<String>(
-                  value: _selectedType,
-                  decoration: InputDecoration(
-                    labelText: 'Tipo',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    isDense: true,
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Buscar promociones...',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  items: [
-                    const DropdownMenuItem<String>(
-                      value: null,
-                      child: Text('Todos', overflow: TextOverflow.ellipsis),
-                    ),
-                    ..._promotionTypes.map(
-                      (type) => DropdownMenuItem<String>(
-                        value: type.id,
-                        child: Text(
-                          type.denominacion,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedType = value;
-                    });
-                    _refreshPromotions();
-                  },
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 1,
-                child: DropdownButtonFormField<bool>(
-                  value: _selectedStatus,
-                  decoration: InputDecoration(
-                    labelText: 'Estado',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    isDense: true,
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedType,
+                decoration: InputDecoration(
+                  labelText: 'Tipo de Promoción',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  items: const [
-                    DropdownMenuItem<bool>(
-                      value: null,
-                      child: Text('Todos', overflow: TextOverflow.ellipsis),
-                    ),
-                    DropdownMenuItem<bool>(
-                      value: true,
-                      child: Text('Activas', overflow: TextOverflow.ellipsis),
-                    ),
-                    DropdownMenuItem<bool>(
-                      value: false,
-                      child: Text('Inactivas', overflow: TextOverflow.ellipsis),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedStatus = value;
-                    });
-                    _refreshPromotions();
-                  },
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                 ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('Todos los tipos'),
+                  ),
+                  ..._promotionTypes.map(
+                    (type) => DropdownMenuItem<String>(
+                      value: type.id,
+                      child: Text(type.denominacion),
+                    ),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedType = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<bool>(
+                value: _selectedStatus,
+                decoration: InputDecoration(
+                  labelText: 'Estado',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                ),
+                items: const [
+                  DropdownMenuItem<bool>(
+                    value: null,
+                    child: Text('Todos los estados'),
+                  ),
+                  DropdownMenuItem<bool>(
+                    value: true,
+                    child: Text('Activas'),
+                  ),
+                  DropdownMenuItem<bool>(
+                    value: false,
+                    child: Text('Inactivas'),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedStatus = value;
+                  });
+                },
               ),
             ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _searchController.clear();
+                _selectedType = null;
+                _selectedStatus = null;
+              });
+              _refreshPromotions();
+              Navigator.pop(context);
+            },
+            child: const Text('Limpiar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _refreshPromotions();
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Aplicar'),
           ),
         ],
       ),
@@ -695,69 +727,6 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
     );
   }
 
-  void _showStatsDialog() {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Estadísticas de Promociones'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildStatRow(
-                    'Total promociones',
-                    _stats['total_promociones']?.toString() ?? '0',
-                  ),
-                  _buildStatRow(
-                    'Promociones activas',
-                    _stats['promociones_activas']?.toString() ?? '0',
-                  ),
-                  _buildStatRow(
-                    'Promociones vencidas',
-                    _stats['promociones_vencidas']?.toString() ?? '0',
-                  ),
-                  _buildStatRow(
-                    'Total usos',
-                    _stats['total_usos']?.toString() ?? '0',
-                  ),
-                  _buildStatRow(
-                    'Descuento aplicado',
-                    '\$${NumberFormat('#,###').format(_stats['descuento_total_aplicado'] ?? 0)}',
-                  ),
-                  _buildStatRow(
-                    'ROI',
-                    '${_stats['roi_promociones']?.toString() ?? '0'}x',
-                  ),
-                  _buildStatRow(
-                    'Tasa conversión',
-                    '${_stats['conversion_rate']?.toString() ?? '0'}%',
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cerrar'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  Widget _buildStatRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
 
   void _navigateToPromotionDetail(Promotion promotion) {
     Navigator.push(
