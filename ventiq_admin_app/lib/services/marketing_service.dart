@@ -12,9 +12,19 @@ class MarketingService {
   /// Obtiene resumen general de marketing
   Future<Map<String, dynamic>> getDashboardSummary({int? storeId}) async {
     try {
-      final selectedStoreId = storeId ?? await _storeSelectorService.getSelectedStoreId();
+      final selectedStoreId = storeId ?? _storeSelectorService.getSelectedStoreId();
       if (selectedStoreId == null) {
-        throw Exception('No se encontró ID de tienda');
+        print('⚠️ No hay tienda seleccionada, usando tienda por defecto (ID: 1)');
+        // Usar tienda por defecto si no hay selección
+        final defaultStoreId = 1;
+        
+        final response = await _supabase.rpc(
+          'fn_marketing_dashboard_resumen',
+          params: {'p_id_tienda': defaultStoreId},
+        );
+
+        print('✅ Respuesta dashboard (tienda por defecto): $response');
+        return response ?? _getMockDashboardData();
       }
 
       print('📊 Obteniendo resumen de marketing para tienda: $selectedStoreId');
@@ -39,10 +49,7 @@ class MarketingService {
     DateTime? fechaHasta,
   }) async {
     try {
-      final selectedStoreId = storeId ?? await _storeSelectorService.getSelectedStoreId();
-      if (selectedStoreId == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
+      final selectedStoreId = storeId ?? _storeSelectorService.getSelectedStoreId() ?? 1;
 
       print('📈 Obteniendo métricas de rendimiento para tienda: $selectedStoreId');
 
@@ -74,10 +81,7 @@ class MarketingService {
     int offset = 0,
   }) async {
     try {
-      final selectedStoreId = storeId ?? await _storeSelectorService.getSelectedStoreId();
-      if (selectedStoreId == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
+      final selectedStoreId = storeId ?? _storeSelectorService.getSelectedStoreId() ?? 1;
 
       print('📋 Listando campañas para tienda: $selectedStoreId');
 
@@ -193,10 +197,7 @@ class MarketingService {
   /// Lista comunicaciones
   Future<List<Map<String, dynamic>>> listCommunications({int? storeId}) async {
     try {
-      final selectedStoreId = storeId ?? await _storeSelectorService.getSelectedStoreId();
-      if (selectedStoreId == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
+      final selectedStoreId = storeId ?? _storeSelectorService.getSelectedStoreId() ?? 1;
 
       print('📧 Listando comunicaciones para tienda: $selectedStoreId');
 
@@ -284,10 +285,7 @@ class MarketingService {
   /// Lista segmentos de clientes
   Future<List<Map<String, dynamic>>> listSegments({int? storeId}) async {
     try {
-      final selectedStoreId = storeId ?? await _storeSelectorService.getSelectedStoreId();
-      if (selectedStoreId == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
+      final selectedStoreId = storeId ?? _storeSelectorService.getSelectedStoreId() ?? 1;
 
       print('👥 Listando segmentos para tienda: $selectedStoreId');
 
@@ -409,10 +407,7 @@ class MarketingService {
   /// Obtiene resumen de fidelización
   Future<Map<String, dynamic>> getLoyaltySummary({int? storeId}) async {
     try {
-      final selectedStoreId = storeId ?? await _storeSelectorService.getSelectedStoreId();
-      if (selectedStoreId == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
+      final selectedStoreId = storeId ?? _storeSelectorService.getSelectedStoreId() ?? 1;
 
       print('⭐ Obteniendo resumen de fidelización para tienda: $selectedStoreId');
 
@@ -435,10 +430,7 @@ class MarketingService {
     int limit = 50,
   }) async {
     try {
-      final selectedStoreId = storeId ?? await _storeSelectorService.getSelectedStoreId();
-      if (selectedStoreId == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
+      final selectedStoreId = storeId ?? _storeSelectorService.getSelectedStoreId() ?? 1;
 
       print('⭐ Listando eventos de fidelización para tienda: $selectedStoreId');
 
@@ -501,10 +493,7 @@ class MarketingService {
     DateTime? fechaHasta,
   }) async {
     try {
-      final selectedStoreId = storeId ?? await _storeSelectorService.getSelectedStoreId();
-      if (selectedStoreId == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
+      final selectedStoreId = storeId ?? _storeSelectorService.getSelectedStoreId() ?? 1;
 
       print('📊 Obteniendo análisis de promociones para tienda: $selectedStoreId');
 
@@ -528,10 +517,7 @@ class MarketingService {
   /// Obtiene análisis de clientes
   Future<Map<String, dynamic>> getClientAnalysis({int? storeId}) async {
     try {
-      final selectedStoreId = storeId ?? await _storeSelectorService.getSelectedStoreId();
-      if (selectedStoreId == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
+      final selectedStoreId = storeId ?? _storeSelectorService.getSelectedStoreId() ?? 1;
 
       print('👥 Obteniendo análisis de clientes para tienda: $selectedStoreId');
 

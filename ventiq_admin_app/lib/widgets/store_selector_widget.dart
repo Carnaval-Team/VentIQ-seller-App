@@ -212,15 +212,13 @@ class _StoreSelectorWidgetState extends State<StoreSelectorWidget> {
                     Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
-                        color: store.esPrincipal 
-                            ? AppColors.primary.withOpacity(0.1)
-                            : Colors.grey.withOpacity(0.1),
+                        color: Colors.grey.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Icon(
-                        store.esPrincipal ? Icons.star : Icons.store,
+                        Icons.store,
                         size: 16,
-                        color: store.esPrincipal ? AppColors.primary : Colors.grey[600],
+                        color: Colors.grey[600],
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -364,9 +362,9 @@ class _AppBarStoreSelectorWidgetState extends State<AppBarStoreSelectorWidget> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      store.esPrincipal ? Icons.star : Icons.store,
+                      Icons.store,
                       size: 14,
-                      color: store.esPrincipal ? AppColors.primary : Colors.grey[600],
+                      color: Colors.grey[600],
                     ),
                     const SizedBox(width: 6),
                     Flexible(

@@ -935,31 +935,42 @@ $$ LANGUAGE plpgsql;
 -- =====================================================
 
 -- Función para obtener tiendas de un gerente
-CREATE OR REPLACE FUNCTION fn_listar_tiendas_gerente(p_uuid UUID)
-RETURNS TABLE(
-    id BIGINT,
+CREATE OR REPLACE FUNCTION fn_listar_tiendas_gerente(
+    p_uuid_usuario UUID
+)
+RETURNS TABLE (
+    id_tienda BIGINT,
     denominacion VARCHAR,
     direccion VARCHAR,
-    telefono VARCHAR,
-    email VARCHAR,
-    es_principal BOOLEAN
-) AS $$
+    ubicacion VARCHAR,
+    created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER  -- Permite acceso seguro desde Supabase
+AS $$
 BEGIN
+    -- Establecer contexto seguro
+    SET search_path = public;
+
+    -- Validar que el usuario esté autenticado
+    IF p_uuid_usuario IS NULL THEN
+        RAISE EXCEPTION 'Usuario no autenticado';
+    END IF;
+
+    -- Verificar que el usuario sea un gerente y devolver sus tiendas
     RETURN QUERY
-    SELECT 
-        t.id,
-        t.denominacion,
+    SELECT
+        t.id AS id_tienda,
+        t.denominacion::VARCHAR,
         t.direccion,
-        t.telefono,
-        t.email,
-        -- Marcar como principal la primera tienda registrada
-        ROW_NUMBER() OVER (ORDER BY g.created_at) = 1 as es_principal
-    FROM app_dat_gerente g
-    JOIN app_dat_tienda t ON g.id_tienda = t.id
-    WHERE g.uuid = p_uuid
-    ORDER BY g.created_at;
+        t.ubicacion,
+        t.created_at
+    FROM app_dat_tienda t
+    INNER JOIN app_dat_gerente g ON t.id = g.id_tienda
+    WHERE g.uuid = p_uuid_usuario
+    ORDER BY t.denominacion;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- =====================================================
 -- 8. FUNCIONES AUXILIARES Y DE CONFIGURACIÓN

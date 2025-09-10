@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import 'product.dart'; // Import the main Product class
 
 class Promotion {
   final String id;
@@ -16,6 +17,7 @@ class Promotion {
   final int? limiteUsos;
   final int? usosActuales;
   final bool? requiereMedioPago;
+  final int? idMedioPagoRequerido;
   final String? medioPagoRequerido;
   final String? tipoPromocionNombre;
   final String? tiendaNombre;
@@ -41,6 +43,7 @@ class Promotion {
     this.limiteUsos,
     this.usosActuales = 0,
     this.requiereMedioPago,
+    this.idMedioPagoRequerido,
     this.medioPagoRequerido,
     this.tipoPromocionNombre,
     this.tiendaNombre,
@@ -129,6 +132,7 @@ class Promotion {
       limiteUsos: json['limite_usos'],
       usosActuales: json['usos_actuales'] ?? 0,
       requiereMedioPago: json['requiere_medio_pago'],
+      idMedioPagoRequerido: json['id_medio_pago_requerido'],
       medioPagoRequerido: json['medio_pago_requerido'],
       tipoPromocionNombre: json['tipo_promocion'],
       tiendaNombre: json['tienda'],
@@ -185,6 +189,7 @@ class Promotion {
       'limite_usos': limiteUsos,
       'usos_actuales': usosActuales,
       'requiere_medio_pago': requiereMedioPago,
+      'id_medio_pago_requerido': idMedioPagoRequerido,
       'medio_pago_requerido': medioPagoRequerido,
       'tipo_promocion': tipoPromocionNombre,
       'tienda': tiendaNombre,
@@ -212,6 +217,7 @@ class Promotion {
     int? limiteUsos,
     int? usosActuales,
     bool? requiereMedioPago,
+    int? idMedioPagoRequerido,
     String? medioPagoRequerido,
     String? tipoPromocionNombre,
     String? tiendaNombre,
@@ -237,6 +243,7 @@ class Promotion {
       limiteUsos: limiteUsos ?? this.limiteUsos,
       usosActuales: usosActuales ?? this.usosActuales,
       requiereMedioPago: requiereMedioPago ?? this.requiereMedioPago,
+      idMedioPagoRequerido: idMedioPagoRequerido ?? this.idMedioPagoRequerido,
       medioPagoRequerido: medioPagoRequerido ?? this.medioPagoRequerido,
       tipoPromocionNombre: tipoPromocionNombre ?? this.tipoPromocionNombre,
       tiendaNombre: tiendaNombre ?? this.tiendaNombre,
@@ -312,7 +319,7 @@ class PromotionProduct {
   });
 
   String get targetName {
-    if (producto != null) return producto!.denominacion;
+    if (producto != null) return producto!.name;
     if (categoria != null) return categoria!.denominacion;
     if (subcategoria != null) return subcategoria!.denominacion;
     return 'Sin especificar';
@@ -512,7 +519,6 @@ class PromotionValidationResult {
   }
 }
 
-// Placeholder classes for related models
 class Store {
   final String id;
   final String denominacion;
@@ -521,22 +527,6 @@ class Store {
 
   factory Store.fromJson(Map<String, dynamic> json) {
     return Store(
-      id: json['id']?.toString() ?? '',
-      denominacion: json['denominacion'] ?? '',
-    );
-  }
-
-  Map<String, dynamic> toJson() => {'id': id, 'denominacion': denominacion};
-}
-
-class Product {
-  final String id;
-  final String denominacion;
-
-  Product({required this.id, required this.denominacion});
-
-  factory Product.fromJson(Map<String, dynamic> json) {
-    return Product(
       id: json['id']?.toString() ?? '',
       denominacion: json['denominacion'] ?? '',
     );

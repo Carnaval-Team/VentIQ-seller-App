@@ -504,13 +504,37 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          promotion.codigoPromocion,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                          ),
+                        Row(
+                          children: [
+                            // Mostrar tipo de promoción
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                promotion.tipoPromocionNombre ?? 'Sin tipo',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              promotion.codigoPromocion,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                         if (promotion.descripcion != null &&
                             promotion.descripcion!.isNotEmpty)
@@ -637,8 +661,11 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
               Row(
                 children: [
                   _buildInfoChip(
-                    Icons.local_offer,
-                    '${promotion.valorDescuento}%',
+                    promotion.isChargePromotion ? Icons.trending_up : Icons.local_offer,
+                    promotion.isChargePromotion 
+                        ? '+${promotion.valorDescuento}%' 
+                        : '${promotion.valorDescuento}%',
+                    color: promotion.isChargePromotion ? Colors.orange : null,
                   ),
                   const SizedBox(width: 8),
                   _buildInfoChip(
@@ -694,19 +721,19 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
     );
   }
 
-  Widget _buildInfoChip(IconData icon, String text) {
+  Widget _buildInfoChip(IconData icon, String text, {Color? color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
+        color: color != null ? color.withOpacity(0.1) : Colors.grey[100],
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: Colors.grey[600]),
+          Icon(icon, size: 14, color: color ?? Colors.grey[600]),
           const SizedBox(width: 4),
-          Text(text, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+          Text(text, style: TextStyle(fontSize: 12, color: color ?? Colors.grey[600])),
         ],
       ),
     );

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
-import '../models/promotion.dart';
+import '../models/promotion.dart' hide Product;
+import '../models/product.dart';
 import '../services/promotion_service.dart';
+import '../services/product_service.dart';
 import '../widgets/marketing_menu_widget.dart';
 import 'promotion_form_screen.dart';
 
@@ -19,11 +21,43 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
   final PromotionService _promotionService = PromotionService();
   late Promotion _promotion;
   bool _isLoading = false;
+  Map<String, Product> _productCache = {};
+  bool _isLoadingProducts = false;
 
   @override
   void initState() {
     super.initState();
     _promotion = widget.promotion;
+    _loadProductData();
+  }
+
+  Future<void> _loadProductData() async {
+    setState(() {
+      _isLoadingProducts = true;
+    });
+
+    try {
+      // Obtener todos los productos de la tienda siempre para tener la caché disponible
+      final products = await ProductService.getProductsByTienda();
+      
+      // Crear un mapa de productos por ID para búsqueda rápida
+      for (final product in products) {
+        _productCache[product.id] = product;
+      }
+      
+      print('✅ Cargados ${_productCache.length} productos en caché');
+    } catch (e) {
+      print('❌ Error cargando productos: $e');
+    } finally {
+      setState(() {
+        _isLoadingProducts = false;
+      });
+    }
+  }
+
+  Product? _getProductById(String? productId) {
+    if (productId == null) return null;
+    return _productCache[productId];
   }
 
   Future<void> _refreshPromotion() async {
@@ -109,6 +143,41 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
+  }
+
+  Future<void> _createSpecialPromotion(Product product) async {
+    try {
+      // Fetch promotion types first
+      final promotionTypes = await _promotionService.getPromotionTypes();
+      
+      // Navigate to promotion form with pre-filled product data
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PromotionFormScreen(
+            promotionTypes: promotionTypes,
+            prefilledProduct: product,
+            onPromotionCreated: (newPromotion) {
+              // Refresh the current screen when a new promotion is created
+              _refreshPromotion();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Promoción especial creada exitosamente'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar tipos de promoción: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -270,8 +339,7 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
                       const SizedBox(height: 16),
                       _buildUsageCard(),
                       const SizedBox(height: 16),
-                      if (_promotion.productos?.isNotEmpty == true)
-                        _buildProductsCard(),
+                      _buildProductsCard(),
                     ],
                   ),
                 ),
@@ -385,6 +453,12 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
   }
 
   Widget _buildDiscountInfoCard() {
+    final isCharge = _promotion.isChargePromotion;
+    final color = isCharge ? Colors.orange : AppColors.primary;
+    final icon = isCharge ? Icons.trending_up : Icons.local_offer;
+    final text = isCharge ? 'de recargo' : 'de descuento';
+    final prefix = isCharge ? '+' : '';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -393,10 +467,10 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.local_offer, color: AppColors.primary),
+                Icon(icon, color: color),
                 const SizedBox(width: 8),
-                const Text(
-                  'Información de Descuento',
+                Text(
+                  isCharge ? 'Información de Recargo' : 'Información de Descuento',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -406,23 +480,23 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                border: Border.all(color: color.withOpacity(0.3)),
               ),
               child: Column(
                 children: [
                   Text(
-                    '${_promotion.valorDescuento}%',
-                    style: const TextStyle(
+                    '$prefix${_promotion.valorDescuento}%',
+                    style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
+                      color: color,
                     ),
                   ),
-                  const Text(
-                    'de descuento',
-                    style: TextStyle(fontSize: 16, color: AppColors.primary),
+                  Text(
+                    text,
+                    style: TextStyle(fontSize: 16, color: color),
                   ),
                 ],
               ),
@@ -626,6 +700,11 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
   }
 
   Widget _buildProductsCard() {
+    final isCharge = _promotion.isChargePromotion;
+    final color = isCharge ? Colors.orange : AppColors.primary;
+    final icon = isCharge ? Icons.trending_up : Icons.inventory;
+    final title = isCharge ? 'Productos con Recargo' : 'Productos con Descuento';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -634,39 +713,423 @@ class _PromotionDetailScreenState extends State<PromotionDetailScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.inventory, color: AppColors.primary),
+                Icon(icon, color: color),
                 const SizedBox(width: 8),
-                const Text(
-                  'Productos Incluidos',
+                Text(
+                  title,
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            ...(_promotion.productos ?? []).map(
-              (product) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+            
+            // Warning banner for surcharge promotions
+            if (isCharge) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.check_circle,
-                      color: Colors.green,
-                      size: 16,
-                    ),
+                    const Icon(Icons.warning, color: Colors.orange, size: 20),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        product.producto?.denominacion ?? 'Producto sin nombre',
+                        'Los siguientes productos tendrán un aumento en su precio de venta',
+                        style: TextStyle(
+                          color: Colors.orange[700],
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 16),
+            ],
+
+            // Information about promotion scope
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: color.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: color, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _promotion.aplicaTodo 
+                          ? 'Esta promoción aplica a todos los productos de la tienda'
+                          : 'Esta promoción aplica solo a productos específicos',
+                      style: TextStyle(
+                        color: color.withOpacity(0.8),
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: 16),
+
+            // Products list from cache
+            if (_isLoadingProducts)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_productCache.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.inventory_2_outlined, 
+                         color: Colors.grey[400], size: 32),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No se pudieron cargar los productos de la tienda',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              )
+            else
+              Column(
+                children: [
+                  // Header with product count
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.inventory, color: Colors.grey[600], size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Productos en la tienda: ${_productCache.length}',
+                          style: TextStyle(
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // Products list
+                  ...(_productCache.values.take(10).map(
+                    (product) => _buildProductItemFromCache(product, isCharge, color),
+                  )),
+                  
+                  // Show more indicator if there are more products
+                  if (_productCache.length > 10)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(top: 8),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: color.withOpacity(0.2)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.more_horiz, color: color, size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Y ${_productCache.length - 10} productos más...',
+                            style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildProductItemFromCache(Product product, bool isCharge, Color color) {
+    final double basePrice = product.basePrice;
+    final double promotionalPrice = _calculatePromotionalPrice(basePrice);
+    final double priceDifference = _calculatePriceDifference(basePrice, promotionalPrice);
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+        borderRadius: BorderRadius.circular(8),
+        color: Colors.grey.withOpacity(0.05),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Product header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.inventory_2, size: 14, color: Colors.blue),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Producto',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                    Text(
+                      'Producto',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                isCharge ? Icons.trending_up : Icons.local_offer,
+                color: color,
+                size: 20,
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 12),
+          _buildPriceInfoFromProduct(product, isCharge, color),
+          
+          // Add "Create Special Promotion" button for individual products
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _createSpecialPromotion(product),
+              icon: Icon(Icons.add_circle_outline, size: 16, color: color),
+              label: Text(
+                'Crear Promoción Especial',
+                style: TextStyle(fontSize: 12, color: color),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: color.withOpacity(0.5)),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPriceInfoFromProduct(Product product, bool isCharge, Color color) {
+    final double basePrice = product.basePrice;
+    final double promotionalPrice = _calculatePromotionalPrice(basePrice);
+    final double priceDifference = _calculatePriceDifference(basePrice, promotionalPrice);
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        children: [
+          // Product info header
+          Row(
+            children: [
+              Icon(Icons.inventory_2, color: color, size: 16),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'SKU: ${product.sku.isNotEmpty ? product.sku : "N/A"}',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (product.tieneStock)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'Stock: ${product.stockDisponible}',
+                    style: TextStyle(
+                      color: Colors.green[700],
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          
+          // Base price
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Precio base:',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 13,
+                ),
+              ),
+              Text(
+                '\$${NumberFormat('#,###.00').format(basePrice)}',
+                style: TextStyle(
+                  fontSize: 13,
+                  decoration: isCharge ? TextDecoration.lineThrough : null,
+                  color: isCharge ? Colors.grey[500] : Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          
+          // Promotional price
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                isCharge ? 'Precio con recargo:' : 'Precio con descuento:',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                '\$${NumberFormat('#,###.00').format(promotionalPrice)}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          
+          // Price difference
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  isCharge ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 14,
+                  color: color,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${isCharge ? "Aumento" : "Ahorro"}: \$${NumberFormat('#,###.00').format(priceDifference.abs())}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '(${_promotion.valorDescuento.toStringAsFixed(1)}%)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: color.withOpacity(0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _calculatePromotionalPrice(double basePrice) {
+    if (_promotion.isChargePromotion) {
+      // For surcharges, add the percentage to the base price
+      return basePrice * (1 + (_promotion.valorDescuento / 100));
+    } else {
+      // For discounts, subtract the percentage from the base price
+      return basePrice * (1 - (_promotion.valorDescuento / 100));
+    }
+  }
+
+  double _calculatePriceDifference(double basePrice, double promotionalPrice) {
+    return promotionalPrice - basePrice;
   }
 
   Widget _buildInfoRow(String label, String value) {
