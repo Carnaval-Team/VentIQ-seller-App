@@ -613,11 +613,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   'Contactos extra:',
                                   order.extraContacts!,
                                 ),
-                              if (order.paymentMethod != null)
-                                _buildDetailRow(
-                                  'Método de pago:',
-                                  order.paymentMethod!,
-                                ),
+                              // if (order.paymentMethod != null)
+                              //   _buildDetailRow(
+                              //     'Método de pago:',
+                              //     order.paymentMethod!,
+                              //   ),
                             ],
 
                             const SizedBox(height: 16),

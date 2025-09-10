@@ -389,6 +389,22 @@ class OrderService {
             print('ID de la ubicación: ${inventoryData['id_ubicacion']}');
             print('Cantidad a descontar: ${item.cantidad}');
 
+            // Use the correct price based on payment method
+            // If payment method is cash (id: 1), use discounted price
+            // Otherwise, use base price
+            double correctPrice;
+            if (item.paymentMethod?.id == 1) {
+              correctPrice = item.precioUnitario; // Discounted price for cash
+            } else {
+              correctPrice = item.precioBase ?? item.precioUnitario; // Base price for other methods
+            }
+
+            print('🏷️ Item: ${item.nombre}');
+            print('💰 Payment Method: ${item.paymentMethod?.displayName ?? 'None'} (ID: ${item.paymentMethod?.id})');
+            print('💵 Precio Base: ${item.precioBase}');
+            print('💸 Precio Unitario (con descuento): ${item.precioUnitario}');
+            print('✅ Precio Final Enviado: $correctPrice');
+
             return {
               'id_producto': item.producto.id,
               'id_variante': inventoryData['id_variante'],
@@ -396,7 +412,7 @@ class OrderService {
               'id_ubicacion': inventoryData['id_ubicacion'],
               'id_presentacion': inventoryData['id_presentacion'],
               'cantidad': item.cantidad,
-              'precio_unitario': item.precioUnitario,
+              'precio_unitario': correctPrice,
               'sku_producto':
                   inventoryData['sku_producto'] ?? item.producto.id.toString(),
               'sku_ubicacion': inventoryData['sku_ubicacion'],

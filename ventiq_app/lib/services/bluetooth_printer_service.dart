@@ -461,35 +461,120 @@ class BluetoothPrinterService {
   /// Print invoice for an order with customer receipt and warehouse picking slip
   Future<bool> printInvoice(Order order) async {
     if (!_isConnected || _selectedDevice == null) {
-      debugPrint('Printer not connected');
+      debugPrint('❌ Printer not connected');
       return false;
     }
 
     try {
+      debugPrint('🖨️ Starting split print job for order: ${order.id}');
+      debugPrint('📦 Order has ${order.items.length} items');
+      
       // Create ESC/POS profile
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
-      List<int> bytes = [];
 
-      // ========== CUSTOMER RECEIPT ==========
-      bytes += _addCustomerReceipt(generator, order);
+      // ========== PRINT CUSTOMER RECEIPT FIRST ==========
+      debugPrint('📄 Printing customer receipt...');
+      bool customerResult = await _printCustomerReceipt(generator, order);
       
-      // ========== DOTTED LINE SEPARATOR ==========
-      bytes += _addDottedLineSeparator(generator);
+      if (!customerResult) {
+        debugPrint('❌ Customer receipt failed to print');
+        return false;
+      }
       
-      // ========== WAREHOUSE PICKING SLIP ==========
-      bytes += _addWarehousePickingSlip(generator, order);
+      // Wait between prints to avoid buffer issues
+      debugPrint('⏳ Waiting 3 seconds before warehouse slip...');
+      await Future.delayed(const Duration(seconds: 3));
       
-      bytes += generator.emptyLines(3);
-      bytes += generator.cut();
-
-      // Send to printer
-      bool result = await PrintBluetoothThermal.writeBytes(bytes);
-      return result;
+      // ========== PRINT WAREHOUSE PICKING SLIP SEPARATELY ==========
+      debugPrint('🏭 Printing warehouse picking slip...');
+      bool warehouseResult = await _printWarehouseSlip(generator, order);
+      
+      if (!warehouseResult) {
+        debugPrint('❌ Warehouse slip failed to print');
+        return false;
+      }
+      
+      debugPrint('✅ Both receipts printed successfully');
+      return true;
+      
     } catch (e) {
-      debugPrint('Error printing invoice: $e');
+      debugPrint('❌ Error printing invoice: $e');
       return false;
     }
+  }
+
+  /// Print customer receipt as separate job
+  Future<bool> _printCustomerReceipt(Generator generator, Order order) async {
+    try {
+      List<int> bytes = [];
+      
+      bytes += _addCustomerReceipt(generator, order);
+      bytes += generator.emptyLines(3);
+      bytes += generator.cut();
+      
+      debugPrint('📤 Sending customer receipt (${bytes.length} bytes)...');
+      
+      return await _sendToPrinterWithRetry(bytes, 'Customer Receipt');
+    } catch (e) {
+      debugPrint('❌ Error creating customer receipt: $e');
+      return false;
+    }
+  }
+
+  /// Print warehouse slip as separate job
+  Future<bool> _printWarehouseSlip(Generator generator, Order order) async {
+    try {
+      List<int> bytes = [];
+      
+      bytes += _addWarehousePickingSlip(generator, order);
+      bytes += generator.emptyLines(3);
+      bytes += generator.cut();
+      
+      debugPrint('📤 Sending warehouse slip (${bytes.length} bytes)...');
+      
+      return await _sendToPrinterWithRetry(bytes, 'Warehouse Slip');
+    } catch (e) {
+      debugPrint('❌ Error creating warehouse slip: $e');
+      return false;
+    }
+  }
+
+  /// Send bytes to printer with retry logic
+  Future<bool> _sendToPrinterWithRetry(List<int> bytes, String jobName) async {
+    bool result = false;
+    int attempts = 0;
+    const maxAttempts = 3;
+    
+    while (!result && attempts < maxAttempts) {
+      attempts++;
+      debugPrint('🔄 $jobName - Print attempt $attempts of $maxAttempts');
+      
+      try {
+        result = await PrintBluetoothThermal.writeBytes(bytes);
+        if (result) {
+          debugPrint('✅ $jobName - Print successful on attempt $attempts');
+        } else {
+          debugPrint('❌ $jobName - Print failed on attempt $attempts');
+          if (attempts < maxAttempts) {
+            debugPrint('⏳ Waiting 2 seconds before retry...');
+            await Future.delayed(const Duration(seconds: 2));
+          }
+        }
+      } catch (printError) {
+        debugPrint('❌ $jobName - Print error on attempt $attempts: $printError');
+        if (attempts < maxAttempts) {
+          debugPrint('⏳ Waiting 3 seconds before retry...');
+          await Future.delayed(const Duration(seconds: 3));
+        }
+      }
+    }
+    
+    if (!result) {
+      debugPrint('❌ $jobName - All print attempts failed');
+    }
+    
+    return result;
   }
 
   /// Add customer receipt section
@@ -515,7 +600,7 @@ class BluetoothPrinterService {
     }
     
     bytes += generator.text('FECHA: ${_formatDateForPrint(order.fechaCreacion)}', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('PAGO: ${order.paymentMethod ?? 'Efectivo'}', styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('PAGO: ${order.paymentMethod ?? 'Completado'}', styles: PosStyles(align: PosAlign.left));
     bytes += generator.emptyLines(1);
 
     // Products header
@@ -569,12 +654,16 @@ class BluetoothPrinterService {
   List<int> _addWarehousePickingSlip(Generator generator, Order order) {
     List<int> bytes = [];
 
+    debugPrint('🏭 Creating warehouse picking slip for order ${order.id}');
+    
     // Header
     bytes += generator.text('VENTIQ', styles: PosStyles(align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2));
     bytes += generator.text('COMPROBANTE DE ALMACEN', styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.text('GUIA DE PICKING', styles: PosStyles(align: PosAlign.center));
     bytes += generator.text('================================', styles: PosStyles(align: PosAlign.center));
     bytes += generator.emptyLines(1);
+    
+    debugPrint('📋 Warehouse header added');
 
     // Order information
     bytes += generator.text('ORDEN: ${order.id}', styles: PosStyles(align: PosAlign.left, bold: true));
@@ -594,9 +683,13 @@ class BluetoothPrinterService {
     bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
 
     // Products with warehouse locations
-    for (var item in order.items) {
+    debugPrint('📦 Adding ${order.items.length} products to warehouse slip');
+    for (int i = 0; i < order.items.length; i++) {
+      var item = order.items[i];
       String ubicacion = item.ubicacionAlmacen ?? 'N/A';
       String productName = item.producto.denominacion;
+      
+      debugPrint('📋 Product ${i + 1}: ${item.cantidad}x $productName @ $ubicacion');
       
       // Truncate product name if too long
       if (productName.length > 15) {
@@ -608,6 +701,7 @@ class BluetoothPrinterService {
       bytes += generator.text('    | \$${item.precioUnitario.toStringAsFixed(0)} c/u', styles: PosStyles(align: PosAlign.left));
       bytes += generator.emptyLines(1);
     }
+    debugPrint('✅ All warehouse products added');
 
     // Summary
     bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
@@ -616,26 +710,27 @@ class BluetoothPrinterService {
     bytes += generator.emptyLines(1);
 
     // Instructions
-    bytes += generator.text('INSTRUCCIONES:', styles: PosStyles(align: PosAlign.left, bold: true));
-    bytes += generator.text('1. Verificar cantidad y producto', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('2. Confirmar ubicacion en almacen', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('3. Marcar como completado', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.emptyLines(1);
+    // bytes += generator.text('INSTRUCCIONES:', styles: PosStyles(align: PosAlign.left, bold: true));
+    // bytes += generator.text('1. Verificar cantidad y producto', styles: PosStyles(align: PosAlign.left));
+    // bytes += generator.text('2. Confirmar ubicacion en almacen', styles: PosStyles(align: PosAlign.left));
+    // bytes += generator.text('3. Marcar como completado', styles: PosStyles(align: PosAlign.left));
+    // bytes += generator.emptyLines(1);
 
     // Signature section
-    bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('FIRMA ALMACENERO:', styles: PosStyles(align: PosAlign.left, bold: true));
-    bytes += generator.emptyLines(3);
-    bytes += generator.text('_________________________', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('Nombre y Firma', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.emptyLines(1);
+    // bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
+    // bytes += generator.text('FIRMA ALMACENERO:', styles: PosStyles(align: PosAlign.left, bold: true));
+    // bytes += generator.emptyLines(3);
+    // bytes += generator.text('_________________________', styles: PosStyles(align: PosAlign.left));
+    // bytes += generator.text('Nombre y Firma', styles: PosStyles(align: PosAlign.left));
+    // bytes += generator.emptyLines(1);
     
-    bytes += generator.text('HORA COMPLETADO: ___________', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.emptyLines(1);
+    // bytes += generator.text('HORA COMPLETADO: ___________', styles: PosStyles(align: PosAlign.left));
+    // bytes += generator.emptyLines(1);
 
     // Footer
     bytes += generator.text('VENTIQ - Sistema de Almacen', styles: PosStyles(align: PosAlign.center));
     
+    debugPrint('🏭 Warehouse picking slip completed (${bytes.length} bytes)');
     return bytes;
   }
 
