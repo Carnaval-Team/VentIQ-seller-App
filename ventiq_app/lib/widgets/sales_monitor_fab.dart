@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/seller_sales_service.dart';
-import '../services/turno_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/user_preferences_service.dart';
 
 class SalesMonitorFAB extends StatefulWidget {
   const SalesMonitorFAB({Key? key}) : super(key: key);
@@ -13,7 +13,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     with TickerProviderStateMixin {
   bool _isExpanded = false;
   bool _isLoading = false;
-  SellerSalesReport? _currentSales;
+  Map<String, dynamic>? _currentSales;
   late AnimationController _animationController;
   late Animation<double> _expandAnimation;
 
@@ -55,12 +55,40 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     });
 
     try {
-      final salesData = await SellerSalesService.getTodaySales();
+      // Use the same query as cierre_screen.dart
+      final userPrefs = UserPreferencesService();
+      final idTpv = await userPrefs.getIdTpv();
+      final userID = await userPrefs.getUserId();
 
-      setState(() {
-        _currentSales = salesData;
-        _isLoading = false;
-      });
+      if (idTpv != null) {
+        print('🧪 Loading sales data with fn_resumen_diario_cierre - TPV: $idTpv');
+        
+        final resumenCierre = await Supabase.instance.client.rpc(
+          'fn_resumen_diario_cierre',
+          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
+        );
+        
+        print('📈 Sales Monitor Response: $resumenCierre');
+        
+        if (resumenCierre != null && resumenCierre is List && resumenCierre.isNotEmpty) {
+          final data = resumenCierre[0];
+          
+          setState(() {
+            _currentSales = data;
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _currentSales = null;
+            _isLoading = false;
+          });
+        }
+      } else {
+        setState(() {
+          _currentSales = null;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -200,8 +228,8 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
             children: [
               Expanded(
                 child: _buildMetricCard(
-                  'Ventas',
-                  '${_currentSales!.totalVentas}',
+                  'Operaciones',
+                  '${_currentSales!['operaciones_totales'] ?? 0}',
                   Icons.shopping_cart,
                   const Color(0xFF10B981),
                 ),
@@ -210,7 +238,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
               Expanded(
                 child: _buildMetricCard(
                   'Total',
-                  '\$${_currentSales!.totalDineroGeneral.toStringAsFixed(2)}',
+                  '\$${(_currentSales!['ventas_totales'] ?? 0.0).toStringAsFixed(2)}',
                   Icons.attach_money,
                   const Color(0xFF4A90E2),
                 ),
@@ -242,7 +270,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                   children: [
                     const Text('Efectivo:', style: TextStyle(fontSize: 13)),
                     Text(
-                      '\$${_currentSales!.totalDineroEfectivo.toStringAsFixed(2)}',
+                      '\$${(_currentSales!['efectivo_real'] ?? 0.0).toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -260,7 +288,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                       style: TextStyle(fontSize: 13),
                     ),
                     Text(
-                      '\$${_currentSales!.totalDineroTransferencia.toStringAsFixed(2)}',
+                      '\$${((_currentSales!['ventas_totales'] ?? 0.0) - (_currentSales!['efectivo_real'] ?? 0.0)).toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -275,7 +303,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                   children: [
                     const Text('Productos:', style: TextStyle(fontSize: 13)),
                     Text(
-                      '${_currentSales!.totalProductosVendidos.toStringAsFixed(0)} uds',
+                      '${(_currentSales!['productos_vendidos'] ?? 0)} uds',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
