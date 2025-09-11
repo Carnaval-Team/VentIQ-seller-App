@@ -38,8 +38,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   @override
   void initState() {
     super.initState();
-    _calcularVentaTotal();
-    _loadExpenses();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    await _loadExpenses();
+    await _calcularVentaTotal();
   }
 
   Future<void> _calcularVentaTotal() async {
@@ -217,7 +221,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _calcularVentaTotal,
+            onPressed: _initializeData,
             tooltip: 'Actualizar',
           ),
         ],

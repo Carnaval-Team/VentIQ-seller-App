@@ -50,18 +50,22 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
 
     if (_isExpanded) {
       _animationController.forward();
-      _loadSalesData();
-      _loadExpenses();
+      _loadDataSequentially();
     } else {
       _animationController.reverse();
     }
   }
 
-  Future<void> _loadSalesData() async {
+  Future<void> _loadDataSequentially() async {
     setState(() {
       _isLoading = true;
     });
+    
+    await _loadExpenses();
+    await _loadSalesData();
+  }
 
+  Future<void> _loadSalesData() async {
     try {
       // Use the same query as cierre_screen.dart
       final userPrefs = UserPreferencesService();
@@ -333,7 +337,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                       style: TextStyle(fontSize: 13),
                     ),
                     Text(
-                      '\$${(((_currentSales!['ventas_totales'] ?? 0.0) - (_currentSales!['efectivo_real'] ?? 0.0)) + _egresosTransferencias).toStringAsFixed(2)}',
+                      '\$${((_currentSales!['ventas_totales'] ?? 0.0) - (_currentSales!['efectivo_real'] ?? 0.0) + _egresosEfectivo).toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
