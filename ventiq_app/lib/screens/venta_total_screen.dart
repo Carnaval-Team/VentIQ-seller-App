@@ -3,6 +3,7 @@ import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/order.dart';
+import '../models/expense.dart';
 import '../services/order_service.dart';
 import '../services/bluetooth_printer_service.dart';
 import '../services/user_preferences_service.dart';
@@ -28,10 +29,17 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   double _totalEfectivoReal = 0.0; // Cambio: era _totalDescuentos
   bool _isLoading = true;
 
+  // Expenses data
+  List<Expense> _expenses = [];
+  double _totalEgresos = 0.0;
+  double _egresosEfectivo = 0.0;
+  double _egresosTransferencias = 0.0;
+
   @override
   void initState() {
     super.initState();
     _calcularVentaTotal();
+    _loadExpenses();
   }
 
   Future<void> _calcularVentaTotal() async {
@@ -89,15 +97,14 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             _totalVentas = (data['ventas_totales'] ?? 0.0).toDouble();
             _totalProductos = (data['productos_vendidos'] ?? 0).toInt();
 
-            // Calcular egresado: ventas_totales - efectivo_real + egresos
+            // Calcular egresado: ventas_totales - efectivo_real + egresos en efectivo
             final ventasTotales = (data['ventas_totales'] ?? 0.0).toDouble();
             final efectivoReal = (data['efectivo_real'] ?? 0.0).toDouble();
-            final egresos = (data['egresos_efectivo'] ?? 0.0).toDouble();
-            _totalEgresado = ventasTotales - efectivoReal + egresos;
+            _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
 
-            // Efectivo real: efectivo_esperado - egresos
+            // Efectivo real: efectivo_esperado - egresos en efectivo
             final efectivoEsperado = (data['efectivo_esperado'] ?? 0.0).toDouble();
-            _totalEfectivoReal = efectivoEsperado - egresos;
+            _totalEfectivoReal = efectivoEsperado - _egresosEfectivo;
 
             _isLoading = false;
           });
@@ -108,8 +115,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           print('Órdenes cargadas: ${orders.length}');
           print('Órdenes completadas: ${ordenesVendidas.length}');
           print('Productos vendidos: ${productosVendidos.length}');
-          print('Total Egresado: $_totalEgresado');
-          print('Efectivo Real: $_totalEfectivoReal');
+          print('Total Egresado: $_totalEgresado (incluye egresos efectivo: $_egresosEfectivo)');
+          print('Efectivo Real: $_totalEfectivoReal (descontando egresos efectivo)');
         }
       }
     } catch (e) {
@@ -141,6 +148,48 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         _totalEgresado = 0.0;
         _totalEfectivoReal = 0.0;
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadExpenses() async {
+    try {
+      final expenses = await TurnoService.getEgresosEnriquecidos();
+
+      // Calculate total expenses and separate by payment type
+      double total = 0.0;
+      double efectivo = 0.0;
+      double transferencias = 0.0;
+
+      for (final expense in expenses) {
+        total += expense.montoEntrega;
+        // Si esDigital es false explícitamente, es efectivo
+        // Si esDigital es true o null, considerarlo como transferencia/digital
+        if (expense.esDigital == false) {
+          efectivo += expense.montoEntrega;
+        } else {
+          transferencias += expense.montoEntrega;
+        }
+      }
+
+      setState(() {
+        _expenses = expenses;
+        _totalEgresos = total;
+        _egresosEfectivo = efectivo;
+        _egresosTransferencias = transferencias;
+      });
+
+      print('DEBUG - Expenses loaded:');
+      print('Total egresos: $_totalEgresos');
+      print('Egresos efectivo: $_egresosEfectivo');
+      print('Egresos transferencias: $_egresosTransferencias');
+    } catch (e) {
+      print('Error loading expenses: $e');
+      setState(() {
+        _expenses = [];
+        _totalEgresos = 0.0;
+        _egresosEfectivo = 0.0;
+        _egresosTransferencias = 0.0;
       });
     }
   }

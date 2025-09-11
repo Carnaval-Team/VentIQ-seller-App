@@ -30,17 +30,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
   bool isLoading = true;
   String? errorMessage;
   final ProductService _productService = ProductService();
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
-  
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+
   // Search functionality
   bool _isSearchVisible = false;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
-  
+
   // Promotion data
   Map<String, dynamic>? _promotionData;
-  
+
   // Cache para evitar peticiones frecuentes
   static final Map<int, Map<String, List<Product>>> _productsCache = {};
   static final Map<int, DateTime> _cacheTimestamps = {};
@@ -86,39 +87,45 @@ class _ProductsScreenState extends State<ProductsScreen> {
     } else {
       filteredProductsBySubcategory = {};
       productsBySubcategory.forEach((subcategory, products) {
-        final filteredProducts = products.where((product) {
-          return product.denominacion.toLowerCase().contains(_searchQuery) ||
-                 product.descripcion?.toLowerCase().contains(_searchQuery) == true;
-        }).toList();
-        
+        final filteredProducts =
+            products.where((product) {
+              return product.denominacion.toLowerCase().contains(
+                    _searchQuery,
+                  ) ||
+                  product.descripcion?.toLowerCase().contains(_searchQuery) ==
+                      true;
+            }).toList();
+
         if (filteredProducts.isNotEmpty) {
           filteredProductsBySubcategory[subcategory] = filteredProducts;
         }
       });
     }
-    
+
     // Debug logging
-    print('🔍 Filter applied: query="$_searchQuery", total filtered products: ${filteredProductsBySubcategory.values.fold(0, (sum, list) => sum + list.length)}');
+    print(
+      '🔍 Filter applied: query="$_searchQuery", total filtered products: ${filteredProductsBySubcategory.values.fold(0, (sum, list) => sum + list.length)}',
+    );
   }
 
   void _showSearchOverlay() {
     setState(() {
       _isSearchVisible = true;
     });
-    
+
     // Focus the search field
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FocusScope.of(context).requestFocus(_searchFocusNode);
     });
   }
-  
+
   void _hideSearchOverlay() {
     setState(() {
       _isSearchVisible = false;
     });
     FocusScope.of(context).unfocus();
   }
-  
+
   void _clearSearch() {
     setState(() {
       _searchController.clear();
@@ -126,7 +133,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       _filterProducts();
     });
   }
-  
+
   void _toggleSearch() {
     if (_isSearchVisible) {
       _hideSearchOverlay();
@@ -155,22 +162,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
       }
 
       print('🔄 Loading products for category ${widget.categoryId}');
-      final products = await _productService.getProductsByCategory(widget.categoryId);
-      print('✅ Loaded ${products.values.fold(0, (sum, list) => sum + list.length)} products');
-      
+      final products = await _productService.getProductsByCategory(
+        widget.categoryId,
+      );
+      print(
+        '✅ Loaded ${products.values.fold(0, (sum, list) => sum + list.length)} products',
+      );
+
       // Guardar en caché
       _productsCache[widget.categoryId] = products;
       _cacheTimestamps[widget.categoryId] = DateTime.now();
-      
+
       setState(() {
         productsBySubcategory = products;
         filteredProductsBySubcategory = Map.from(products);
         isLoading = false;
       });
-      
+
       // Aplicar filtro actual si existe
       _filterProducts();
-      
     } catch (e) {
       print('❌ Error loading products: $e');
       setState(() {
@@ -179,17 +189,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
       });
     }
   }
-  
+
   bool _isCacheValid(int categoryId) {
-    if (!_productsCache.containsKey(categoryId) || !_cacheTimestamps.containsKey(categoryId)) {
+    if (!_productsCache.containsKey(categoryId) ||
+        !_cacheTimestamps.containsKey(categoryId)) {
       return false;
     }
-    
+
     final cacheTime = _cacheTimestamps[categoryId]!;
     final now = DateTime.now();
     return now.difference(cacheTime) < _cacheExpiration;
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -213,11 +223,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(
-              Icons.search,
-              color: Colors.white,
-              size: 28,
-            ),
+            icon: const Icon(Icons.search, color: Colors.white, size: 28),
             onPressed: _toggleSearch,
             tooltip: 'Buscar productos',
           ),
@@ -254,109 +260,112 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 topRight: Radius.circular(20),
               ),
             ),
-            child: isLoading
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(
-                      color: widget.categoryColor,
-                      strokeWidth: 3,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Cargando productos...',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: widget.categoryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            : errorMessage != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 80,
-                          color: Colors.red.withOpacity(0.3),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          errorMessage!,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.red,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () => _loadProducts(forceRefresh: true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.categoryColor,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('Reintentar'),
-                        ),
-                      ],
-                    ),
-                  )
-                : filteredProductsBySubcategory.isEmpty
+            child:
+                isLoading
                     ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.inventory_2_outlined,
-                              size: 80,
-                              color: widget.categoryColor.withOpacity(0.3),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            color: widget.categoryColor,
+                            strokeWidth: 3,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Cargando productos...',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: widget.categoryColor,
                             ),
-                            const SizedBox(height: 16),
-                            Text(
-                              _searchQuery.isNotEmpty 
+                          ),
+                        ],
+                      ),
+                    )
+                    : errorMessage != null
+                    ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 80,
+                            color: Colors.red.withOpacity(0.3),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            errorMessage!,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.red,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => _loadProducts(forceRefresh: true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: widget.categoryColor,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Reintentar'),
+                          ),
+                        ],
+                      ),
+                    )
+                    : filteredProductsBySubcategory.isEmpty
+                    ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.inventory_2_outlined,
+                            size: 80,
+                            color: widget.categoryColor.withOpacity(0.3),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _searchQuery.isNotEmpty
                                 ? 'No se encontraron productos'
                                 : 'No hay productos disponibles',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: widget.categoryColor,
+                            ),
+                          ),
+                          if (_searchQuery.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Intenta con otros términos de búsqueda',
                               style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: widget.categoryColor,
+                                fontSize: 14,
+                                color: Colors.grey[600],
                               ),
                             ),
-                            if (_searchQuery.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                'Intenta con otros términos de búsqueda',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
                           ],
-                        ),
-                      )
-                : RefreshIndicator(
-                    onRefresh: () async => _loadProducts(forceRefresh: true),
-                    color: widget.categoryColor,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      itemCount: filteredProductsBySubcategory.keys.length,
-                      itemBuilder: (context, index) {
-                        final subcategory = filteredProductsBySubcategory.keys.elementAt(index);
-                        final products = filteredProductsBySubcategory[subcategory]!;
-                        return _SubcategorySection(
-                          title: subcategory,
-                          products: products,
-                          categoryColor: widget.categoryColor,
-                          promotionData: _promotionData,
-                        );
-                      },
+                        ],
+                      ),
+                    )
+                    : RefreshIndicator(
+                      onRefresh: () async => _loadProducts(forceRefresh: true),
+                      color: widget.categoryColor,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        itemCount: filteredProductsBySubcategory.keys.length,
+                        itemBuilder: (context, index) {
+                          final subcategory = filteredProductsBySubcategory.keys
+                              .elementAt(index);
+                          final products =
+                              filteredProductsBySubcategory[subcategory]!;
+                          return _SubcategorySection(
+                            title: subcategory,
+                            products: products,
+                            categoryColor: widget.categoryColor,
+                            promotionData: _promotionData,
+                          );
+                        },
+                      ),
                     ),
-                  ),
           ),
           // Floating search overlay
           if (_isSearchVisible)
@@ -366,7 +375,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 color: Colors.black.withOpacity(0.5),
                 child: Center(
                   child: GestureDetector(
-                    onTap: () {}, // Prevent closing when tapping on the search card
+                    onTap:
+                        () {}, // Prevent closing when tapping on the search card
                     child: Container(
                       margin: const EdgeInsets.all(20),
                       padding: const EdgeInsets.all(20),
@@ -535,48 +545,13 @@ class _SubcategorySection extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: products.asMap().entries.map((entry) {
-            final index = entry.key;
-            final product = entry.value;
-            return Container(
-              margin: EdgeInsets.only(
-                bottom: index < products.length - 1 ? 6 : 0,
-              ),
-              child: _PlayStoreProductCard(
-                product: product,
-                categoryColor: categoryColor,
-                promotionData: promotionData,
-              ),
-            );
-          }).toList(),
-        ),
-      );
-    }
-
-    // Para más de 3 productos, usar el layout horizontal original
-    return SizedBox(
-      height: 252, // Altura optimizada: 3 productos (80px) + espaciado (6px entre cards)
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: (products.length / 3).ceil(), // Número de columnas de 3 productos
-        itemBuilder: (context, columnIndex) {
-          // Calcular productos para esta columna
-          final startIndex = columnIndex * 3;
-          final endIndex = (startIndex + 3).clamp(0, products.length);
-          final columnProducts = products.sublist(startIndex, endIndex);
-          
-          return Container(
-            width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
-            margin: const EdgeInsets.only(right: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: columnProducts.asMap().entries.map((entry) {
+          children:
+              products.asMap().entries.map((entry) {
                 final index = entry.key;
                 final product = entry.value;
                 return Container(
                   margin: EdgeInsets.only(
-                    bottom: index < columnProducts.length - 1 ? 6 : 0, // Solo espaciado entre cards, no al final
+                    bottom: index < products.length - 1 ? 6 : 0,
                   ),
                   child: _PlayStoreProductCard(
                     product: product,
@@ -585,6 +560,48 @@ class _SubcategorySection extends StatelessWidget {
                   ),
                 );
               }).toList(),
+        ),
+      );
+    }
+
+    // Para más de 3 productos, usar el layout horizontal original
+    return SizedBox(
+      height:
+          252, // Altura optimizada: 3 productos (80px) + espaciado (6px entre cards)
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount:
+            (products.length / 3).ceil(), // Número de columnas de 3 productos
+        itemBuilder: (context, columnIndex) {
+          // Calcular productos para esta columna
+          final startIndex = columnIndex * 3;
+          final endIndex = (startIndex + 3).clamp(0, products.length);
+          final columnProducts = products.sublist(startIndex, endIndex);
+
+          return Container(
+            width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
+            margin: const EdgeInsets.only(right: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children:
+                  columnProducts.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final product = entry.value;
+                    return Container(
+                      margin: EdgeInsets.only(
+                        bottom:
+                            index < columnProducts.length - 1
+                                ? 6
+                                : 0, // Solo espaciado entre cards, no al final
+                      ),
+                      child: _PlayStoreProductCard(
+                        product: product,
+                        categoryColor: categoryColor,
+                        promotionData: promotionData,
+                      ),
+                    );
+                  }).toList(),
             ),
           );
         },
@@ -610,44 +627,51 @@ class _PlayStoreProductCard extends StatefulWidget {
 }
 
 class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
-  
-  double? _calculateDiscountPrice() {
+  Map<String, double> _calculatePromotionPrices() {
     if (widget.promotionData == null) {
       print('🎯 No promotion data available');
-      return null;
+      return {
+        'precio_venta': widget.product.precio,
+        'precio_oferta': widget.product.precio,
+      };
     }
-    
+
     final valorDescuento = widget.promotionData!['valor_descuento'] as double?;
     final tipoDescuento = widget.promotionData!['tipo_descuento'] as int?;
-    
-    print('🎯 Discount calculation: valor=$valorDescuento, tipo=$tipoDescuento');
-    
+
+    print(
+      '🎯 Promotion calculation: valor=$valorDescuento, tipo=$tipoDescuento',
+    );
+
     final originalPrice = widget.product.precio;
-    final discountedPrice = PriceUtils.calculateAndRoundDiscountPrice(
+    final promotionPrices = PriceUtils.calculatePromotionPrices(
       originalPrice,
       valorDescuento,
       tipoDescuento,
     );
-    
-    if (discountedPrice != null) {
-      print('🎯 Rounded discount price: $originalPrice -> $discountedPrice');
-    }
-    
-    return discountedPrice;
+
+    print('🎯 Promotion prices: $promotionPrices');
+
+    return promotionPrices;
   }
 
   @override
   Widget build(BuildContext context) {
-    final discountPrice = _calculateDiscountPrice();
+    final promotionPrices = _calculatePromotionPrices();
+    final precioVenta = promotionPrices['precio_venta']!;
+    final precioOferta = promotionPrices['precio_oferta']!;
+    final hasPromotion = PriceUtils.hasActivePromotion(widget.promotionData?['tipo_descuento']);
+    
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ProductDetailsScreen(
-              product: widget.product,
-              categoryColor: widget.categoryColor,
-            ),
+            builder:
+                (_) => ProductDetailsScreen(
+                  product: widget.product,
+                  categoryColor: widget.categoryColor,
+                ),
           ),
         );
       },
@@ -694,9 +718,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                     return Container(
                       color: Colors.grey[200],
                       child: const Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     );
                   },
@@ -746,36 +768,38 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                   Flexible(
                     child: Row(
                       children: [
-                        if (discountPrice != null) ...[
-                          // Precio original tachado
+                        if (hasPromotion && precioVenta != precioOferta) ...[
+                          // Precio de venta (tachado si es mayor que oferta)
                           Flexible(
                             child: Text(
-                              '\$${widget.product.precio.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                                decoration: TextDecoration.lineThrough,
+                              '\$${precioVenta.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: precioVenta > precioOferta ? 12 : 14,
+                                color: precioVenta > precioOferta ? Colors.grey : widget.categoryColor,
+                                decoration: precioVenta > precioOferta ? TextDecoration.lineThrough : null,
+                                fontWeight: precioVenta > precioOferta ? FontWeight.normal : FontWeight.w600,
                                 height: 1.2,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 4),
-                          // Precio con descuento
+                          // Precio de oferta (destacado si es menor que venta)
                           Flexible(
                             child: Text(
-                              '\$${PriceUtils.formatDiscountPrice(discountPrice)}',
+                              '\$${precioOferta.toStringAsFixed(2)}',
                               style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: widget.categoryColor,
+                                fontSize: precioOferta < precioVenta ? 14 : 12,
+                                fontWeight: precioOferta < precioVenta ? FontWeight.w600 : FontWeight.normal,
+                                color: precioOferta < precioVenta ? widget.categoryColor : Colors.grey,
+                                decoration: precioOferta > precioVenta ? TextDecoration.lineThrough : null,
                                 height: 1.2,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ] else
-                          // Precio normal sin descuento
+                          // Precio normal sin promoción
                           Flexible(
                             child: Text(
                               '\$${widget.product.precio.toStringAsFixed(2)}',
@@ -802,12 +826,15 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                         // Estado de stock
                         Flexible(
                           child: Text(
-                            widget.product.cantidad > 0 ? 'Stock: ${widget.product.cantidad}' : 'Agotado',
+                            widget.product.cantidad > 0
+                                ? 'Stock: ${widget.product.cantidad}'
+                                : 'Agotado',
                             style: TextStyle(
                               fontSize: 13,
-                              color: widget.product.cantidad > 0
-                                  ? Colors.green[600]
-                                  : Colors.red[600],
+                              color:
+                                  widget.product.cantidad > 0
+                                      ? Colors.green[600]
+                                      : Colors.red[600],
                               height: 1.2,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -830,16 +857,14 @@ class _ProductCard extends StatefulWidget {
   final Product product;
   final Color categoryColor;
 
-  const _ProductCard({
-    required this.product,
-    required this.categoryColor,
-  });
+  const _ProductCard({required this.product, required this.categoryColor});
 
   @override
   State<_ProductCard> createState() => _ProductCardState();
 }
 
-class _ProductCardState extends State<_ProductCard> with SingleTickerProviderStateMixin {
+class _ProductCardState extends State<_ProductCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   bool _isPressed = false;
@@ -851,13 +876,9 @@ class _ProductCardState extends State<_ProductCard> with SingleTickerProviderSta
       duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.95,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -886,10 +907,11 @@ class _ProductCardState extends State<_ProductCard> with SingleTickerProviderSta
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ProductDetailsScreen(
-          product: widget.product,
-          categoryColor: widget.categoryColor,
-        ),
+        builder:
+            (_) => ProductDetailsScreen(
+              product: widget.product,
+              categoryColor: widget.categoryColor,
+            ),
       ),
     );
   }
@@ -914,17 +936,22 @@ class _ProductCardState extends State<_ProductCard> with SingleTickerProviderSta
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: _isPressed 
-                          ? widget.categoryColor.withOpacity(0.3)
-                          : Colors.black.withOpacity(0.08),
+                      color:
+                          _isPressed
+                              ? widget.categoryColor.withOpacity(0.3)
+                              : Colors.black.withOpacity(0.08),
                       blurRadius: _isPressed ? 15 : 10,
                       offset: Offset(0, _isPressed ? 2 : 4),
                       spreadRadius: _isPressed ? 2 : 0,
                     ),
                   ],
-                  border: _isPressed 
-                      ? Border.all(color: widget.categoryColor.withOpacity(0.5), width: 2)
-                      : null,
+                  border:
+                      _isPressed
+                          ? Border.all(
+                            color: widget.categoryColor.withOpacity(0.5),
+                            width: 2,
+                          )
+                          : null,
                 ),
                 child: Row(
                   children: [
@@ -938,66 +965,84 @@ class _ProductCardState extends State<_ProductCard> with SingleTickerProviderSta
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: widget.product.foto != null
-                            ? Image.network(
-                                widget.product.foto!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          widget.categoryColor.withOpacity(0.3),
-                                          widget.categoryColor.withOpacity(0.1),
-                                        ],
+                        child:
+                            widget.product.foto != null
+                                ? Image.network(
+                                  widget.product.foto!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            widget.categoryColor.withOpacity(
+                                              0.3,
+                                            ),
+                                            widget.categoryColor.withOpacity(
+                                              0.1,
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                    child: Icon(
-                                      Icons.inventory_2,
-                                      color: widget.categoryColor,
-                                      size: 32,
-                                    ),
-                                  );
-                                },
-                                loadingBuilder: (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Container(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          widget.categoryColor.withOpacity(0.2),
-                                          widget.categoryColor.withOpacity(0.1),
-                                        ],
-                                      ),
-                                    ),
-                                    child: Center(
-                                      child: CircularProgressIndicator(
+                                      child: Icon(
+                                        Icons.inventory_2,
                                         color: widget.categoryColor,
-                                        strokeWidth: 2,
-                                        value: loadingProgress.expectedTotalBytes != null
-                                            ? loadingProgress.cumulativeBytesLoaded /
-                                                loadingProgress.expectedTotalBytes!
-                                            : null,
+                                        size: 32,
                                       ),
+                                    );
+                                  },
+                                  loadingBuilder: (
+                                    context,
+                                    child,
+                                    loadingProgress,
+                                  ) {
+                                    if (loadingProgress == null) return child;
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            widget.categoryColor.withOpacity(
+                                              0.2,
+                                            ),
+                                            widget.categoryColor.withOpacity(
+                                              0.1,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          color: widget.categoryColor,
+                                          strokeWidth: 2,
+                                          value:
+                                              loadingProgress
+                                                          .expectedTotalBytes !=
+                                                      null
+                                                  ? loadingProgress
+                                                          .cumulativeBytesLoaded /
+                                                      loadingProgress
+                                                          .expectedTotalBytes!
+                                                  : null,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                )
+                                : Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        widget.categoryColor.withOpacity(0.3),
+                                        widget.categoryColor.withOpacity(0.1),
+                                      ],
                                     ),
-                                  );
-                                },
-                              )
-                            : Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      widget.categoryColor.withOpacity(0.3),
-                                      widget.categoryColor.withOpacity(0.1),
-                                    ],
+                                  ),
+                                  child: Icon(
+                                    Icons.inventory_2,
+                                    color: widget.categoryColor,
+                                    size: 32,
                                   ),
                                 ),
-                                child: Icon(
-                                  Icons.inventory_2,
-                                  color: widget.categoryColor,
-                                  size: 32,
-                                ),
-                              ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -1022,7 +1067,10 @@ class _ProductCardState extends State<_ProductCard> with SingleTickerProviderSta
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: widget.categoryColor.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(8),
@@ -1133,11 +1181,7 @@ class _PropertyIcon extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: color.withOpacity(0.3), width: 1),
         ),
-        child: Icon(
-          icon,
-          size: 14,
-          color: color,
-        ),
+        child: Icon(icon, size: 14, color: color),
       ),
     );
   }

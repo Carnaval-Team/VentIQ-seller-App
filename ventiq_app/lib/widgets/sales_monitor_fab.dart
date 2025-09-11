@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/user_preferences_service.dart';
+import '../services/turno_service.dart';
+import '../models/expense.dart';
 
 class SalesMonitorFAB extends StatefulWidget {
   const SalesMonitorFAB({Key? key}) : super(key: key);
@@ -16,6 +18,11 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
   Map<String, dynamic>? _currentSales;
   late AnimationController _animationController;
   late Animation<double> _expandAnimation;
+
+  // Expenses data
+  List<Expense> _expenses = [];
+  double _egresosEfectivo = 0.0;
+  double _egresosTransferencias = 0.0;
 
   @override
   void initState() {
@@ -44,6 +51,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
     if (_isExpanded) {
       _animationController.forward();
       _loadSalesData();
+      _loadExpenses();
     } else {
       _animationController.reverse();
     }
@@ -94,6 +102,43 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
         _isLoading = false;
       });
       print('Error loading sales data: $e');
+    }
+  }
+
+  Future<void> _loadExpenses() async {
+    try {
+      final expenses = await TurnoService.getEgresosEnriquecidos();
+
+      // Calculate expenses by payment type
+      double efectivo = 0.0;
+      double transferencias = 0.0;
+
+      for (final expense in expenses) {
+        // Si esDigital es false explícitamente, es efectivo
+        // Si esDigital es true o null, considerarlo como transferencia/digital
+        if (expense.esDigital == false) {
+          efectivo += expense.montoEntrega;
+        } else {
+          transferencias += expense.montoEntrega;
+        }
+      }
+
+      setState(() {
+        _expenses = expenses;
+        _egresosEfectivo = efectivo;
+        _egresosTransferencias = transferencias;
+      });
+
+      print('DEBUG - Sales Monitor Expenses loaded:');
+      print('Egresos efectivo: $_egresosEfectivo');
+      print('Egresos transferencias: $_egresosTransferencias');
+    } catch (e) {
+      print('Error loading expenses in sales monitor: $e');
+      setState(() {
+        _expenses = [];
+        _egresosEfectivo = 0.0;
+        _egresosTransferencias = 0.0;
+      });
     }
   }
 
@@ -270,7 +315,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                   children: [
                     const Text('Efectivo:', style: TextStyle(fontSize: 13)),
                     Text(
-                      '\$${(_currentSales!['efectivo_real'] ?? 0.0).toStringAsFixed(2)}',
+                      '\$${((_currentSales!['efectivo_real'] ?? 0.0) - _egresosEfectivo).toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -288,7 +333,7 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
                       style: TextStyle(fontSize: 13),
                     ),
                     Text(
-                      '\$${((_currentSales!['ventas_totales'] ?? 0.0) - (_currentSales!['efectivo_real'] ?? 0.0)).toStringAsFixed(2)}',
+                      '\$${(((_currentSales!['ventas_totales'] ?? 0.0) - (_currentSales!['efectivo_real'] ?? 0.0)) + _egresosTransferencias).toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,

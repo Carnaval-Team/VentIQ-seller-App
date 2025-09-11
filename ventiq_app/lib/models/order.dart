@@ -1,5 +1,6 @@
 import 'product.dart';
 import 'payment_method.dart';
+import '../utils/price_utils.dart';
 
 class Order {
   final String id;
@@ -75,6 +76,7 @@ class OrderItem {
   final String ubicacionAlmacen;
   final Map<String, dynamic>? inventoryData;
   final PaymentMethod? paymentMethod;
+  final Map<String, dynamic>? promotionData;
 
   OrderItem({
     required this.id,
@@ -86,24 +88,43 @@ class OrderItem {
     required this.ubicacionAlmacen,
     this.inventoryData,
     this.paymentMethod,
+    this.promotionData,
   });
 
   double get subtotal {
-    // Si el método de pago es efectivo (id: 1), usar precio con descuento
-    // Si no, usar precio base
-    if (paymentMethod?.id == 1) {
-      return precioUnitario * cantidad;
-    } else {
-      return (precioBase ?? precioUnitario) * cantidad;
-    }
+    return _getFinalPrice() * cantidad;
   }
 
   double get displayPrice {
-    // Precio a mostrar según el método de pago
+    return _getFinalPrice();
+  }
+
+  double _getFinalPrice() {
+    // Si no hay datos de promoción, usar lógica original
+    if (promotionData == null) {
+      if (paymentMethod?.id == 1) {
+        return precioUnitario; // Precio con descuento para efectivo
+      } else {
+        return precioBase ?? precioUnitario; // Precio base para otros métodos
+      }
+    }
+
+    // Con promociones, calcular precios según tipo y método de pago
+    final valorDescuento = promotionData!['valor_descuento'] as double?;
+    final tipoDescuento = promotionData!['tipo_descuento'] as int?;
+    
+    final prices = PriceUtils.calculatePromotionPrices(
+      precioBase ?? precioUnitario,
+      valorDescuento,
+      tipoDescuento,
+    );
+
+    // Para efectivo (id: 1), usar precio_oferta (el menor)
+    // Para otros métodos, usar precio_venta (el mayor)
     if (paymentMethod?.id == 1) {
-      return precioUnitario; // Precio con descuento
+      return prices['precio_oferta']!;
     } else {
-      return precioBase ?? precioUnitario; // Precio base
+      return prices['precio_venta']!;
     }
   }
 
@@ -124,6 +145,7 @@ class OrderItem {
     String? ubicacionAlmacen,
     Map<String, dynamic>? inventoryData,
     PaymentMethod? paymentMethod,
+    Map<String, dynamic>? promotionData,
   }) {
     return OrderItem(
       id: id ?? this.id,
@@ -135,6 +157,7 @@ class OrderItem {
       ubicacionAlmacen: ubicacionAlmacen ?? this.ubicacionAlmacen,
       inventoryData: inventoryData ?? this.inventoryData,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      promotionData: promotionData ?? this.promotionData,
     );
   }
 }

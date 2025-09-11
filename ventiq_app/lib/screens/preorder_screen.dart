@@ -539,12 +539,12 @@ class _PreorderScreenState extends State<PreorderScreen> {
 
     // Highlight if no payment method is selected
     final bool hasPaymentMethod = item.paymentMethod != null;
-    final Color borderColor = hasPaymentMethod 
-        ? const Color(0xFF10B981) 
-        : Colors.red[300]!;
-    final Color backgroundColor = hasPaymentMethod 
-        ? const Color(0xFF10B981).withOpacity(0.05)
-        : Colors.red[50]!;
+    final Color borderColor =
+        hasPaymentMethod ? const Color(0xFF10B981) : Colors.red[300]!;
+    final Color backgroundColor =
+        hasPaymentMethod
+            ? const Color(0xFF10B981).withOpacity(0.05)
+            : Colors.red[50]!;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -561,15 +561,23 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Icon(
                 hasPaymentMethod ? Icons.check_circle : Icons.payment,
                 size: 18,
-                color: hasPaymentMethod ? const Color(0xFF10B981) : Colors.red[600],
+                color:
+                    hasPaymentMethod
+                        ? const Color(0xFF10B981)
+                        : Colors.red[600],
               ),
               const SizedBox(width: 8),
               Text(
-                hasPaymentMethod ? 'Método de pago asignado:' : 'Método de pago requerido:',
+                hasPaymentMethod
+                    ? 'Método de pago asignado:'
+                    : 'Método de pago requerido:',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: hasPaymentMethod ? const Color(0xFF10B981) : Colors.red[700],
+                  color:
+                      hasPaymentMethod
+                          ? const Color(0xFF10B981)
+                          : Colors.red[700],
                 ),
               ),
             ],
@@ -592,28 +600,29 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   style: TextStyle(fontSize: 14, color: Colors.grey),
                 ),
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                items: _paymentMethods.map((pm.PaymentMethod method) {
-                  return DropdownMenuItem<pm.PaymentMethod>(
-                    value: method,
-                    child: Row(
-                      children: [
-                        Icon(
-                          method.typeIcon,
-                          size: 18,
-                          color: Colors.grey[600],
+                items:
+                    _paymentMethods.map((pm.PaymentMethod method) {
+                      return DropdownMenuItem<pm.PaymentMethod>(
+                        value: method,
+                        child: Row(
+                          children: [
+                            Icon(
+                              method.typeIcon,
+                              size: 18,
+                              color: Colors.grey[600],
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                method.displayName,
+                                style: const TextStyle(fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            method.displayName,
-                            style: const TextStyle(fontSize: 14),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
+                      );
+                    }).toList(),
                 onChanged: (pm.PaymentMethod? newMethod) {
                   _updateItemPaymentMethod(item.id, newMethod);
                 },
@@ -786,7 +795,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF4A90E2).withOpacity(0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3), width: 1.5),
+        border: Border.all(
+          color: const Color(0xFF4A90E2).withOpacity(0.3),
+          width: 1.5,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -799,11 +811,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   color: const Color(0xFF4A90E2),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Icon(
-                  Icons.payment,
-                  size: 18,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.payment, size: 18, color: Colors.white),
               ),
               const SizedBox(width: 12),
               const Expanded(
@@ -823,7 +831,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
             height: 48,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.4), width: 1.5),
+              border: Border.all(
+                color: const Color(0xFF4A90E2).withOpacity(0.4),
+                width: 1.5,
+              ),
               borderRadius: BorderRadius.circular(10),
               color: Colors.white,
               boxShadow: [
@@ -851,38 +862,39 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   color: Colors.black87,
                   fontWeight: FontWeight.w500,
                 ),
-                items: _paymentMethods.map((pm.PaymentMethod method) {
-                  return DropdownMenuItem<pm.PaymentMethod>(
-                    value: method,
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Icon(
-                            method.typeIcon,
-                            size: 18,
-                            color: const Color(0xFF4A90E2),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            method.displayName,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
+                items:
+                    _paymentMethods.map((pm.PaymentMethod method) {
+                      return DropdownMenuItem<pm.PaymentMethod>(
+                        value: method,
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Icon(
+                                method.typeIcon,
+                                size: 18,
+                                color: const Color(0xFF4A90E2),
+                              ),
                             ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                method.displayName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  );
-                }).toList(),
+                      );
+                    }).toList(),
                 onChanged: (pm.PaymentMethod? newMethod) {
                   _applyGlobalPaymentMethod(newMethod);
                 },
@@ -913,13 +925,13 @@ class _PreorderScreenState extends State<PreorderScreen> {
                   onPressed: _clearGlobalPaymentMethod,
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.grey[600],
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     minimumSize: Size.zero,
                   ),
-                  child: const Text(
-                    'Limpiar',
-                    style: TextStyle(fontSize: 12),
-                  ),
+                  child: const Text('Limpiar', style: TextStyle(fontSize: 12)),
                 ),
               ],
             ),

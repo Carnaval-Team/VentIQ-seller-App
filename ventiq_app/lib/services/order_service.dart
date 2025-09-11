@@ -41,6 +41,7 @@ class OrderService {
     Map<String, dynamic>? inventoryData,
     double? precioUnitario,
     double? precioBase,
+    Map<String, dynamic>? promotionData,
   }) {
     final order = getCurrentOrCreateOrder();
     final precio = precioUnitario ?? (variante?.precio ?? producto.precio);
@@ -72,6 +73,7 @@ class OrderService {
         precioBase: precioOriginal,
         ubicacionAlmacen: ubicacionAlmacen,
         inventoryData: inventoryData,
+        promotionData: promotionData,
       );
       order.items.add(newItem);
     }
