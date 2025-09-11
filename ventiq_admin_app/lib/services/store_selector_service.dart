@@ -6,38 +6,34 @@ class Store {
   final int id;
   final String denominacion;
   final String? direccion;
-  final String? telefono;
-  final String? email;
-  final bool esPrincipal;
+  final String? ubicacion;
+  final DateTime createdAt;
 
   Store({
     required this.id,
     required this.denominacion,
     this.direccion,
-    this.telefono,
-    this.email,
-    required this.esPrincipal,
+    this.ubicacion,
+    required this.createdAt,
   });
 
   factory Store.fromJson(Map<String, dynamic> json) {
     return Store(
-      id: json['id'] as int,
+      id: json['id_tienda'] as int,
       denominacion: json['denominacion'] as String,
       direccion: json['direccion'] as String?,
-      telefono: json['telefono'] as String?,
-      email: json['email'] as String?,
-      esPrincipal: json['es_principal'] as bool? ?? false,
+      ubicacion: json['ubicacion'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
+      'id_tienda': id,
       'denominacion': denominacion,
       'direccion': direccion,
-      'telefono': telefono,
-      'email': email,
-      'es_principal': esPrincipal,
+      'ubicacion': ubicacion,
+      'created_at': createdAt.toIso8601String(),
     };
   }
 }
@@ -85,12 +81,12 @@ class StoreSelectorService extends ChangeNotifier {
 
       final response = await _supabase.rpc(
         'fn_listar_tiendas_gerente',
-        params: {'p_uuid': user.id},
+        params: {'p_uuid_usuario': user.id},
       );
 
       print('🏪 Respuesta tiendas: $response');
 
-      if (response != null && response is List) {
+      if (response != null && response is List && response.isNotEmpty) {
         _userStores = response
             .map((storeData) => Store.fromJson(storeData as Map<String, dynamic>))
             .toList();
@@ -100,14 +96,20 @@ class StoreSelectorService extends ChangeNotifier {
         // Guardar en cache local
         await _saveStoresToCache();
       } else {
-        print('⚠️ No se encontraron tiendas, usando datos mock');
-        _userStores = _getMockStores();
+        print('⚠️ No se encontraron tiendas para el usuario');
+        _userStores = [];
+        // Intentar cargar desde cache como fallback
+        await _loadStoresFromCache();
       }
     } catch (e) {
       print('❌ Error cargando tiendas: $e');
-      // Cargar desde cache o usar mock
+      // Solo cargar desde cache, no usar mock automáticamente
+      _userStores = [];
       await _loadStoresFromCache();
-      if (_userStores.isEmpty) {
+      
+      // Si no hay datos en cache y estamos en modo debug, usar mock
+      if (_userStores.isEmpty && kDebugMode) {
+        print('🔧 Modo debug: usando datos mock como fallback');
         _userStores = _getMockStores();
       }
     }
@@ -116,19 +118,24 @@ class StoreSelectorService extends ChangeNotifier {
   /// Cargar tienda seleccionada desde preferencias
   Future<void> _loadSelectedStore() async {
     try {
+      if (_userStores.isEmpty) {
+        _selectedStore = null;
+        return;
+      }
+
       final prefs = await SharedPreferences.getInstance();
       final selectedStoreId = prefs.getInt(_selectedStoreKey);
 
       if (selectedStoreId != null) {
         _selectedStore = _userStores.firstWhere(
           (store) => store.id == selectedStoreId,
-          orElse: () => _userStores.isNotEmpty ? _userStores.first : _getMockStores().first,
+          orElse: () => _userStores.first,
         );
       } else {
         // Seleccionar la tienda principal por defecto
         _selectedStore = _userStores.firstWhere(
-          (store) => store.esPrincipal,
-          orElse: () => _userStores.isNotEmpty ? _userStores.first : _getMockStores().first,
+          (store) => store.denominacion == 'Tienda Principal',
+          orElse: () => _userStores.first,
         );
       }
 
@@ -137,6 +144,8 @@ class StoreSelectorService extends ChangeNotifier {
       print('❌ Error cargando tienda seleccionada: $e');
       if (_userStores.isNotEmpty) {
         _selectedStore = _userStores.first;
+      } else {
+        _selectedStore = null;
       }
     }
   }
@@ -184,9 +193,10 @@ class StoreSelectorService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final storesString = prefs.getString(_userStoresKey);
-      if (storesString != null) {
-        // Implementar deserialización si es necesario
+      if (storesString != null && storesString.isNotEmpty) {
         print('📱 Cargando tiendas desde cache local');
+        // Por ahora, el cache no está implementado completamente
+        // Se puede implementar deserialización JSON aquí si es necesario
       }
     } catch (e) {
       print('Error cargando tiendas desde cache: $e');
@@ -200,25 +210,22 @@ class StoreSelectorService extends ChangeNotifier {
         id: 1,
         denominacion: 'Tienda Principal',
         direccion: 'Calle Principal 123',
-        telefono: '+1234567890',
-        email: 'principal@ventiq.com',
-        esPrincipal: true,
+        ubicacion: 'Ubicación Principal',
+        createdAt: DateTime.now(),
       ),
       Store(
         id: 2,
         denominacion: 'Sucursal Norte',
         direccion: 'Av. Norte 456',
-        telefono: '+1234567891',
-        email: 'norte@ventiq.com',
-        esPrincipal: false,
+        ubicacion: 'Ubicación Norte',
+        createdAt: DateTime.now(),
       ),
       Store(
         id: 3,
         denominacion: 'Sucursal Sur',
         direccion: 'Calle Sur 789',
-        telefono: '+1234567892',
-        email: 'sur@ventiq.com',
-        esPrincipal: false,
+        ubicacion: 'Ubicación Sur',
+        createdAt: DateTime.now(),
       ),
     ];
   }

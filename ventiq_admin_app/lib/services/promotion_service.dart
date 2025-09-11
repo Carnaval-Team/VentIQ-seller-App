@@ -1,12 +1,22 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/promotion.dart';
+import '../models/product.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_selector_service.dart';
+import '../services/payment_method_service.dart';
+import '../models/payment_method.dart';
 
 class PromotionService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _prefsService = UserPreferencesService();
-  final StoreSelectorService _storeSelectorService = StoreSelectorService();
+  
+  // Usar una instancia compartida o crear una nueva si es necesario
+  StoreSelectorService? _storeSelectorService;
+  
+  StoreSelectorService get _storeService {
+    _storeSelectorService ??= StoreSelectorService();
+    return _storeSelectorService!;
+  }
 
   /// Lista promociones con filtros y paginación
   Future<List<Promotion>> listPromotions({
@@ -21,9 +31,7 @@ class PromotionService {
   }) async {
     try {
       // Obtener ID de tienda del usuario si no se especifica
-      final storeIdInt = idTienda != null
-          ? int.tryParse(idTienda)
-          : await _storeSelectorService.getSelectedStoreId();
+      final storeIdInt = await _getStoreId(idTienda);
       if (storeIdInt == null) {
         throw Exception('No se encontró ID de tienda del usuario');
       }
@@ -215,87 +223,26 @@ class PromotionService {
     }
   }
 
-  /// Crea una nueva promoción
-  Future<Promotion> createPromotion(Map<String, dynamic> promotionData) async {
-    try {
-      final userId = await _prefsService.getUserId();
-      final storeId = await _storeSelectorService.getSelectedStoreId();
-      
-      if (userId == null || storeId == null) {
-        throw Exception('No se encontraron datos de usuario o tienda');
-      }
-
-      // Obtener UUID del usuario autenticado desde Supabase
-      final user = _supabase.auth.currentUser;
-      if (user == null) {
-        throw Exception('Usuario no autenticado');
-      }
-      final userUuid = user.id;
-
-      print('📢 Creando promoción: $promotionData');
-
-      // Preparar parámetros según la estructura de fn_insertar_promocion
-      final params = {
-        'p_uuid_usuario': userUuid,
-        'p_id_tienda': storeId,
-        'p_id_tipo_promocion': promotionData['id_tipo_promocion'],
-        'p_codigo_promocion': promotionData['codigo_promocion'],
-        'p_nombre': promotionData['nombre'],
-        'p_descripcion': promotionData['descripcion'],
-        'p_valor_descuento': promotionData['valor_descuento'],
-        'p_fecha_inicio': promotionData['fecha_inicio'],
-        'p_fecha_fin': promotionData['fecha_fin'],
-        'p_min_compra': promotionData['min_compra'],
-        'p_limite_usos': promotionData['limite_usos'],
-        'p_aplica_todo': promotionData['aplica_todo'],
-        'p_requiere_medio_pago': promotionData['requiere_medio_pago'] ?? false,
-        'p_id_medio_pago_requerido': promotionData['id_medio_pago_requerido'],
-        'p_id_campana': null, // Por defecto null, se puede agregar al formulario más adelante
-      };
-
-      print('📢 Parámetros para fn_insertar_promocion: $params');
-
-      final response = await _supabase.rpc(
-        'fn_insertar_promocion',
-        params: params,
-      );
-
-      print('✅ Respuesta de creación: $response');
-
-      if (response == null) {
-        throw Exception('No se recibió respuesta del servidor');
-      }
-
-      // La función retorna un objeto JSON con success, id y message
-      if (response['success'] != true) {
-        throw Exception(response['message'] ?? 'Error al crear promoción');
-      }
-
-      // Obtener la promoción creada usando el ID retornado
-      final promotionId = response['id'];
-      return await getPromotionById(promotionId.toString());
-    } catch (e) {
-      print('❌ Error creando promoción: $e');
-      rethrow;
-    }
-  }
-
   /// Actualiza una promoción existente
   Future<Promotion> updatePromotion(
     String promotionId,
     Map<String, dynamic> promotionData,
   ) async {
     try {
+      print('📝 Actualizando promoción: $promotionId');
+      print('📝 Datos a actualizar: $promotionData');
+
+      // Obtener ID de usuario
       final userId = await _prefsService.getUserId();
       if (userId == null) {
         throw Exception('No se encontró ID de usuario');
       }
 
-      print('📝 Actualizando promoción: $promotionId');
-      print('📝 Datos a actualizar: $promotionData');
-
       // Preparar parámetros según la estructura exacta de fn_actualizar_promocion
-      final params = <String, dynamic>{};
+      final params = <String, dynamic>{
+        'p_id': int.parse(promotionId), // ID es obligatorio
+        'p_uuid_usuario': userId, // UUID del usuario autenticado
+      };
       
       // Solo agregar parámetros que no sean null para usar COALESCE correctamente
       if (promotionData['nombre'] != null) {
@@ -325,15 +272,15 @@ class PromotionService {
       if (promotionData['estado'] != null) {
         params['p_estado'] = promotionData['estado'];
       }
+      if (promotionData['id_tipo_promocion'] != null) {
+        params['p_id_tipo_promocion'] = int.tryParse(promotionData['id_tipo_promocion']?.toString() ?? '1') ?? 1;
+      }
       if (promotionData['requiere_medio_pago'] != null) {
         params['p_requiere_medio_pago'] = promotionData['requiere_medio_pago'];
       }
       if (promotionData['id_medio_pago_requerido'] != null) {
         params['p_id_medio_pago_requerido'] = promotionData['id_medio_pago_requerido'];
       }
-      
-      // El ID es obligatorio
-      params['p_id'] = int.parse(promotionId);
 
       print('📝 Parámetros para RPC: $params');
 
@@ -344,11 +291,22 @@ class PromotionService {
 
       print('📝 Respuesta de actualización: $response');
 
-      // La función retorna un booleano (FOUND), no un objeto con success
-      if (response != true) {
-        throw Exception('No se pudo actualizar la promoción');
+      // La función SQL ahora retorna JSONB con success, message, etc.
+      if (response == null) {
+        throw Exception('No se recibió respuesta del servidor');
       }
 
+      final Map<String, dynamic> result = response is Map<String, dynamic> 
+          ? response 
+          : {'success': false, 'message': 'Respuesta inválida del servidor'};
+
+      if (result['success'] != true) {
+        throw Exception(result['message'] ?? 'Error desconocido al actualizar promoción');
+      }
+
+      print('✅ Promoción actualizada exitosamente');
+      
+      // Obtener la promoción actualizada
       return await getPromotionById(promotionId);
     } catch (e) {
       print('❌ Error actualizando promoción: $e');
@@ -388,16 +346,14 @@ class PromotionService {
     try {
       print('🔍 Obteniendo promoción: $promotionId');
 
-      final response = await _supabase.rpc(
-        'fn_obtener_promocion_detalle',
-        params: {'p_id_promocion': int.parse(promotionId)},
+      // Intentar obtener desde la lista de promociones ya que fn_obtener_promocion_detalle no existe
+      final promotions = await listPromotions();
+      final promotion = promotions.firstWhere(
+        (p) => p.id == promotionId,
+        orElse: () => throw Exception('Promoción no encontrada'),
       );
 
-      if (response == null) {
-        throw Exception('Promoción no encontrada');
-      }
-
-      return Promotion.fromJson(response);
+      return promotion;
     } catch (e) {
       print('❌ Error obteniendo promoción: $e');
       rethrow;
@@ -471,9 +427,7 @@ class PromotionService {
     DateTime? fechaHasta,
   }) async {
     try {
-      final storeIdInt = idTienda != null
-          ? int.tryParse(idTienda)
-          : await _storeSelectorService.getSelectedStoreId();
+      final storeIdInt = await _getStoreId(idTienda);
       if (storeIdInt == null) {
         throw Exception('No se encontró ID de tienda');
       }
@@ -509,6 +463,217 @@ class PromotionService {
       print('❌ Error generando código: $e');
       return _generateMockCode(prefix);
     }
+  }
+
+  /// Crea una nueva promoción
+  Future<Promotion> createPromotion(Map<String, dynamic> promotionData) async {
+    try {
+      print('📝 Creando nueva promoción');
+      print('📝 Datos de promoción: $promotionData');
+
+      // Obtener ID de tienda del usuario
+      final storeIdInt = await _getStoreId(promotionData['id_tienda']);
+      if (storeIdInt == null) {
+        throw Exception('No se encontró ID de tienda del usuario');
+      }
+
+      // Obtener UUID de usuario
+      final userId = await _prefsService.getUserId();
+      if (userId == null) {
+        throw Exception('No se encontró ID de usuario');
+      }
+
+      // Preparar parámetros para la función RPC
+      final params = <String, dynamic>{
+        'p_uuid_usuario': userId,
+        'p_id_tienda': storeIdInt,
+        'p_id_tipo_promocion': int.tryParse(promotionData['id_tipo_promocion']?.toString() ?? '1') ?? 1,
+        'p_codigo_promocion': promotionData['codigo_promocion'],
+        'p_nombre': promotionData['nombre'],
+        'p_fecha_inicio': promotionData['fecha_inicio'],
+        'p_id_campana': promotionData['id_campana'],
+        'p_descripcion': promotionData['descripcion'],
+        'p_valor_descuento': promotionData['valor_descuento'],
+        'p_fecha_fin': promotionData['fecha_fin'],
+        'p_min_compra': promotionData['min_compra'],
+        'p_limite_usos': promotionData['limite_usos'],
+        'p_aplica_todo': promotionData['aplica_todo'] ?? false,
+        'p_requiere_medio_pago': promotionData['requiere_medio_pago'] ?? false,
+        'p_id_medio_pago_requerido': promotionData['id_medio_pago_requerido'],
+      };
+
+      print('📝 Parámetros para RPC: $params');
+
+      final response = await _supabase.rpc(
+        'fn_insertar_promocion',
+        params: params,
+      );
+
+      print('📝 Respuesta de creación: $response');
+
+      if (response == null) {
+        throw Exception('No se recibió respuesta del servidor');
+      }
+
+      // La nueva función retorna un JSON con success, id y message
+      if (response is Map<String, dynamic>) {
+        final success = response['success'] as bool?;
+        final message = response['message'] as String?;
+        
+        if (success != true) {
+          throw Exception(message ?? 'Error desconocido al crear la promoción');
+        }
+        
+        final promotionId = response['id']?.toString();
+        if (promotionId == null) {
+          throw Exception('No se pudo obtener el ID de la promoción creada');
+        }
+
+        print('✅ Promoción creada exitosamente con ID: $promotionId');
+        
+        // Obtener la promoción recién creada
+        return await getPromotionById(promotionId);
+      } else {
+        throw Exception('Formato de respuesta inesperado del servidor');
+      }
+    } catch (e) {
+      print('❌ Error creando promoción: $e');
+      rethrow;
+    }
+  }
+
+  /// Agrega productos específicos a una promoción
+  Future<void> addProductsToPromotion(String promotionId, List<Product> products) async {
+    try {
+      final userId = await _prefsService.getUserId();
+      if (userId == null) {
+        throw Exception('No se encontró ID de usuario');
+      }
+
+      print('📝 Agregando ${products.length} productos a promoción: $promotionId');
+
+      for (final product in products) {
+        final response = await _supabase.rpc(
+          'fn_agregar_producto_promocion',
+          params: {
+            'p_id_promocion': int.parse(promotionId),
+            'p_id_producto': int.parse(product.id),
+            'p_id_categoria': null,
+            'p_id_subcategoria': null,
+            'p_uuid_usuario': userId,
+          },
+        );
+
+        print('📝 Respuesta agregar producto ${product.name}: $response');
+
+        if (response == null || response['success'] != true) {
+          throw Exception(response?['message'] ?? 'Error al agregar producto ${product.name}');
+        }
+      }
+
+      print('✅ Productos agregados exitosamente a la promoción');
+    } catch (e) {
+      print('❌ Error agregando productos a promoción: $e');
+      rethrow;
+    }
+  }
+
+  /// Crea una nueva promoción con productos específicos
+  Future<Promotion> createPromotionWithProducts(
+    Map<String, dynamic> promotionData,
+    List<Product> selectedProducts,
+  ) async {
+    try {
+      print('📝 Creando promoción con productos específicos');
+      
+      // Primero crear la promoción
+      final promotion = await createPromotion(promotionData);
+      
+      // Si hay productos seleccionados, agregarlos a la promoción
+      if (selectedProducts.isNotEmpty) {
+        await addProductsToPromotion(promotion.id, selectedProducts);
+      }
+      
+      return promotion;
+    } catch (e) {
+      print('❌ Error creando promoción con productos: $e');
+      rethrow;
+    }
+  }
+
+  /// Obtiene el ID de tienda del usuario de manera más robusta
+  Future<int?> _getStoreId([String? providedStoreId]) async {
+    // Si se proporciona un ID específico, usarlo
+    if (providedStoreId != null) {
+      return int.tryParse(providedStoreId);
+    }
+    
+    // Intentar obtener desde el store selector service
+    int? storeId = await _storeService.getSelectedStoreId();
+    
+    // Si no hay tienda seleccionada, intentar inicializar el servicio
+    if (storeId == null) {
+      await _storeService.initialize();
+      storeId = await _storeService.getSelectedStoreId();
+    }
+    
+    // Como último recurso, usar la primera tienda disponible
+    if (storeId == null && _storeService.userStores.isNotEmpty) {
+      storeId = _storeService.userStores.first.id;
+    }
+    
+    return storeId;
+  }
+
+  /// Obtiene los métodos de pago disponibles
+  Future<List<PaymentMethod>> getPaymentMethods() async {
+    try {
+      print('💳 Cargando métodos de pago usando PaymentMethodService');
+      return await PaymentMethodService.getActivePaymentMethods();
+    } catch (e) {
+      print('❌ Error cargando métodos de pago: $e');
+      return _getMockPaymentMethods();
+    }
+  }
+
+  List<PaymentMethod> _getMockPaymentMethods() {
+    return [
+      PaymentMethod(
+        id: 1,
+        denominacion: 'Efectivo',
+        esDigital: false,
+        esEfectivo: true,
+        esActivo: true,
+      ),
+      PaymentMethod(
+        id: 2,
+        denominacion: 'Tarjeta de Crédito',
+        esDigital: true,
+        esEfectivo: false,
+        esActivo: true,
+      ),
+      PaymentMethod(
+        id: 3,
+        denominacion: 'Tarjeta de Débito',
+        esDigital: true,
+        esEfectivo: false,
+        esActivo: true,
+      ),
+      PaymentMethod(
+        id: 4,
+        denominacion: 'Transferencia Bancaria',
+        esDigital: true,
+        esEfectivo: false,
+        esActivo: true,
+      ),
+      PaymentMethod(
+        id: 5,
+        denominacion: 'Pago Móvil',
+        esDigital: true,
+        esEfectivo: false,
+        esActivo: true,
+      ),
+    ];
   }
 
   // Métodos de datos mock para fallback
