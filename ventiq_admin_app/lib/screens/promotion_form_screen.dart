@@ -73,9 +73,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     _isEditing = widget.promotion != null;
     _promotionTypes = widget.promotionTypes;
     
-    if (_isEditing) {
-      _populateForm();
-    } else {
+    // Set default dates for new promotions
+    if (!_isEditing) {
       _fechaInicio = DateTime.now();
       _fechaFin = DateTime.now().add(const Duration(days: 30));
       
@@ -93,8 +92,12 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     // Load available products
     _loadAvailableProducts();
     
-    // Load payment methods
-    _loadPaymentMethods();
+    // Load payment methods first, then populate form for editing
+    _loadPaymentMethods().then((_) {
+      if (_isEditing) {
+        _populateForm();
+      }
+    });
   }
 
   @override
@@ -127,6 +130,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     
     print('📝 Formulario poblado con datos de promoción: ${promotion.nombre}');
     print('📝 Tipo de promoción seleccionado: $_selectedTipoPromocion');
+    print('📝 Requiere medio de pago: $_requiereMedioPago');
+    print('📝 Medio de pago seleccionado: $_selectedMedioPago');
   }
 
   void _prefilledProductForm() {
@@ -208,12 +213,27 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         _isLoadingPaymentMethods = false;
       });
       print('✅ Cargados ${paymentMethods.length} métodos de pago');
+      
+      // Si estamos editando y hay un método de pago seleccionado, verificar que existe en la lista
+      if (_isEditing && _selectedMedioPago != null) {
+        final methodExists = _paymentMethods.any((method) => method.id.toString() == _selectedMedioPago);
+        if (!methodExists) {
+          print('⚠️ Método de pago ${_selectedMedioPago} no encontrado en la lista cargada');
+          // Mantener el valor pero mostrar advertencia
+        } else {
+          print('✅ Método de pago ${_selectedMedioPago} encontrado y validado');
+        }
+      }
     } catch (e) {
       setState(() {
         _isLoadingPaymentMethods = false;
       });
       print('❌ Error cargando métodos de pago: $e');
       _showErrorSnackBar('Error cargando métodos de pago: $e');
+    } finally {
+      if (_isEditing) {
+        _populateForm();
+      }
     }
   }
 
@@ -338,13 +358,13 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: AppColors.error),
     );
   }
 
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.green),
+      SnackBar(content: Text(message), backgroundColor: AppColors.success),
     );
   }
 
@@ -526,19 +546,19 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
           Container(
             height: 56,
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.red),
+              border: Border.all(color: AppColors.error),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Center(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error, color: Colors.red, size: 16),
+                  const Icon(Icons.error, color: AppColors.error, size: 16),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _loadingError!,
-                      style: const TextStyle(color: Colors.red, fontSize: 12),
+                      style: const TextStyle(color: AppColors.error, fontSize: 12),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -598,19 +618,19 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.1),
-        border: Border.all(color: Colors.orange, width: 1),
+        color: AppColors.promotionChargeBg,
+        border: Border.all(color: AppColors.promotionCharge, width: 1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          const Icon(Icons.warning, color: Colors.orange, size: 20),
+          const Icon(Icons.warning, color: AppColors.promotionCharge, size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               '⚠️ Esta promoción aumentará el precio de venta de los productos afectados',
               style: TextStyle(
-                color: Colors.orange[800],
+                color: AppColors.promotionCharge,
                 fontWeight: FontWeight.w500,
                 fontSize: 13,
               ),
@@ -753,8 +773,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                 : 'Seleccionar fecha',
                             style: TextStyle(
                               color: _fechaInicio != null
-                                  ? Colors.black87
-                                  : Colors.grey[600],
+                                  ? AppColors.textPrimary
+                                  : AppColors.textSecondary,
                             ),
                           ),
                         ),
@@ -776,8 +796,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                     : 'Sin vencimiento',
                                 style: TextStyle(
                                   color: _fechaFin != null
-                                      ? Colors.black87
-                                      : Colors.grey[600],
+                                      ? AppColors.textPrimary
+                                      : AppColors.textSecondary,
                                 ),
                               ),
                             ),
@@ -794,7 +814,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                 icon: const Icon(Icons.clear, size: 16),
                                 label: const Text('Sin vencimiento', style: TextStyle(fontSize: 12)),
                                 style: TextButton.styleFrom(
-                                  foregroundColor: Colors.grey[600],
+                                  foregroundColor: AppColors.textSecondary,
                                   padding: const EdgeInsets.symmetric(horizontal: 8),
                                 ),
                               ),
@@ -822,8 +842,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                   : 'Seleccionar fecha',
                               style: TextStyle(
                                 color: _fechaInicio != null
-                                    ? Colors.black87
-                                    : Colors.grey[600],
+                                    ? AppColors.textPrimary
+                                    : AppColors.textSecondary,
                               ),
                             ),
                           ),
@@ -848,8 +868,8 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                       : 'Sin vencimiento',
                                   style: TextStyle(
                                     color: _fechaFin != null
-                                        ? Colors.black87
-                                        : Colors.grey[600],
+                                        ? AppColors.textPrimary
+                                        : AppColors.textSecondary,
                                   ),
                                 ),
                               ),
@@ -866,7 +886,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                                   icon: const Icon(Icons.clear, size: 16),
                                   label: const Text('Sin vencimiento', style: TextStyle(fontSize: 12)),
                                   style: TextButton.styleFrom(
-                                    foregroundColor: Colors.grey[600],
+                                    foregroundColor: AppColors.textSecondary,
                                     padding: const EdgeInsets.symmetric(horizontal: 8),
                                   ),
                                 ),

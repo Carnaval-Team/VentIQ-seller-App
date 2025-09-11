@@ -72,7 +72,7 @@ class Product {
       brand: json['brand'] ?? '',
       sku: json['sku'] ?? '',
       barcode: json['barcode'] ?? '',
-      basePrice: (json['basePrice'] ?? 0.0).toDouble(),
+      basePrice: (json['basePrice'] ?? json['baseprice'] ?? 0.0).toDouble(),
       imageUrl: json['imageUrl'] ?? '',
       isActive: json['isActive'] ?? true,
       createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
