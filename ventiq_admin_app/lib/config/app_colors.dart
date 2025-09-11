@@ -14,6 +14,28 @@ class AppColors {
   static const Color error = Colors.red;
   static const Color info = Color(0xFF4A90E2);
 
+  // Colores específicos para promociones
+  static const Color promotionDiscount = Color(0xFF10B981); // Verde para descuentos
+  static const Color promotionCharge = Color(0xFFFF6B35); // Naranja para recargos
+  static const Color promotionActive = Color(0xFF10B981); // Verde para activas
+  static const Color promotionInactive = Color(0xFFFF6B35); // Naranja para inactivas
+  static const Color promotionExpired = Color(0xFF6B7280); // Gris para vencidas
+
+  // Colores de fondo con mejor contraste
+  static const Color promotionDiscountBg = Color(0xFFECFDF5); // Fondo verde claro
+  static const Color promotionChargeBg = Color(0xFFFFF7ED); // Fondo naranja claro
+  static const Color promotionActiveBg = Color(0xFFECFDF5); // Fondo verde claro
+  static const Color promotionInactiveBg = Color(0xFFFFF7ED); // Fondo naranja claro
+  static const Color promotionExpiredBg = Color(0xFFF9FAFB); // Fondo gris claro
+
+  // Colores adicionales para estados
+  static const Color active = Color(0xFF10B981); // Verde para elementos activos
+  static const Color inactive = Color(0xFFFF6B35); // Naranja para elementos inactivos
+  static const Color expired = Color(0xFF6B7280); // Gris para elementos vencidos
+  static const Color neutral = Color(0xFF4A90E2); // Azul neutro
+  static const Color usage = Color(0xFF4A90E2); // Azul para uso/estadísticas
+  static const Color limit = Color(0xFFFF6B35); // Naranja para límites
+
   // Colores de texto
   static const Color textPrimary = Color(0xFF1F2937);
   static const Color textSecondary = Color(0xFF6B7280);

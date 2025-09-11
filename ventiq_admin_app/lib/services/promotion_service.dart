@@ -248,6 +248,9 @@ class PromotionService {
       if (promotionData['nombre'] != null) {
         params['p_nombre'] = promotionData['nombre'];
       }
+      if (promotionData['codigo_promocion'] != null) {
+        params['p_codigo_promocion'] = promotionData['codigo_promocion'];
+      }
       if (promotionData['descripcion'] != null) {
         params['p_descripcion'] = promotionData['descripcion'];
       }
@@ -332,8 +335,8 @@ class PromotionService {
         },
       );
 
-      if (response == null || response['success'] != true) {
-        throw Exception(response?['message'] ?? 'Error al eliminar promoción');
+      if (response != true) {
+        throw Exception('Error al eliminar promoción');
       }
     } catch (e) {
       print('❌ Error eliminando promoción: $e');
@@ -379,8 +382,8 @@ class PromotionService {
         },
       );
 
-      if (response == null || response['success'] != true) {
-        throw Exception(response?['message'] ?? 'Error al cambiar estado');
+      if (response != true) {
+        throw Exception('Error al cambiar estado');
       }
     } catch (e) {
       print('❌ Error cambiando estado promoción: $e');
@@ -780,5 +783,49 @@ class PromotionService {
       8,
     );
     return '${prefix ?? 'PROMO'}$random';
+  }
+
+  /// Obtiene los productos afectados por una promoción específica
+  Future<List<Product>> getPromotionProducts(String promotionId) async {
+    try {
+      print('📦 Obteniendo productos para promoción: $promotionId');
+      
+      // Convertir String a int para la función RPC
+      final promotionIdInt = int.tryParse(promotionId);
+      if (promotionIdInt == null) {
+        throw Exception('ID de promoción inválido: $promotionId');
+      }
+      
+      // Llamar a la función RPC para obtener productos de la promoción
+      final response = await _supabase.rpc(
+        'fn_listar_productos_promocion',
+        params: {
+          'p_id_promocion': promotionIdInt,
+        },
+      );
+
+      if (response == null) {
+        print('⚠️ No se encontraron productos para la promoción $promotionId');
+        return [];
+      }
+
+      final List<dynamic> data = response as List<dynamic>;
+      print('✅ Encontrados ${data.length} productos para la promoción');
+      
+      // Debug: Log first product's raw data
+      if (data.isNotEmpty) {
+        print('DEBUG: Raw product data: ${data.first}');
+      }
+      
+      return data.map((item) => Product.fromJson(item)).toList();
+    } catch (e) {
+      print('❌ Error obteniendo productos de promoción: $e');
+      // Si la función RPC no existe, devolver lista vacía
+      if (e.toString().contains('Could not find the function')) {
+        print('⚠️ Función fn_listar_productos_promocion no encontrada, devolviendo lista vacía');
+        return [];
+      }
+      throw Exception('Error al obtener productos de la promoción: $e');
+    }
   }
 }
