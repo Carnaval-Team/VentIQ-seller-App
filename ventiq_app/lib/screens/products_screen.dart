@@ -660,8 +660,10 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
     final promotionPrices = _calculatePromotionPrices();
     final precioVenta = promotionPrices['precio_venta']!;
     final precioOferta = promotionPrices['precio_oferta']!;
-    final hasPromotion = PriceUtils.hasActivePromotion(widget.promotionData?['tipo_descuento']);
-    
+    final hasPromotion = PriceUtils.hasActivePromotion(
+      widget.promotionData?['tipo_descuento'],
+    );
+
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -775,9 +777,18 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                               '\$${precioVenta.toStringAsFixed(2)}',
                               style: TextStyle(
                                 fontSize: precioVenta > precioOferta ? 12 : 14,
-                                color: precioVenta > precioOferta ? Colors.grey : widget.categoryColor,
-                                decoration: precioVenta > precioOferta ? TextDecoration.lineThrough : null,
-                                fontWeight: precioVenta > precioOferta ? FontWeight.normal : FontWeight.w600,
+                                color:
+                                    precioVenta > precioOferta
+                                        ? Colors.grey
+                                        : widget.categoryColor,
+                                decoration:
+                                    precioVenta > precioOferta
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                fontWeight:
+                                    precioVenta > precioOferta
+                                        ? FontWeight.normal
+                                        : FontWeight.w600,
                                 height: 1.2,
                               ),
                               overflow: TextOverflow.ellipsis,
@@ -790,9 +801,18 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                               '\$${precioOferta.toStringAsFixed(2)}',
                               style: TextStyle(
                                 fontSize: precioOferta < precioVenta ? 14 : 12,
-                                fontWeight: precioOferta < precioVenta ? FontWeight.w600 : FontWeight.normal,
-                                color: precioOferta < precioVenta ? widget.categoryColor : Colors.grey,
-                                decoration: precioOferta > precioVenta ? TextDecoration.lineThrough : null,
+                                fontWeight:
+                                    precioOferta < precioVenta
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                color:
+                                    precioOferta < precioVenta
+                                        ? widget.categoryColor
+                                        : Colors.grey,
+                                decoration:
+                                    precioOferta > precioVenta
+                                        ? TextDecoration.lineThrough
+                                        : null,
                                 height: 1.2,
                               ),
                               overflow: TextOverflow.ellipsis,

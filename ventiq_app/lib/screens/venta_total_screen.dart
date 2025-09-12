@@ -264,10 +264,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   children: [
                     Expanded(
                       child: _buildSummaryCard(
-                        'Total Productos',
-                        _totalProductos.toString(),
-                        Icons.inventory,
-                        const Color(0xFF10B981),
+                        'Total Egresado',
+                        _egresosEfectivo.toStringAsFixed(0),
+                        Icons.attach_money,
+                        const Color.fromARGB(255, 160, 22, 22),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -286,9 +286,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   children: [
                     Expanded(
                       child: _buildSummaryCard(
-                        'Total Egresado',
-                        '\$${_totalEgresado.toStringAsFixed(0)}',
-                        Icons.money_off,
+                        'Total Transferencia',
+                        '\$${(_totalEgresado - _egresosEfectivo).toStringAsFixed(0)}',
+                        Icons.credit_card,
                         Colors.orange,
                       ),
                     ),
