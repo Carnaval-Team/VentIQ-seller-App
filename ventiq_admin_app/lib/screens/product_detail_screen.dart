@@ -861,25 +861,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       children: [
         _buildInfoRow('Stock Disponible', _product.stockDisponible.toString()),
         _buildInfoRow('Tiene Stock', _product.tieneStock ? 'Sí' : 'No'),
-        if (_product.inventario.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Text(
-            'Detalles de Inventario:',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
-            ),
-          ),
-          const SizedBox(height: 8),
-          ..._product.inventario.map((inv) => Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              '• ${inv.toString()}',
-              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-            ),
-          )),
-        ],
+        // if (_product.inventario.isNotEmpty) ...[
+        //   const SizedBox(height: 12),
+        //   Text(r
+        //     'Detalles de Inventario:',
+        //     style: TextStyle(
+        //       fontSize: 14,
+        //       fontWeight: FontWeight.w600,
+        //       color: Colors.grey[700],
+        //     ),
+        //   ),
+        //   const SizedBox(height: 8),
+        //   ..._product.inventario.map((inv) => Padding(
+        //     padding: const EdgeInsets.only(bottom: 4),
+        //     child: Text(
+        //       '• ${inv.toString()}',
+        //       style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+        //     ),
+        //   )),
+        // ],
       ],
     );
   }
@@ -983,7 +983,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             border: Border.all(color: Colors.grey[200]!),
           ),
           child: Text(
-            pres.toString(),
+            'Tipo: '+ pres['presentacion']+ ' Cantidad equivalente: '+  pres['cantidad'].toString() + 'unds',
             style: TextStyle(fontSize: 13, color: Colors.grey[700]),
           ),
         )),
