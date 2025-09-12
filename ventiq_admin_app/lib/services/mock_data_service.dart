@@ -219,6 +219,7 @@ class MockDataService {
       Product(
         id: '1',
         name: 'Coca Cola',
+        denominacion: 'Coca Cola',
         description: 'Bebida gaseosa refrescante',
         categoryId: 'cat1',
         categoryName: 'Bebidas',
@@ -262,6 +263,7 @@ class MockDataService {
       Product(
         id: '2',
         name: 'Pan Integral',
+        denominacion: 'Pan Integral',
         description: 'Pan de molde integral nutritivo',
         categoryId: 'cat2',
         categoryName: 'Panadería',
@@ -287,6 +289,7 @@ class MockDataService {
       Product(
         id: '3',
         name: 'Leche Entera',
+        denominacion: 'Leche Entera',
         description: 'Leche fresca pasteurizada',
         categoryId: 'cat3',
         categoryName: 'Lácteos',
@@ -321,6 +324,7 @@ class MockDataService {
       Product(
         id: '4',
         name: 'Arroz Blanco',
+        denominacion: 'Arroz Blanco',
         description: 'Arroz grano largo premium',
         categoryId: 'cat4',
         categoryName: 'Granos',
@@ -355,6 +359,7 @@ class MockDataService {
       Product(
         id: '5',
         name: 'Aceite de Girasol',
+        denominacion: 'Aceite de Girasol',
         description: 'Aceite vegetal para cocinar',
         categoryId: 'cat5',
         categoryName: 'Aceites',

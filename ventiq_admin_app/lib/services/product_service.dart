@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 import '../models/product.dart';
 import 'user_preferences_service.dart';
+import 'store_selector_service.dart';
 
 class ProductService {
   static final SupabaseClient _supabase = Supabase.instance.client;
+  static StoreSelectorService? _storeSelectorService;
 
   /// Obtiene productos completos por tienda usando la función RPC optimizada
   static Future<List<Product>> getProductsByTienda({
@@ -124,8 +126,9 @@ class ProductService {
       print('📦 Subcategorías obtenidas: ${response.length}');
       return response;
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al obtener subcategorías: $e');
+      print('📍 StackTrace: $stackTrace');
       throw Exception('Error al obtener subcategorías: $e');
     }
   }
@@ -142,8 +145,9 @@ class ProductService {
       print('📦 Presentaciones obtenidas: ${response.length}');
       return response;
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al obtener presentaciones: $e');
+      print('📍 StackTrace: $stackTrace');
       throw Exception('Error al obtener presentaciones: $e');
     }
   }
@@ -160,8 +164,9 @@ class ProductService {
       print('📦 Atributos obtenidos: ${response.length}');
       return response;
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al obtener atributos: $e');
+      print('📍 StackTrace: $stackTrace');
       throw Exception('Error al obtener atributos: $e');
     }
   }
@@ -193,8 +198,9 @@ class ProductService {
         };
       }).toList();
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al obtener categorías: $e');
+      print('📍 StackTrace: $stackTrace');
       throw Exception('Error al obtener categorías: $e');
     }
   }
@@ -241,6 +247,7 @@ class ProductService {
       return Product(
         id: json['id']?.toString() ?? '',
         name: json['denominacion'] ?? '',
+        denominacion: json['denominacion'] ?? '',
         description: json['descripcion'] ?? '',
         categoryId: categoria['id']?.toString() ?? '',
         categoryName: categoria['denominacion'] ?? '',
@@ -270,9 +277,10 @@ class ProductService {
         variantesDisponibles: (json['variantes_disponibles'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
       );
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al convertir producto: $e');
       print('📦 JSON problemático: $json');
+      print('📍 StackTrace: $stackTrace');
       rethrow;
     }
   }
@@ -301,8 +309,9 @@ class ProductService {
       print('✅ Debug JSON guardado en: ${file.path}');
       print('📄 Tamaño del archivo: ${jsonString.length} caracteres');
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al guardar debug JSON: $e');
+      print('📍 StackTrace: $stackTrace');
       // Don't throw error, just log it since this is debug functionality
     }
   }
@@ -336,13 +345,748 @@ class ProductService {
 
       return result;
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al eliminar producto: $e');
+      print('📍 StackTrace: $stackTrace');
       return {
         'success': false,
         'message': 'Error al eliminar producto: $e',
         'producto_id': productId,
       };
+    }
+  }
+
+  /// Obtiene las ubicaciones de stock para un producto específico
+  static Future<List<Map<String, dynamic>>> getProductStockLocations(String productId) async {
+    try {
+      print('🔍 Obteniendo ubicaciones de stock para producto: $productId');
+
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda en las preferencias del usuario');
+      }
+
+      final response = await _supabase.rpc(
+        'fn_listar_inventario_productos_paged',
+        params: {
+          'p_id_tienda': idTienda,
+          'p_id_producto': int.tryParse(productId),
+          'p_mostrar_sin_stock': true,
+          'p_limite': 50,
+          'p_pagina': 1,
+        },
+      );
+
+      if (response == null) return [];
+
+      final List<dynamic> data = response as List<dynamic>;
+      return data.map((item) => {
+        'ubicacion': item['ubicacion'] ?? item['almacen'] ?? 'Sin ubicación',
+        'cantidad': (item['cantidad_final'] ?? 0).toDouble(),
+        'reservado': (item['stock_reservado'] ?? 0).toDouble(),
+      }).toList();
+
+    } catch (e, stackTrace) {
+      print('❌ Error al obtener ubicaciones de stock: $e');
+      print('📍 StackTrace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Obtiene las operaciones de recepción para un producto específico con paginación
+  static Future<Map<String, dynamic>> getProductReceptionOperations(
+    String productId, {
+    int page = 1,
+    int limit = 5,
+    String? operationIdFilter,
+  }) async {
+    try {
+      print('🔍 Obteniendo operaciones de recepción para producto: $productId (página: $page, límite: $limit)');
+
+      // Preparar parámetros para la nueva función RPC optimizada
+      final Map<String, dynamic> params = {
+        'p_id_producto': int.tryParse(productId),
+        'p_limite': limit,
+        'p_pagina': page,
+      };
+
+      // Agregar filtro de ID de operación si se proporciona
+      if (operationIdFilter != null && operationIdFilter.isNotEmpty) {
+        final operationId = int.tryParse(operationIdFilter);
+        if (operationId != null) {
+          params['p_id_operacion'] = operationId;
+        } else {
+          // Si no es un número válido, usar búsqueda general
+          params['p_busqueda'] = operationIdFilter;
+        }
+      }
+
+      final response = await _supabase.rpc(
+        'fn_listar_operaciones_producto_especifico',
+        params: params,
+      );
+
+      if (response == null) {
+        return {
+          'operations': <Map<String, dynamic>>[],
+          'totalCount': 0,
+          'currentPage': page,
+          'totalPages': 0,
+          'hasNextPage': false,
+          'hasPreviousPage': false,
+        };
+      }
+
+      final List<dynamic> data = response as List<dynamic>;
+      
+      // Procesar operaciones directamente (ya filtradas por la función SQL)
+      List<Map<String, dynamic>> operations = [];
+      int totalCount = 0;
+      
+      for (var operation in data) {
+        // Obtener el total count del primer elemento
+        if (totalCount == 0 && operation['total_count'] != null) {
+          totalCount = operation['total_count'] as int;
+        }
+
+        operations.add({
+          'id': operation['id'],
+          'fecha': DateTime.parse(operation['created_at']),
+          'cantidad': (operation['cantidad_producto'] ?? 0).toDouble(),
+          'proveedor': operation['proveedor'] ?? 'No especificado',
+          'documento': operation['documento'] ?? 'OP-${operation['id']}',
+          'usuario': operation['usuario_email'] ?? 'Sistema',
+          'estado': operation['estado_nombre'] ?? 'Completado',
+          'total': (operation['importe_producto'] ?? 0).toDouble(),
+        });
+      }
+
+      // Calcular información de paginación
+      final totalPages = (totalCount / limit).ceil();
+      final hasNextPage = page < totalPages;
+      final hasPreviousPage = page > 1;
+
+      return {
+        'operations': operations,
+        'totalCount': totalCount,
+        'currentPage': page,
+        'totalPages': totalPages,
+        'hasNextPage': hasNextPage,
+        'hasPreviousPage': hasPreviousPage,
+      };
+
+    } catch (e, stackTrace) {
+      print('❌ Error al obtener operaciones de recepción: $e');
+      print('📍 StackTrace: $stackTrace');
+      return {
+        'operations': <Map<String, dynamic>>[],
+        'totalCount': 0,
+        'currentPage': page,
+        'totalPages': 0,
+        'hasNextPage': false,
+        'hasPreviousPage': false,
+      };
+    }
+  }
+
+  /// Obtiene el histórico de precios para un producto específico
+  static Future<List<Map<String, dynamic>>> getProductPriceHistory(String productId) async {
+    try {
+      print('🔍 Obteniendo histórico de precios para producto: $productId');
+
+      // Parse productId to int, return empty list if invalid
+      final productIdInt = int.tryParse(productId);
+      if (productIdInt == null) {
+        print('❌ ID de producto inválido: $productId');
+        return [];
+      }
+
+      final response = await _supabase
+          .from('app_dat_precio_venta')
+          .select('precio_venta_cup, fecha_desde, fecha_hasta')
+          .eq('id_producto', productIdInt)
+          .order('fecha_desde', ascending: false)
+          .limit(30);
+
+      if (response.isEmpty) return [];
+
+      return response.map<Map<String, dynamic>>((item) => {
+        'fecha': DateTime.parse(item['fecha_desde']),
+        'precio': (item['precio_venta_cup'] ?? 0.0).toDouble(),
+      }).toList();
+
+    } catch (e, stackTrace) {
+      print('❌ Error al obtener histórico de precios: $e');
+      print('📍 StackTrace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Obtiene los precios promocionales activos para un producto
+  static Future<List<Map<String, dynamic>>> getProductPromotionalPrices(String productId) async {
+    try {
+      print('🔍 Obteniendo precios promocionales para producto: $productId');
+
+      final response = await _supabase.rpc(
+        'fn_listar_promociones_producto',
+        params: {'p_id_producto': int.tryParse(productId)},
+      );
+
+      if (response == null) return [];
+
+      final List<dynamic> data = response as List<dynamic>;
+      return data.map<Map<String, dynamic>>((promo) => {
+        'promocion': promo['nombre'] ?? 'Promoción sin nombre',
+        'precio_original': (promo['precio_base'] ?? 0.0).toDouble(),
+        'precio_promocional': _calculatePromotionalPrice(
+          (promo['precio_base'] ?? 0.0).toDouble(),
+          (promo['valor_descuento'] ?? 0.0).toDouble(),
+          promo['es_recargo'] ?? false,
+        ),
+        'vigencia': '${_formatDate(promo['fecha_inicio'])} - ${_formatDate(promo['fecha_fin'])}',
+        'activa': _isPromotionActive(promo['fecha_inicio'], promo['fecha_fin'], promo['estado']),
+      }).toList();
+
+    } catch (e, stackTrace) {
+      print('❌ Error al obtener precios promocionales: $e');
+      print('📍 StackTrace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Obtiene el histórico de stock para un producto específico
+  static Future<List<Map<String, dynamic>>> getProductStockHistory(String productId, double stockActual) async {
+    try {
+      print('🔍 Obteniendo histórico de inventario para producto: $productId');
+      print('📦 Stock actual recibido como parámetro: $stockActual');
+
+      final response = await _supabase.rpc(
+        'fn_listar_historial_inventario_producto_v2',
+        params: {
+          'p_id_producto': int.tryParse(productId),
+          'p_dias': 30,
+        },
+      );
+
+      if (response == null) return [];
+
+      final List<dynamic> data = response as List<dynamic>;
+      
+      // Convertir las operaciones a formato para gráfico de stock acumulativo
+      List<Map<String, dynamic>> stockHistory = [];
+      
+      if (data.isNotEmpty) {
+        print('📊 Total operaciones recibidas: ${data.length}');
+        
+        // Ordenar operaciones por fecha (más antigua primero para calcular hacia adelante)
+        data.sort((a, b) => DateTime.parse(a['fecha']).compareTo(DateTime.parse(b['fecha'])));
+        
+        print('🔍 ANÁLISIS DETALLADO DE OPERACIONES:');
+        for (int i = 0; i < data.length; i++) {
+          var op = data[i];
+          print('Op ${i + 1}: ${op['tipo_operacion']} | Cantidad: ${op['cantidad']} | Stock inicial: ${op['stock_inicial']} | Stock final: ${op['stock_final']} | Fecha: ${op['fecha']}');
+        }
+        
+        // Calcular stock hacia adelante desde 0
+        double stockAcumulado = 0.0;
+        
+        // Agregar punto inicial (antes de cualquier operación)
+        if (data.isNotEmpty) {
+          final primeraFecha = DateTime.parse(data.first['fecha']);
+          final fechaInicial = primeraFecha.subtract(Duration(days: 1));
+          
+          stockHistory.add({
+            'fecha': fechaInicial,
+            'cantidad': 0.0,
+            'operacion_cantidad': 0.0,
+            'tipo_operacion': 'Inicial',
+            'documento': 'Stock inicial',
+          });
+          
+          print('📈 Punto inicial agregado: Stock = 0.0, Fecha = $fechaInicial');
+        }
+        
+        print('🔄 CALCULANDO STOCK PASO A PASO:');
+        print('🔍 VALIDANDO CONSISTENCIA DE OPERACIONES:');
+        
+        double stockAnteriorEsperado = 0.0;
+        int inconsistenciasDetectadas = 0;
+        
+        for (int i = 0; i < data.length; i++) {
+          var operation = data[i];
+          final fecha = DateTime.parse(operation['fecha']);
+          final cantidad = (operation['cantidad'] ?? 0).toDouble();
+          final tipoOperacion = operation['tipo_operacion'] ?? 'Operación';
+          final stockInicialBD = (operation['stock_inicial'] ?? 0).toDouble();
+          final stockFinalBD = (operation['stock_final'] ?? 0).toDouble();
+          
+          // Mostrar detalles de las primeras 15 operaciones
+          bool mostrarDetalle = i < 15;
+          
+          if (mostrarDetalle) {
+            print('--- Operación ${i + 1} ---');
+            print('Tipo: $tipoOperacion');
+            print('Cantidad: $cantidad');
+            print('Stock inicial BD: $stockInicialBD');
+            print('Stock final BD: $stockFinalBD');
+            print('Stock esperado anterior: $stockAnteriorEsperado');
+          }
+          
+          // Validar consistencia PARA TODAS LAS OPERACIONES
+          if (i > 0 && (stockInicialBD - stockAnteriorEsperado).abs() > 0.01) {
+            inconsistenciasDetectadas++;
+            if (mostrarDetalle || inconsistenciasDetectadas <= 20) { // Mostrar primeras 20 inconsistencias
+              print('⚠️ INCONSISTENCIA ${inconsistenciasDetectadas} DETECTADA!');
+              print('   Operación ${i + 1}: $tipoOperacion');
+              print('   Stock inicial BD: $stockInicialBD');
+              print('   Stock esperado: $stockAnteriorEsperado');
+              print('   Diferencia: ${stockInicialBD - stockAnteriorEsperado}');
+              print('   Fecha: $fecha');
+            }
+          }
+          
+          // Determinar si es entrada o salida según el tipo de operación
+          double cantidadConSigno;
+          if (tipoOperacion == 'Recepción') {
+            cantidadConSigno = cantidad; // Entrada: suma al stock
+            if (mostrarDetalle) print('Es ENTRADA: +$cantidad');
+          } else {
+            cantidadConSigno = -cantidad; // Salida: resta del stock (Venta, Extracción, Salida)
+            if (mostrarDetalle) print('Es SALIDA: -$cantidad');
+          }
+          
+          // Sumar la operación al stock acumulado
+          stockAcumulado += cantidadConSigno;
+          
+          if (mostrarDetalle) {
+            print('Stock después (calculado): $stockAcumulado');
+            print('Stock final BD: $stockFinalBD');
+            
+            // Validar que nuestro cálculo coincida con la BD
+            if ((stockAcumulado - stockFinalBD).abs() > 0.01) {
+              print('⚠️ DISCREPANCIA EN CÁLCULO!');
+              print('   Calculado: $stockAcumulado');
+              print('   BD: $stockFinalBD');
+              print('   Diferencia: ${stockAcumulado - stockFinalBD}');
+            }
+            print('Stock en gráfico: ${stockAcumulado.abs()}');
+            print('---');
+          }
+          
+          stockHistory.add({
+            'fecha': fecha,
+            'cantidad': stockAcumulado.abs(), // Usar valor absoluto para evitar negativos
+            'operacion_cantidad': cantidadConSigno,
+            'tipo_operacion': tipoOperacion,
+            'documento': operation['documento'] ?? '',
+          });
+          
+          // Actualizar stock esperado para la siguiente operación
+          stockAnteriorEsperado = stockFinalBD;
+          
+          // Mostrar progreso cada 50 operaciones
+          if (i > 0 && (i + 1) % 50 == 0) {
+            print('📊 Procesadas ${i + 1} operaciones...');
+          }
+        }
+        
+        print('');
+        print('📊 RESUMEN DE ANÁLISIS COMPLETO:');
+        print('Total operaciones procesadas: ${data.length}');
+        print('Inconsistencias detectadas: $inconsistenciasDetectadas');
+        if (inconsistenciasDetectadas > 20) {
+          print('(Mostrando solo las primeras 20 inconsistencias en detalle)');
+        }
+        
+        // Agregar punto actual si es diferente del último calculado
+        if (stockAcumulado.abs() != stockActual) {
+          print('⚠️ DISCREPANCIA DETECTADA:');
+          print('Stock calculado: ${stockAcumulado.abs()}');
+          print('Stock actual real: $stockActual');
+          print('Diferencia: ${stockActual - stockAcumulado.abs()}');
+          
+          // En lugar de ajustar, mostrar el gráfico con los datos calculados
+          // pero agregar una nota sobre la discrepancia
+          stockHistory.add({
+            'fecha': DateTime.now(),
+            'cantidad': stockActual,
+            'operacion_cantidad': stockActual - stockAcumulado.abs(),
+            'tipo_operacion': 'Discrepancia',
+            'documento': 'Diferencia entre histórico y stock actual: ${(stockActual - stockAcumulado.abs()).toStringAsFixed(0)} unidades',
+          });
+        }
+        
+        print('📈 RESUMEN FINAL:');
+        print('Stock inicial en gráfico: ${stockHistory.first['cantidad']}');
+        print('Stock final calculado: ${stockAcumulado.abs()}');
+        print('Stock actual real: $stockActual');
+        print('Total puntos en gráfico: ${stockHistory.length}');
+        print('Última operación: ${data.last['tipo_operacion']} - ${data.last['cantidad']} - ${data.last['fecha']}');
+        
+        // Agregar información sobre la integridad de los datos
+        final diferencia = stockActual - stockAcumulado.abs();
+        if (diferencia.abs() > 100) { // Si la diferencia es significativa
+          print('⚠️ ADVERTENCIA: Discrepancia significativa en los datos');
+          print('   Esto puede indicar:');
+          print('   - Operaciones no registradas en el histórico');
+          print('   - Ajustes manuales de inventario no documentados');
+          print('   - Diferencias entre el stock teórico y físico');
+          
+          // Ejecutar análisis de inconsistencias automáticamente
+          print('');
+          print('🔍 EJECUTANDO ANÁLISIS DE INCONSISTENCIAS...');
+          await detectStockInconsistencies(productId);
+        }
+        
+        print('✅ Histórico de stock calculado: ${stockHistory.length} puntos');
+        return stockHistory;
+      } else {
+        print('📊 No hay operaciones de inventario para este producto en los últimos 30 días');
+        // Crear un punto único con el stock actual
+        return [{
+          'fecha': DateTime.now(),
+          'cantidad': stockActual,
+          'operacion_cantidad': 0.0,
+          'tipo_operacion': 'Stock Actual',
+          'documento': 'Sin operaciones recientes',
+        }];
+      }
+
+    } catch (e, stackTrace) {
+      print('❌ Error al obtener histórico de inventario: $e');
+      print('📍 StackTrace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Actualiza un producto existente
+  static Future<bool> updateProduct(String productId, Map<String, dynamic> productData) async {
+    try {
+      print('🔍 Actualizando producto: $productId');
+      print('📦 Datos: $productData');
+
+      final response = await _supabase.rpc(
+        'fn_actualizar_producto',
+        params: {
+          'p_id_producto': int.tryParse(productId),
+          'p_denominacion': productData['denominacion'],
+          'p_descripcion': productData['descripcion'],
+          'p_nombre_comercial': productData['nombre_comercial'],
+          'p_sku': productData['sku'],
+          'p_codigo_barras': productData['codigo_barras'],
+          'p_imagen': productData['imagen'],
+          'p_es_vendible': productData['es_vendible'],
+          'p_id_categoria': productData['id_categoria'],
+        },
+      );
+
+      return response == true;
+
+    } catch (e, stackTrace) {
+      print('❌ Error al actualizar producto: $e');
+      print('📍 StackTrace: $stackTrace');
+      return false;
+    }
+  }
+
+  /// Duplica un producto existente
+  static Future<Map<String, dynamic>?> duplicateProduct(String productId) async {
+    try {
+      print('🔍 Duplicando producto: $productId');
+
+      final response = await _supabase.rpc(
+        'fn_duplicar_producto',
+        params: {'p_id_producto': int.tryParse(productId)},
+      );
+
+      if (response != null && response['success'] == true) {
+        return response;
+      }
+      return null;
+
+    } catch (e, stackTrace) {
+      print('❌ Error al duplicar producto: $e');
+      print('📍 StackTrace: $stackTrace');
+      return null;
+    }
+  }
+
+  /// Elimina un producto
+  static Future<bool> deleteProduct(String productId) async {
+    try {
+      print('🔍 Eliminando producto: $productId');
+
+      final response = await _supabase.rpc(
+        'fn_eliminar_producto_completo',
+        params: {'p_id_producto': int.tryParse(productId)},
+      );
+
+      return response == true;
+
+    } catch (e, stackTrace) {
+      print('❌ Error al eliminar producto: $e');
+      print('📍 StackTrace: $stackTrace');
+      return false;
+    }
+  }
+
+  /// Detecta inconsistencias en el histórico de stock de un producto
+  static Future<void> detectStockInconsistencies(String productId) async {
+    try {
+      print('🔍 Detectando inconsistencias en histórico de stock para producto: $productId');
+
+      final response = await _supabase.rpc(
+        'fn_detectar_inconsistencias_stock',
+        params: {
+          'p_id_producto': int.tryParse(productId),
+          'p_dias': 30,
+        },
+      );
+
+      if (response == null) {
+        print('✅ No se encontraron inconsistencias en el stock');
+        return;
+      }
+
+      final List<dynamic> inconsistencias = response as List<dynamic>;
+      
+      if (inconsistencias.isEmpty) {
+        print('✅ No se encontraron inconsistencias en el stock');
+        return;
+      }
+
+      print('⚠️ INCONSISTENCIAS DETECTADAS: ${inconsistencias.length}');
+      print('');
+      
+      for (int i = 0; i < inconsistencias.length; i++) {
+        var inc = inconsistencias[i];
+        print('--- Inconsistencia ${i + 1} ---');
+        print('Operación ID: ${inc['operacion_id']}');
+        print('Número de operación: ${inc['operacion_numero']}');
+        print('Tipo: ${inc['tipo_operacion']}');
+        print('Fecha: ${inc['fecha']}');
+        print('Cantidad: ${inc['cantidad']}');
+        print('Stock inicial (actual): ${inc['stock_inicial_actual']}');
+        print('Stock final (anterior): ${inc['stock_final_anterior']}');
+        print('Diferencia: ${inc['diferencia']}');
+        print('Documento: ${inc['documento']}');
+        print('');
+      }
+
+      // Calcular total de discrepancias
+      double totalDiscrepancia = 0;
+      for (var inc in inconsistencias) {
+        totalDiscrepancia += (inc['diferencia'] ?? 0).toDouble();
+      }
+      
+      print('📊 RESUMEN DE INCONSISTENCIAS:');
+      print('Total de operaciones con problemas: ${inconsistencias.length}');
+      print('Suma total de discrepancias: $totalDiscrepancia');
+      print('');
+
+    } catch (e, stackTrace) {
+      print('❌ Error al detectar inconsistencias: $e');
+      print('📍 StackTrace: $stackTrace');
+    }
+  }
+
+  /// Obtiene el ID de tienda del usuario con múltiples estrategias de fallback
+  static Future<int?> _getStoreId([int? providedStoreId]) async {
+    try {
+      // 1. Usar ID proporcionado si está disponible
+      if (providedStoreId != null) {
+        print('🏪 Usando ID de tienda proporcionado: $providedStoreId');
+        return providedStoreId;
+      }
+
+      // 2. Intentar obtener desde el servicio de selector de tienda
+      _storeSelectorService ??= StoreSelectorService();
+      
+      final selectedStoreId = await _storeSelectorService!.getSelectedStoreId();
+      if (selectedStoreId != null) {
+        print('🏪 ID de tienda desde selector: $selectedStoreId');
+        return selectedStoreId;
+      }
+
+      // 3. Inicializar el servicio si no está inicializado
+      if (!_storeSelectorService!.isInitialized) {
+        print('🔄 Inicializando servicio de selector de tienda...');
+        await _storeSelectorService!.initialize();
+        
+        final storeIdAfterInit = await _storeSelectorService!.getSelectedStoreId();
+        if (storeIdAfterInit != null) {
+          print('🏪 ID de tienda después de inicializar: $storeIdAfterInit');
+          return storeIdAfterInit;
+        }
+      }
+
+      // 4. Fallback: usar la primera tienda disponible
+      final stores = _storeSelectorService!.userStores;
+      if (stores.isNotEmpty) {
+        final firstStoreId = stores.first.id;
+        print('🏪 Usando primera tienda disponible como fallback: $firstStoreId');
+        return firstStoreId;
+      }
+
+      print('❌ No se pudo obtener ID de tienda por ningún método');
+      return null;
+
+    } catch (e, stackTrace) {
+      print('❌ Error al obtener ID de tienda: $e');
+      print('📍 StackTrace: $stackTrace');
+      return null;
+    }
+  }
+
+  static double _calculatePromotionalPrice(double basePrice, double discount, bool isCharge) {
+    if (isCharge) {
+      return basePrice + (basePrice * discount / 100);
+    } else {
+      return basePrice - (basePrice * discount / 100);
+    }
+  }
+
+  static String _formatDate(String? dateStr) {
+    if (dateStr == null) return 'N/A';
+    try {
+      final date = DateTime.parse(dateStr);
+      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    } catch (e) {
+      return 'N/A';
+    }
+  }
+
+  static bool _isPromotionActive(String? startDate, String? endDate, int? status) {
+    if (startDate == null || endDate == null || status != 1) return false;
+    
+    try {
+      final now = DateTime.now();
+      final start = DateTime.parse(startDate);
+      final end = DateTime.parse(endDate);
+      return now.isAfter(start) && now.isBefore(end);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Actualiza los datos de una operación de recepción (precios, facturas, descuentos)
+  static Future<Map<String, dynamic>> updateReceptionOperation({
+    required String operationId,
+    String? entregadoPor,
+    String? recibidoPor,
+    double? montoTotal,
+    String? observaciones,
+    String? numeroFactura,
+    DateTime? fechaFactura,
+    double? montoFactura,
+    String? monedaFactura,
+    String? pdfFactura,
+    String? observacionesCompra,
+    List<Map<String, dynamic>>? productosData,
+  }) async {
+    try {
+      print('🔍 Actualizando operación de recepción: $operationId');
+
+      // Preparar parámetros para la función
+      final params = <String, dynamic>{
+        'p_id_operacion': int.tryParse(operationId),
+      };
+
+      // Agregar parámetros opcionales solo si no son null
+      if (entregadoPor != null) params['p_entregado_por'] = entregadoPor;
+      if (recibidoPor != null) params['p_recibido_por'] = recibidoPor;
+      if (montoTotal != null) params['p_monto_total'] = montoTotal;
+      if (observaciones != null) params['p_observaciones'] = observaciones;
+      if (numeroFactura != null) params['p_numero_factura'] = numeroFactura;
+      if (fechaFactura != null) params['p_fecha_factura'] = fechaFactura.toIso8601String().split('T')[0];
+      if (montoFactura != null) params['p_monto_factura'] = montoFactura;
+      if (monedaFactura != null) params['p_moneda_factura'] = monedaFactura;
+      if (pdfFactura != null) params['p_pdf_factura'] = pdfFactura;
+      if (observacionesCompra != null) params['p_observaciones_compra'] = observacionesCompra;
+      if (productosData != null && productosData.isNotEmpty) {
+        params['p_productos_data'] = productosData;
+      }
+
+      print('📤 Parámetros enviados: $params');
+
+      final response = await _supabase.rpc(
+        'fn_actualizar_operacion_recepcion',
+        params: params,
+      );
+
+      print('📥 Respuesta recibida: $response');
+
+      if (response != null && response is Map<String, dynamic>) {
+        if (response['success'] == true) {
+          print('✅ Operación de recepción actualizada correctamente');
+          return {
+            'success': true,
+            'message': response['message'] ?? 'Operación actualizada correctamente',
+            'data': response,
+          };
+        } else {
+          print('❌ Error en la actualización: ${response['message']}');
+          return {
+            'success': false,
+            'message': response['message'] ?? 'Error desconocido al actualizar la operación',
+          };
+        }
+      } else {
+        print('❌ Respuesta inválida del servidor');
+        return {
+          'success': false,
+          'message': 'Respuesta inválida del servidor',
+        };
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error al actualizar operación de recepción: $e');
+      print('📍 StackTrace: $stackTrace');
+      return {
+        'success': false,
+        'message': 'Error al actualizar la operación: $e',
+      };
+    }
+  }
+
+  /// Obtiene los detalles completos de una operación de recepción para edición
+  static Future<Map<String, dynamic>?> getReceptionOperationDetails(String operationId) async {
+    try {
+      print('🔍 Obteniendo detalles de operación de recepción: $operationId');
+
+      // Parse the operation ID and validate it
+      final parsedId = int.tryParse(operationId);
+      if (parsedId == null) {
+        print('❌ ID de operación inválido: $operationId');
+        return null;
+      }
+
+      // First get the operation details
+      final operationResponse = await _supabase
+          .from('app_dat_operaciones')
+          .select('*')
+          .eq('id', parsedId)
+          .single();
+
+      // Then get the related products for this operation from reception products table
+      final productsResponse = await _supabase
+          .from('app_dat_recepcion_productos')
+          .select('''
+            *,
+            app_dat_producto(id, denominacion, sku)
+          ''')
+          .eq('id_operacion', parsedId);
+
+      // Combine the data
+      final result = Map<String, dynamic>.from(operationResponse);
+      result['app_dat_recepcion_productos'] = productsResponse;
+
+      print('📥 Detalles obtenidos: $result');
+      return result;
+    } catch (e, stackTrace) {
+      print('❌ Error al obtener detalles de operación: $e');
+      print('📍 StackTrace: $stackTrace');
+      return null;
     }
   }
 }

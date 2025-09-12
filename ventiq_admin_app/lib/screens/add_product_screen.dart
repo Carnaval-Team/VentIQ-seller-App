@@ -1,13 +1,21 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
+import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/openfoodfacts_service.dart';
 import 'barcode_scanner_screen.dart';
 
 class AddProductScreen extends StatefulWidget {
-  const AddProductScreen({Key? key}) : super(key: key);
+  final Product? product;
+  final VoidCallback? onProductSaved;
+  
+  const AddProductScreen({
+    Key? key, 
+    this.product,
+    this.onProductSaved,
+  }) : super(key: key);
 
   @override
   State<AddProductScreen> createState() => _AddProductScreenState();
@@ -33,6 +41,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _isLoading = false;
   bool _isLoadingData = true;
   bool _isLoadingOpenFoodFacts = false;
+  bool _showAdvancedConfig = false; // Nueva variable para mostrar/ocultar configuración avanzada
 
   // Datos para dropdowns
   List<Map<String, dynamic>> _categorias = [];
@@ -56,7 +65,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   // Listas dinámicas
   List<String> _etiquetas = [];
-  List<String> _multimedias = [];
+  List<Map<String, dynamic>> _multimedias = [];
 
   // Variables para variantes
   List<Map<String, dynamic>> _selectedVariantes = [];
@@ -64,6 +73,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.product != null) {
+      _skuController.text = widget.product!.sku ?? '';
+      _denominacionController.text = widget.product!.denominacion ?? '';
+      _nombreComercialController.text = widget.product!.nombreComercial ?? '';
+      _denominacionCortaController.text = widget.product!.denominacionCorta ?? '';
+      _descripcionController.text = widget.product!.description ?? '';
+      _descripcionCortaController.text = widget.product!.descripcionCorta ?? '';
+      _umController.text = widget.product!.um ?? '';
+      _diasAlertController.text = widget.product!.diasAlertCaducidad.toString() ?? '0';
+      _codigoBarrasController.text = widget.product!.codigoBarras ?? '';
+      _precioVentaController.text = widget.product!.precioVenta.toString() ?? '0.0';
+      _esRefrigerado = widget.product!.esRefrigerado ?? false;
+      _esFragil = widget.product!.esFragil ?? false;
+      _esPeligroso = widget.product!.esPeligroso ?? false;
+      _esVendible = widget.product!.esVendible ?? true;
+      _esComprable = widget.product!.esComprable ?? true;
+      _esInventariable = widget.product!.esInventariable ?? true;
+      _esPorLotes = widget.product!.esPorLotes ?? false;
+      _etiquetas = widget.product!.etiquetas ?? [];
+      _multimedias = widget.product!.multimedias ?? [];
+    }
     _loadInitialData();
   }
 
@@ -113,6 +143,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         _subcategorias = subcategorias;
         _selectedSubcategorias.clear(); // Limpiar selecciones previas
       });
+      _generateSKU(); // Generar SKU cuando cambia la categoría
     } catch (e) {
       print('Error al cargar subcategorías: $e');
       _showErrorSnackBar('Error al cargar subcategorías: $e');
@@ -131,12 +162,67 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
+  void _generateSKU() {
+    String sku = '';
+    
+    // Agregar código de categoría
+    if (_selectedCategoryId != null) {
+      final categoria = _categorias.firstWhere(
+        (cat) => cat['id'] == _selectedCategoryId,
+        orElse: () => {'denominacion': 'CAT'},
+      );
+      final catCode = categoria['denominacion']
+          .toString()
+          .toUpperCase()
+          .replaceAll(RegExp(r'[^A-Z0-9]'), '')
+          .substring(0, categoria['denominacion'].toString().length >= 3 ? 3 : categoria['denominacion'].toString().length);
+      sku += catCode;
+    }
+    
+    // Agregar código de subcategoría
+    if (_selectedSubcategorias.isNotEmpty) {
+      final subcategoria = _subcategorias.firstWhere(
+        (subcat) => subcat['id'] == _selectedSubcategorias.first,
+        orElse: () => {'denominacion': 'SUB'},
+      );
+      final subCode = subcategoria['denominacion']
+          .toString()
+          .toUpperCase()
+          .replaceAll(RegExp(r'[^A-Z0-9]'), '')
+          .substring(0, subcategoria['denominacion'].toString().length >= 2 ? 2 : subcategoria['denominacion'].toString().length);
+      sku += '-$subCode';
+    }
+    
+    // Agregar código de variante si existe
+    if (_selectedVariantes.isNotEmpty) {
+      final variante = _selectedVariantes.first;
+      if (variante['opciones'] != null && (variante['opciones'] as List).isNotEmpty) {
+        final opcion = (variante['opciones'] as List).first;
+        final varCode = opcion['valor']
+            .toString()
+            .toUpperCase()
+            .replaceAll(RegExp(r'[^A-Z0-9]'), '')
+            .substring(0, opcion['valor'].toString().length >= 2 ? 2 : opcion['valor'].toString().length);
+        sku += '-$varCode';
+      }
+    }
+    
+    // Agregar timestamp para unicidad
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString().substring(8);
+    sku += '-$timestamp';
+    
+    // Actualizar el campo SKU
+    setState(() {
+      _skuController.text = sku.isNotEmpty ? sku : 'PROD-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Agregar Producto',
+        title: Text(
+          widget.product != null ? 'Editar Producto' : 'Agregar Producto',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
         ),
         backgroundColor: AppColors.primary,
@@ -146,7 +232,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           TextButton(
             onPressed: _isLoading ? null : _saveProduct,
             child: Text(
-              'GUARDAR',
+              widget.product != null ? 'ACTUALIZAR' : 'GUARDAR',
               style: TextStyle(
                 color: _isLoading ? Colors.white54 : Colors.white,
                 fontWeight: FontWeight.w600,
@@ -173,29 +259,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
                   children: [
-                    _buildBasicInfoSection(),
-                    const SizedBox(height: 24),
-                    _buildCategorySection(),
-                    const SizedBox(height: 24),
-                    _buildPropertiesSection(),
-                    const SizedBox(height: 24),
-                    _buildPricingSection(),
-                    const SizedBox(height: 24),
-                    _buildTagsSection(),
-                    const SizedBox(height: 24),
-                    _buildMultimediaSection(),
-                    const SizedBox(height: 24),
-                    _buildPresentacionesSection(),
-                    const SizedBox(height: 24),
-                    _buildVariantesSection(),
+                    _buildEssentialFieldsSection(),
                     const SizedBox(height: 32),
+                    _buildAdvancedFieldsSection(),
                   ],
                 ),
               ),
     );
   }
 
-  Widget _buildBasicInfoSection() {
+  Widget _buildEssentialFieldsSection() {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -203,21 +276,24 @@ class _AddProductScreenState extends State<AddProductScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Información Básica',
+              'Información Esencial',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+                color: AppColors.primary,
               ),
             ),
             const SizedBox(height: 16),
+            // SKU - Visible pero auto-generado
             TextFormField(
               controller: _skuController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'SKU *',
-                hintText: 'Código único del producto',
-                border: OutlineInputBorder(),
+                hintText: 'Se genera automáticamente',
+                border: const OutlineInputBorder(),
+                suffixIcon: Icon(Icons.auto_awesome, color: AppColors.primary),
               ),
+              readOnly: true,
               validator: (value) {
                 if (value == null || value.isEmpty) {
                   return 'El SKU es requerido';
@@ -226,165 +302,46 @@ class _AddProductScreenState extends State<AddProductScreen> {
               },
             ),
             const SizedBox(height: 16),
+            // Denominación
             TextFormField(
               controller: _denominacionController,
               decoration: const InputDecoration(
-                labelText: 'Denominación *',
+                labelText: 'Nombre del Producto *',
                 hintText: 'Nombre completo del producto',
                 border: OutlineInputBorder(),
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return 'La denominación es requerida';
+                  return 'El nombre del producto es requerido';
                 }
                 return null;
               },
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _nombreComercialController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre Comercial',
-                hintText: 'Nombre comercial o marca',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _denominacionCortaController,
-                    decoration: const InputDecoration(
-                      labelText: 'Denominación Corta',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: TextFormField(
-                    controller: _umController,
-                    decoration: const InputDecoration(
-                      labelText: 'Unidad de Medida',
-                      hintText: 'Ej: kg, lt, und',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+            // Descripción
             TextFormField(
               controller: _descripcionController,
               decoration: const InputDecoration(
                 labelText: 'Descripción',
-                hintText: 'Descripción detallada del producto',
+                hintText: 'Descripción del producto',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _descripcionCortaController,
-              decoration: const InputDecoration(
-                labelText: 'Descripción Corta',
-                hintText: 'Descripción breve',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _codigoBarrasController,
-                    decoration: InputDecoration(
-                      labelText: 'Código de Barras',
-                      hintText: 'Código de barras del producto',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: _isLoadingOpenFoodFacts
-                          ? const Padding(
-                              padding: EdgeInsets.all(12.0),
-                              child: SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                                ),
-                              ),
-                            )
-                          : null,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoadingOpenFoodFacts ? null : _openBarcodeScanner,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.all(12),
-                    ),
-                    child: _isLoadingOpenFoodFacts
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : const Icon(
-                            Icons.qr_code_scanner,
-                            size: 24,
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategorySection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Categorización',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
+            // Categoría
             DropdownButtonFormField<int>(
               value: _selectedCategoryId,
               decoration: const InputDecoration(
                 labelText: 'Categoría *',
                 border: OutlineInputBorder(),
               ),
-              items:
-                  _categorias.map((categoria) {
-                    return DropdownMenuItem<int>(
-                      value: categoria['id'],
-                      child: Text(categoria['denominacion']),
-                    );
-                  }).toList(),
+              items: _categorias.map((categoria) {
+                return DropdownMenuItem<int>(
+                  value: categoria['id'],
+                  child: Text(categoria['denominacion']),
+                );
+              }).toList(),
               onChanged: (value) {
                 setState(() {
                   _selectedCategoryId = value;
@@ -401,6 +358,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 return null;
               },
             ),
+            // Subcategorías
             if (_subcategorias.isNotEmpty) ...[
               const SizedBox(height: 16),
               const Text(
@@ -415,128 +373,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children:
-                    _subcategorias.map((subcat) {
-                      final isSelected = _selectedSubcategorias.contains(
-                        subcat['id'],
-                      );
-                      return FilterChip(
-                        label: Text(subcat['denominacion']),
-                        selected: isSelected,
-                        onSelected: (selected) {
-                          setState(() {
-                            if (selected) {
-                              _selectedSubcategorias.add(subcat['id']);
-                            } else {
-                              _selectedSubcategorias.remove(subcat['id']);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
+                children: _subcategorias.map((subcat) {
+                  final isSelected = _selectedSubcategorias.contains(subcat['id']);
+                  return FilterChip(
+                    label: Text(subcat['denominacion']),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedSubcategorias.add(subcat['id']);
+                        } else {
+                          _selectedSubcategorias.remove(subcat['id']);
+                        }
+                      });
+                      _generateSKU();
+                    },
+                  );
+                }).toList(),
               ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPropertiesSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Propiedades del Producto',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-            ),
             const SizedBox(height: 16),
-            CheckboxListTile(
-              title: const Text('Es Refrigerado'),
-              subtitle: const Text('Requiere refrigeración'),
-              value: _esRefrigerado,
-              onChanged:
-                  (value) => setState(() => _esRefrigerado = value ?? false),
-            ),
-            CheckboxListTile(
-              title: const Text('Es Frágil'),
-              subtitle: const Text('Requiere manejo especial'),
-              value: _esFragil,
-              onChanged: (value) => setState(() => _esFragil = value ?? false),
-            ),
-            CheckboxListTile(
-              title: const Text('Es Peligroso'),
-              subtitle: const Text('Producto peligroso o tóxico'),
-              value: _esPeligroso,
-              onChanged:
-                  (value) => setState(() => _esPeligroso = value ?? false),
-            ),
-            CheckboxListTile(
-              title: const Text('Es Vendible'),
-              subtitle: const Text('Disponible para venta'),
-              value: _esVendible,
-              onChanged: (value) => setState(() => _esVendible = value ?? true),
-            ),
-            CheckboxListTile(
-              title: const Text('Es Comprable'),
-              subtitle: const Text('Se puede comprar a proveedores'),
-              value: _esComprable,
-              onChanged:
-                  (value) => setState(() => _esComprable = value ?? true),
-            ),
-            CheckboxListTile(
-              title: const Text('Es Inventariable'),
-              subtitle: const Text('Se controla en inventario'),
-              value: _esInventariable,
-              onChanged:
-                  (value) => setState(() => _esInventariable = value ?? true),
-            ),
-            CheckboxListTile(
-              title: const Text('Es por Lotes'),
-              subtitle: const Text('Se maneja por lotes con fechas'),
-              value: _esPorLotes,
-              onChanged:
-                  (value) => setState(() => _esPorLotes = value ?? false),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _diasAlertController,
-              decoration: const InputDecoration(
-                labelText: 'Días de Alerta de Caducidad',
-                hintText: 'Días antes del vencimiento para alertar',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPricingSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Precio de Venta',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
+            // Precio de Venta
             TextFormField(
               controller: _precioVentaController,
               decoration: const InputDecoration(
@@ -545,7 +402,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 prefixText: '\$ ',
                 border: OutlineInputBorder(),
               ),
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               validator: (value) {
                 if (value == null || value.isEmpty) {
                   return 'El precio de venta es requerido';
@@ -563,178 +420,214 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
-  Widget _buildTagsSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildAdvancedFieldsSection() {
+    return Column(
+      children: [
+        // Campos adicionales básicos
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Etiquetas',
+                  'Información Adicional',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: _addEtiqueta,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Agregar'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (_etiquetas.isEmpty)
-              const Text(
-                'No hay etiquetas agregadas',
-                style: TextStyle(color: AppColors.textSecondary),
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children:
-                    _etiquetas.map((etiqueta) {
-                      return Chip(
-                        label: Text(etiqueta),
-                        deleteIcon: const Icon(Icons.close, size: 18),
-                        onDeleted: () {
-                          setState(() => _etiquetas.remove(etiqueta));
-                        },
-                      );
-                    }).toList(),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMultimediaSection() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Multimedia',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _nombreComercialController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre Comercial',
+                    hintText: 'Nombre comercial o marca',
+                    border: OutlineInputBorder(),
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: _addMultimedia,
-                  icon: const Icon(Icons.add_photo_alternate),
-                  label: const Text('Agregar'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (_multimedias.isEmpty)
-              const Text(
-                'No hay multimedia agregada',
-                style: TextStyle(color: AppColors.textSecondary),
-              )
-            else
-              Column(
-                children:
-                    _multimedias.map((media) {
-                      return ListTile(
-                        leading: const Icon(Icons.image),
-                        title: Text(media),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            setState(() => _multimedias.remove(media));
-                          },
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _denominacionCortaController,
+                        decoration: const InputDecoration(
+                          labelText: 'Denominación Corta',
+                          border: OutlineInputBorder(),
                         ),
-                      );
-                    }).toList(),
-              ),
-          ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _umController,
+                        decoration: const InputDecoration(
+                          labelText: 'Unidad de Medida',
+                          hintText: 'Ej: kg, lt, und',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _descripcionCortaController,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripción Corta',
+                    hintText: 'Descripción breve',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _codigoBarrasController,
+                        decoration: InputDecoration(
+                          labelText: 'Código de Barras',
+                          hintText: 'Código de barras del producto',
+                          border: const OutlineInputBorder(),
+                          suffixIcon: _isLoadingOpenFoodFacts
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12.0),
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                    ),
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _isLoadingOpenFoodFacts ? null : _openBarcodeScanner,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.all(12),
+                        ),
+                        child: _isLoadingOpenFoodFacts
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.qr_code_scanner,
+                                size: 24,
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
-    );
-  }
-
-  void _addEtiqueta() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: const Text('Agregar Etiqueta'),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              labelText: 'Etiqueta',
-              hintText: 'Ej: Orgánico, Sin gluten, etc.',
+        const SizedBox(height: 16),
+        // Propiedades del producto
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Propiedades del Producto',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                CheckboxListTile(
+                  title: const Text('Es Refrigerado'),
+                  subtitle: const Text('Requiere refrigeración'),
+                  value: _esRefrigerado,
+                  onChanged: (value) => setState(() => _esRefrigerado = value ?? false),
+                ),
+                CheckboxListTile(
+                  title: const Text('Es Frágil'),
+                  subtitle: const Text('Requiere manejo especial'),
+                  value: _esFragil,
+                  onChanged: (value) => setState(() => _esFragil = value ?? false),
+                ),
+                CheckboxListTile(
+                  title: const Text('Es Peligroso'),
+                  subtitle: const Text('Producto peligroso o tóxico'),
+                  value: _esPeligroso,
+                  onChanged: (value) => setState(() => _esPeligroso = value ?? false),
+                ),
+                CheckboxListTile(
+                  title: const Text('Es Vendible'),
+                  subtitle: const Text('Disponible para venta'),
+                  value: _esVendible,
+                  onChanged: (value) => setState(() => _esVendible = value ?? true),
+                ),
+                CheckboxListTile(
+                  title: const Text('Es Comprable'),
+                  subtitle: const Text('Se puede comprar a proveedores'),
+                  value: _esComprable,
+                  onChanged: (value) => setState(() => _esComprable = value ?? true),
+                ),
+                CheckboxListTile(
+                  title: const Text('Es Inventariable'),
+                  subtitle: const Text('Se controla en inventario'),
+                  value: _esInventariable,
+                  onChanged: (value) => setState(() => _esInventariable = value ?? true),
+                ),
+                CheckboxListTile(
+                  title: const Text('Es por Lotes'),
+                  subtitle: const Text('Se maneja por lotes con fechas'),
+                  value: _esPorLotes,
+                  onChanged: (value) => setState(() => _esPorLotes = value ?? false),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _diasAlertController,
+                  decoration: const InputDecoration(
+                    labelText: 'Días de Alerta de Caducidad',
+                    hintText: 'Días antes del vencimiento para alertar',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+              ],
             ),
-            autofocus: true,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (controller.text.isNotEmpty) {
-                  setState(() => _etiquetas.add(controller.text));
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Agregar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _addMultimedia() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: const Text('Agregar Multimedia'),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              labelText: 'URL de imagen',
-              hintText: 'https://ejemplo.com/imagen.jpg',
-            ),
-            autofocus: true,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (controller.text.isNotEmpty) {
-                  setState(() => _multimedias.add(controller.text));
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Agregar'),
-            ),
-          ],
-        );
-      },
+        ),
+        const SizedBox(height: 16),
+        // Etiquetas
+        _buildTagsSection(),
+        const SizedBox(height: 16),
+        // Multimedia
+        _buildMultimediaSection(),
+        const SizedBox(height: 16),
+        // Presentaciones
+        _buildPresentacionesSection(),
+        const SizedBox(height: 16),
+        // Variantes
+        _buildVariantesSection(),
+      ],
     );
   }
 
@@ -762,7 +655,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'denominacion': _denominacionController.text,
         'nombre_comercial': _nombreComercialController.text,
         'denominacion_corta': _denominacionCortaController.text,
-        'descripcion': _descripcionController.text,
+        'description': _descripcionController.text,
         'descripcion_corta': _descripcionCortaController.text,
         'um': _umController.text,
         'es_refrigerado': _esRefrigerado,
@@ -907,6 +800,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       // Mostrar éxito y regresar
       _showSuccessSnackBar('Producto creado exitosamente');
+      if (widget.onProductSaved != null) {
+        widget.onProductSaved!();
+      }
       Navigator.pop(context, true); // true indica que se creó un producto
     } catch (e) {
       _showErrorSnackBar('Error al crear producto: $e');
@@ -929,174 +825,174 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   Future<void> _openBarcodeScanner() async {
     try {
-      final result = await Navigator.push<String>(
+      setState(() => _isLoadingOpenFoodFacts = true);
+      
+      final result = await Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (context) => const BarcodeScannerScreen(),
-        ),
+        MaterialPageRoute(builder: (context) => const BarcodeScannerScreen()),
       );
       
-      if (result != null && result.isNotEmpty) {
-        setState(() {
-          _codigoBarrasController.text = result;
-        });
+      if (result != null && result is String) {
+        _codigoBarrasController.text = result;
         
-        // Buscar producto en OpenFoodFacts
-        await _searchProductInOpenFoodFacts(result);
+        // Intentar obtener información del producto desde OpenFoodFacts
+        try {
+          final response = await OpenFoodFactsService.getProductByBarcode(result);
+          if (response.isSuccess && response.product != null) {
+            _showProductInfoDialog(response.product!.toJson());
+          }
+        } catch (e) {
+          print('Error al obtener información de OpenFoodFacts: $e');
+        }
       }
     } catch (e) {
-      _showErrorSnackBar('Error al abrir el escáner: $e');
-    }
-  }
-
-  Future<void> _searchProductInOpenFoodFacts(String barcode) async {
-    setState(() => _isLoadingOpenFoodFacts = true);
-    
-    try {
-      final response = await OpenFoodFactsService.getProductByBarcode(barcode);
-      
-      if (response.isSuccess && response.product != null) {
-        _fillFormWithOpenFoodFactsData(response.product!);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Producto encontrado: ${response.product!.bestProductName}'),
-            backgroundColor: AppColors.success,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      } else if (response.isNotFound) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('ℹ️ Producto no encontrado en OpenFoodFacts. Código: $barcode'),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('⚠️ Error al buscar producto: ${response.error ?? "Error desconocido"}'),
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      _showErrorSnackBar('Error al consultar OpenFoodFacts: $e');
+      _showErrorSnackBar('Error al escanear código de barras: $e');
     } finally {
       setState(() => _isLoadingOpenFoodFacts = false);
     }
   }
 
-  void _fillFormWithOpenFoodFactsData(OpenFoodFactsProduct product) {
-    setState(() {
-      // Nombre del producto
-      if (product.bestProductName.isNotEmpty && product.bestProductName != 'Producto sin nombre') {
-        _denominacionController.text = product.bestProductName;
-      }
-      
-      // Nombre comercial (marca)
-      if (product.brands != null && product.brands!.isNotEmpty) {
-        _nombreComercialController.text = product.brands!;
-      }
-      
-      // Descripción
-      if (product.bestDescription.isNotEmpty) {
-        _descripcionController.text = product.bestDescription;
-      }
-      
-      // Descripción corta (usar nombre genérico o categorías)
-      String descripcionCorta = '';
-      if (product.genericNameEs != null && product.genericNameEs!.isNotEmpty) {
-        descripcionCorta = product.genericNameEs!;
-      } else if (product.genericName != null && product.genericName!.isNotEmpty) {
-        descripcionCorta = product.genericName!;
-      } else if (product.bestCategories.isNotEmpty) {
-        // Tomar la primera categoría
-        final categorias = product.bestCategories.split(',');
-        if (categorias.isNotEmpty) {
-          descripcionCorta = categorias.first.trim();
-        }
-      }
-      if (descripcionCorta.isNotEmpty) {
-        _descripcionCortaController.text = descripcionCorta;
-      }
-      
-      // Denominación corta (usar marca + nombre corto)
-      String denomCorta = '';
-      if (product.brands != null && product.brands!.isNotEmpty) {
-        final marca = product.brands!.split(',').first.trim();
-        if (product.productName != null && product.productName!.length > marca.length + 5) {
-          // Si el nombre es mucho más largo que la marca, crear versión corta
-          denomCorta = '$marca ${product.productName!.substring(0, 20)}...';
-        } else {
-          denomCorta = product.bestProductName.length > 30 
-              ? '${product.bestProductName.substring(0, 30)}...'
-              : product.bestProductName;
-        }
-      } else {
-        denomCorta = product.bestProductName.length > 30 
-            ? '${product.bestProductName.substring(0, 30)}...'
-            : product.bestProductName;
-      }
-      if (denomCorta.isNotEmpty && denomCorta != 'Producto sin nombre') {
-        _denominacionCortaController.text = denomCorta;
-      }
-      
-      // Cantidad/Unidad de medida
-      if (product.quantity != null && product.quantity!.isNotEmpty) {
-        _umController.text = product.quantity!;
-      }
-      
-      // Agregar etiquetas basadas en categorías
-      if (product.bestCategories.isNotEmpty) {
-        final categorias = product.bestCategories.split(',');
-        for (final categoria in categorias.take(3)) { // Máximo 3 etiquetas
-          final etiqueta = categoria.trim();
-          if (etiqueta.isNotEmpty && !_etiquetas.contains(etiqueta)) {
-            _etiquetas.add(etiqueta);
-          }
-        }
-      }
-      
-      // Agregar imagen si está disponible
-      if (product.bestImageUrl != null && product.bestImageUrl!.isNotEmpty) {
-        if (!_multimedias.contains(product.bestImageUrl!)) {
-          _multimedias.add(product.bestImageUrl!);
-        }
-      }
-      
-      // Configurar propiedades basadas en categorías
-      final categoriesLower = product.bestCategories.toLowerCase();
-      
-      // Es refrigerado (productos lácteos, carnes, etc.)
-      if (categoriesLower.contains('dairy') || 
-          categoriesLower.contains('meat') || 
-          categoriesLower.contains('lácteo') || 
-          categoriesLower.contains('carne') ||
-          categoriesLower.contains('yogurt') ||
-          categoriesLower.contains('cheese') ||
-          categoriesLower.contains('queso')) {
-        _esRefrigerado = true;
-      }
-      
-      // Es frágil (vidrio, huevos, etc.)
-      if (categoriesLower.contains('eggs') || 
-          categoriesLower.contains('huevo') ||
-          categoriesLower.contains('glass') ||
-          categoriesLower.contains('vidrio')) {
-        _esFragil = true;
-      }
-    });
-    
-    print('📝 Formulario rellenado con datos de OpenFoodFacts');
-    print('   - Producto: ${product.bestProductName}');
-    print('   - Marca: ${product.brands ?? "N/A"}');
-    print('   - Categorías: ${product.bestCategories}');
-    print('   - Cantidad: ${product.quantity ?? "N/A"}');
-    print('   - Etiquetas agregadas: ${_etiquetas.length}');
-    print('   - Imágenes agregadas: ${_multimedias.length}');
+  void _showProductInfoDialog(Map<String, dynamic> productInfo) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Información del Producto'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (productInfo['product_name'] != null)
+              Text('Nombre: ${productInfo['product_name']}'),
+            if (productInfo['brands'] != null)
+              Text('Marca: ${productInfo['brands']}'),
+            if (productInfo['categories'] != null)
+              Text('Categorías: ${productInfo['categories']}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // Llenar campos con la información obtenida
+              if (productInfo['product_name'] != null) {
+                _denominacionController.text = productInfo['product_name'];
+              }
+              if (productInfo['brands'] != null) {
+                _nombreComercialController.text = productInfo['brands'];
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Usar Información'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTagsSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Etiquetas',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _addEtiqueta,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Agregar'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_etiquetas.isEmpty)
+              const Text(
+                'No hay etiquetas agregadas',
+                style: TextStyle(color: AppColors.textSecondary),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _etiquetas.map((etiqueta) {
+                  return Chip(
+                    label: Text(etiqueta),
+                    deleteIcon: const Icon(Icons.close, size: 18),
+                    onDeleted: () {
+                      setState(() => _etiquetas.remove(etiqueta));
+                    },
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMultimediaSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Multimedia',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _addMultimedia,
+                  icon: const Icon(Icons.add_photo_alternate),
+                  label: const Text('Agregar'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_multimedias.isEmpty)
+              const Text(
+                'No hay multimedia agregada',
+                style: TextStyle(color: AppColors.textSecondary),
+              )
+            else
+              Column(
+                children: _multimedias.map((media) {
+                  return ListTile(
+                    leading: const Icon(Icons.image),
+                    title: Text(media['url']),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () {
+                        setState(() => _multimedias.remove(media));
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildPresentacionesSection() {
@@ -1124,42 +1020,37 @@ class _AddProductScreenState extends State<AddProductScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children:
-                    _presentaciones.map((presentacion) {
-                      final isSelected = _selectedPresentaciones.contains(
-                        presentacion['id'],
-                      );
-                      return FilterChip(
-                        label: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(presentacion['denominacion']),
-                            if (presentacion['descripcion'] != null)
-                              Text(
-                                presentacion['descripcion'],
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                          ],
-                        ),
-                        selected: isSelected,
-                        onSelected: (selected) {
-                          setState(() {
-                            if (selected) {
-                              _selectedPresentaciones.add(presentacion['id']);
-                            } else {
-                              _selectedPresentaciones.remove(
-                                presentacion['id'],
-                              );
-                            }
-                          });
-                        },
-                        selectedColor: AppColors.primary.withOpacity(0.2),
-                        checkmarkColor: AppColors.primary,
-                      );
-                    }).toList(),
+                children: _presentaciones.map((presentacion) {
+                  final isSelected = _selectedPresentaciones.contains(presentacion['id']);
+                  return FilterChip(
+                    label: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(presentacion['denominacion']),
+                        if (presentacion['descripcion'] != null)
+                          Text(
+                            presentacion['descripcion'],
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                      ],
+                    ),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedPresentaciones.add(presentacion['id']);
+                        } else {
+                          _selectedPresentaciones.remove(presentacion['id']);
+                        }
+                      });
+                    },
+                    selectedColor: AppColors.primary.withOpacity(0.2),
+                    checkmarkColor: AppColors.primary,
+                  );
+                }).toList(),
               ),
           ],
         ),
@@ -1186,8 +1077,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   ),
                 ),
                 TextButton.icon(
-                  onPressed:
-                      _selectedSubcategorias.isNotEmpty ? _addVariante : null,
+                  onPressed: _selectedSubcategorias.isNotEmpty ? _addVariante : null,
                   icon: const Icon(Icons.add),
                   label: const Text('Agregar Variante'),
                 ),
@@ -1223,31 +1113,97 @@ class _AddProductScreenState extends State<AddProductScreen> {
               )
             else
               Column(
-                children:
-                    _selectedVariantes.map((variante) {
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          title: Text(variante['atributo_nombre']),
-                          subtitle: Text(
-                            'Opciones: ${variante['opciones'].length}',
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () {
-                              setState(
-                                () => _selectedVariantes.remove(variante),
-                              );
-                            },
-                          ),
-                          onTap: () => _editVariante(variante),
-                        ),
-                      );
-                    }).toList(),
+                children: _selectedVariantes.map((variante) {
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      title: Text(variante['atributo_nombre']),
+                      subtitle: Text('Opciones: ${variante['opciones'].length}'),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () {
+                          setState(() => _selectedVariantes.remove(variante));
+                          _generateSKU(); // Regenerar SKU cuando se elimina variante
+                        },
+                      ),
+                      onTap: () => _editVariante(variante),
+                    ),
+                  );
+                }).toList(),
               ),
           ],
         ),
       ),
+    );
+  }
+
+  void _addEtiqueta() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Agregar Etiqueta'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: 'Etiqueta',
+              hintText: 'Ej: Orgánico, Sin gluten, etc.',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.text.isNotEmpty) {
+                  setState(() => _etiquetas.add(controller.text));
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Agregar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _addMultimedia() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Agregar Multimedia'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: 'URL de imagen',
+              hintText: 'https://ejemplo.com/imagen.jpg',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.text.isNotEmpty) {
+                  setState(() => _multimedias.add({'url': controller.text}));
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Agregar'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1259,43 +1215,43 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => _VarianteDialog(
-            atributos: _atributos,
-            onSave: (variante) {
-              setState(() => _selectedVariantes.add(variante));
-            },
-          ),
+      builder: (context) => _VarianteDialog(
+        atributos: _atributos,
+        onSave: (variante) {
+          setState(() => _selectedVariantes.add(variante));
+          _generateSKU(); // Regenerar SKU cuando se agrega variante
+        },
+      ),
     );
   }
 
   void _editVariante(Map<String, dynamic> variante) {
     showDialog(
       context: context,
-      builder:
-          (context) => _VarianteDialog(
-            atributos: _atributos,
-            initialVariante: variante,
-            onSave: (updatedVariante) {
-              setState(() {
-                final index = _selectedVariantes.indexOf(variante);
-                _selectedVariantes[index] = updatedVariante;
-              });
-            },
-          ),
+      builder: (context) => _VarianteDialog(
+        atributos: _atributos,
+        initialVariante: variante,
+        onSave: (updatedVariante) {
+          setState(() {
+            final index = _selectedVariantes.indexOf(variante);
+            _selectedVariantes[index] = updatedVariante;
+          });
+          _generateSKU(); // Regenerar SKU cuando se edita variante
+        },
+      ),
     );
   }
 }
 
 class _VarianteDialog extends StatefulWidget {
   final List<Map<String, dynamic>> atributos;
-  final Map<String, dynamic>? initialVariante;
   final Function(Map<String, dynamic>) onSave;
+  final Map<String, dynamic>? initialVariante;
 
   const _VarianteDialog({
     required this.atributos,
-    this.initialVariante,
     required this.onSave,
+    this.initialVariante,
   });
 
   @override
@@ -1304,128 +1260,188 @@ class _VarianteDialog extends StatefulWidget {
 
 class _VarianteDialogState extends State<_VarianteDialog> {
   int? _selectedAtributoId;
-  List<Map<String, dynamic>> _selectedOpciones = [];
-  List<Map<String, dynamic>> _availableOpciones = [];
+  String _selectedAtributoNombre = '';
+  List<Map<String, dynamic>> _opciones = [];
+  final TextEditingController _opcionController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     if (widget.initialVariante != null) {
       _selectedAtributoId = widget.initialVariante!['id_atributo'];
-      _selectedOpciones = List<Map<String, dynamic>>.from(
-        widget.initialVariante!['opciones'],
-      );
-      _loadOpciones(_selectedAtributoId!);
+      _selectedAtributoNombre = widget.initialVariante!['atributo_nombre'];
+      _opciones = List<Map<String, dynamic>>.from(widget.initialVariante!['opciones'] ?? []);
     }
   }
 
-  void _loadOpciones(int atributoId) {
-    final atributo = widget.atributos.firstWhere((a) => a['id'] == atributoId);
+  @override
+  void dispose() {
+    _opcionController.dispose();
+    super.dispose();
+  }
+
+  void _addOpcion() {
+    final opcion = _opcionController.text.trim();
+    if (opcion.isNotEmpty) {
+      setState(() {
+        _opciones.add({
+          'valor': opcion,
+          'id': DateTime.now().millisecondsSinceEpoch, // Temporary ID
+        });
+        _opcionController.clear();
+      });
+    }
+  }
+
+  void _removeOpcion(int index) {
     setState(() {
-      _availableOpciones = List<Map<String, dynamic>>.from(
-        atributo['app_dat_atributo_opcion'] ?? [],
-      );
-      // Asegurar que cada opción tenga un sku_codigo si no lo tiene
-      for (var opcion in _availableOpciones) {
-        if (opcion['sku_codigo'] == null || opcion['sku_codigo'].isEmpty) {
-          opcion['sku_codigo'] = opcion['valor']?.toString().replaceAll(' ', '').toUpperCase() ?? '';
-        }
-      }
+      _opciones.removeAt(index);
     });
+  }
+
+  void _saveVariante() {
+    if (_selectedAtributoId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona un atributo')),
+      );
+      return;
+    }
+
+    if (_opciones.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Agrega al menos una opción')),
+      );
+      return;
+    }
+
+    final variante = {
+      'id_atributo': _selectedAtributoId,
+      'atributo_nombre': _selectedAtributoNombre,
+      'opciones': _opciones,
+    };
+
+    widget.onSave(variante);
+    Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(
-        widget.initialVariante == null ? 'Agregar Variante' : 'Editar Variante',
-      ),
+      title: Text(widget.initialVariante != null ? 'Editar Variante' : 'Agregar Variante'),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Selector de atributo
+            const Text(
+              'Atributo:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
             DropdownButtonFormField<int>(
               value: _selectedAtributoId,
               decoration: const InputDecoration(
-                labelText: 'Atributo',
                 border: OutlineInputBorder(),
+                hintText: 'Selecciona un atributo',
               ),
-              items:
-                  widget.atributos.map((atributo) {
-                    return DropdownMenuItem<int>(
-                      value: atributo['id'],
-                      child: Text(atributo['denominacion']),
-                    );
-                  }).toList(),
+              items: widget.atributos.map((atributo) {
+                return DropdownMenuItem<int>(
+                  value: atributo['id'],
+                  child: Text(atributo['denominacion'] ?? 'Sin nombre'),
+                );
+              }).toList(),
               onChanged: (value) {
                 setState(() {
                   _selectedAtributoId = value;
-                  _selectedOpciones.clear();
+                  final atributo = widget.atributos.firstWhere(
+                    (a) => a['id'] == value,
+                    orElse: () => {},
+                  );
+                  _selectedAtributoNombre = atributo['denominacion'] ?? '';
                 });
-                if (value != null) {
-                  _loadOpciones(value);
-                }
               },
             ),
             const SizedBox(height: 16),
-            if (_availableOpciones.isNotEmpty) ...[
-              const Text(
-                'Opciones disponibles:',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                child: ListView(
+
+            // Opciones
+            const Text(
+              'Opciones:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            
+            // Input para agregar opciones
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _opcionController,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'Ej: Rojo, Azul, Grande, etc.',
+                    ),
+                    onSubmitted: (_) => _addOpcion(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: _addOpcion,
+                  icon: const Icon(Icons.add),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Lista de opciones agregadas
+            if (_opciones.isNotEmpty) ...[
+              const Text('Opciones agregadas:'),
+              const SizedBox(height: 4),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 150),
+                child: ListView.builder(
                   shrinkWrap: true,
-                  children:
-                      _availableOpciones.map((opcion) {
-                        final isSelected = _selectedOpciones.any(
-                          (o) => o['id'] == opcion['id'],
-                        );
-                        return CheckboxListTile(
-                          title: Text(opcion['valor']),
-                          value: isSelected,
-                          onChanged: (selected) {
-                            setState(() {
-                              if (selected == true) {
-                                _selectedOpciones.add(opcion);
-                              } else {
-                                _selectedOpciones.removeWhere(
-                                  (o) => o['id'] == opcion['id'],
-                                );
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
+                  itemCount: _opciones.length,
+                  itemBuilder: (context, index) {
+                    final opcion = _opciones[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      child: ListTile(
+                        dense: true,
+                        title: Text(opcion['valor']),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                          onPressed: () => _removeOpcion(index),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
-            ],
+            ] else
+              const Text(
+                'No hay opciones agregadas',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
           ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
         ),
         ElevatedButton(
-          onPressed:
-              _selectedAtributoId != null && _selectedOpciones.isNotEmpty
-                  ? () {
-                    final atributo = widget.atributos.firstWhere(
-                      (a) => a['id'] == _selectedAtributoId,
-                    );
-                    final variante = {
-                      'id_atributo': _selectedAtributoId,
-                      'atributo_nombre': atributo['denominacion'],
-                      'opciones': _selectedOpciones,
-                    };
-                    widget.onSave(variante);
-                    Navigator.pop(context);
-                  }
-                  : null,
+          onPressed: _saveVariante,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
           child: const Text('Guardar'),
         ),
       ],

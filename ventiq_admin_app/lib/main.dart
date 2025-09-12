@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'config/app_colors.dart';
+import 'models/product.dart';
 import 'screens/splash_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/products_screen.dart';
+import 'screens/product_detail_screen.dart';
+import 'screens/add_product_screen.dart';
 import 'screens/categories_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/sales_screen.dart';
@@ -71,6 +74,22 @@ class MyApp extends StatelessWidget {
         ),
       ),
       initialRoute: '/', // Inicia con splash screen
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case '/product-detail':
+            final product = settings.arguments as Product?;
+            if (product != null) {
+              return MaterialPageRoute(
+                builder: (context) => ProductDetailScreen(product: product),
+              );
+            }
+            return MaterialPageRoute(
+              builder: (context) => const ProductsScreen(),
+            );
+          default:
+            return null;
+        }
+      },
       routes: {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
@@ -92,6 +111,7 @@ class MyApp extends StatelessWidget {
         '/communications': (context) => const CommunicationsScreen(),
         '/segments': (context) => const SegmentsScreen(),
         '/loyalty': (context) => const LoyaltyScreen(),
+        '/add-product': (context) => const AddProductScreen(),
       },
     );
   }

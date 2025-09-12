@@ -140,6 +140,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                   return Product(
                     id: inventoryProduct.id.toString(),
                     name: inventoryProduct.nombreProducto,
+                    denominacion: inventoryProduct.nombreProducto,
                     description: inventoryProduct.subcategoria,
                     categoryId: inventoryProduct.idCategoria.toString(),
                     categoryName: inventoryProduct.categoria,

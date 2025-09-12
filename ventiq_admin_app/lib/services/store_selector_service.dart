@@ -47,11 +47,13 @@ class StoreSelectorService extends ChangeNotifier {
   List<Store> _userStores = [];
   Store? _selectedStore;
   bool _isLoading = false;
+  bool _isInitialized = false;
 
   List<Store> get userStores => _userStores;
   Store? get selectedStore => _selectedStore;
   bool get isLoading => _isLoading;
   bool get hasMultipleStores => _userStores.length > 1;
+  bool get isInitialized => _isInitialized;
 
   /// Inicializar el servicio cargando las tiendas del usuario
   Future<void> initialize() async {
@@ -61,6 +63,7 @@ class StoreSelectorService extends ChangeNotifier {
     try {
       await _loadUserStores();
       await _loadSelectedStore();
+      _isInitialized = true;
     } catch (e) {
       print('Error initializing StoreSelectorService: $e');
     } finally {

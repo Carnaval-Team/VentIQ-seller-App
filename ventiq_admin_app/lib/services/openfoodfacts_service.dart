@@ -238,4 +238,32 @@ class OpenFoodFactsProduct {
   String? get bestImageUrl {
     return imageFrontUrl ?? imageUrl;
   }
+
+  /// Convierte el producto a Map para compatibilidad
+  Map<String, dynamic> toJson() {
+    return {
+      'product_name': bestProductName,
+      'product_name_es': productNameEs,
+      'generic_name': genericName,
+      'generic_name_es': genericNameEs,
+      'brands': brands,
+      'categories': bestCategories,
+      'categories_es': categoriesEs,
+      'description': bestDescription,
+      'ingredients_text': bestIngredients,
+      'ingredients_text_es': ingredientsEs,
+      'quantity': quantity,
+      'packaging': bestPackaging,
+      'packaging_es': packagingEs,
+      'image_url': bestImageUrl,
+      'image_front_url': imageFrontUrl,
+      'allergens': allergens,
+      'nutriments': nutriments,
+      'serving_size': servingSize,
+      'countries': countries,
+      'manufacturing_places': manufacturingPlaces,
+      'origins': origins,
+      'stores': stores,
+    };
+  }
 }

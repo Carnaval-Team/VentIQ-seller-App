@@ -4,6 +4,7 @@ import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import 'add_product_screen.dart';
+import 'product_detail_screen.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/admin_drawer.dart';
 
@@ -649,10 +650,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   void _showAddProductDialog() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const AddProductScreen()),
-    ).then((result) {
+    Navigator.pushNamed(context, '/add-product').then((result) {
       // Si se creó un producto, recargar la lista
       if (result == true) {
         _loadProducts();
@@ -661,144 +659,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   void _showProductDetails(Product product) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            maxChildSize: 0.95,
-            minChildSize: 0.5,
-            builder:
-                (context, scrollController) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Detalles del Producto',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      Expanded(
-                        child: ListView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(16),
-                          children: [
-                            _buildDetailRow('Nombre:', product.name),
-                            _buildDetailRow(
-                              'Descripción:',
-                              product.description,
-                            ),
-                            _buildDetailRow('Categoría:', product.categoryName),
-                            _buildDetailRow('Marca:', product.brand),
-                            _buildDetailRow('SKU:', product.sku),
-                            _buildDetailRow(
-                              'Código de barras:',
-                              product.barcode,
-                            ),
-                            _buildDetailRow(
-                              'Precio base:',
-                              '\$${product.basePrice.toStringAsFixed(2)}',
-                            ),
-                            _buildDetailRow(
-                              'Estado:',
-                              product.isActive ? 'Activo' : 'Inactivo',
-                            ),
-                            _buildDetailRow(
-                              'Stock disponible:',
-                              '${product.stockDisponible}',
-                            ),
-                            _buildDetailRow(
-                              'Unidad de medida:',
-                              product.um ?? 'No especificada',
-                            ),
-                            _buildDetailRow(
-                              'Refrigerado:',
-                              product.esRefrigerado ? 'Sí' : 'No',
-                            ),
-                            _buildDetailRow(
-                              'Frágil:',
-                              product.esFragil ? 'Sí' : 'No',
-                            ),
-                            _buildDetailRow(
-                              'Peligroso:',
-                              product.esPeligroso ? 'Sí' : 'No',
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Variantes del Producto',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            ..._buildVariantsList(product),
-                            if (product.subcategorias.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Subcategorías',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              ...product.subcategorias
-                                  .map(
-                                    (subcat) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Text(
-                                        '• ${subcat['denominacion']}',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          color: AppColors.textSecondary,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-          ),
+    Navigator.pushNamed(
+      context,
+      '/product-detail',
+      arguments: product,
     );
   }
 
