@@ -4,6 +4,7 @@ import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../services/dashboard_service.dart';
+import '../services/currency_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -41,6 +42,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
     
     try {
+      // Fetch and update exchange rates first
+      print('💱 Fetching exchange rates...');
+      await CurrencyService.fetchAndUpdateExchangeRates();
+      
       // Validar que el supervisor tenga id_tienda
       final hasValidStore = await _dashboardService.validateSupervisorStore();
       

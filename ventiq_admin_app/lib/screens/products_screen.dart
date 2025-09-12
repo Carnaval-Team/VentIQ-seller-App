@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
+import '../services/currency_service.dart';
 import 'add_product_screen.dart';
 import 'product_detail_screen.dart';
 import '../widgets/admin_bottom_navigation.dart';
@@ -44,6 +45,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
     });
 
     try {
+      // Fetch and update exchange rates first
+      print('💱 Fetching exchange rates...');
+      await CurrencyService.fetchAndUpdateExchangeRates();
+      
       final productos = await ProductService.getProductsByTienda(
         categoryId: _selectedCategoryId,
         soloDisponibles: false,

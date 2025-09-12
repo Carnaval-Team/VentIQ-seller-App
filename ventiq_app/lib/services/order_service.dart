@@ -392,14 +392,8 @@ class OrderService {
             print('Cantidad a descontar: ${item.cantidad}');
 
             // Use the correct price based on payment method
-            // If payment method is cash (id: 1), use discounted price
-            // Otherwise, use base price
-            double correctPrice;
-            if (item.paymentMethod?.id == 1) {
-              correctPrice = item.precioUnitario; // Discounted price for cash
-            } else {
-              correctPrice = item.precioBase ?? item.precioUnitario; // Base price for other methods
-            }
+            // Use the final calculated price that includes payment method discount
+            double correctPrice = item.displayPrice;
 
             print('🏷️ Item: ${item.nombre}');
             print('💰 Payment Method: ${item.paymentMethod?.displayName ?? 'None'} (ID: ${item.paymentMethod?.id})');

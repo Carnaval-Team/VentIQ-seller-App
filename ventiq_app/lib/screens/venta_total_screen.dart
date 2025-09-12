@@ -104,6 +104,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             // Calcular egresado: ventas_totales - efectivo_real + egresos en efectivo
             final ventasTotales = (data['ventas_totales'] ?? 0.0).toDouble();
             final efectivoReal = (data['efectivo_real'] ?? 0.0).toDouble();
+            //marca cambiada 
             _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
 
             // Efectivo real: efectivo_esperado - egresos en efectivo

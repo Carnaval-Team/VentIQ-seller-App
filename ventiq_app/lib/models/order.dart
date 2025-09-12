@@ -112,7 +112,7 @@ class OrderItem {
     // Con promociones, calcular precios según tipo y método de pago
     final valorDescuento = promotionData!['valor_descuento'] as double?;
     final tipoDescuento = promotionData!['tipo_descuento'] as int?;
-    
+
     final prices = PriceUtils.calculatePromotionPrices(
       precioBase ?? precioUnitario,
       valorDescuento,
