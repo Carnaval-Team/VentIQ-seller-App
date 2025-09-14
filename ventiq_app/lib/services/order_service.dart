@@ -508,15 +508,21 @@ class OrderService {
 
       for (final item in order.items) {
         if (item.paymentMethod != null) {
-          final methodId = item.paymentMethod!.id;
+          // Convertir método especial "Pago Regular (Efectivo)" (ID 999) a efectivo (ID 1)
+          int actualMethodId = item.paymentMethod!.id;
+          if (actualMethodId == 999) {
+            actualMethodId = 1; // Convertir a efectivo normal
+            print('🔄 Convirtiendo método especial "Pago Regular (Efectivo)" a método ID 1 (efectivo)');
+          }
+          
           final itemTotal = item.subtotal;
 
-          paymentsByMethod[methodId] =
-              (paymentsByMethod[methodId] ?? 0.0) + itemTotal;
+          paymentsByMethod[actualMethodId] =
+              (paymentsByMethod[actualMethodId] ?? 0.0) + itemTotal;
 
           print('Item: ${item.nombre}');
           print(
-            'Payment Method: ${item.paymentMethod!.denominacion} (ID: $methodId)',
+            'Payment Method: ${item.paymentMethod!.denominacion} (Original ID: ${item.paymentMethod!.id}, Final ID: $actualMethodId)',
           );
           print('Item Total: \$${itemTotal.toStringAsFixed(2)}');
         } else {

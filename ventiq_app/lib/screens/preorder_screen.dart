@@ -110,8 +110,22 @@ class _PreorderScreenState extends State<PreorderScreen> {
     try {
       final paymentMethods =
           await PaymentMethodService.getActivePaymentMethods();
+      
+      // Agregar método especial "Pago Regular (Efectivo)" hardcoded
+      final pagoRegularEfectivo = pm.PaymentMethod(
+        id: 999, // ID especial para diferenciarlo
+        denominacion: 'Pago Regular (Efectivo)',
+        descripcion: 'Pago en efectivo sin descuento aplicado',
+        esDigital: false,
+        esEfectivo: true,
+        esActivo: true,
+      );
+      
+      // Agregar al inicio de la lista para que aparezca primero
+      final methodsWithSpecial = [pagoRegularEfectivo, ...paymentMethods];
+      
       setState(() {
-        _paymentMethods = paymentMethods;
+        _paymentMethods = methodsWithSpecial;
         _loadingPaymentMethods = false;
       });
     } catch (e) {
@@ -602,24 +616,59 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
                 items:
                     _paymentMethods.map((pm.PaymentMethod method) {
+                      // Identificar si es el método especial "Pago Regular (Efectivo)"
+                      final isSpecialCash = method.id == 999;
+                      
                       return DropdownMenuItem<pm.PaymentMethod>(
                         value: method,
-                        child: Row(
-                          children: [
-                            Icon(
-                              method.typeIcon,
-                              size: 18,
-                              color: Colors.grey[600],
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                method.displayName,
-                                style: const TextStyle(fontSize: 14),
-                                overflow: TextOverflow.ellipsis,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: isSpecialCash ? Colors.red.withOpacity(0.1) : null,
+                            borderRadius: BorderRadius.circular(6),
+                            border: isSpecialCash 
+                                ? Border.all(color: Colors.red.withOpacity(0.3), width: 1)
+                                : null,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                method.typeIcon,
+                                size: 18,
+                                color: isSpecialCash ? Colors.red[700] : Colors.grey[600],
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  method.displayName,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: isSpecialCash ? Colors.red[700] : Colors.black87,
+                                    fontWeight: isSpecialCash ? FontWeight.w600 : FontWeight.normal,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (isSpecialCash) ...[
+                                const SizedBox(width: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Text(
+                                    'SIN DESC.',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       );
                     }).toList(),
@@ -864,34 +913,66 @@ class _PreorderScreenState extends State<PreorderScreen> {
                 ),
                 items:
                     _paymentMethods.map((pm.PaymentMethod method) {
+                      // Identificar si es el método especial "Pago Regular (Efectivo)"
+                      final isSpecialCash = method.id == 999;
+                      
                       return DropdownMenuItem<pm.PaymentMethod>(
                         value: method,
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Icon(
-                                method.typeIcon,
-                                size: 18,
-                                color: const Color(0xFF4A90E2),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                method.displayName,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: isSpecialCash ? Colors.red.withOpacity(0.1) : null,
+                            borderRadius: BorderRadius.circular(6),
+                            border: isSpecialCash 
+                                ? Border.all(color: Colors.red.withOpacity(0.3), width: 1)
+                                : null,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: isSpecialCash ? Colors.red.withOpacity(0.2) : Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(4),
                                 ),
-                                overflow: TextOverflow.ellipsis,
+                                child: Icon(
+                                  method.typeIcon,
+                                  size: 18,
+                                  color: isSpecialCash ? Colors.red[700] : const Color(0xFF4A90E2),
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  method.displayName,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: isSpecialCash ? Colors.red[700] : Colors.black87,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (isSpecialCash) ...[
+                                const SizedBox(width: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Text(
+                                    'SIN DESC.',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       );
                     }).toList(),

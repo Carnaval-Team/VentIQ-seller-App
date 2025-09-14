@@ -1030,8 +1030,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            payment['medio_pago_denominacion'] ??
-                                'Método desconocido',
+                            _getCustomPaymentMethodName(payment),
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
@@ -1372,6 +1371,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
       Navigator.pop(context); // Cerrar diálogo de progreso si está abierto
       _showErrorDialog('Error', 'Ocurrió un error durante la impresión: $e');
       await _printerService.disconnect();
+    }
+  }
+
+  // Personalizar nombres de métodos de pago para el desglose
+  String _getCustomPaymentMethodName(Map<String, dynamic> payment) {
+    final mediopagoId = payment['medio_pago_id'];
+    
+    if (mediopagoId == 1) {
+      return 'Dinero en efectivo';
+    } else {
+      return 'Transferencia';
     }
   }
 }
