@@ -8,6 +8,7 @@ import 'inventory_warehouse_screen.dart';
 import 'inventory_stock_screen.dart';
 import 'inventory_transfer_screen.dart';
 import 'inventory_extraction_screen.dart';
+import 'inventory_adjustment_screen.dart'; // Importar la pantalla de ajuste de inventario
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -66,91 +67,124 @@ class _InventoryScreenState extends State<InventoryScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
+      isScrollControlled: true,
+      builder: (context) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 20),
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Handle bar
-                Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(top: 12, bottom: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
 
-                // Title
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 20),
-                  child: Text(
-                    'Opciones de Inventario',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
+            // Title
+            const Padding(
+              padding: EdgeInsets.only(bottom: 20),
+              child: Text(
+                'Opciones de Inventario',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
                 ),
-
-                // Menu options
-                _buildMenuOption(
-                  icon: Icons.input,
-                  title: 'Recepción de Productos',
-                  subtitle: 'Registrar entrada de mercancía',
-                  color: const Color(0xFF10B981),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _navigateToReception();
-                  },
-                ),
-
-                _buildMenuOption(
-                  icon: Icons.swap_horiz,
-                  title: 'Transferencia entre Almacenes',
-                  subtitle: 'Mover productos entre ubicaciones',
-                  color: const Color(0xFF4A90E2),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _navigateToTransfer();
-                  },
-                ),
-
-                _buildMenuOption(
-                  icon: Icons.output,
-                  title: 'Extracción de Productos',
-                  subtitle: 'Registrar salida de mercancía',
-                  color: const Color(0xFFEF4444),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _navigateToExtraction();
-                  },
-                ),
-
-                _buildMenuOption(
-                  icon: Icons.filter_list,
-                  title: 'Filtro de Búsqueda',
-                  subtitle: 'Filtrar y buscar productos',
-                  color: const Color(0xFF8B5CF6),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showSearchFilter();
-                  },
-                ),
-
-                const SizedBox(height: 20),
-              ],
+              ),
             ),
-          ),
+
+            // Scrollable menu options
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    _buildMenuOption(
+                      icon: Icons.input,
+                      title: 'Recepción de Productos',
+                      subtitle: 'Registrar entrada de mercancía',
+                      color: const Color(0xFF10B981),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _navigateToReception();
+                      },
+                    ),
+
+                    _buildMenuOption(
+                      icon: Icons.swap_horiz,
+                      title: 'Transferencia entre Almacenes',
+                      subtitle: 'Mover productos entre ubicaciones',
+                      color: const Color(0xFF4A90E2),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _navigateToTransfer();
+                      },
+                    ),
+
+                    _buildMenuOption(
+                      icon: Icons.trending_up,
+                      title: 'Ajuste por Exceso',
+                      subtitle: 'Reducir inventario por sobrante',
+                      color: const Color(0xFFFF6B35),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _navigateToExcessAdjustment();
+                      },
+                    ),
+
+                    _buildMenuOption(
+                      icon: Icons.trending_down,
+                      title: 'Ajuste por Faltante',
+                      subtitle: 'Aumentar inventario por faltante',
+                      color: const Color(0xFFFF8C42),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _navigateToShortageAdjustment();
+                      },
+                    ),
+
+                    _buildMenuOption(
+                      icon: Icons.output,
+                      title: 'Extracción de Productos',
+                      subtitle: 'Registrar salida de mercancía',
+                      color: const Color(0xFFEF4444),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _navigateToExtraction();
+                      },
+                    ),
+
+                    _buildMenuOption(
+                      icon: Icons.filter_list,
+                      title: 'Filtro de Búsqueda',
+                      subtitle: 'Filtrar y buscar productos',
+                      color: const Color(0xFF8B5CF6),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSearchFilter();
+                      },
+                    ),
+
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -173,6 +207,30 @@ class _InventoryScreenState extends State<InventoryScreen>
       context,
       MaterialPageRoute(
         builder: (context) => const InventoryExtractionScreen(),
+      ),
+    );
+  }
+
+  void _navigateToExcessAdjustment() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const InventoryAdjustmentScreen(
+          operationType: 4, // Tipo de operación para exceso (restar)
+          adjustmentType: 'excess',
+        ),
+      ),
+    );
+  }
+
+  void _navigateToShortageAdjustment() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const InventoryAdjustmentScreen(
+          operationType: 3, // Tipo de operación para faltante (sumar)
+          adjustmentType: 'shortage',
+        ),
       ),
     );
   }

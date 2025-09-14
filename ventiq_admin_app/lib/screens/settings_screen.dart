@@ -17,6 +17,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final GlobalKey<State<VariantsTabView>> _variantsTabKey = GlobalKey<State<VariantsTabView>>();
+  final GlobalKey<State<PresentationsTabView>> _presentationsTabKey = GlobalKey<State<PresentationsTabView>>();
 
   @override
   void initState() {
@@ -73,7 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         children: [
           CategoriesTabView(),
           VariantsTabView(key: _variantsTabKey),
-          PresentationsTabView(),
+          PresentationsTabView(key: _presentationsTabKey),
         ],
       ),
       endDrawer: const AdminDrawer(),
@@ -99,7 +100,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         (_variantsTabKey.currentState as dynamic)?.showAddVariantDialog();
         break;
       case 2:
-        _showAddPresentationDialog();
+        (_presentationsTabKey.currentState as dynamic)?.showAddPresentationDialog();
         break;
     }
   }
@@ -146,41 +147,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Categoría agregada exitosamente')),
-                );
-              }
-            },
-            child: const Text('Agregar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAddPresentationDialog() {
-    final nameController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Presentación'),
-        content: TextField(
-          controller: nameController,
-          decoration: const InputDecoration(
-            labelText: 'Nombre de la presentación',
-            prefixIcon: Icon(Icons.format_paint),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (nameController.text.isNotEmpty) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Presentación agregada exitosamente')),
                 );
               }
             },
