@@ -41,7 +41,7 @@ class ProductSalesReport {
       valorUsd: (json['valor_usd'] ?? 1).toDouble(),
       precioCostoCup: (json['precio_costo_cup'] ?? 0).toDouble(),
       totalVendido: (json['total_vendido'] ?? 0).toDouble(),
-      ingresosTotales: (json['ingreso_total'] ?? 0).toDouble(),
+      ingresosTotales: (json['ingresos_totales'] ?? 0).toDouble(),
       costoTotalVendido: (json['costo_total_vendido'] ?? 0).toDouble(),
       gananciaUnitaria: (json['ganancia_unitaria'] ?? 0).toDouble(),
       gananciaTotal: (json['ganancia_total'] ?? 0).toDouble(),
@@ -118,9 +118,7 @@ class SalesService {
       print('- fecha_hasta: $fechaHasta');
 
       // Prepare parameters
-      final Map<String, dynamic> params = {
-        'p_id_tienda': idTienda,
-      };
+      final Map<String, dynamic> params = {'p_id_tienda': idTienda};
 
       if (fechaDesde != null) {
         params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
@@ -148,7 +146,9 @@ class SalesService {
         try {
           final report = ProductSalesReport.fromJson(item);
           reports.add(report);
-          print('Added product: ${report.nombreProducto} - Total vendido: ${report.totalVendido}');
+          print(
+            'Added product: ${report.nombreProducto} - Total vendido: ${report.totalVendido}',
+          );
         } catch (e) {
           print('Error parsing product sales report item: $e');
           print('Item data: $item');
@@ -157,7 +157,6 @@ class SalesService {
 
       print('Successfully parsed ${reports.length} product sales reports');
       return reports;
-
     } catch (e) {
       print('Error in getProductSalesReport: $e');
       return [];
@@ -165,49 +164,62 @@ class SalesService {
   }
 
   // Get date ranges for filters
-  static DateTime getStartOfDay() => DateTime.now().copyWith(hour: 0, minute: 0, second: 0, microsecond: 0);
+  static DateTime getStartOfDay() =>
+      DateTime.now().copyWith(hour: 0, minute: 0, second: 0, microsecond: 0);
   static DateTime getStartOfWeek() {
     final now = DateTime.now();
     final weekday = now.weekday;
-    return now.subtract(Duration(days: weekday - 1)).copyWith(hour: 0, minute: 0, second: 0, microsecond: 0);
+    return now
+        .subtract(Duration(days: weekday - 1))
+        .copyWith(hour: 0, minute: 0, second: 0, microsecond: 0);
   }
-  static DateTime getStartOfMonth() => DateTime(DateTime.now().year, DateTime.now().month, 1);
+
+  static DateTime getStartOfMonth() =>
+      DateTime(DateTime.now().year, DateTime.now().month, 1);
   static DateTime getStartOfYear() => DateTime(DateTime.now().year, 1, 1);
 
   static Map<String, DateTime> _getDateRangeForPeriod(String period) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
+
     switch (period) {
       case 'Hoy':
         return {
           'start': today,
-          'end': today.add(const Duration(days: 1)).subtract(const Duration(seconds: 1)),
+          'end': today
+              .add(const Duration(days: 1))
+              .subtract(const Duration(seconds: 1)),
         };
       case 'Esta Semana':
         final startOfWeek = today.subtract(Duration(days: now.weekday - 1));
         return {
           'start': startOfWeek,
-          'end': startOfWeek.add(const Duration(days: 7)).subtract(const Duration(seconds: 1)),
+          'end': startOfWeek
+              .add(const Duration(days: 7))
+              .subtract(const Duration(seconds: 1)),
         };
       case 'Este Mes':
         final startOfMonth = DateTime(now.year, now.month, 1);
-        final endOfMonth = DateTime(now.year, now.month + 1, 1).subtract(const Duration(seconds: 1));
-        return {
-          'start': startOfMonth,
-          'end': endOfMonth,
-        };
+        final endOfMonth = DateTime(
+          now.year,
+          now.month + 1,
+          1,
+        ).subtract(const Duration(seconds: 1));
+        return {'start': startOfMonth, 'end': endOfMonth};
       case 'Este Año':
         final startOfYear = DateTime(now.year, 1, 1);
-        final endOfYear = DateTime(now.year + 1, 1, 1).subtract(const Duration(seconds: 1));
-        return {
-          'start': startOfYear,
-          'end': endOfYear,
-        };
+        final endOfYear = DateTime(
+          now.year + 1,
+          1,
+          1,
+        ).subtract(const Duration(seconds: 1));
+        return {'start': startOfYear, 'end': endOfYear};
       default:
         return {
           'start': today,
-          'end': today.add(const Duration(days: 1)).subtract(const Duration(seconds: 1)),
+          'end': today
+              .add(const Duration(days: 1))
+              .subtract(const Duration(seconds: 1)),
         };
     }
   }
@@ -216,48 +228,92 @@ class SalesService {
     try {
       final userPrefs = UserPreferencesService();
       final storeId = await userPrefs.getIdTienda();
-      
+
+      print('=== DEBUG getSalesMetrics ===');
+      print('Period: $period');
+      print('Store ID: $storeId');
+
       final dateRange = _getDateRangeForPeriod(period);
       final startDate = dateRange['start']!.toIso8601String().split('T')[0];
       final endDate = dateRange['end']!.toIso8601String().split('T')[0];
-      
-      final response = await Supabase.instance.client.rpc(
-        'fn_reporte_ventas_ganancias',
-        params: {
-          'p_id_tienda': storeId,
-          'p_fecha_desde': startDate,
-          'p_fecha_hasta': endDate,
-        },
+
+      print('Date range calculated:');
+      print('- Start date: $startDate');
+      print('- End date: $endDate');
+      print('- Start DateTime: ${dateRange['start']}');
+      print('- End DateTime: ${dateRange['end']}');
+
+      final params = {
+        'p_id_tienda': storeId,
+        'p_fecha_desde': startDate,
+        'p_fecha_hasta': endDate,
+      };
+
+      print('Parameters being sent to fn_reporte_ventas_ganancias:');
+      print(
+        '- p_id_tienda: ${params['p_id_tienda']} (type: ${params['p_id_tienda'].runtimeType})',
+      );
+      print(
+        '- p_fecha_desde: ${params['p_fecha_desde']} (type: ${params['p_fecha_desde'].runtimeType})',
+      );
+      print(
+        '- p_fecha_hasta: ${params['p_fecha_hasta']} (type: ${params['p_fecha_hasta'].runtimeType})',
       );
 
+      print('Calling RPC function...');
+      final response = await Supabase.instance.client.rpc(
+        'fn_reporte_ventas_ganancias',
+        params: params,
+      );
+
+      print('Raw response received:');
+      print('- Response type: ${response.runtimeType}');
+      print('- Response length: ${response?.length ?? 'null'}');
+      print('- Response content: $response');
+
       if (response == null || response.isEmpty) {
-        return {
-          'totalSales': 0.0,
-          'transactionCount': 0,
-        };
+        print('No data received - returning zeros');
+        return {'totalSales': 0.0, 'transactionCount': 0};
       }
 
       double totalSales = 0.0;
       int transactionCount = 0;
 
-      for (var item in response) {
-        totalSales += (item['ingreso_total'] as num?)?.toDouble() ?? 0.0;
+      print('Processing ${response.length} items:');
+      for (int i = 0; i < response.length; i++) {
+        var item = response[i];
+        print('Item $i: $item');
+        print('- Item type: ${item.runtimeType}');
+        print('- Keys: ${item.keys.toList()}');
+
+        final ingresoTotal = (item['ingresos_totales'] as num?)?.toDouble() ?? 0.0;
         final totalVendido = (item['total_vendido'] as num?)?.toDouble() ?? 0.0;
+
+        print('- ingresos_totales: $ingresoTotal (raw: ${item['ingresos_totales']})');
+        print('- total_vendido: $totalVendido (raw: ${item['total_vendido']})');
+
+        totalSales += ingresoTotal;
         if (totalVendido > 0) {
           transactionCount++;
         }
       }
 
-      return {
+      final result = {
         'totalSales': totalSales,
         'transactionCount': transactionCount,
       };
+
+      print('Final calculated metrics:');
+      print('- Total Sales: $totalSales');
+      print('- Transaction Count: $transactionCount');
+      print('=== END DEBUG getSalesMetrics ===');
+
+      return result;
     } catch (e) {
-      print('Error getting sales metrics: $e');
-      return {
-        'totalSales': 0.0,
-        'transactionCount': 0,
-      };
+      print('ERROR in getSalesMetrics: $e');
+      print('Error type: ${e.runtimeType}');
+      print('Stack trace: ${StackTrace.current}');
+      return {'totalSales': 0.0, 'transactionCount': 0};
     }
   }
 
@@ -280,9 +336,7 @@ class SalesService {
       print('- fecha_hasta: $fechaHasta');
 
       // Prepare parameters
-      final Map<String, dynamic> params = {
-        'p_id_tienda': idTienda,
-      };
+      final Map<String, dynamic> params = {'p_id_tienda': idTienda};
 
       // if (fechaDesde != null) {
       //   params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
@@ -317,7 +371,9 @@ class SalesService {
         }
       }
 
-      print('Successfully parsed ${productAnalysis.length} product analysis records');
+      print(
+        'Successfully parsed ${productAnalysis.length} product analysis records',
+      );
       return productAnalysis;
     } catch (e) {
       print('Error in getProductAnalysis: $e');
@@ -346,9 +402,7 @@ class SalesService {
       print('- p_uuid_usuario: $uuidUsuario');
 
       // Prepare parameters
-      final Map<String, dynamic> params = {
-        'p_id_tienda': idTienda,
-      };
+      final Map<String, dynamic> params = {'p_id_tienda': idTienda};
 
       if (fechaDesde != null) {
         params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
@@ -379,7 +433,9 @@ class SalesService {
         try {
           final report = SalesVendorReport.fromJson(item);
           reports.add(report);
-          print('Added vendor: ${report.nombreCompleto} - Total ventas: ${report.totalVentas} - Total dinero: \$${report.totalDineroGeneral}');
+          print(
+            'Added vendor: ${report.nombreCompleto} - Total ventas: ${report.totalVentas} - Total dinero: \$${report.totalDineroGeneral}',
+          );
         } catch (e) {
           print('Error parsing sales vendor report item: $e');
           print('Item data: $item');
@@ -388,7 +444,6 @@ class SalesService {
 
       print('Successfully parsed ${reports.length} sales vendor reports');
       return reports;
-
     } catch (e) {
       print('Error in getSalesVendorReport: $e');
       return [];
