@@ -52,7 +52,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
   // Selecciones
   int? _selectedCategoryId;
   List<int> _selectedSubcategorias = [];
-  List<int> _selectedPresentaciones = [];
+  List<Map<String, dynamic>> _selectedPresentaciones = []; // Changed to store presentation details
+
+  // Presentation management
+  int? _basePresentationId;
 
   // Checkboxes
   bool _esRefrigerado = false;
@@ -633,7 +636,34 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   Future<void> _saveProduct() async {
     if (!_formKey.currentState!.validate()) {
+      _showErrorSnackBar('Por favor corrija los errores en el formulario');
       return;
+    }
+
+    // Validate that at least one presentation is selected
+    if (_selectedPresentaciones.isEmpty) {
+      _showErrorSnackBar('Debe seleccionar al menos una presentación para el producto');
+      return;
+    }
+
+    // Validate that there is exactly one base presentation
+    final basePresentations = _selectedPresentaciones.where((p) => p['es_base'] == true).toList();
+    if (basePresentations.isEmpty) {
+      _showErrorSnackBar('Debe marcar una presentación como base');
+      return;
+    }
+    if (basePresentations.length > 1) {
+      _showErrorSnackBar('Solo puede haber una presentación base por producto');
+      return;
+    }
+
+    // Validate that all presentations have valid quantities
+    for (var presentacion in _selectedPresentaciones) {
+      final cantidad = presentacion['cantidad'];
+      if (cantidad == null || cantidad <= 0) {
+        _showErrorSnackBar('Todas las presentaciones deben tener una cantidad válida mayor a 0');
+        return;
+      }
     }
 
     setState(() => _isLoading = true);
@@ -688,12 +718,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
       final presentacionesData =
           _selectedPresentaciones
               .map(
-                (id) => {
-                  'id_presentacion': id,
-                  'cantidad': 1, // Cantidad por defecto
-                  'es_base':
-                      _selectedPresentaciones.indexOf(id) ==
-                      0, // Primera como base
+                (presentacion) => {
+                  'id_presentacion': presentacion['id'],
+                  'cantidad': presentacion['cantidad'] ?? 1, // Cantidad por defecto
+                  'es_base': presentacion['es_base'] ?? false, // Primera como base
                 },
               )
               .toList();
@@ -1017,40 +1045,202 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 style: TextStyle(color: AppColors.textSecondary),
               )
             else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _presentaciones.map((presentacion) {
-                  final isSelected = _selectedPresentaciones.contains(presentacion['id']);
-                  return FilterChip(
-                    label: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(presentacion['denominacion']),
-                        if (presentacion['descripcion'] != null)
-                          Text(
-                            presentacion['descripcion'],
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                      ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Selected presentations list
+                  if (_selectedPresentaciones.isNotEmpty) ...[
+                    const Text(
+                      'Presentaciones Seleccionadas:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedPresentaciones.add(presentacion['id']);
-                        } else {
-                          _selectedPresentaciones.remove(presentacion['id']);
-                        }
-                      });
-                    },
-                    selectedColor: AppColors.primary.withOpacity(0.2),
-                    checkmarkColor: AppColors.primary,
-                  );
-                }).toList(),
+                    const SizedBox(height: 8),
+                    ..._selectedPresentaciones.map((selectedPres) {
+                      final presentacion = _presentaciones.firstWhere(
+                        (p) => p['id'] == selectedPres['id'],
+                      );
+                      final isBase = selectedPres['es_base'] ?? false;
+                      
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: isBase ? AppColors.primary : Colors.grey.shade300,
+                            width: isBase ? 2 : 1,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          color: isBase ? AppColors.primary.withOpacity(0.1) : Colors.grey.shade50,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        presentacion['denominacion'],
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: isBase ? AppColors.primary : Colors.black87,
+                                        ),
+                                      ),
+                                      if (isBase) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary,
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: const Text(
+                                            'BASE',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  if (presentacion['descripcion'] != null)
+                                    Text(
+                                      presentacion['descripcion'],
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Quantity input
+                            SizedBox(
+                              width: 80,
+                              child: TextFormField(
+                                initialValue: selectedPres['cantidad'].toString(),
+                                decoration: const InputDecoration(
+                                  labelText: 'Cant.',
+                                  border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                ),
+                                keyboardType: TextInputType.number,
+                                onChanged: (value) {
+                                  final cantidad = double.tryParse(value) ?? 1;
+                                  setState(() {
+                                    selectedPres['cantidad'] = cantidad;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Base presentation toggle
+                            Column(
+                              children: [
+                                const Text('Base', style: TextStyle(fontSize: 10)),
+                                Checkbox(
+                                  value: isBase,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      if (value == true) {
+                                        // Remove base flag from all others
+                                        for (var pres in _selectedPresentaciones) {
+                                          pres['es_base'] = false;
+                                        }
+                                        // Set this as base
+                                        selectedPres['es_base'] = true;
+                                        _basePresentationId = selectedPres['id'];
+                                      } else {
+                                        selectedPres['es_base'] = false;
+                                        if (_basePresentationId == selectedPres['id']) {
+                                          _basePresentationId = null;
+                                        }
+                                      }
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                            // Remove button
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle, color: Colors.red),
+                              onPressed: () {
+                                setState(() {
+                                  final wasBase = selectedPres['es_base'] ?? false;
+                                  _selectedPresentaciones.removeWhere((p) => p['id'] == selectedPres['id']);
+                                  if (wasBase) {
+                                    _basePresentationId = null;
+                                  }
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    const SizedBox(height: 16),
+                  ],
+                  
+                  // Available presentations to add
+                  const Text(
+                    'Presentaciones Disponibles:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _presentaciones.map((presentacion) {
+                      final isSelected = _selectedPresentaciones.any((p) => p['id'] == presentacion['id']);
+                      if (isSelected) return const SizedBox.shrink();
+                      
+                      return FilterChip(
+                        label: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(presentacion['denominacion']),
+                            if (presentacion['descripcion'] != null)
+                              Text(
+                                presentacion['descripcion'],
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                          ],
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              final isFirstPresentation = _selectedPresentaciones.isEmpty;
+                              _selectedPresentaciones.add({
+                                'id': presentacion['id'],
+                                'cantidad': 1.0,
+                                'es_base': isFirstPresentation, // First one is automatically base
+                              });
+                              if (isFirstPresentation) {
+                                _basePresentationId = presentacion['id'];
+                              }
+                            });
+                          }
+                        },
+                        selectedColor: AppColors.primary.withOpacity(0.2),
+                        checkmarkColor: AppColors.primary,
+                      );
+                    }).toList(),
+                  ),
+                ],
               ),
           ],
         ),
@@ -1382,7 +1572,7 @@ class _VarianteDialogState extends State<_VarianteDialog> {
                       border: OutlineInputBorder(),
                       hintText: 'Ej: Rojo, Azul, Grande, etc.',
                     ),
-                    onSubmitted: (_) => _addOpcion(),
+                    autofocus: true,
                   ),
                 ),
                 const SizedBox(width: 8),

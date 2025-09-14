@@ -163,18 +163,6 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 _buildDrawerItem(
                   context,
-                  icon: Icons.category,
-                  title: 'Categorías',
-                  subtitle: 'Organización de productos',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/categories');
-                  },
-                ),
-                const Divider(height: 1),
-
-                _buildDrawerItem(
-                  context,
                   icon: Icons.warehouse,
                   title: 'Inventario',
                   subtitle: 'Control de stock',
