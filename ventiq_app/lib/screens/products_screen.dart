@@ -627,6 +627,72 @@ class _PlayStoreProductCard extends StatefulWidget {
 }
 
 class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
+  void _showOutOfStockDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.inventory_2_outlined,
+                color: Colors.red[600],
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Producto Agotado',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.product.denominacion,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Este producto está actualmente agotado y no se puede agregar a la orden.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: widget.categoryColor,
+              ),
+              child: const Text(
+                'Entendido',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Map<String, double> _calculatePromotionPrices() {
     if (widget.promotionData == null) {
       print('🎯 No promotion data available');
@@ -666,6 +732,12 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
 
     return GestureDetector(
       onTap: () {
+        // Verificar si el producto está agotado
+        if (widget.product.cantidad <= 0) {
+          _showOutOfStockDialog(context);
+          return;
+        }
+        
         Navigator.push(
           context,
           MaterialPageRoute(
