@@ -7,6 +7,7 @@ import '../models/sales.dart';
 import '../services/mock_sales_service.dart';
 import '../services/sales_service.dart';
 
+
 class SalesScreen extends StatefulWidget {
   const SalesScreen({super.key});
 
@@ -54,7 +55,7 @@ class _SalesScreenState extends State<SalesScreen>
         _isLoading = false;
       });
     });
-    
+
     _loadProductSalesData();
     _loadVendorReports();
   }
@@ -68,14 +69,14 @@ class _SalesScreenState extends State<SalesScreen>
     try {
       // Get date range for the selected period
       final dateRange = _getDateRangeForPeriod(_selectedPeriod);
-      
+
       // Load both product sales data and metrics
       final productSales = await SalesService.getProductSalesReport(
         fechaDesde: dateRange['start'],
         fechaHasta: dateRange['end'],
       );
       final metrics = await SalesService.getSalesMetrics(_selectedPeriod);
-      
+
       setState(() {
         _productSalesReports = productSales;
         _totalSales = metrics['totalSales'] ?? 0.0;
@@ -103,7 +104,7 @@ class _SalesScreenState extends State<SalesScreen>
         fechaDesde: dateRange['start'],
         fechaHasta: dateRange['end'],
       );
-      
+
       setState(() {
         _vendorReports = reports;
         _isLoadingVendors = false;
@@ -127,7 +128,7 @@ class _SalesScreenState extends State<SalesScreen>
         fechaDesde: dateRange['start'],
         fechaHasta: dateRange['end'],
       );
-      
+
       setState(() {
         _productAnalysis = analysis;
         _isLoadingAnalysis = false;
@@ -143,37 +144,45 @@ class _SalesScreenState extends State<SalesScreen>
   Map<String, DateTime> _getDateRangeForPeriod(String period) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
+
     switch (period) {
       case 'Hoy':
         return {
           'start': today,
-          'end': today.add(const Duration(days: 1)).subtract(const Duration(seconds: 1)),
+          'end': today
+              .add(const Duration(days: 1))
+              .subtract(const Duration(seconds: 1)),
         };
       case 'Esta Semana':
         final startOfWeek = today.subtract(Duration(days: now.weekday - 1));
         return {
           'start': startOfWeek,
-          'end': startOfWeek.add(const Duration(days: 7)).subtract(const Duration(seconds: 1)),
+          'end': startOfWeek
+              .add(const Duration(days: 7))
+              .subtract(const Duration(seconds: 1)),
         };
       case 'Este Mes':
         final startOfMonth = DateTime(now.year, now.month, 1);
-        final endOfMonth = DateTime(now.year, now.month + 1, 1).subtract(const Duration(seconds: 1));
-        return {
-          'start': startOfMonth,
-          'end': endOfMonth,
-        };
+        final endOfMonth = DateTime(
+          now.year,
+          now.month + 1,
+          1,
+        ).subtract(const Duration(seconds: 1));
+        return {'start': startOfMonth, 'end': endOfMonth};
       case 'Este Año':
         final startOfYear = DateTime(now.year, 1, 1);
-        final endOfYear = DateTime(now.year + 1, 1, 1).subtract(const Duration(seconds: 1));
-        return {
-          'start': startOfYear,
-          'end': endOfYear,
-        };
+        final endOfYear = DateTime(
+          now.year + 1,
+          1,
+          1,
+        ).subtract(const Duration(seconds: 1));
+        return {'start': startOfYear, 'end': endOfYear};
       default:
         return {
           'start': today,
-          'end': today.add(const Duration(days: 1)).subtract(const Duration(seconds: 1)),
+          'end': today
+              .add(const Duration(days: 1))
+              .subtract(const Duration(seconds: 1)),
         };
     }
   }
@@ -300,7 +309,8 @@ class _SalesScreenState extends State<SalesScreen>
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _vendorReports.length,
-              itemBuilder: (context, index) => _buildVendorCard(_vendorReports[index]),
+              itemBuilder:
+                  (context, index) => _buildVendorCard(_vendorReports[index]),
             ),
         ],
       ),
@@ -312,9 +322,7 @@ class _SalesScreenState extends State<SalesScreen>
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildProductAnalysisTable(),
-        ],
+        children: [_buildProductAnalysisTable()],
       ),
     );
   }
@@ -350,18 +358,18 @@ class _SalesScreenState extends State<SalesScreen>
                 const SizedBox(height: 8),
                 _isLoadingMetrics
                     ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                     : Text(
-                        '\$${totalSales.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.success,
-                        ),
+                      '\$${totalSales.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.success,
                       ),
+                    ),
                 Text(
                   'Ventas $periodLabel',
                   style: const TextStyle(color: AppColors.textSecondary),
@@ -385,18 +393,18 @@ class _SalesScreenState extends State<SalesScreen>
                 const SizedBox(height: 8),
                 _isLoadingMetrics
                     ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                     : Text(
-                        '$salesCount',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
+                      '$salesCount',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
                       ),
+                    ),
                 Text(
                   'Productos $periodLabel',
                   style: const TextStyle(color: AppColors.textSecondary),
@@ -447,67 +455,197 @@ class _SalesScreenState extends State<SalesScreen>
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                columnSpacing: 16,
+                columnSpacing: 12,
                 columns: const [
-                  DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Total Vendido', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Precio Venta', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Costo USD', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Total Ventas', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Total Diferencia', style: TextStyle(fontWeight: FontWeight.bold))),
+                  DataColumn(
+                    label: Text(
+                      'Producto',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Precio (u)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Cant Vendidos',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Total Venta',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Costo (u)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Total Costo',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Ganancias',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ],
-                rows: _productSalesReports.map((report) {
-                  return DataRow(
-                    cells: [
-                      DataCell(
-                        SizedBox(
-                          width: 120,
-                          child: Text(
-                            report.nombreProducto,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w500),
+                rows: [
+                  // Product rows
+                  ..._productSalesReports.map((report) {
+                    // Calculate total cost CUP and profit
+                    final totalCostoCup =
+                        report.precioCostoCup * report.totalVendido;
+                    final ganancias = report.ingresosTotales - totalCostoCup;
+
+                    return DataRow(
+                      cells: [
+                        DataCell(
+                          SizedBox(
+                            width: 100,
+                            child: Text(
+                              report.nombreProducto,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${report.totalVendido.toStringAsFixed(0)} uds',
-                          style: const TextStyle(color: AppColors.info),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${report.precioVentaCup.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppColors.textPrimary),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${report.precioCosto.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppColors.warning),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${report.ingresosTotales.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            color: AppColors.success,
-                            fontWeight: FontWeight.bold,
+                        DataCell(
+                          Text(
+                            '\$${report.precioVentaCup.toStringAsFixed(0)}',
+                            style: const TextStyle(color: AppColors.info),
                           ),
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${report.gananciaTotal.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: report.gananciaTotal >= 0 ? AppColors.success : AppColors.error,
-                            fontWeight: FontWeight.bold,
+                        DataCell(
+                          Text(
+                            '${report.totalVendido.toStringAsFixed(0)}',
+                            style: const TextStyle(color: AppColors.primary),
                           ),
                         ),
+                        DataCell(
+                          Text(
+                            '\$${report.ingresosTotales.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              color: AppColors.success,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            '\$${report.precioCostoCup.toStringAsFixed(0)}',
+                            style: const TextStyle(color: AppColors.warning),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            '\$${totalCostoCup.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              color: AppColors.warning,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            '\$${ganancias.toStringAsFixed(0)}',
+                            style: TextStyle(
+                              color:
+                                  ganancias >= 0
+                                      ? AppColors.success
+                                      : AppColors.error,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                  // Totals row
+                  if (_productSalesReports.isNotEmpty)
+                    DataRow(
+                      color: MaterialStateProperty.all(
+                        AppColors.primary.withOpacity(0.1),
                       ),
-                    ],
-                  );
-                }).toList(),
+                      cells: [
+                        const DataCell(
+                          Text(
+                            'TOTALES',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                        const DataCell(Text('-')), // No average price
+                        DataCell(
+                          Text(
+                            '${_productSalesReports.fold(0.0, (sum, report) => sum + report.totalVendido).toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            '\$${_productSalesReports.fold(0.0, (sum, report) => sum + report.ingresosTotales).toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ),
+                        const DataCell(Text('-')), // No average cost
+                        DataCell(
+                          Text(
+                            '\$${_productSalesReports.fold(0.0, (sum, report) => sum + (report.precioCostoCup * report.totalVendido)).toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            '\$${(_productSalesReports.fold(0.0, (sum, report) => sum + report.ingresosTotales) - _productSalesReports.fold(0.0, (sum, report) => sum + (report.precioCostoCup * report.totalVendido))).toStringAsFixed(0)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  (_productSalesReports.fold(
+                                                0.0,
+                                                (sum, report) =>
+                                                    sum +
+                                                    report.ingresosTotales,
+                                              ) -
+                                              _productSalesReports.fold(
+                                                0.0,
+                                                (sum, report) =>
+                                                    sum +
+                                                    (report.precioCostoCup *
+                                                        report.totalVendido),
+                                              )) >=
+                                          0
+                                      ? AppColors.success
+                                      : AppColors.error,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
               ),
             ),
         ],
@@ -555,79 +693,132 @@ class _SalesScreenState extends State<SalesScreen>
               child: DataTable(
                 columnSpacing: 16,
                 columns: const [
-                  DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Precio Venta CUP', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Precio Venta USD', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Costo USD', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Valor USD', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Precio Costo CUP', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('Ganancia', style: TextStyle(fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text('% Ganancia', style: TextStyle(fontWeight: FontWeight.bold))),
+                  DataColumn(
+                    label: Text(
+                      'Producto',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Precio Venta CUP',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Precio Venta USD',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Costo USD',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Valor USD',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Precio Costo CUP',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Ganancia',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      '% Ganancia',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 ],
-                rows: _productAnalysis.map((analysis) {
-                  return DataRow(
-                    cells: [
-                      DataCell(
-                        SizedBox(
-                          width: 120,
-                          child: Text(
-                            analysis.nombreProducto,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w500),
+                rows:
+                    _productAnalysis.map((analysis) {
+                      return DataRow(
+                        cells: [
+                          DataCell(
+                            SizedBox(
+                              width: 120,
+                              child: Text(
+                                analysis.nombreProducto,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.precioVentaCup.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppColors.success),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.precioVentaUsd.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppColors.info),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.precioCosto.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppColors.warning),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.valorUsd.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
-                          style: const TextStyle(color: AppColors.textPrimary),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '\$${analysis.ganancia.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: analysis.ganancia >= 0 ? AppColors.success : AppColors.error,
-                            fontWeight: FontWeight.bold,
+                          DataCell(
+                            Text(
+                              '\$${analysis.precioVentaCup.toStringAsFixed(2)}',
+                              style: const TextStyle(color: AppColors.success),
+                            ),
                           ),
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${analysis.porcentajeGanancia.toStringAsFixed(1)}%',
-                          style: TextStyle(
-                            color: analysis.porcentajeGanancia >= 0 ? AppColors.success : AppColors.error,
-                            fontWeight: FontWeight.bold,
+                          DataCell(
+                            Text(
+                              '\$${analysis.precioVentaUsd.toStringAsFixed(2)}',
+                              style: const TextStyle(color: AppColors.info),
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
-                  );
-                }).toList(),
+                          DataCell(
+                            Text(
+                              '\$${analysis.precioCosto.toStringAsFixed(2)}',
+                              style: const TextStyle(color: AppColors.warning),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '\$${analysis.valorUsd.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '\$${analysis.ganancia.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                color:
+                                    analysis.ganancia >= 0
+                                        ? AppColors.success
+                                        : AppColors.error,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${analysis.porcentajeGanancia.toStringAsFixed(1)}%',
+                              style: TextStyle(
+                                color:
+                                    analysis.porcentajeGanancia >= 0
+                                        ? AppColors.success
+                                        : AppColors.error,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
               ),
             ),
         ],
@@ -656,12 +847,15 @@ class _SalesScreenState extends State<SalesScreen>
               value: _selectedPeriod,
               isExpanded: true,
               underline: Container(),
-              items: ['Hoy', 'Esta Semana', 'Este Mes', 'Este Año'].map((String value) {
-                return DropdownMenuItem<String>(
-                  value: value,
-                  child: Text(value),
-                );
-              }).toList(),
+              items:
+                  ['Hoy', 'Esta Semana', 'Este Mes', 'Este Año'].map((
+                    String value,
+                  ) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
               onChanged: (value) {
                 setState(() => _selectedPeriod = value!);
                 _loadProductSalesData();
@@ -688,10 +882,7 @@ class _SalesScreenState extends State<SalesScreen>
       child: ExpansionTile(
         leading: CircleAvatar(
           backgroundColor: statusColor.withOpacity(0.1),
-          child: Icon(
-            Icons.person,
-            color: statusColor,
-          ),
+          child: Icon(Icons.person, color: statusColor),
         ),
         title: Text(
           vendor.nombreCompleto,
@@ -700,27 +891,49 @@ class _SalesScreenState extends State<SalesScreen>
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${vendor.totalVentas} ventas • \$${vendor.totalDineroGeneral.toStringAsFixed(2)}'),
+            Text(
+              '${vendor.totalVentas} ventas • \$${vendor.totalDineroGeneral.toStringAsFixed(2)}',
+            ),
             Text(
               '${vendor.totalProductosVendidos.toStringAsFixed(0)} productos vendidos',
-              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
             ),
           ],
         ),
-        trailing: Icon(
-          statusIcon,
-          color: statusColor,
-        ),
+        trailing: Icon(statusIcon, color: statusColor),
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                _buildVendorDetailRow('Efectivo', '\$${vendor.totalDineroEfectivo.toStringAsFixed(2)}', AppColors.success),
-                _buildVendorDetailRow('Transferencia', '\$${vendor.totalDineroTransferencia.toStringAsFixed(2)}', AppColors.info),
-                _buildVendorDetailRow('Productos diferentes', '${vendor.productosDiferentesVendidos}', AppColors.primary),
-                _buildVendorDetailRow('Primera venta', _formatDateTime(vendor.primeraVenta), AppColors.textSecondary),
-                _buildVendorDetailRow('Última venta', _formatDateTime(vendor.ultimaVenta), AppColors.textSecondary),
+                _buildVendorDetailRow(
+                  'Efectivo',
+                  '\$${vendor.totalDineroEfectivo.toStringAsFixed(2)}',
+                  AppColors.success,
+                ),
+                _buildVendorDetailRow(
+                  'Transferencia',
+                  '\$${vendor.totalDineroTransferencia.toStringAsFixed(2)}',
+                  AppColors.info,
+                ),
+                _buildVendorDetailRow(
+                  'Productos diferentes',
+                  '${vendor.productosDiferentesVendidos}',
+                  AppColors.primary,
+                ),
+                _buildVendorDetailRow(
+                  'Primera venta',
+                  _formatDateTime(vendor.primeraVenta),
+                  AppColors.textSecondary,
+                ),
+                _buildVendorDetailRow(
+                  'Última venta',
+                  _formatDateTime(vendor.ultimaVenta),
+                  AppColors.textSecondary,
+                ),
               ],
             ),
           ),
@@ -735,16 +948,10 @@ class _SalesScreenState extends State<SalesScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: const TextStyle(color: AppColors.textSecondary),
-          ),
+          Text(label, style: const TextStyle(color: AppColors.textSecondary)),
           Text(
             value,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w600, color: color),
           ),
         ],
       ),
@@ -781,7 +988,7 @@ class _SalesScreenState extends State<SalesScreen>
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final dateToCheck = DateTime(dateTime.year, dateTime.month, dateTime.day);
-    
+
     if (dateToCheck == today) {
       return 'Hoy ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
     } else if (dateToCheck == today.subtract(const Duration(days: 1))) {
@@ -790,7 +997,6 @@ class _SalesScreenState extends State<SalesScreen>
       return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
     }
   }
-
 
   Widget _buildSalesChart() {
     return Container(

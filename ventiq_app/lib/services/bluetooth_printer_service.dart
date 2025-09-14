@@ -740,11 +740,13 @@ class BluetoothPrinterService {
 
   /// Format date for printing
   String _formatDateForPrint(DateTime date) {
-    return "${date.day.toString().padLeft(2, '0')}/"
-           "${date.month.toString().padLeft(2, '0')}/"
-           "${date.year} "
-           "${date.hour.toString().padLeft(2, '0')}:"
-           "${date.minute.toString().padLeft(2, '0')}";
+    // Convert to local time if it's not already
+    final localDate = date.toLocal();
+    return "${localDate.day.toString().padLeft(2, '0')}/"
+           "${localDate.month.toString().padLeft(2, '0')}/"
+           "${localDate.year} "
+           "${localDate.hour.toString().padLeft(2, '0')}:"
+           "${localDate.minute.toString().padLeft(2, '0')}";
   }
 
   /// Show enhanced device selection dialog with scanning

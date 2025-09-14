@@ -529,11 +529,13 @@ class _EgresoScreenState extends State<EgresoScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    final localDate = date.toLocal();
+    return '${localDate.day.toString().padLeft(2, '0')}/${localDate.month.toString().padLeft(2, '0')}/${localDate.year}';
   }
 
   String _formatTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    final localTime = time.toLocal();
+    return '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
   }
 
   void _registrarEgreso() async {
@@ -607,8 +609,8 @@ class _EgresoScreenState extends State<EgresoScreen> {
                 Text('Motivo: ${_motivoController.text}'),
                 Text('Autoriza: ${_nombreAutorizaController.text}'),
                 Text('Recibe: ${_nombreRecibeController.text}'),
-                Text('Fecha: ${_formatDate(DateTime.now())}'),
-                Text('Hora: ${_formatTime(DateTime.now())}'),
+                _buildInfoRow('Fecha:', _formatDate(DateTime.now().toLocal())),
+                _buildInfoRow('Hora:', _formatTime(DateTime.now().toLocal())),
               ],
             ),
             actions: [

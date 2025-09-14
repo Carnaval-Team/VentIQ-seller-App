@@ -200,8 +200,8 @@ class _AperturaScreenState extends State<AperturaScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    _buildInfoRow('Fecha:', _formatDate(DateTime.now())),
-                    _buildInfoRow('Hora:', _formatTime(DateTime.now())),
+                    _buildInfoRow('Fecha:', _formatDate(DateTime.now().toLocal())),
+                    _buildInfoRow('Hora:', _formatTime(DateTime.now().toLocal())),
                     _buildInfoRow('Usuario:', _userName),
                   ],
                 ),
@@ -490,11 +490,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    final localDate = date.toLocal();
+    return '${localDate.day.toString().padLeft(2, '0')}/${localDate.month.toString().padLeft(2, '0')}/${localDate.year}';
   }
 
   String _formatTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    final localTime = time.toLocal();
+    return '${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}';
   }
 
   // Inventory list method removed since inventory management is disabled
