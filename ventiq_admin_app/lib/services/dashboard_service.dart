@@ -24,11 +24,19 @@ class DashboardService {
         return null;
       }
 
+      // Get current date in Cuba timezone (America/Havana)
+      final now = DateTime.now().toLocal();
+      final cubaDate = _formatDateForCuba(now);
+      
       print('🔍 Calling obtener_analisis_tienda RPC:');
       print('  - p_id_tienda: $idTienda');
       print('  - p_periodo: $periodo');
+      print('  - Cuba local date: $cubaDate (${now.toIso8601String()})');
+      print('  - UTC date: ${DateTime.now().toUtc().toIso8601String()}');
+      print('  - Timezone offset: ${now.timeZoneOffset}');
+      print('  - Current hour Cuba: ${now.hour}:${now.minute}');
 
-      // Llamar a la función RPC
+      // Llamar a la función RPC (revert to original parameters)
       final response = await _supabase.rpc('obtener_analisis_tienda', params:{
         'p_id_tienda': idTienda,
         'p_periodo': periodo,
@@ -42,12 +50,28 @@ class DashboardService {
       print('✅ RPC obtener_analisis_tienda response:');
       print('📊 Raw response: $response');
       
+      // Debug specific fields that might have timezone issues
+      if (response is Map<String, dynamic>) {
+        print('🔍 Debugging timezone-sensitive data:');
+        print('  - total_ordenes: ${response['total_ordenes']}');
+        print('  - ventas_totales: ${response['ventas_totales']}');
+        print('  - tendencias_de_venta: ${response['tendencias_de_venta']}');
+        
+        // Check if tendencias have date information
+        if (response['tendencias_de_venta'] is List) {
+          final tendencias = response['tendencias_de_venta'] as List;
+          for (int i = 0; i < tendencias.length && i < 3; i++) {
+            print('  - tendencia[$i]: ${tendencias[i]}');
+          }
+        }
+      }
+      
       // Transformar respuesta a formato del dashboard
       final transformedData = _transformRpcResponseToDashboard(response, periodo);
       
       print('🔄 Transformed dashboard data:');
       transformedData.forEach((key, value) {
-        print('  - $key: ${value.runtimeType}');
+        print('  - $key: $value (${value.runtimeType})');
       });
 
       return transformedData;
@@ -126,13 +150,20 @@ class DashboardService {
         
         // Datos adicionales
         'period': periodo,
-        'lastUpdated': DateTime.now().toIso8601String(),
+        'lastUpdated': DateTime.now().toLocal().toIso8601String(),
       };
     } catch (e) {
       print('❌ Error transforming RPC response: $e');
       return {};
     }
   }
+
+  /// Formatea la fecha para el timezone de Cuba (America/Havana)
+  String _formatDateForCuba(DateTime date) {
+    final localDate = date.toLocal();
+    return '${localDate.day.toString().padLeft(2, '0')}/${localDate.month.toString().padLeft(2, '0')}/${localDate.year}';
+  }
+
 
   /// Transforma las tendencias de venta a formato FlSpot
   List<FlSpot> _transformTendenciasToFlSpot(List<dynamic> tendencias) {

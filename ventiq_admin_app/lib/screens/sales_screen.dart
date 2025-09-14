@@ -24,7 +24,8 @@ class _SalesScreenState extends State<SalesScreen>
   bool _isLoading = true;
   bool _isLoadingProducts = true;
   bool _isLoadingVendors = true;
-  String _selectedPeriod = 'Hoy';
+  DateTime _startDate = DateTime.now();
+  DateTime _endDate = DateTime.now();
   String _selectedTPV = 'Todos';
   double _totalSales = 0.0;
   int _transactionCount = 0;
@@ -36,8 +37,15 @@ class _SalesScreenState extends State<SalesScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _initializeDateRange();
     _loadSalesData();
     _loadProductAnalysis();
+  }
+
+  void _initializeDateRange() {
+    final now = DateTime.now();
+    _startDate = DateTime(now.year, now.month, now.day, 0, 0, 0);
+    _endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
   }
 
   @override
@@ -67,15 +75,15 @@ class _SalesScreenState extends State<SalesScreen>
     });
 
     try {
-      // Get date range for the selected period
-      final dateRange = _getDateRangeForPeriod(_selectedPeriod);
+      // Use the selected date range
+      final dateRange = {'start': _startDate, 'end': _endDate};
 
       // Load both product sales data and metrics
       final productSales = await SalesService.getProductSalesReport(
         fechaDesde: dateRange['start'],
         fechaHasta: dateRange['end'],
       );
-      final metrics = await SalesService.getSalesMetrics(_selectedPeriod);
+      final metrics = await SalesService.getSalesMetrics('custom');
 
       setState(() {
         _productSalesReports = productSales;
@@ -99,14 +107,26 @@ class _SalesScreenState extends State<SalesScreen>
     });
 
     try {
-      final dateRange = _getDateRangeForPeriod(_selectedPeriod);
       final reports = await SalesService.getSalesVendorReport(
-        fechaDesde: dateRange['start'],
-        fechaHasta: dateRange['end'],
+        fechaDesde: _startDate,
+        fechaHasta: _endDate,
       );
 
+      // Load egresos for each vendor
+      final List<SalesVendorReport> reportsWithEgresos = [];
+      for (final report in reports) {
+        final totalEgresos = await SalesService.getTotalEgresosByVendor(
+          fechaInicio: _startDate,
+          fechaFin: _endDate,
+          uuidUsuario: report.uuidUsuario,
+        );
+        
+        final updatedReport = report.copyWith(totalEgresos: totalEgresos);
+        reportsWithEgresos.add(updatedReport);
+      }
+
       setState(() {
-        _vendorReports = reports;
+        _vendorReports = reportsWithEgresos;
         _isLoadingVendors = false;
       });
     } catch (e) {
@@ -123,10 +143,9 @@ class _SalesScreenState extends State<SalesScreen>
     });
 
     try {
-      final dateRange = _getDateRangeForPeriod(_selectedPeriod);
       final analysis = await SalesService.getProductAnalysis(
-        fechaDesde: dateRange['start'],
-        fechaHasta: dateRange['end'],
+        fechaDesde: _startDate,
+        fechaHasta: _endDate,
       );
 
       setState(() {
@@ -141,51 +160,6 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
-  Map<String, DateTime> _getDateRangeForPeriod(String period) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (period) {
-      case 'Hoy':
-        return {
-          'start': today,
-          'end': today
-              .add(const Duration(days: 1))
-              .subtract(const Duration(seconds: 1)),
-        };
-      case 'Esta Semana':
-        final startOfWeek = today.subtract(Duration(days: now.weekday - 1));
-        return {
-          'start': startOfWeek,
-          'end': startOfWeek
-              .add(const Duration(days: 7))
-              .subtract(const Duration(seconds: 1)),
-        };
-      case 'Este Mes':
-        final startOfMonth = DateTime(now.year, now.month, 1);
-        final endOfMonth = DateTime(
-          now.year,
-          now.month + 1,
-          1,
-        ).subtract(const Duration(seconds: 1));
-        return {'start': startOfMonth, 'end': endOfMonth};
-      case 'Este Año':
-        final startOfYear = DateTime(now.year, 1, 1);
-        final endOfYear = DateTime(
-          now.year + 1,
-          1,
-          1,
-        ).subtract(const Duration(seconds: 1));
-        return {'start': startOfYear, 'end': endOfYear};
-      default:
-        return {
-          'start': today,
-          'end': today
-              .add(const Duration(days: 1))
-              .subtract(const Duration(seconds: 1)),
-        };
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -327,17 +301,19 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
-  Widget _buildRealTimeMetrics(double totalSales, int salesCount) {
-    String periodLabel = _selectedPeriod;
-    if (_selectedPeriod == 'Hoy') {
-      periodLabel = 'Hoy';
-    } else if (_selectedPeriod == 'Esta Semana') {
-      periodLabel = 'Esta Semana';
-    } else if (_selectedPeriod == 'Este Mes') {
-      periodLabel = 'Este Mes';
-    } else if (_selectedPeriod == 'Este Año') {
-      periodLabel = 'Este Año';
+  String _formatDateRangeLabel() {
+    final startFormatted = '${_startDate.day.toString().padLeft(2, '0')}/${_startDate.month.toString().padLeft(2, '0')}/${_startDate.year}';
+    final endFormatted = '${_endDate.day.toString().padLeft(2, '0')}/${_endDate.month.toString().padLeft(2, '0')}/${_endDate.year}';
+    
+    if (_startDate.day == _endDate.day && _startDate.month == _endDate.month && _startDate.year == _endDate.year) {
+      return startFormatted;
+    } else {
+      return '$startFormatted - $endFormatted';
     }
+  }
+
+  Widget _buildRealTimeMetrics(double totalSales, int salesCount) {
+    String periodLabel = _formatDateRangeLabel();
     return Row(
       children: [
         Expanded(
@@ -371,7 +347,7 @@ class _SalesScreenState extends State<SalesScreen>
                       ),
                     ),
                 Text(
-                  'Ventas $periodLabel',
+                  'Ventas',
                   style: const TextStyle(color: AppColors.textSecondary),
                 ),
               ],
@@ -406,7 +382,7 @@ class _SalesScreenState extends State<SalesScreen>
                       ),
                     ),
                 Text(
-                  'Productos $periodLabel',
+                  'Productos',
                   style: const TextStyle(color: AppColors.textSecondary),
                 ),
               ],
@@ -826,48 +802,6 @@ class _SalesScreenState extends State<SalesScreen>
     );
   }
 
-  Widget _buildPeriodSelector() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.date_range, color: AppColors.primary),
-          const SizedBox(width: 12),
-          const Text(
-            'Período: ',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          Expanded(
-            child: DropdownButton<String>(
-              value: _selectedPeriod,
-              isExpanded: true,
-              underline: Container(),
-              items:
-                  ['Hoy', 'Esta Semana', 'Este Mes', 'Este Año'].map((
-                    String value,
-                  ) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
-              onChanged: (value) {
-                setState(() => _selectedPeriod = value!);
-                _loadProductSalesData();
-                _loadVendorReports();
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildVendorCard(SalesVendorReport vendor) {
     final statusColor = _getVendorStatusColor(vendor.status);
     final statusIcon = _getVendorStatusIcon(vendor.status);
@@ -934,6 +868,25 @@ class _SalesScreenState extends State<SalesScreen>
                   _formatDateTime(vendor.ultimaVenta),
                   AppColors.textSecondary,
                 ),
+                _buildVendorDetailRow(
+                  'Total Egresos',
+                  '\$${vendor.totalEgresos.toStringAsFixed(2)}',
+                  AppColors.error,
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showVendorEgresosDetail(vendor),
+                    icon: const Icon(Icons.receipt_long, size: 18),
+                    label: const Text('Ver Egresos Detallados'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -985,16 +938,18 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   String _formatDateTime(DateTime dateTime) {
+    // Convert to local timezone
+    final localDateTime = dateTime.toLocal();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final dateToCheck = DateTime(dateTime.year, dateTime.month, dateTime.day);
+    final dateToCheck = DateTime(localDateTime.year, localDateTime.month, localDateTime.day);
 
     if (dateToCheck == today) {
-      return 'Hoy ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+      return 'Hoy ${localDateTime.hour.toString().padLeft(2, '0')}:${localDateTime.minute.toString().padLeft(2, '0')}';
     } else if (dateToCheck == today.subtract(const Duration(days: 1))) {
-      return 'Ayer ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+      return 'Ayer ${localDateTime.hour.toString().padLeft(2, '0')}:${localDateTime.minute.toString().padLeft(2, '0')}';
     } else {
-      return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+      return '${localDateTime.day.toString().padLeft(2, '0')}/${localDateTime.month.toString().padLeft(2, '0')}/${localDateTime.year} ${localDateTime.hour.toString().padLeft(2, '0')}:${localDateTime.minute.toString().padLeft(2, '0')}';
     }
   }
 
@@ -1085,6 +1040,204 @@ class _SalesScreenState extends State<SalesScreen>
         ],
       ),
     );
+  }
+
+  Widget _buildPeriodSelector() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.date_range, color: AppColors.primary),
+          const SizedBox(width: 12),
+          const Text(
+            'Fecha: ',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: _showDateRangePicker,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.border),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _formatDateRangeLabel(),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    const Icon(Icons.arrow_drop_down, color: AppColors.primary),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDateRangePicker() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: AppColors.primary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        // Ensure start date is at 00:00:00
+        _startDate = DateTime(
+          picked.start.year,
+          picked.start.month,
+          picked.start.day,
+          0,
+          0,
+          0,
+        );
+        // Ensure end date is at 23:59:59
+        _endDate = DateTime(
+          picked.end.year,
+          picked.end.month,
+          picked.end.day,
+          23,
+          59,
+          59,
+        );
+      });
+      
+      // Reload data with new date range
+      _loadProductSalesData();
+      _loadVendorReports();
+      _loadProductAnalysis();
+    }
+  }
+
+  void _showVendorEgresosDetail(SalesVendorReport vendor) async {
+    try {
+      final deliveries = await SalesService.getCashDeliveries(
+        fechaInicio: _startDate,
+        fechaFin: _endDate,
+        uuidUsuario: vendor.uuidUsuario,
+      );
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            'Egresos de ${vendor.nombreCompleto}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: deliveries.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No hay egresos registrados para este vendedor en el período seleccionado',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: deliveries.length,
+                    itemBuilder: (context, index) {
+                      final delivery = deliveries[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: AppColors.error.withOpacity(0.1),
+                            child: const Icon(
+                              Icons.money_off,
+                              color: AppColors.error,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            '\$${delivery.montoEntrega.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.error,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                delivery.motivoEntrega,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                'Recibe: ${delivery.nombreRecibe}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              Text(
+                                'Autoriza: ${delivery.nombreAutoriza}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          trailing: Text(
+                            _formatDateTime(delivery.fechaEntrega),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      print('Error loading vendor egresos detail: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al cargar los egresos del vendedor'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _onBottomNavTap(int index) {

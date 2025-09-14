@@ -141,6 +141,44 @@ class TPV {
   }
 }
 
+class CashDelivery {
+  final int id;
+  final double montoEntrega;
+  final String motivoEntrega;
+  final String nombreRecibe;
+  final String nombreAutoriza;
+  final DateTime fechaEntrega;
+  final int estado;
+  final int idTurno;
+  final String creadoPor;
+
+  CashDelivery({
+    required this.id,
+    required this.montoEntrega,
+    required this.motivoEntrega,
+    required this.nombreRecibe,
+    required this.nombreAutoriza,
+    required this.fechaEntrega,
+    required this.estado,
+    required this.idTurno,
+    required this.creadoPor,
+  });
+
+  factory CashDelivery.fromJson(Map<String, dynamic> json) {
+    return CashDelivery(
+      id: json['id'] ?? 0,
+      montoEntrega: (json['monto_entrega'] ?? 0.0).toDouble(),
+      motivoEntrega: json['motivo_entrega'] ?? '',
+      nombreRecibe: json['nombre_recibe'] ?? '',
+      nombreAutoriza: json['nombre_autoriza'] ?? '',
+      fechaEntrega: DateTime.parse(json['fecha_entrega'] ?? DateTime.now().toIso8601String()),
+      estado: json['estado'] ?? 1,
+      idTurno: json['id_turno'] ?? 0,
+      creadoPor: json['creado_por'] ?? '',
+    );
+  }
+}
+
 class SalesVendorReport {
   final String uuidUsuario;
   final String nombres;
@@ -155,6 +193,7 @@ class SalesVendorReport {
   final int productosDiferentesVendidos;
   final DateTime primeraVenta;
   final DateTime ultimaVenta;
+  final double totalEgresos;
 
   SalesVendorReport({
     required this.uuidUsuario,
@@ -170,6 +209,7 @@ class SalesVendorReport {
     required this.productosDiferentesVendidos,
     required this.primeraVenta,
     required this.ultimaVenta,
+    this.totalEgresos = 0.0,
   });
 
   factory SalesVendorReport.fromJson(Map<String, dynamic> json) {
@@ -187,6 +227,27 @@ class SalesVendorReport {
       productosDiferentesVendidos: json['productos_diferentes_vendidos'] ?? 0,
       primeraVenta: DateTime.parse(json['primera_venta'] ?? DateTime.now().toIso8601String()),
       ultimaVenta: DateTime.parse(json['ultima_venta'] ?? DateTime.now().toIso8601String()),
+      totalEgresos: (json['total_egresos'] ?? 0.0).toDouble(),
+    );
+  }
+
+  // Helper method to create a copy with updated egresos
+  SalesVendorReport copyWith({double? totalEgresos}) {
+    return SalesVendorReport(
+      uuidUsuario: uuidUsuario,
+      nombres: nombres,
+      apellidos: apellidos,
+      nombreCompleto: nombreCompleto,
+      totalVentas: totalVentas,
+      totalProductosVendidos: totalProductosVendidos,
+      totalDineroEfectivo: totalDineroEfectivo,
+      totalDineroTransferencia: totalDineroTransferencia,
+      totalDineroGeneral: totalDineroGeneral,
+      totalImporteVentas: totalImporteVentas,
+      productosDiferentesVendidos: productosDiferentesVendidos,
+      primeraVenta: primeraVenta,
+      ultimaVenta: ultimaVenta,
+      totalEgresos: totalEgresos ?? this.totalEgresos,
     );
   }
 

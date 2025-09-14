@@ -25,7 +25,6 @@ class _AperturaScreenState extends State<AperturaScreen> {
   // Previous shift data
   double _previousShiftSales = 0.0;
   double _previousShiftCash = 0.0;
-  double _expectedCashFromPrevious = 0.0;
   int _previousShiftProducts = 0;
   double _previousShiftTicketAvg = 0.0;
 
@@ -114,9 +113,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
           _previousShiftSales =
               (resumenTurno['ventas_totales'] ?? 0.0).toDouble();
           _previousShiftCash =
-              (resumenTurno['efectivo_real'] ?? 0.0).toDouble();
-          _expectedCashFromPrevious =
-              (resumenTurno['efectivo_esperado'] ?? 0.0).toDouble();
+              (resumenTurno['efectivo_inicial'] ?? 0.0).toDouble();
           _previousShiftProducts =
               (resumenTurno['productos_vendidos'] ?? 0).toInt();
           _previousShiftTicketAvg =
@@ -507,12 +504,12 @@ class _AperturaScreenState extends State<AperturaScreen> {
     }
 
     final montoInicial = double.parse(_montoInicialController.text);
-    if (_expectedCashFromPrevious > 0) {
-      final diferencia = montoInicial - _expectedCashFromPrevious;
+    if (_previousShiftCash > 0) {
+      final diferencia = montoInicial - _previousShiftCash;
       if (diferencia.abs() > 0) {
         final shouldContinue = await _showCashDifferenceDialog(
           montoInicial,
-          _expectedCashFromPrevious,
+          _previousShiftCash,
           diferencia,
         );
         if (!shouldContinue) {
@@ -647,7 +644,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                   '\$${_previousShiftSales.toStringAsFixed(2)}',
                 ),
                 _buildInfoRow(
-                  'Efectivo Final:',
+                  'Efectivo Inicial:',
                   '\$${_previousShiftCash.toStringAsFixed(2)}',
                 ),
                 _buildInfoRow(
@@ -713,7 +710,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Se detectó una diferencia entre el monto inicial y el efectivo esperado del turno anterior:',
+                    'Se detectó una diferencia entre el monto inicial y el efectivo inicial del turno anterior:',
                     style: TextStyle(fontSize: 14),
                   ),
                   const SizedBox(height: 16),
@@ -727,7 +724,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                     child: Column(
                       children: [
                         _buildDialogInfoRow(
-                          'Efectivo Esperado:',
+                          'Efectivo Inicial:',
                           '\$${montoEsperado.toStringAsFixed(2)}',
                         ),
                         _buildDialogInfoRow(

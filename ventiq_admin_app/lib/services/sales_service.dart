@@ -381,6 +381,63 @@ class SalesService {
     }
   }
 
+  static Future<List<CashDelivery>> getCashDeliveries({
+    required DateTime fechaInicio,
+    required DateTime fechaFin,
+    String? uuidUsuario,
+  }) async {
+    try {
+      print('Calling fn_listar_entregas_por_fechas_usuario with:');
+      print('- p_fecha_inicio: $fechaInicio');
+      print('- p_fecha_fin: $fechaFin');
+      print('- p_uuid_usuario: $uuidUsuario');
+
+      // Prepare parameters
+      final Map<String, dynamic> params = {
+        'p_fecha_inicio': fechaInicio.toIso8601String(),
+        'p_fecha_fin': fechaFin.toIso8601String(),
+      };
+
+      if (uuidUsuario != null) {
+        params['p_uuid_usuario'] = uuidUsuario;
+      }
+
+      // Call the RPC function
+      final response = await _supabase.rpc(
+        'fn_listar_entregas_por_fechas_usuario',
+        params: params,
+      );
+
+      print('Response received: ${response?.length ?? 0} cash deliveries');
+
+      if (response == null) {
+        print('No data received from fn_listar_entregas_por_fechas_usuario');
+        return [];
+      }
+
+      // Convert response to CashDelivery objects
+      final List<CashDelivery> deliveries = [];
+      for (final item in response) {
+        try {
+          final delivery = CashDelivery.fromJson(item);
+          deliveries.add(delivery);
+          print(
+            'Added delivery: ID ${delivery.id} - Monto: \$${delivery.montoEntrega} - Motivo: ${delivery.motivoEntrega}',
+          );
+        } catch (e) {
+          print('Error parsing cash delivery item: $e');
+          print('Item data: $item');
+        }
+      }
+
+      print('Successfully parsed ${deliveries.length} cash deliveries');
+      return deliveries;
+    } catch (e) {
+      print('Error in getCashDeliveries: $e');
+      return [];
+    }
+  }
+
   static Future<List<SalesVendorReport>> getSalesVendorReport({
     DateTime? fechaDesde,
     DateTime? fechaHasta,
@@ -447,6 +504,31 @@ class SalesService {
     } catch (e) {
       print('Error in getSalesVendorReport: $e');
       return [];
+    }
+  }
+
+  static Future<double> getTotalEgresosByVendor({
+    required DateTime fechaInicio,
+    required DateTime fechaFin,
+    required String uuidUsuario,
+  }) async {
+    try {
+      final deliveries = await getCashDeliveries(
+        fechaInicio: fechaInicio,
+        fechaFin: fechaFin,
+        uuidUsuario: uuidUsuario,
+      );
+
+      double totalEgresos = 0.0;
+      for (final delivery in deliveries) {
+        totalEgresos += delivery.montoEntrega;
+      }
+
+      print('Total egresos for user $uuidUsuario: \$${totalEgresos.toStringAsFixed(2)}');
+      return totalEgresos;
+    } catch (e) {
+      print('Error calculating total egresos for vendor: $e');
+      return 0.0;
     }
   }
 }
