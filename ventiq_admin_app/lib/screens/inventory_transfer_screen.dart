@@ -209,6 +209,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             product: product,
             sourceLayoutId: _getZoneIdFromLocation(_selectedSourceLocation!),
             onAdd: (productData) {
+              print('🔍 DEBUG: Producto agregado a _selectedProducts:');
+              print('   - id_producto: ${productData['id_producto']}');
+              print('   - nombre_producto: ${productData['nombre_producto']}');
+              print('   - id_presentacion: ${productData['id_presentacion']}');
+              print('   - presentacion_nombre: ${productData['presentacion_nombre']}');
+              print('   - Tipo de id_presentacion: ${productData['id_presentacion'].runtimeType}');
+              
               setState(() {
                 _selectedProducts.add(productData);
               });
@@ -227,7 +234,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   Future<void> _submitTransfer() async {
     if (!_formKey.currentState!.validate() || _selectedProducts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'Complete todos los campos y agregue al menos un producto',
           ),
@@ -239,7 +246,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     if (_selectedSourceLocation == null ||
         _selectedDestinationLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Debe seleccionar ubicaciones de origen y destino'),
         ),
       );
@@ -249,7 +256,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     // Validate that source and destination are different
     if (_selectedSourceLocation!.id == _selectedDestinationLocation!.id) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'Las ubicaciones de origen y destino no pueden ser las mismas',
           ),
@@ -261,6 +268,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     setState(() => _isLoading = true);
 
     try {
+      print('🚀 === INICIO TRANSFERENCIA ===');
+      print('📍 Origen: ${_selectedSourceLocation!.name} (ID: ${_getZoneIdFromLocation(_selectedSourceLocation!)})');
+      print('📍 Destino: ${_selectedDestinationLocation!.name} (ID: ${_getZoneIdFromLocation(_selectedDestinationLocation!)})');
+      print('📦 Productos: ${_selectedProducts.length}');
+      
       final userPrefs = UserPreferencesService();
       final idTienda = await userPrefs.getIdTienda();
       final userUuid = await userPrefs.getUserId();
@@ -314,6 +326,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       print('📤 Productos preparados para envío:');
       for (int i = 0; i < productosParaEnviar.length; i++) {
         print('   [$i] ${productosParaEnviar[i]}');
+        print('   [$i] DEBUG id_presentacion: ${productosParaEnviar[i]['id_presentacion']} (${productosParaEnviar[i]['id_presentacion'].runtimeType})');
       }
 
       // Extract warehouse IDs from location IDs
@@ -352,21 +365,34 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         estadoInicial: 1, // Pendiente - can be confirmed later
       );
 
-      print('📥 Resultado de la transferencia: $result');
+      print('📋 Resultado de la transferencia:');
+      print('   - Status: ${result['status']}');
+      print('   - Message: ${result['message']}');
+      print('   - ID Extracción: ${result['id_extraccion']}');
+      print('   - ID Recepción: ${result['id_recepcion']}');
+      
+      if (result['extraction_completion'] != null) {
+        print('📤 Completado extracción:');
+        print('   - Status: ${result['extraction_completion']['status']}');
+        print('   - Message: ${result['extraction_completion']['message']}');
+      }
+      
+      if (result['reception_completion'] != null) {
+        print('📥 Completado recepción:');
+        print('   - Status: ${result['reception_completion']['status']}');
+        print('   - Message: ${result['reception_completion']['message']}');
+      }
 
-      // Complete both operations automatically if transfer was successful
       if (result['status'] == 'success') {
-        final idExtraccion = result['id_extraccion'];
-        final idRecepcion = result['id_recepcion'];
-
-        if (idExtraccion != null && idRecepcion != null) {
+        // Complete both operations automatically if transfer was successful
+        if (result['id_extraccion'] != null && result['id_recepcion'] != null) {
           try {
             print('🔄 Completando operación de extracción...');
-            print('📊 ID Extracción: $idExtraccion');
+            print('📊 ID Extracción: ${result['id_extraccion']}');
 
             final completeExtractionResult =
                 await InventoryService.completeOperation(
-                  idOperacion: idExtraccion,
+                  idOperacion: result['id_extraccion'],
                   comentario:
                       'Extracción de transferencia completada automáticamente - ${_observacionesController.text.trim()}',
                   uuid: userUuid,
@@ -388,11 +414,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
             }
 
             print('🔄 Completando operación de recepción...');
-            print('📊 ID Recepción: $idRecepcion');
+            print('📊 ID Recepción: ${result['id_recepcion']}');
 
             final completeReceptionResult =
                 await InventoryService.completeOperation(
-                  idOperacion: idRecepcion,
+                  idOperacion: result['id_recepcion'],
                   comentario:
                       'Recepción de transferencia completada automáticamente - ${_observacionesController.text.trim()}',
                   uuid: userUuid,
@@ -987,20 +1013,36 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
         idLayout: widget.sourceLayoutId!,
       );
 
-      if (variants.isEmpty) {
-        print('⚠️ No se encontraron variantes con stock en esta ubicación');
-        _initializeFallbackVariants();
+      if (variants.isNotEmpty) {
+        setState(() {
+          _availableVariants = variants;
+          _selectedVariant = variants.first;
+          _maxAvailableStock = _selectedVariant!['stock_disponible'];
+          _isLoadingVariants = false;
+        });
+        print('✅ Cargadas ${variants.length} variantes con stock');
         return;
       }
 
-      setState(() {
-        _availableVariants = variants;
-        _selectedVariant = variants.first;
-        _maxAvailableStock = _selectedVariant!['stock_disponible'];
-        _isLoadingVariants = false;
-      });
+      // Si no hay variantes con stock, buscar presentaciones configuradas en la zona
+      print('⚠️ No se encontraron variantes con stock, buscando presentaciones en la zona...');
+      final presentations = await InventoryService.getProductPresentationsInZone(
+        idProducto: int.parse(widget.product.id),
+        idLayout: widget.sourceLayoutId!,
+      );
 
-      print('✅ Cargadas ${variants.length} variantes con stock');
+      if (presentations.isNotEmpty) {
+        setState(() {
+          _availableVariants = presentations;
+          _selectedVariant = presentations.first;
+          _maxAvailableStock = _selectedVariant!['stock_disponible'];
+          _isLoadingVariants = false;
+        });
+        print('✅ Cargadas ${presentations.length} presentaciones de la zona');
+      } else {
+        print('⚠️ No se encontraron presentaciones configuradas, usando fallback genérico');
+        _initializeFallbackVariants();
+      }
     } catch (e) {
       print('❌ Error cargando variantes: $e');
       _initializeFallbackVariants();
@@ -1019,14 +1061,14 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
           'variante_nombre': 'Sin variante',
           'id_opcion_variante': null,
           'opcion_variante_nombre': 'Única',
-          'id_presentacion': null,
+          'id_presentacion': 1, // Use default presentation ID (1 = unidad) instead of null
           'presentacion_nombre': 'Unidad',
           'presentacion_codigo': 'UN',
           'stock_disponible': widget.product.stockDisponible.toDouble(),
           'stock_reservado': 0.0,
           'stock_actual': widget.product.stockDisponible.toDouble(),
           'precio_unitario': widget.product.basePrice,
-          'variant_key': 'null_null_null',
+          'variant_key': 'null_null_1',
         },
       ];
       _selectedVariant = _availableVariants.first;
@@ -1122,25 +1164,35 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
               if (_isLoadingVariants)
                 const CircularProgressIndicator()
               else if (_availableVariants.isNotEmpty) ...[
-                DropdownButtonFormField<Map<String, dynamic>>(
-                  value: _selectedVariant,
-                  decoration: const InputDecoration(
-                    labelText: 'Variante / Presentación',
-                    border: OutlineInputBorder(),
-                    helperText:
-                        'Seleccione la variante específica a transferir',
+                Expanded(
+                  child: DropdownButtonFormField<Map<String, dynamic>>(
+                    value: _selectedVariant,
+                    decoration: const InputDecoration(
+                      labelText: 'Variante / Presentación',
+                      border: OutlineInputBorder(),
+                      helperText:
+                          'Seleccione la variante específica a transferir',
+                    ),
+                    items:
+                        _availableVariants.map((variant) {
+                          return DropdownMenuItem(
+                            value: variant,
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: Text(
+                                _buildVariantDisplayName(variant),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                    onChanged: _onVariantChanged,
+                    validator:
+                        (value) =>
+                            value == null ? 'Seleccione una variante' : null,
                   ),
-                  items:
-                      _availableVariants.map((variant) {
-                        return DropdownMenuItem(
-                          value: variant,
-                          child: Text(_buildVariantDisplayName(variant)),
-                        );
-                      }).toList(),
-                  onChanged: _onVariantChanged,
-                  validator:
-                      (value) =>
-                          value == null ? 'Seleccione una variante' : null,
                 ),
                 const SizedBox(height: 16),
               ],
@@ -1257,6 +1309,16 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                             _selectedVariant!['stock_disponible'],
                         'variant_key': _selectedVariant!['variant_key'],
                       };
+                      
+                      // Debug logging for presentation ID tracking
+                      print('🔍 DEBUG: ProductData creado en diálogo:');
+                      print('   - id_producto: ${productData['id_producto']}');
+                      print('   - nombre_producto: ${productData['nombre_producto']}');
+                      print('   - id_presentacion: ${productData['id_presentacion']}');
+                      print('   - presentacion_nombre: ${productData['presentacion_nombre']}');
+                      print('   - _selectedVariant id_presentacion: ${_selectedVariant!['id_presentacion']}');
+                      print('   - Tipo de id_presentacion: ${productData['id_presentacion'].runtimeType}');
+                      
                       widget.onAdd(productData);
                     }
                   },

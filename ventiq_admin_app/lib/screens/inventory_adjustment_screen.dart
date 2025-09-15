@@ -229,12 +229,14 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       );
       
       // Extraer presentaciones únicas de todos los productos de inventario
-      final Map<int, Map<String, dynamic>> uniquePresentations = {};
+      final Map<String, Map<String, dynamic>> uniquePresentations = {};
       
       // Primero agregar todas las presentaciones disponibles del producto
       for (final product in allPresentationsResponse.products) {
+        String presentationKey;
         if (product.idPresentacion != null) {
-          uniquePresentations[product.idPresentacion!] = {
+          presentationKey = product.idPresentacion.toString();
+          uniquePresentations[presentationKey] = {
             'id': product.idPresentacion!,
             'name': product.presentacion,
             'denominacion': product.presentacion,
@@ -242,14 +244,26 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
             'stock_disponible': 0.0, // Inicializar en 0
             'available_in_zone': false,
           };
+        } else {
+          // Handle products without specific presentation
+          presentationKey = 'null';
+          uniquePresentations[presentationKey] = {
+            'id': null,
+            'name': 'Sin presentación',
+            'denominacion': 'Sin presentación',
+            'codigo': 'SIN_PRES',
+            'stock_disponible': 0.0,
+            'available_in_zone': false,
+          };
         }
       }
       
       // Luego actualizar con el stock específico de la zona seleccionada
       for (final product in zoneSpecificResponse.products) {
-        if (product.idPresentacion != null && uniquePresentations.containsKey(product.idPresentacion!)) {
-          uniquePresentations[product.idPresentacion!]!['stock_disponible'] = product.cantidadFinal;
-          uniquePresentations[product.idPresentacion!]!['available_in_zone'] = true;
+        String presentationKey = product.idPresentacion?.toString() ?? 'null';
+        if (uniquePresentations.containsKey(presentationKey)) {
+          uniquePresentations[presentationKey]!['stock_disponible'] = product.cantidadFinal;
+          uniquePresentations[presentationKey]!['available_in_zone'] = true;
         }
       }
       
@@ -315,7 +329,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       // Obtener stock específico usando el servicio de inventario real
       final productId = int.tryParse(_selectedProduct!.id);
       final zoneId = _selectedZone!['id'] as int;
-      final presentationId = _selectedPresentation!['id'] as int;
+      final presentationId = _selectedPresentation!['id'] as int?;
       
       if (productId == null) {
         throw Exception('ID de producto inválido');
@@ -954,7 +968,15 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                 items: _presentations.map((presentation) {
                   return DropdownMenuItem(
                     value: presentation,
-                    child: Text(presentation['name']),
+                    child: Container(
+                      width: double.infinity,
+                      child: Text(
+                        presentation['name'],
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
                   );
                 }).toList(),
                 onChanged: _presentations.isEmpty ? null : (value) {

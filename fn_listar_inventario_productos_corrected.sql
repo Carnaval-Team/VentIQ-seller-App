@@ -68,7 +68,7 @@ DECLARE
     v_total_paginas INTEGER;
     v_tiene_siguiente BOOLEAN;
 BEGIN
-    -- ✅ Validar acceso si se especifica tienda
+    -- Validar acceso si se especifica tienda
     IF p_id_tienda IS NOT NULL THEN
         PERFORM check_user_has_access_to_tienda(p_id_tienda);
         
@@ -78,7 +78,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- ✅ Contar total de resultados (para paginación)
+    -- Contar total de resultados (para paginación)
     SELECT COUNT(*) INTO v_total_count
     FROM (
         SELECT DISTINCT
@@ -137,7 +137,7 @@ BEGIN
             )
     ) AS conteo;
 
-    -- ✅ Calcular totales para resumen de inventario
+    -- Calcular totales para resumen de inventario
     SELECT 
         COUNT(*) AS total_inventario,
         COUNT(CASE WHEN i.cantidad_final < 10 THEN 1 END) AS total_con_cantidad_baja,
@@ -193,11 +193,11 @@ BEGIN
             )
         );
 
-    -- ✅ Calcular información de paginación
+    -- Calcular información de paginación
     v_total_paginas := CEIL(v_total_count::NUMERIC / p_limite);
     v_tiene_siguiente := p_pagina < v_total_paginas;
 
-    -- ✅ Retornar inventario paginado
+    -- Retornar inventario paginado
     RETURN QUERY
     WITH inventario_detalle AS (
         SELECT DISTINCT ON (i.id_producto, COALESCE(i.id_variante, 0), COALESCE(i.id_opcion_variante, 0), 
@@ -223,10 +223,10 @@ BEGIN
             AND (p_id_tienda IS NULL OR t.id = p_id_tienda)
             AND (p_id_almacen IS NULL OR a.id = p_id_almacen)
             AND (p_id_producto IS NULL OR i.id_producto = p_id_producto)
-            AND (p_id_variante IS NULL OR i.id_variante = p_id_variante)
-            AND (p_id_opcion_variante IS NULL OR i.id_opcion_variante = p_id_opcion_variante)
+            AND (p_id_variante IS NULL OR COALESCE(i.id_variante, 0) = COALESCE(p_id_variante, 0))
+            AND (p_id_opcion_variante IS NULL OR COALESCE(i.id_opcion_variante, 0) = COALESCE(p_id_opcion_variante, 0))
             AND (p_id_ubicacion IS NULL OR i.id_ubicacion = p_id_ubicacion)
-            AND (p_id_presentacion IS NULL OR i.id_presentacion = p_id_presentacion)
+            AND (p_id_presentacion IS NULL OR COALESCE(i.id_presentacion, 0) = COALESCE(p_id_presentacion, 0))
             AND (p_origen_cambio IS NULL OR i.origen_cambio = p_origen_cambio)
             AND (p_id_proveedor IS NULL OR i.id_proveedor = p_id_proveedor)
             AND (p_mostrar_sin_stock = TRUE OR i.cantidad_final > 0)
@@ -238,7 +238,8 @@ BEGIN
                 )
             )
         ORDER BY i.id_producto, COALESCE(i.id_variante, 0), COALESCE(i.id_opcion_variante, 0), 
-                 COALESCE(i.id_presentacion, 0), COALESCE(i.id_ubicacion, 0), i.id DESC
+                 COALESCE(i.id_presentacion, 0), COALESCE(i.id_ubicacion, 0), 
+                 i.created_at DESC, i.id DESC
     ),
     producto_info AS (
         SELECT

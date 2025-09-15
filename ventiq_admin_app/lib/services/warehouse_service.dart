@@ -962,7 +962,7 @@ class WarehouseService {
       }
 
       // Transformar la respuesta del RPC al formato esperado por la UI
-      final products =
+      final rawProducts =
           (response as List).map((item) {
             return {
               'id': item['id'],
@@ -995,11 +995,31 @@ class WarehouseService {
               'lote': null, // No disponible en esta función
               'fecha_vencimiento': null, // No disponible en esta función
               'created_at': item['fecha_ultima_actualizacion'],
+              // Clave única para agrupación por producto
+              'product_key': '${item['id']}_${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
             };
           }).toList();
 
-      print('✅ Productos transformados: ${products.length}');
+      print('📦 Productos sin agrupar: ${rawProducts.length}');
 
+      // Agrupar productos por clave única para eliminar duplicados históricos
+      final Map<String, Map<String, dynamic>> groupedProducts = {};
+      
+      for (final product in rawProducts) {
+        final productKey = product['product_key'];
+        
+        if (!groupedProducts.containsKey(productKey)) {
+          // Tomar la primera ocurrencia (más reciente por el ORDER BY de la función SQL)
+          groupedProducts[productKey] = Map<String, dynamic>.from(product);
+          print('📦 Agregando producto: ${product['denominacion']} (key: $productKey, stock: ${product['stock_actual']})');
+        } else {
+          // Ignorar duplicados históricos
+          print('📦 Ignorando duplicado histórico: ${product['denominacion']} (key: $productKey, stock: ${product['stock_actual']})');
+        }
+      }
+
+      final products = groupedProducts.values.toList();
+      print('📦 Productos únicos después de agrupar: ${products.length}');
       // Log algunos productos para debug
       if (products.isNotEmpty) {
         print(
