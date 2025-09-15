@@ -191,11 +191,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       builder:
           (context) => _ProductQuantityDialog(
             product: product,
-            onAdd: (productData) {
+            onProductAdded: (productData) {
               setState(() {
                 _selectedProducts.add(productData);
               });
-              Navigator.pop(context);
+              // ❌ Removido Navigator.pop(context) - el diálogo se cierra desde adentro
             },
           ),
     );
@@ -535,20 +535,61 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                   final item = _getFilteredSelectedProducts()[index];
                   final originalIndex = _selectedProducts.indexOf(item);
                   return ListTile(
-                    title: Text(item['nombre_producto']),
+                    title: Text(item['denominacion'] ?? item['nombre_producto'] ?? 'Producto sin nombre'),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Cantidad: ${item['cantidad']} | Precio: \$${item['precio_unitario']?.toStringAsFixed(2) ?? '0.00'}',
+                          'SKU: ${item['sku'] ?? 'N/A'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
                         ),
-                        if (_buildVariantInfo(item).isNotEmpty)
+                        SizedBox(height: 4),
+                        Text(
+                          'Cantidad: ${item['cantidad']} | Precio: \$${item['precio_unitario']?.toStringAsFixed(2) ?? '0.00'}',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        if (item['precio_referencia'] != null && item['precio_referencia'] > 0)
                           Text(
-                            _buildVariantInfo(item),
+                            'Precio Ref: \$${item['precio_referencia']?.toStringAsFixed(2)}',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey[600],
-                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        if ((item['descuento_porcentaje'] ?? 0) > 0 || (item['descuento_monto'] ?? 0) > 0)
+                          Text(
+                            'Descuento: ${item['descuento_porcentaje'] ?? 0}% + \$${item['descuento_monto']?.toStringAsFixed(2) ?? '0.00'}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange[700],
+                            ),
+                          ),
+                        if ((item['bonificacion_cantidad'] ?? 0) > 0)
+                          Text(
+                            'Bonificación: +${item['bonificacion_cantidad']} unidades',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green[700],
+                            ),
+                          ),
+                        if (_buildVariantInfo(item).isNotEmpty)
+                          Container(
+                            margin: EdgeInsets.only(top: 4),
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              _buildVariantInfo(item),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                       ],
@@ -792,59 +833,138 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   String _buildVariantInfo(Map<String, dynamic> item) {
     List<String> variantParts = [];
 
-    // Add variant information if available
-    if (item['id_variante'] != null) {
-      // Try to find variant info from the original product
-      final productId = item['id_producto']?.toString();
-      if (productId != null) {
-        try {
-          final product = _availableProducts.firstWhere(
-            (p) => p.id == productId,
-          );
-
-          // Find matching variant in product inventory
-          for (final inv in product.inventario) {
-            if (inv['variante'] != null &&
-                inv['variante']['id']?.toString() ==
-                    item['id_variante']?.toString()) {
-              final atributo = inv['variante']['atributo']?['label'] ?? '';
-              final opcion = inv['variante']['opcion']?['valor'] ?? '';
-              if (atributo.isNotEmpty && opcion.isNotEmpty) {
-                variantParts.add('$atributo: $opcion');
-              }
-              break;
-            }
-          }
-        } catch (e) {
-          // Product not found, skip variant info
-        }
+    // Priority 1: Use stored variant_info and presentation_info (from dialog selection)
+    if (item['variant_info'] != null) {
+      final variantInfo = item['variant_info'];
+      final atributo = variantInfo['atributo']?['denominacion'] ?? 
+                     variantInfo['atributo']?['label'] ?? '';
+      final opcion = variantInfo['opcion']?['valor'] ?? '';
+      
+      if (atributo.isNotEmpty && opcion.isNotEmpty) {
+        variantParts.add('$atributo: $opcion');
+      } else if (atributo.isNotEmpty) {
+        variantParts.add(atributo);
+      }
+    }
+    
+    if (item['presentation_info'] != null) {
+      final presentationInfo = item['presentation_info'];
+      final denominacion = presentationInfo['denominacion'] ?? 
+                          presentationInfo['presentacion'] ?? 
+                          presentationInfo['nombre'] ?? 
+                          presentationInfo['tipo'] ?? '';
+      final cantidad = presentationInfo['cantidad'] ?? 1;
+      
+      if (denominacion.isNotEmpty) {
+        variantParts.add('Presentación: $denominacion (${cantidad}x)');
       }
     }
 
-    // Add presentation information if available
-    if (item['id_presentacion'] != null) {
-      final productId = item['id_producto']?.toString();
-      if (productId != null) {
-        try {
-          final product = _availableProducts.firstWhere(
-            (p) => p.id == productId,
-          );
+    // Priority 2: Fallback to searching in product data (only if stored info not available)
+    if (variantParts.isEmpty) {
+      // Add variant information if available
+      if (item['id_variante'] != null) {
+        final productId = item['id_producto']?.toString();
+        if (productId != null) {
+          try {
+            final product = _availableProducts.firstWhere(
+              (p) => p.id == productId,
+            );
 
-          // Find matching presentation in product inventory
-          for (final inv in product.inventario) {
-            if (inv['presentacion'] != null &&
-                inv['presentacion']['id']?.toString() ==
-                    item['id_presentacion']?.toString()) {
-              final denominacion = inv['presentacion']['denominacion'] ?? '';
-              final cantidad = inv['presentacion']['cantidad'] ?? 1;
-              if (denominacion.isNotEmpty) {
-                variantParts.add('Presentación: $denominacion (${cantidad}x)');
+            // Search in variantesDisponibles first
+            bool found = false;
+            for (final varianteDisponible in product.variantesDisponibles) {
+              if (varianteDisponible['variante'] != null &&
+                  varianteDisponible['variante']['id']?.toString() == item['id_variante']?.toString()) {
+                final atributo = varianteDisponible['variante']['atributo']?['denominacion'] ?? 
+                               varianteDisponible['variante']['atributo']?['label'] ?? '';
+                
+                // Check if there's a matching option
+                if (item['id_opcion_variante'] != null && 
+                    varianteDisponible['variante']['opciones'] != null) {
+                  final opciones = varianteDisponible['variante']['opciones'] as List<dynamic>;
+                  for (final opcion in opciones) {
+                    if (opcion['id']?.toString() == item['id_opcion_variante']?.toString()) {
+                      final opcionValor = opcion['valor'] ?? '';
+                      if (atributo.isNotEmpty && opcionValor.isNotEmpty) {
+                        variantParts.add('$atributo: $opcionValor');
+                      }
+                      found = true;
+                      break;
+                    }
+                  }
+                } else if (atributo.isNotEmpty) {
+                  variantParts.add(atributo);
+                  found = true;
+                }
+                
+                if (found) break;
               }
-              break;
             }
+
+            // Fallback to inventario if not found in variantesDisponibles
+            if (!found) {
+              for (final inv in product.inventario) {
+                if (inv['variante'] != null &&
+                    inv['variante']['id']?.toString() == item['id_variante']?.toString()) {
+                  final atributo = inv['variante']['atributo']?['label'] ?? '';
+                  final opcion = inv['variante']['opcion']?['valor'] ?? '';
+                  if (atributo.isNotEmpty && opcion.isNotEmpty) {
+                    variantParts.add('$atributo: $opcion');
+                  }
+                  break;
+                }
+              }
+            }
+          } catch (e) {
+            print('Error finding product for variant info: $e');
           }
-        } catch (e) {
-          // Product not found, skip presentation info
+        }
+      }
+
+      // Add presentation information if available
+      if (item['id_presentacion'] != null) {
+        final productId = item['id_producto']?.toString();
+        if (productId != null) {
+          try {
+            final product = _availableProducts.firstWhere(
+              (p) => p.id == productId,
+            );
+
+            // Search in presentaciones first
+            bool found = false;
+            for (final presentation in product.presentaciones) {
+              if (presentation['id']?.toString() == item['id_presentacion']?.toString()) {
+                final denominacion = presentation['denominacion'] ?? 
+                                   presentation['presentacion'] ?? 
+                                   presentation['nombre'] ?? 
+                                   presentation['tipo'] ?? '';
+                final cantidad = presentation['cantidad'] ?? 1;
+                if (denominacion.isNotEmpty) {
+                  variantParts.add('Presentación: $denominacion (${cantidad}x)');
+                }
+                found = true;
+                break;
+              }
+            }
+
+            // Fallback to inventario if not found in presentaciones
+            if (!found) {
+              for (final inv in product.inventario) {
+                if (inv['presentacion'] != null &&
+                    inv['presentacion']['id']?.toString() == item['id_presentacion']?.toString()) {
+                  final denominacion = inv['presentacion']['denominacion'] ?? '';
+                  final cantidad = inv['presentacion']['cantidad'] ?? 1;
+                  if (denominacion.isNotEmpty) {
+                    variantParts.add('Presentación: $denominacion (${cantidad}x)');
+                  }
+                  break;
+                }
+              }
+            }
+          } catch (e) {
+            print('Error finding product for presentation info: $e');
+          }
         }
       }
     }
@@ -855,49 +975,47 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
 class _ProductQuantityDialog extends StatefulWidget {
   final Product product;
-  final Function(Map<String, dynamic>) onAdd;
+  final Function(Map<String, dynamic>) onProductAdded;
 
-  const _ProductQuantityDialog({required this.product, required this.onAdd});
+  const _ProductQuantityDialog({required this.product, required this.onProductAdded});
 
   @override
   State<_ProductQuantityDialog> createState() => _ProductQuantityDialogState();
 }
 
 class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
-  final _cantidadController = TextEditingController();
-  final _precioController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  final _quantityController = TextEditingController();
+  final _precioUnitarioController = TextEditingController();
+  final _precioReferenciaController = TextEditingController();
+  final _descuentoPorcentajeController = TextEditingController();
+  final _descuentoMontoController = TextEditingController();
+  final _bonificacionCantidadController = TextEditingController();
   Map<String, dynamic>? _selectedVariant;
   Map<String, dynamic>? _selectedPresentation;
   List<Map<String, dynamic>> _availableVariants = [];
   List<Map<String, dynamic>> _availablePresentations = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeVariantsAndPresentations();
-    _precioController.text = widget.product.basePrice.toString();
-  }
+  bool _advancedOptionsExpanded = false;
 
   void _initializeVariantsAndPresentations() {
     final variantMap = <String, Map<String, dynamic>>{};
     final presentationMap = <String, Map<String, dynamic>>{};
 
-    // Check if inventory is empty, use variantes_disponibles instead
-    if (widget.product.inventario.isEmpty &&
-        widget.product.variantesDisponibles.isNotEmpty) {
-      print('📦 Inventario vacío, usando variantes_disponibles');
+    print('🔍 Inicializando variantes y presentaciones para producto: ${widget.product.id}');
 
-      // Extract variants and presentations from variantes_disponibles
+    // Process variants from variantesDisponibles
+    if (widget.product.variantesDisponibles.isNotEmpty) {
       for (final varianteDisponible in widget.product.variantesDisponibles) {
-        // Add variant if exists
+        // Process variant
         if (varianteDisponible['variante'] != null) {
           final variant = varianteDisponible['variante'];
-          if (variant['opciones'] != null) {
+          
+          if (variant['opciones'] != null && variant['opciones'] is List) {
             final opciones = variant['opciones'] as List<dynamic>;
+            
             for (final opcion in opciones) {
               final variantKey = '${variant['id']}_${opcion['id']}';
               if (!variantMap.containsKey(variantKey)) {
-                // Create variant structure similar to inventory format
                 variantMap[variantKey] = {
                   'id': variant['id'],
                   'atributo': variant['atributo'],
@@ -905,13 +1023,23 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                 };
               }
             }
+          } else {
+            // Handle variants without specific options
+            final variantKey = '${variant['id']}_no_option';
+            if (!variantMap.containsKey(variantKey)) {
+              variantMap[variantKey] = {
+                'id': variant['id'],
+                'atributo': variant['atributo'],
+                'opcion': null,
+              };
+            }
           }
         }
 
-        // Add presentations if exist
+        // Process presentations from variantesDisponibles
         if (varianteDisponible['presentaciones'] != null) {
-          final presentaciones =
-              varianteDisponible['presentaciones'] as List<dynamic>;
+          final presentaciones = varianteDisponible['presentaciones'] as List<dynamic>;
+          
           for (final presentation in presentaciones) {
             final presentationKey = presentation['id'].toString();
             if (!presentationMap.containsKey(presentationKey)) {
@@ -920,34 +1048,15 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
           }
         }
       }
+    }
 
-      // Also add presentations from product.presentaciones as fallback
-      for (final presentation in widget.product.presentaciones) {
-        final presentationKey = presentation['id'].toString();
-        if (!presentationMap.containsKey(presentationKey)) {
-          presentationMap[presentationKey] = presentation;
-        }
-      }
-    } else {
-      // Use existing inventory logic
-      for (final inventoryItem in widget.product.inventario) {
-        // Add variant if exists
-        if (inventoryItem['variante'] != null) {
-          final variant = inventoryItem['variante'];
-          final variantKey = '${variant['id']}_${variant['opcion']?['id']}';
-          if (!variantMap.containsKey(variantKey)) {
-            variantMap[variantKey] = variant;
-          }
-        }
-
-        // Add presentation if exists
-        if (inventoryItem['presentacion'] != null) {
-          final presentation = inventoryItem['presentacion'];
-          final presentationKey = presentation['id'].toString();
-          if (!presentationMap.containsKey(presentationKey)) {
-            presentationMap[presentationKey] = presentation;
-          }
-        }
+    // Add direct presentations from product
+    for (int i = 0; i < widget.product.presentaciones.length; i++) {
+      final presentation = widget.product.presentaciones[i];
+      final presentationKey = presentation['id']?.toString() ?? i.toString();
+      
+      if (!presentationMap.containsKey(presentationKey)) {
+        presentationMap[presentationKey] = presentation;
       }
     }
 
@@ -955,15 +1064,30 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     _availablePresentations = presentationMap.values.toList();
 
     // Set defaults
-    if (_availableVariants.isNotEmpty) {
-      _selectedVariant = _availableVariants.first;
-    }
+    _selectedVariant = null;
+    _selectedPresentation = null;
+    
+    // Auto-select base presentation if available
     if (_availablePresentations.isNotEmpty) {
-      _selectedPresentation = _availablePresentations.first;
+      final basePresentation = _availablePresentations.firstWhere(
+        (p) {
+          final name = _getPresentationName(p).toLowerCase();
+          return name.contains('base') || name.contains('unidad') || name.contains('individual');
+        },
+        orElse: () => _availablePresentations.first,
+      );
+      _selectedPresentation = basePresentation;
     }
 
-    print('🔍 Variantes disponibles: ${_availableVariants.length}');
-    print('🔍 Presentaciones disponibles: ${_availablePresentations.length}');
+    print('✅ Inicialización completa: ${_availableVariants.length} variantes, ${_availablePresentations.length} presentaciones');
+  }
+
+  String _getPresentationName(Map<String, dynamic> presentation) {
+    return presentation['denominacion'] ?? 
+           presentation['presentacion'] ?? 
+           presentation['nombre'] ?? 
+           presentation['tipo'] ?? 
+           'Sin nombre';
   }
 
   Map<String, dynamic>? _findMatchingInventoryItem() {
@@ -1005,152 +1129,583 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _initializeVariantsAndPresentations();
+    _precioUnitarioController.text = widget.product.basePrice.toString();
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    _precioUnitarioController.dispose();
+    _precioReferenciaController.dispose();
+    _descuentoPorcentajeController.dispose();
+    _descuentoMontoController.dispose();
+    _bonificacionCantidadController.dispose();
+    super.dispose();
+  }
+
+  void _submitForm() {
+    if (_formKey.currentState!.validate()) {
+      final cantidad = double.tryParse(_quantityController.text) ?? 0;
+      final precioUnitario = double.tryParse(_precioUnitarioController.text) ?? 0;
+      final precioReferencia = double.tryParse(_precioReferenciaController.text) ?? 0;
+      final descuentoPorcentaje = double.tryParse(_descuentoPorcentajeController.text) ?? 0;
+      final descuentoMonto = double.tryParse(_descuentoMontoController.text) ?? 0;
+      final bonificacionCantidad = double.tryParse(_bonificacionCantidadController.text) ?? 0;
+
+      final productData = {
+        'id_producto': widget.product.id,
+        'cantidad': cantidad,
+        'precio_unitario': precioUnitario,
+        'precio_referencia': precioReferencia,
+        'descuento_porcentaje': descuentoPorcentaje,
+        'descuento_monto': descuentoMonto,
+        'bonificacion_cantidad': bonificacionCantidad,
+        'denominacion': widget.product.name,
+        'sku': widget.product.sku,
+      };
+
+      // Add variant information if selected
+      if (_selectedVariant != null) {
+        productData['id_variante'] = _selectedVariant!['id'];
+        if (_selectedVariant!['opcion'] != null) {
+          productData['id_opcion_variante'] = _selectedVariant!['opcion']['id'];
+        }
+        // Store variant info for display purposes
+        productData['variant_info'] = _selectedVariant! as Object;
+      }
+
+      // Add presentation information if selected
+      if (_selectedPresentation != null) {
+        productData['id_presentacion'] = _selectedPresentation!['id'];
+        // Store presentation info for display purposes
+        productData['presentation_info'] = _selectedPresentation! as Object;
+      }
+
+      widget.onProductAdded(productData);
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Agregar ${widget.product.name}'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Variant selection dropdown
-          if (_availableVariants.length > 1)
-            DropdownButtonFormField<Map<String, dynamic>>(
-              value: _selectedVariant,
-              decoration: const InputDecoration(
-                labelText: 'Variante',
-                border: OutlineInputBorder(),
-              ),
-              items:
-                  _availableVariants.map((variant) {
-                    final atributo = variant['atributo']?['label'] ?? '';
-                    final opcion = variant['opcion']?['valor'] ?? '';
-                    final displayText =
-                        atributo.isNotEmpty && opcion.isNotEmpty
-                            ? '$atributo: $opcion'
-                            : 'Variante ${_availableVariants.indexOf(variant) + 1}';
-
-                    return DropdownMenuItem(
-                      value: variant,
-                      child: Text(displayText),
-                    );
-                  }).toList(),
-              onChanged: (variant) {
-                setState(() {
-                  _selectedVariant = variant;
-                });
-              },
-            ),
-          if (_availableVariants.length > 1) const SizedBox(height: 12),
-
-          // Presentation selection dropdown
-          if (_availablePresentations.length > 1)
-            DropdownButtonFormField<Map<String, dynamic>>(
-              value: _selectedPresentation,
-              decoration: const InputDecoration(
-                labelText: 'Presentación',
-                border: OutlineInputBorder(),
-              ),
-              items:
-                  _availablePresentations.map((presentation) {
-                    final denominacion = presentation['denominacion'] ?? '';
-                    final cantidad = presentation['cantidad'] ?? 1;
-                    final displayText =
-                        denominacion.isNotEmpty
-                            ? '$denominacion (${cantidad}x)'
-                            : 'Presentación ${_availablePresentations.indexOf(presentation) + 1}';
-
-                    return DropdownMenuItem(
-                      value: presentation,
-                      child: Text(displayText),
-                    );
-                  }).toList(),
-              onChanged: (presentation) {
-                setState(() {
-                  _selectedPresentation = presentation;
-                });
-              },
-            ),
-          if (_availablePresentations.length > 1) const SizedBox(height: 12),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _cantidadController,
-            decoration: const InputDecoration(
-              labelText: 'Cantidad',
-              border: OutlineInputBorder(),
-            ),
-            keyboardType: TextInputType.number,
-            validator: (value) {
-              if (value?.isEmpty == true) return 'Campo requerido';
-              if (double.tryParse(value!) == null)
-                return 'Ingrese un número válido';
-              return null;
-            },
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _precioController,
-            decoration: const InputDecoration(
-              labelText: 'Precio Unitario',
-              border: OutlineInputBorder(),
-            ),
-            keyboardType: TextInputType.number,
-          ),
-        ],
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: MediaQuery.of(context).size.height * 0.8,
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+                border: Border(
+                  bottom: BorderSide(color: AppColors.border, width: 1),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.add_shopping_cart, color: AppColors.primary, size: 24),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Agregar Producto',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          widget.product.name,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: Icon(Icons.close, color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Content
+            Expanded(
+              child: Form(
+                key: _formKey,
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Product Information Section
+                      _buildSection(
+                        title: 'Información del Producto',
+                        icon: Icons.info_outline,
+                        child: Container(
+                          padding: EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.border.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 60,
+                                height: 60,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.inventory_2,
+                                  color: AppColors.primary,
+                                  size: 30,
+                                ),
+                              ),
+                              SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      widget.product.name,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    if (widget.product.sku.isNotEmpty)
+                                      Text(
+                                        'SKU: ${widget.product.sku}',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    Text(
+                                      'Stock actual: ${widget.product.stockDisponible}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      
+                      SizedBox(height: 24),
+                      
+                      // Datos de Entrada Section
+                      _buildSection(
+                        title: 'Datos de Entrada',
+                        icon: Icons.input,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Presentation Selection
+                            if (_availablePresentations.isNotEmpty) ...[
+                              DropdownButtonFormField<Map<String, dynamic>>(
+                                value: _selectedPresentation,
+                                decoration: InputDecoration(
+                                  labelText: 'Presentación',
+                                  border: OutlineInputBorder(
+                                    borderSide: BorderSide(color: AppColors.border),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(color: AppColors.border),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                  ),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                ),
+                                isExpanded: true,
+                                items: [
+                                  DropdownMenuItem<Map<String, dynamic>>(
+                                    value: null,
+                                    child: Text(
+                                      'Sin presentación específica', 
+                                      style: TextStyle(color: AppColors.textSecondary),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  ..._availablePresentations.map((presentation) {
+                                    return DropdownMenuItem<Map<String, dynamic>>(
+                                      value: presentation,
+                                      child: Text(
+                                        _getPresentationName(presentation),
+                                        style: TextStyle(color: AppColors.textPrimary),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }).toList(),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedPresentation = value;
+                                  });
+                                },
+                              ),
+                              SizedBox(height: 16),
+                            ],
+                            
+                            // Variant Selection
+                            if (_availableVariants.isNotEmpty) ...[
+                              DropdownButtonFormField<Map<String, dynamic>>(
+                                value: _selectedVariant,
+                                decoration: InputDecoration(
+                                  labelText: 'Variante',
+                                  border: OutlineInputBorder(
+                                    borderSide: BorderSide(color: AppColors.border),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(color: AppColors.border),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                  ),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                ),
+                                isExpanded: true,
+                                items: [
+                                  DropdownMenuItem<Map<String, dynamic>>(
+                                    value: null,
+                                    child: Text(
+                                      'Sin variante', 
+                                      style: TextStyle(color: AppColors.textSecondary),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  ..._availableVariants.map((variant) {
+                                    final atributo = variant['atributo']?['denominacion'] ?? variant['atributo']?['label'] ?? '';
+                                    final opcion = variant['opcion']?['valor'] ?? '';
+                                    return DropdownMenuItem<Map<String, dynamic>>(
+                                      value: variant,
+                                      child: Text(
+                                        '$atributo - $opcion', 
+                                        style: TextStyle(color: AppColors.textPrimary),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }).toList(),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedVariant = value;
+                                  });
+                                },
+                              ),
+                              SizedBox(height: 16),
+                            ],
+                            
+                            // Quantity
+                            TextFormField(
+                              controller: _quantityController,
+                              decoration: InputDecoration(
+                                labelText: 'Cantidad',
+                                border: OutlineInputBorder(
+                                  borderSide: BorderSide(color: AppColors.border),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderSide: BorderSide(color: AppColors.border),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                ),
+                                prefixIcon: Icon(Icons.inventory, color: AppColors.primary),
+                              ),
+                              keyboardType: TextInputType.numberWithOptions(decimal: true),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'La cantidad es obligatoria';
+                                }
+                                if (double.tryParse(value) == null || double.parse(value) <= 0) {
+                                  return 'Ingrese una cantidad válida';
+                                }
+                                return null;
+                              },
+                            ),
+                            SizedBox(height: 16),
+                            
+                            // Purchase Price
+                            TextFormField(
+                              controller: _precioUnitarioController,
+                              decoration: InputDecoration(
+                                labelText: 'Precio de Compra',
+                                border: OutlineInputBorder(
+                                  borderSide: BorderSide(color: AppColors.border),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderSide: BorderSide(color: AppColors.border),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                ),
+                                prefixIcon: Icon(Icons.attach_money, color: AppColors.primary),
+                              ),
+                              keyboardType: TextInputType.numberWithOptions(decimal: true),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'El precio de compra es obligatorio';
+                                }
+                                return null;
+                              },
+                            ),
+                            
+                            SizedBox(height: 24),
+                            
+                            // Advanced Reception Data Subsection
+                            ExpansionTile(
+                              title: Text(
+                                'Datos Avanzados de Recepción',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              children: [
+                                ListTile(
+                                  title: Text(
+                                    'Expandir para ver opciones avanzadas',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: 12),
+                                // Reference Price
+                                TextFormField(
+                                  controller: _precioReferenciaController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Precio de Referencia (Opcional)',
+                                    prefixText: '\$ ',
+                                    border: OutlineInputBorder(
+                                      borderSide: BorderSide(color: AppColors.border),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderSide: BorderSide(color: AppColors.border),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                    ),
+                                    prefixIcon: Icon(Icons.price_check, color: AppColors.textSecondary),
+                                  ),
+                                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                ),
+                                SizedBox(height: 16),
+                                
+                                // Discounts Row
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _descuentoPorcentajeController,
+                                        decoration: InputDecoration(
+                                          labelText: 'Descuento %',
+                                          border: OutlineInputBorder(
+                                            borderSide: BorderSide(color: AppColors.warning),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderSide: BorderSide(color: AppColors.warning),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderSide: BorderSide(color: AppColors.warning, width: 2),
+                                          ),
+                                          prefixIcon: Icon(Icons.percent, color: AppColors.warning),
+                                        ),
+                                        keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                      ),
+                                    ),
+                                    SizedBox(width: 12),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _descuentoMontoController,
+                                        decoration: InputDecoration(
+                                          labelText: 'Descuento \$',
+                                          prefixText: '\$ ',
+                                          border: OutlineInputBorder(
+                                            borderSide: BorderSide(color: AppColors.warning),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderSide: BorderSide(color: AppColors.warning),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderSide: BorderSide(color: AppColors.warning, width: 2),
+                                          ),
+                                          prefixIcon: Icon(Icons.money_off, color: AppColors.warning),
+                                        ),
+                                        keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: 16),
+                                
+                                // Bonification
+                                TextFormField(
+                                  controller: _bonificacionCantidadController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Bonificación (Cantidad Extra)',
+                                    border: OutlineInputBorder(
+                                      borderSide: BorderSide(color: AppColors.success),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderSide: BorderSide(color: AppColors.success),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderSide: BorderSide(color: AppColors.success, width: 2),
+                                    ),
+                                    prefixIcon: Icon(Icons.add_circle_outline, color: AppColors.success),
+                                  ),
+                                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            
+            // Actions
+            Container(
+              padding: EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  top: BorderSide(color: AppColors.border, width: 1),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'Cancelar',
+                      style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+                    ),
+                  ),
+                  SizedBox(width: 16),
+                  ElevatedButton(
+                    onPressed: _submitForm,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      'Agregar',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        ElevatedButton(
-          onPressed: () {
-            if (_cantidadController.text.isNotEmpty) {
-              final cantidad = double.tryParse(_cantidadController.text) ?? 0;
-              final precio = double.tryParse(_precioController.text) ?? 0;
+      ),
+    );
+  }
 
-              // Extract proper IDs from inventory item data
-              final productData = {
-                'id_producto': int.parse(widget.product.id),
-                'cantidad': cantidad,
-                'precio_unitario': precio,
-                'sku_producto': widget.product.sku,
-                'nombre_producto': widget.product.name,
-              };
-
-              // Add variant and presentation IDs from separate selections
-              if (_selectedVariant != null) {
-                productData['id_variante'] = _selectedVariant!['id'];
-                if (_selectedVariant!['opcion'] != null) {
-                  productData['id_opcion_variante'] =
-                      _selectedVariant!['opcion']['id'];
-                }
-              }
-
-              if (_selectedPresentation != null) {
-                productData['id_presentacion'] = _selectedPresentation!['id'];
-              }
-
-              // Find matching inventory item for location info
-              final matchingInventoryItem = _findMatchingInventoryItem();
-              if (matchingInventoryItem != null) {
-                if (matchingInventoryItem['ubicacion'] != null) {
-                  productData['id_ubicacion'] =
-                      matchingInventoryItem['ubicacion']['id'];
-                  productData['sku_ubicacion'] =
-                      matchingInventoryItem['ubicacion']['sku_codigo'];
-                }
-                if (matchingInventoryItem['id_inventario'] != null) {
-                  productData['id_inventario'] =
-                      matchingInventoryItem['id_inventario'];
-                }
-              }
-
-              widget.onAdd(productData);
-            }
-          },
-          style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-          child: const Text('Agregar', style: TextStyle(color: Colors.white)),
-        ),
-      ],
+  Widget _buildSection({
+    required String title,
+    required IconData icon,
+    required Widget child,
+    bool isCollapsible = false,
+  }) {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppColors.border.withOpacity(0.3)),
+      ),
+      child: isCollapsible
+          ? ExpansionTile(
+              leading: Icon(icon, color: AppColors.primary),
+              title: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: child,
+                ),
+              ],
+            )
+          : Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(icon, color: AppColors.primary),
+                      SizedBox(width: 8),
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 16),
+                  child,
+                ],
+              ),
+            ),
     );
   }
 }

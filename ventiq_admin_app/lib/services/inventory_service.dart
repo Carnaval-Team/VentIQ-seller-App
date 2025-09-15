@@ -319,20 +319,24 @@ class InventoryService {
 
       print('📦 RPC Response type: ${response.runtimeType}');
       print('📦 RPC Response length: ${response?.length ?? 0}');
+      print('📦 RPC Response first: ${response?[0]}');
 
       if (response == null || response.isEmpty) {
         print('⚠️ No data received from RPC');
         return InventoryResponse(products: []);
       }
 
-      print('📦 RPC Response first: ${response[0]}');
+      // Handle nested response structure from fn_listar_inventario_productos_paged
+      final data = response is List 
+          ? response as List<dynamic>
+          : (response['data'] as List<dynamic>? ?? []);
+      print('📦 Encontradas ${data.length} variantes con stock');
 
-      // Parse the response
       final List<InventoryProduct> products = [];
       InventorySummary? summary;
       PaginationInfo? pagination;
 
-      for (final row in response) {
+      for (final row in data) {
         try {
           if (row is Map<String, dynamic>) {
             final product = InventoryProduct.fromSupabaseRpc(row);
@@ -424,9 +428,13 @@ class InventoryService {
           productos
               .map(
                 (p) => {
-                  ...p,
-                  'id_ubicacion':
-                      idLayoutOrigen, // Add missing id_ubicacion parameter
+                  'id_producto': p['id_producto'],
+                  'id_variante': p['id_variante'],
+                  'id_opcion_variante': p['id_opcion_variante'],
+                  'id_presentacion': p['id_presentacion'], // Add missing presentation ID
+                  'cantidad': p['cantidad'],
+                  'precio_unitario': p['precio_unitario'] ?? 0.0,
+                  'id_ubicacion': idLayoutOrigen, // Source location for extraction
                 },
               )
               .toList();
@@ -459,6 +467,7 @@ class InventoryService {
                   'id_producto': p['id_producto'],
                   'id_variante': p['id_variante'],
                   'id_opcion_variante': p['id_opcion_variante'],
+                  'id_presentacion': p['id_presentacion'], // Add missing presentation ID
                   'cantidad': p['cantidad'],
                   'precio_unitario': p['precio_unitario'] ?? 0.0,
                   'id_ubicacion':
@@ -790,30 +799,54 @@ class InventoryService {
     required String uuid,
   }) async {
     try {
-      print('🔄 Completando operación $idOperacion...');
-      print('📝 Comentario: $comentario');
-      print('👤 UUID: $uuid');
+      print('🔄 === INICIO COMPLETAR OPERACIÓN ===');
+      print('📊 ID Operación: $idOperacion');
+      print('💬 Comentario: $comentario');
+      print('👤 UUID Usuario: $uuid');
 
       final response = await _supabase.rpc(
         'fn_contabilizar_operacion',
         params: {
-          'p_id_operacion': idOperacion, // Ensure it's an integer
-          'p_comentario': comentario.trim(), // Clean string
-          'p_uuid': uuid.trim(), // Clean string
+          'p_id_operacion': idOperacion,
+          'p_comentario': comentario,
+          'p_uuid': uuid,
         },
       );
 
-      print('✅ Respuesta completeOperation: $response');
+      print('📋 Respuesta RPC completeOperation:');
+      print('   - Tipo: ${response.runtimeType}');
+      print('   - Es null: ${response == null}');
+      print('   - Contenido: $response');
 
       if (response == null) {
-        throw Exception('No se recibió respuesta del servidor');
+        print('❌ Respuesta nula de fn_contabilizar_operacion');
+        return {
+          'status': 'error',
+          'message': 'Respuesta nula del servidor',
+        };
       }
 
-      return response as Map<String, dynamic>;
+      final result = response as Map<String, dynamic>;
+      
+      print('📊 Resultado parseado:');
+      print('   - Status: ${result['status']}');
+      print('   - Message: ${result['message']}');
+      
+      if (result['status'] == 'success') {
+        print('✅ Operación completada exitosamente');
+      } else {
+        print('❌ Error completando operación: ${result['message']}');
+      }
+
+      print('🏁 === FIN COMPLETAR OPERACIÓN ===');
+      return result;
     } catch (e, stackTrace) {
-      print('❌ Error al completar operación: $e');
+      print('❌ Error en completeOperation: $e');
       print('📍 StackTrace: $stackTrace');
-      rethrow;
+      return {
+        'status': 'error',
+        'message': 'Error al completar operación: $e',
+      };
     }
   }
 
@@ -832,10 +865,10 @@ class InventoryService {
         'fn_listar_inventario_productos_paged',
         params: {
           'p_id_producto': idProducto,
-          'p_id_layout': idLayout,
+          'p_id_ubicacion': idLayout,  // Fix: use p_id_ubicacion instead of p_id_layout
           'p_mostrar_sin_stock': false, // Solo con stock
-          'p_page': 1,
-          'p_page_size': 100, // Suficiente para todas las variantes
+          'p_pagina': 1,  // Fix: use p_pagina instead of p_page
+          'p_limite': 100, // Fix: use p_limite instead of p_page_size
         },
       );
 
@@ -844,12 +877,25 @@ class InventoryService {
         return [];
       }
 
-      final data = response['data'] as List<dynamic>? ?? [];
+      // Handle nested response structure from fn_listar_inventario_productos_paged
+      final data = response is List 
+          ? response as List<dynamic>
+          : (response['data'] as List<dynamic>? ?? []);
       print('📦 Encontradas ${data.length} variantes con stock');
 
       final variants =
           data.map<Map<String, dynamic>>((item) {
             final stockDisponible = (item['stock_disponible'] ?? 0).toDouble();
+
+            // Debug logging for variant data analysis
+            print('🔍 Processing item:');
+            print('   - id_variante: ${item['id_variante']} (${item['id_variante'].runtimeType})');
+            print('   - variante: ${item['variante']} (${item['variante'].runtimeType})');
+            print('   - id_opcion_variante: ${item['id_opcion_variante']} (${item['id_opcion_variante'].runtimeType})');
+            print('   - opcion_variante: ${item['opcion_variante']} (${item['opcion_variante'].runtimeType})');
+            print('   - id_presentacion: ${item['id_presentacion']} (${item['id_presentacion'].runtimeType})');
+            print('   - um: ${item['um']} (${item['um'].runtimeType})');
+            print('   - stock_disponible: ${item['stock_disponible']}');
 
             return {
               'id_producto': item['id_producto'] ?? idProducto,
@@ -862,10 +908,14 @@ class InventoryService {
               'id_opcion_variante': item['id_opcion_variante'],
               'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
 
-              // Información de presentación
-              'id_presentacion': item['id_presentacion'],
-              'presentacion_nombre': item['um'] ?? 'UN',
-              'presentacion_codigo': item['um_codigo'] ?? 'UN',
+              // Información de presentación - Handle null id_presentacion
+              'id_presentacion': item['id_presentacion'], // Keep original null value
+              'presentacion_nombre': item['id_presentacion'] != null 
+                  ? _safeSubstring(item['um'] ?? 'UN', 0, 3) // Safe substring to prevent RangeError
+                  : 'Sin presentación',
+              'presentacion_codigo': item['id_presentacion'] != null
+                  ? (item['um_codigo'] ?? 'UN')
+                  : 'SIN_PRES',
 
               // Stock disponible
               'stock_disponible': stockDisponible,
@@ -876,29 +926,111 @@ class InventoryService {
               'precio_unitario': (item['precio_venta'] ?? 0).toDouble(),
               'id_layout': idLayout,
 
-              // Clave única para identificar esta combinación específica
-              'variant_key':
-                  '${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
+              // Clave única para agrupación - Solo por presentación para transferencias
+              'presentation_key': '${item['id_presentacion'] ?? 'null'}',
             };
           }).toList();
 
-      // Agrupar por variante y opción para mejor organización
-      final groupedVariants = <String, List<Map<String, dynamic>>>{};
+      // Agrupar por presentación únicamente (ignorar variantes)
+      final Map<String, Map<String, dynamic>> groupedPresentations = {};
+      
       for (final variant in variants) {
-        final key =
-            '${variant['id_variante']}_${variant['id_opcion_variante']}';
-        groupedVariants[key] ??= [];
-        groupedVariants[key]!.add(variant);
+        final presentationKey = variant['presentation_key'];
+        
+        if (!groupedPresentations.containsKey(presentationKey)) {
+          // Tomar la primera ocurrencia de cada presentación (stocks ya consolidados en SQL)
+          groupedPresentations[presentationKey] = Map<String, dynamic>.from(variant);
+          print('📦 Agregando presentación: ${variant['presentacion_nombre']} (key: $presentationKey, stock: ${variant['stock_disponible']})');
+        } else {
+          // No sumar stocks - ya vienen consolidados de la función SQL
+          print('📦 Ignorando duplicado de presentación: ${variant['presentacion_nombre']} (key: $presentationKey, stock: ${variant['stock_disponible']})');
+        }
       }
 
-      print('📊 Variantes agrupadas: ${groupedVariants.keys.length} grupos');
-      for (final entry in groupedVariants.entries) {
-        print('   ${entry.key}: ${entry.value.length} presentaciones');
-      }
+      final groupedVariants = groupedPresentations.values.toList();
+      print('📦 Después de agrupar: ${groupedVariants.length} presentaciones únicas');
 
-      return variants;
+      return groupedVariants;
     } catch (e) {
       print('❌ Error obteniendo variantes del producto: $e');
+      return [];
+    }
+  }
+
+  /// Get product presentations available in a specific location/zone
+  /// This method queries for all presentations of a product in a zone, even if no inventory exists
+  /// Used as fallback when getProductVariantsInLocation returns empty
+  static Future<List<Map<String, dynamic>>> getProductPresentationsInZone({
+    required int idProducto,
+    required int idLayout,
+  }) async {
+    try {
+      print('🔍 Obteniendo presentaciones del producto $idProducto en zona $idLayout...');
+
+      // Query to get all presentations configured for this product in this zone
+      final response = await _supabase.rpc(
+        'fn_listar_inventario_productos_paged',
+        params: {
+          'p_id_producto': idProducto,
+          'p_id_ubicacion': idLayout, // Fix: use p_id_ubicacion instead of p_id_layout
+          'p_mostrar_sin_stock': true, // Include zero stock items
+          'p_pagina': 1, // Fix: use p_pagina instead of p_page
+          'p_limite': 100, // Fix: use p_limite instead of p_page_size
+        },
+      );
+
+      if (response == null) {
+        print('⚠️ Respuesta nula del RPC para presentaciones');
+        return [];
+      }
+
+      final data = response['data'] as List<dynamic>? ?? [];
+      print('📦 Encontradas ${data.length} presentaciones configuradas');
+
+      final presentations = data.map<Map<String, dynamic>>((item) {
+        return {
+          'id_producto': item['id_producto'] ?? idProducto,
+          'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
+          'sku_producto': item['sku_producto'] ?? '',
+
+          // Información de variante
+          'id_variante': item['id_variante'],
+          'variante_nombre': item['variante'] ?? 'Sin variante',
+          'id_opcion_variante': item['id_opcion_variante'],
+          'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
+
+          // Información de presentación
+          'id_presentacion': item['id_presentacion'], // Keep original null value
+          'presentacion_nombre': item['id_presentacion'] != null 
+              ? _safeSubstring(item['um'] ?? 'UN', 0, 3) // Safe substring to prevent RangeError
+              : 'Sin presentación',
+          'presentacion_codigo': item['id_presentacion'] != null
+              ? (item['um_codigo'] ?? 'UN')
+              : 'SIN_PRES',
+
+          // Stock (puede ser 0)
+          'stock_disponible': (item['stock_disponible'] ?? 0).toDouble(),
+          'stock_reservado': (item['stock_reservado'] ?? 0).toDouble(),
+          'stock_actual': (item['stock_actual'] ?? 0).toDouble(),
+
+          // Información adicional
+          'precio_unitario': (item['precio_venta'] ?? 0).toDouble(),
+          'id_layout': idLayout,
+
+          // Clave única
+          'variant_key':
+              '${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
+        };
+      }).toList();
+
+      print('📊 Presentaciones encontradas: ${presentations.length}');
+      for (final pres in presentations) {
+        print('   - ID: ${pres['id_presentacion']}, Nombre: ${pres['presentacion_nombre']}, Stock: ${pres['stock_disponible']}');
+      }
+
+      return presentations;
+    } catch (e) {
+      print('❌ Error obteniendo presentaciones del producto: $e');
       return [];
     }
   }
@@ -996,5 +1128,87 @@ class InventoryService {
       print('❌ Stack trace: $stackTrace');
       rethrow;
     }
+  }
+
+  /// Insert inventory adjustment using fn_insertar_ajuste_inventario RPC
+  static Future<Map<String, dynamic>> insertInventoryAdjustment({
+    required int idProducto,
+    required int idUbicacion,
+    required int? idPresentacion, // Make nullable to handle "Sin presentación"
+    required double cantidadAnterior,
+    required double cantidadNueva,
+    required String motivo,
+    required String observaciones,
+    required String uuid,
+    required int idTipoOperacion,
+  }) async {
+    try {
+      print('🔍 Insertando ajuste de inventario...');
+      print('📦 Parámetros:');
+      print('   - ID Producto: $idProducto');
+      print('   - ID Ubicación: $idUbicacion');
+      print('   - ID Presentación: $idPresentacion');
+      print('   - Cantidad Anterior: $cantidadAnterior');
+      print('   - Cantidad Nueva: $cantidadNueva');
+      print('   - Motivo: $motivo');
+      print('   - Observaciones: $observaciones');
+      print('   - UUID Usuario: $uuid');
+      print('   - ID Tipo Operación: $idTipoOperacion');
+
+      final response = await _supabase.rpc(
+        'fn_insertar_ajuste_inventario',
+        params: {
+          'p_id_producto': idProducto,
+          'p_id_ubicacion': idUbicacion,
+          'p_id_presentacion': idPresentacion,
+          'p_cantidad_anterior': cantidadAnterior,
+          'p_cantidad_nueva': cantidadNueva,
+          'p_motivo': motivo,
+          'p_observaciones': observaciones,
+          'p_uuid_usuario': uuid,
+          'p_id_tipo_operacion': idTipoOperacion,
+        },
+      );
+
+      print('📦 Respuesta RPC: $response');
+
+      if (response == null) {
+        throw Exception('Respuesta nula de la función RPC');
+      }
+
+      final result = response as Map<String, dynamic>;
+      
+      if (result['status'] == 'success') {
+        print('✅ Ajuste de inventario registrado exitosamente');
+        print('📊 ID Operación: ${result['id_operacion']}');
+      } else {
+        print('❌ Error en ajuste: ${result['message']}');
+      }
+
+      return result;
+    } catch (e, stackTrace) {
+      print('❌ Error en insertInventoryAdjustment: $e');
+      print('📍 StackTrace: $stackTrace');
+      return {
+        'status': 'error',
+        'message': 'Error al insertar ajuste de inventario: $e',
+      };
+    }
+  }
+
+  static String _safeSubstring(String? text, int start, int end) {
+    if (text == null) {
+      return '';
+    }
+
+    if (start > text.length) {
+      return '';
+    }
+
+    if (end > text.length) {
+      end = text.length;
+    }
+
+    return text.substring(start, end);
   }
 }

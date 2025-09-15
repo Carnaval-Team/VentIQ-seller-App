@@ -77,6 +77,10 @@ class _PresentationsTabViewState extends State<PresentationsTabView> {
     }
   }
 
+  void showAddPresentationDialog() {
+    _showCreateEditDialog();
+  }
+
   Future<void> _deletePresentationConfirm(Presentation presentation) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -346,9 +350,8 @@ class _PresentationsTabViewState extends State<PresentationsTabView> {
 
 class PresentationFormDialog extends StatefulWidget {
   final Presentation? presentation;
-  final int? productId; // For creating presentation for specific product
 
-  const PresentationFormDialog({Key? key, this.presentation, this.productId}) : super(key: key);
+  const PresentationFormDialog({Key? key, this.presentation}) : super(key: key);
 
   @override
   State<PresentationFormDialog> createState() => _PresentationFormDialogState();
@@ -359,13 +362,8 @@ class _PresentationFormDialogState extends State<PresentationFormDialog> {
   final _denominacionController = TextEditingController();
   final _descripcionController = TextEditingController();
   final _skuCodigoController = TextEditingController();
-  final _cantidadController = TextEditingController();
   
   bool _isLoading = false;
-  bool _esBase = false;
-  int? _selectedProductId;
-  List<Map<String, dynamic>> _products = [];
-  bool _loadingProducts = false;
 
   @override
   void initState() {
@@ -375,13 +373,6 @@ class _PresentationFormDialogState extends State<PresentationFormDialog> {
       _descripcionController.text = widget.presentation!.descripcion ?? '';
       _skuCodigoController.text = widget.presentation!.skuCodigo;
     }
-    
-    if (widget.productId != null) {
-      _selectedProductId = widget.productId;
-      _cantidadController.text = '1';
-    }
-    
-    _loadProducts();
   }
 
   @override
@@ -389,23 +380,7 @@ class _PresentationFormDialogState extends State<PresentationFormDialog> {
     _denominacionController.dispose();
     _descripcionController.dispose();
     _skuCodigoController.dispose();
-    _cantidadController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadProducts() async {
-    setState(() => _loadingProducts = true);
-    try {
-      // Mock products for now - replace with actual service call
-      _products = [
-        {'id': 1, 'denominacion': 'Producto Ejemplo 1', 'sku': 'PROD001'},
-        {'id': 2, 'denominacion': 'Producto Ejemplo 2', 'sku': 'PROD002'},
-      ];
-    } catch (e) {
-      print('Error loading products: $e');
-    } finally {
-      setState(() => _loadingProducts = false);
-    }
   }
 
   Future<void> _savePresentacion() async {
@@ -429,17 +404,6 @@ class _PresentationFormDialogState extends State<PresentationFormDialog> {
         savedPresentation = await PresentationService.createPresentation(presentation);
       } else {
         savedPresentation = await PresentationService.updatePresentation(presentation);
-      }
-
-      // If product is selected and quantity is provided, create product-presentation relationship
-      if (_selectedProductId != null && _cantidadController.text.isNotEmpty) {
-        final cantidad = double.tryParse(_cantidadController.text) ?? 1.0;
-        await PresentationService.addPresentationToProduct(
-          productId: _selectedProductId!,
-          presentationId: savedPresentation.id,
-          cantidad: cantidad,
-          esBase: _esBase,
-        );
       }
 
       if (mounted) {
@@ -470,33 +434,31 @@ class _PresentationFormDialogState extends State<PresentationFormDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.presentation == null ? 'Nueva Presentación' : 'Editar Presentación'),
-      content: SizedBox(
-        width: 500,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 400,
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Basic presentation fields
-                Text(
-                  'Información de Presentación',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
                 TextFormField(
                   controller: _denominacionController,
                   decoration: const InputDecoration(
                     labelText: 'Denominación *',
                     border: OutlineInputBorder(),
                     helperText: 'Ej: Caja, Paquete, Unidad',
+                    prefixIcon: Icon(Icons.format_paint),
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'La denominación es requerida';
+                    }
+                    if (value.trim().length < 2) {
+                      return 'La denominación debe tener al menos 2 caracteres';
                     }
                     return null;
                   },
@@ -508,8 +470,9 @@ class _PresentationFormDialogState extends State<PresentationFormDialog> {
                     labelText: 'Descripción',
                     border: OutlineInputBorder(),
                     helperText: 'Descripción opcional de la presentación',
+                    prefixIcon: Icon(Icons.description),
                   ),
-                  maxLines: 2,
+                  maxLines: 3,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -518,117 +481,18 @@ class _PresentationFormDialogState extends State<PresentationFormDialog> {
                     labelText: 'Código SKU *',
                     border: OutlineInputBorder(),
                     helperText: 'Código único de identificación',
+                    prefixIcon: Icon(Icons.qr_code),
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'El código SKU es requerido';
                     }
+                    if (value.trim().length < 3) {
+                      return 'El código SKU debe tener al menos 3 caracteres';
+                    }
                     return null;
                   },
                 ),
-                
-                const SizedBox(height: 24),
-                const Divider(),
-                const SizedBox(height: 16),
-                
-                // Product relationship section
-                Text(
-                  'Asignación a Producto (Opcional)',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                
-                if (widget.productId == null) ...[
-                  DropdownButtonFormField<int>(
-                    value: _selectedProductId,
-                    decoration: const InputDecoration(
-                      labelText: 'Seleccionar Producto',
-                      border: OutlineInputBorder(),
-                      helperText: 'Opcional: Asignar esta presentación a un producto',
-                    ),
-                    items: _loadingProducts 
-                        ? []
-                        : _products.map((product) {
-                            return DropdownMenuItem<int>(
-                              value: product['id'],
-                              child: Text('${product['denominacion']} (${product['sku']})'),
-                            );
-                          }).toList(),
-                    onChanged: (value) {
-                      setState(() => _selectedProductId = value);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                
-                if (_selectedProductId != null) ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _cantidadController,
-                          decoration: const InputDecoration(
-                            labelText: 'Cantidad Base *',
-                            border: OutlineInputBorder(),
-                            helperText: 'Cantidad de unidades en esta presentación',
-                            suffixText: 'unidades',
-                          ),
-                          keyboardType: TextInputType.number,
-                          validator: (value) {
-                            if (_selectedProductId != null) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'La cantidad es requerida';
-                              }
-                              final cantidad = double.tryParse(value);
-                              if (cantidad == null || cantidad <= 0) {
-                                return 'Ingrese una cantidad válida';
-                              }
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: CheckboxListTile(
-                          title: const Text('Presentación Base'),
-                          subtitle: const Text('Marcar como presentación principal'),
-                          value: _esBase,
-                          onChanged: (value) {
-                            setState(() => _esBase = value ?? false);
-                          },
-                          controlAffinity: ListTileControlAffinity.leading,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline, color: Colors.blue.shade600, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'La presentación base se usa como referencia principal para el producto. Solo puede haber una presentación base por producto.',
-                            style: TextStyle(
-                              color: Colors.blue.shade700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ],
             ),
           ),

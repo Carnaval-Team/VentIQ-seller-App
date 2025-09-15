@@ -29,60 +29,67 @@ BEGIN
     -- Check inventory operations
     SELECT COUNT(*) INTO v_count
     FROM app_dat_inventario_productos ip
-    INNER JOIN app_dat_variantes v ON ip.id_variante = v.id
-    INNER JOIN app_dat_producto p ON ip.id_producto = p.id
-    INNER JOIN app_dat_productos_subcategorias ps ON p.id = ps.id_producto
-    WHERE v.id = v_variant_id 
-    AND ps.id_sub_categoria = p_id_subcategoria;
+    WHERE ip.id_variante = v_variant_id;
     
     IF v_count > 0 THEN
-        RAISE EXCEPTION 'No se puede eliminar la relación porque % registro(s) de inventario están usando esta combinación de atributo y subcategoría', v_count;
+        RAISE EXCEPTION 'No se puede eliminar la relación porque % registro(s) de inventario están usando esta variante', v_count;
     END IF;
     
     -- Check reception operations
     SELECT COUNT(*) INTO v_count
     FROM app_dat_recepcion_productos rp
-    INNER JOIN app_dat_variantes v ON rp.id_variante = v.id
-    INNER JOIN app_dat_producto p ON rp.id_producto = p.id
-    INNER JOIN app_dat_productos_subcategorias ps ON p.id = ps.id_producto
-    WHERE v.id = v_variant_id 
-    AND ps.id_sub_categoria = p_id_subcategoria;
+    WHERE rp.id_variante = v_variant_id;
     
     IF v_count > 0 THEN
-        RAISE EXCEPTION 'No se puede eliminar la relación porque % operación(es) de recepción están usando esta combinación de atributo y subcategoría', v_count;
+        RAISE EXCEPTION 'No se puede eliminar la relación porque % operación(es) de recepción están usando esta variante', v_count;
     END IF;
     
     -- Check extraction operations
     SELECT COUNT(*) INTO v_count
     FROM app_dat_extraccion_productos ep
-    INNER JOIN app_dat_variantes v ON ep.id_variante = v.id
-    INNER JOIN app_dat_producto p ON ep.id_producto = p.id
-    INNER JOIN app_dat_productos_subcategorias ps ON p.id = ps.id_producto
-    WHERE v.id = v_variant_id 
-    AND ps.id_sub_categoria = p_id_subcategoria;
+    WHERE ep.id_variante = v_variant_id;
     
     IF v_count > 0 THEN
-        RAISE EXCEPTION 'No se puede eliminar la relación porque % operación(es) de extracción están usando esta combinación de atributo y subcategoría', v_count;
+        RAISE EXCEPTION 'No se puede eliminar la relación porque % operación(es) de extracción están usando esta variante', v_count;
     END IF;
     
     -- Check control operations
     SELECT COUNT(*) INTO v_count
     FROM app_dat_control_productos cp
-    INNER JOIN app_dat_variantes v ON cp.id_variante = v.id
-    INNER JOIN app_dat_producto p ON cp.id_producto = p.id
-    INNER JOIN app_dat_productos_subcategorias ps ON p.id = ps.id_producto
-    WHERE v.id = v_variant_id 
-    AND ps.id_sub_categoria = p_id_subcategoria;
+    WHERE cp.id_variante = v_variant_id;
     
     IF v_count > 0 THEN
-        RAISE EXCEPTION 'No se puede eliminar la relación porque % operación(es) de control están usando esta combinación de atributo y subcategoría', v_count;
+        RAISE EXCEPTION 'No se puede eliminar la relación porque % operación(es) de control están usando esta variante', v_count;
     END IF;
     
-    -- If we reach here, it's safe to remove the relationship
-    -- Set the variant's subcategory to NULL to break the relationship
-    UPDATE app_dat_variantes 
-    SET id_sub_categoria = NULL,
-        updated_at = NOW()
+    -- Check if variant is used in any products directly
+    SELECT COUNT(*) INTO v_count
+    FROM app_dat_producto p
+    WHERE p.id IN (
+        SELECT DISTINCT ip.id_producto 
+        FROM app_dat_inventario_productos ip 
+        WHERE ip.id_variante = v_variant_id
+        UNION
+        SELECT DISTINCT rp.id_producto 
+        FROM app_dat_recepcion_productos rp 
+        WHERE rp.id_variante = v_variant_id
+        UNION
+        SELECT DISTINCT ep.id_producto 
+        FROM app_dat_extraccion_productos ep 
+        WHERE ep.id_variante = v_variant_id
+        UNION
+        SELECT DISTINCT cp.id_producto 
+        FROM app_dat_control_productos cp 
+        WHERE cp.id_variante = v_variant_id
+    );
+    
+    IF v_count > 0 THEN
+        RAISE EXCEPTION 'No se puede eliminar la relación porque la variante está siendo usada por % producto(s)', v_count;
+    END IF;
+    
+    -- If we reach here, it's safe to delete the entire variant relationship
+    -- Delete the variant row completely
+    DELETE FROM app_dat_variantes 
     WHERE id = v_variant_id;
     
     -- Log the operation
