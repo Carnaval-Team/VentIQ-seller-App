@@ -848,6 +848,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   String _getChartLabel(int index) {
+    // Usar las etiquetas reales del servicio si están disponibles
+    if (_dashboardData != null && 
+        _dashboardData['salesLabels'] != null && 
+        _dashboardData['salesLabels'] is List<String>) {
+      final labels = _dashboardData['salesLabels'] as List<String>;
+      return index < labels.length ? labels[index] : '';
+    }
+    
+    // Fallback a etiquetas estáticas si no hay datos del servicio
     switch (_selectedTimeFilter) {
       case 'Día':
         const labels = ['6AM', '9AM', '12PM', '3PM', '6PM', '9PM'];
@@ -882,24 +891,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double _getXAxisInterval() {
     final maxX = _getMaxX();
     
-    // Para evitar sobreposición de etiquetas, mostrar máximo 6-7 etiquetas
-    if (maxX <= 6) {
-      return 1; // Mostrar todas
-    } else if (maxX <= 12) {
-      return 2; // Mostrar cada 2
-    } else {
-      return (maxX / 5).ceilToDouble(); // Mostrar aproximadamente 5 etiquetas
+    // Para evitar sobreposición de etiquetas según el período
+    switch (_selectedTimeFilter) {
+      case 'Día':
+        return 1; // Mostrar todas las horas
+      case 'Semana':
+        return 1; // Mostrar todos los días
+      case '1 mes':
+        // Para mes, mostrar cada 5 días para evitar sobreposición
+        return maxX > 15 ? 5 : 3;
+      case '3 meses':
+      case '6 meses':
+        return maxX > 10 ? 2 : 1;
+      case '1 año':
+      case '3 años':
+      case '5 años':
+        return 1;
+      default:
+        // Lógica general para otros casos
+        if (maxX <= 6) {
+          return 1;
+        } else if (maxX <= 12) {
+          return 2;
+        } else {
+          return (maxX / 5).ceilToDouble();
+        }
     }
   }
 
   double _getMaxX() {
+    // Usar el número real de datos si están disponibles
+    if (_dashboardData != null && _dashboardData['salesData'] != null) {
+      final salesData = _dashboardData['salesData'] as List<FlSpot>;
+      if (salesData.isNotEmpty) {
+        return salesData.length.toDouble() - 1;
+      }
+    }
+    
+    // Fallback a valores por defecto
     switch (_selectedTimeFilter) {
       case 'Día':
         return 5;
       case 'Semana':
         return 6;
       case '1 mes':
-        return 3;
+        return 30; // Cambiar de 3 a 30 para días del mes
       case '3 meses':
         return 2;
       case '6 meses':
