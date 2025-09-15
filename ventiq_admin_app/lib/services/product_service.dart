@@ -1089,4 +1089,42 @@ class ProductService {
       return null;
     }
   }
+
+  /// Obtiene un producto completo por ID con todas sus variantes y presentaciones configuradas
+  static Future<Product?> getProductoCompletoById(int productId) async {
+    try {
+      // Obtener ID de tienda desde las preferencias del usuario
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda en las preferencias del usuario');
+      }
+
+      print('🔍 Obteniendo producto completo por ID: $productId');
+      
+      // Llamar a la función RPC para obtener un producto específico con todas sus configuraciones
+      final response = await _supabase.rpc(
+        'get_producto_completo_by_id',
+        params: {
+          'id_producto_param': productId,
+          'id_tienda_param': idTienda,
+        },
+      );
+
+      print('📦 Respuesta producto por ID: $response');
+
+      if (response == null || response.isEmpty) {
+        print('⚠️ No se encontró producto con ID: $productId');
+        return null;
+      }
+
+      // El response debería ser un objeto con la estructura del producto
+      final productData = response is List ? response.first : response;
+      
+      return Product.fromJson(productData);
+    } catch (e) {
+      print('❌ Error obteniendo producto por ID $productId: $e');
+      return null;
+    }
+  }
 }

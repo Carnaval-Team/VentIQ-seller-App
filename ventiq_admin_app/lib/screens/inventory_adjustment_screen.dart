@@ -9,7 +9,7 @@ import '../services/product_service.dart';
 import '../services/inventory_service.dart';
 import '../services/warehouse_service.dart';
 import '../services/presentation_service.dart';
-import '../services/variant_service.dart';
+import '../services/user_preferences_service.dart';
 
 class InventoryAdjustmentScreen extends StatefulWidget {
   final int operationType; // 3 para faltante (sumar), 4 para exceso (restar)
@@ -28,7 +28,7 @@ class InventoryAdjustmentScreen extends StatefulWidget {
 class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
   final _formKey = GlobalKey<FormState>();
   final _searchController = TextEditingController();
-  final _quantityController = TextEditingController();
+  final _newQuantityController = TextEditingController();
   final _reasonController = TextEditingController();
   final _observationsController = TextEditingController();
 
@@ -42,16 +42,12 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
   List<Map<String, dynamic>> _presentations = [];
   Map<String, dynamic>? _selectedPresentation;
   
-  List<Map<String, dynamic>> _variants = [];
-  Map<String, dynamic>? _selectedVariant;
-  
   double? _currentStock;
   
   bool _isLoading = false;
   bool _isLoadingProducts = false;
   bool _isLoadingZones = false;
   bool _isLoadingPresentations = false;
-  bool _isLoadingVariants = false;
   bool _isLoadingStock = false;
 
   @override
@@ -63,7 +59,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
   @override
   void dispose() {
     _searchController.dispose();
-    _quantityController.dispose();
+    _newQuantityController.dispose();
     _reasonController.dispose();
     _observationsController.dispose();
     super.dispose();
@@ -266,12 +262,11 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
         // Auto-seleccionar si solo hay una presentación disponible
         if (presentations.length == 1) {
           _selectedPresentation = presentations.first;
-          // Cargar variantes para la presentación seleccionada automáticamente
-          _loadVariantsForPresentation();
+          // Cargar stock para la presentación seleccionada automáticamente
+          _loadCurrentStock();
         } else {
           // Reset selección si hay múltiples opciones
           _selectedPresentation = null;
-          _selectedVariant = null;
           _currentStock = null;
         }
       });
@@ -309,45 +304,9 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     }
   }
 
-  Future<void> _loadVariantsForPresentation() async {
-    if (_selectedProduct == null || _selectedZone == null || _selectedPresentation == null) return;
-    
-    setState(() => _isLoadingVariants = true);
-    try {
-      // Obtener variantes disponibles usando el servicio real
-      final variants = await VariantService.getVariants();
-      
-      // Convertir a formato para el dropdown
-      final variantOptions = variants.expand((variant) => 
-        variant.options.map((option) => {
-          'id': option.id,
-          'name': '${variant.denominacion}: ${option.denominacion}',
-          'denominacion': option.denominacion,
-          'variant_id': variant.id,
-          'variant_name': variant.denominacion,
-        })
-      ).toList();
-      
-      setState(() {
-        _variants = variantOptions;
-        _isLoadingVariants = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingVariants = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al cargar variantes: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
   Future<void> _loadCurrentStock() async {
     if (_selectedProduct == null || _selectedZone == null || 
-        _selectedPresentation == null || _selectedVariant == null) {
+        _selectedPresentation == null) {
       return;
     }
 
@@ -357,7 +316,6 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       final productId = int.tryParse(_selectedProduct!.id);
       final zoneId = _selectedZone!['id'] as int;
       final presentationId = _selectedPresentation!['id'] as int;
-      final variantId = _selectedVariant!['id'] as int;
       
       if (productId == null) {
         throw Exception('ID de producto inválido');
@@ -368,7 +326,6 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
         idProducto: productId,
         idUbicacion: zoneId,
         idPresentacion: presentationId,
-        idOpcionVariante: variantId,
         mostrarSinStock: true,
         limite: 1,
       );
@@ -416,7 +373,6 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       // Reset dependent selections
       _selectedZone = null;
       _selectedPresentation = null;
-      _selectedVariant = null;
       _currentStock = null;
     });
     _loadZonesForProduct();
@@ -429,73 +385,299 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       _filteredProducts = _products;
       _selectedZone = null;
       _selectedPresentation = null;
-      _selectedVariant = null;
       _currentStock = null;
     });
   }
 
   Future<void> _submitAdjustment() async {
-    if (!_formKey.currentState!.validate() || 
-        _selectedProduct == null || 
-        _selectedZone == null || 
-        _selectedPresentation == null || 
-        _selectedVariant == null) {
+    if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Por favor complete todos los campos requeridos'),
+          content: Text('Por favor, completa todos los campos requeridos'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validar que se haya seleccionado un producto
+    if (_selectedProduct == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe seleccionar un producto'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validar que se haya seleccionado una zona
+    if (_selectedZone == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe seleccionar una zona'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validar que se haya seleccionado una presentación
+    if (_selectedPresentation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe seleccionar una presentación'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validar que se haya ingresado una nueva cantidad
+    final nuevaCantidadText = _newQuantityController.text.trim();
+    if (nuevaCantidadText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe ingresar la nueva cantidad'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final nuevaCantidad = double.tryParse(nuevaCantidadText);
+    if (nuevaCantidad == null || nuevaCantidad < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La nueva cantidad debe ser un número válido mayor o igual a cero'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validar que se haya ingresado un motivo
+    final motivo = _reasonController.text.trim();
+    if (motivo.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe ingresar el motivo del ajuste'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validar que se haya ingresado observaciones
+    final observaciones = _observationsController.text.trim();
+    if (observaciones.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe ingresar observaciones del ajuste'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validar que el stock actual esté disponible
+    if (_currentStock == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se ha cargado el stock actual. Seleccione nuevamente la presentación.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validar que la nueva cantidad sea diferente del stock actual
+    final stockActual = _currentStock!;
+    if (nuevaCantidad == stockActual) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La nueva cantidad debe ser diferente del stock actual'),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
 
-    setState(() => _isLoading = true);
+    // Calcular la diferencia y validar que sea significativa
+    final diferencia = nuevaCantidad - stockActual;
+    if (diferencia.abs() < 0.01) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La diferencia debe ser mayor a 0.01 unidades'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Mostrar confirmación para ajustes grandes
+    if (diferencia.abs() > stockActual * 0.5 && stockActual > 0) {
+      final confirmacion = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Confirmar Ajuste Grande'),
+          content: Text(
+            'Está ajustando ${diferencia > 0 ? 'aumentando' : 'disminuyendo'} '
+            'el stock en ${diferencia.abs().toStringAsFixed(2)} unidades '
+            '(${(diferencia.abs() / stockActual * 100).toStringAsFixed(1)}% del stock actual).\n\n'
+            '¿Está seguro de continuar?'
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Confirmar'),
+            ),
+          ],
+        ),
+      );
+      
+      if (confirmacion != true) return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
 
     try {
-      final quantity = double.parse(_quantityController.text);
-      final reason = _reasonController.text.trim();
-      final observations = _observationsController.text.trim();
+      print('🔄 INICIO: Preparando datos para ajuste de inventario...');
+      
+      // Obtener UUID del usuario
+      final userUuid = await UserPreferencesService().getUserId();
+      if (userUuid == null || userUuid.isEmpty) {
+        throw Exception('No se pudo obtener el UUID del usuario');
+      }
 
-      // TODO: Implementar llamada al servicio de ajuste de inventario granular
-      // await InventoryService.createGranularAdjustment(
-      //   productId: _selectedProduct!.id,
-      //   zoneId: _selectedZone!['id'],
-      //   presentationId: _selectedPresentation!['id'],
-      //   variantId: _selectedVariant!['id'],
-      //   operationType: widget.operationType,
-      //   quantity: quantity,
-      //   reason: reason,
-      //   observations: observations,
-      // );
+      // Preparar datos del ajuste
+      final ajusteData = {
+        'idProducto': _selectedProduct!.id,
+        'idUbicacion': _selectedZone!['id'],
+        'idPresentacion': _selectedPresentation!['id'],
+        'cantidadAnterior': _currentStock ?? 0.0,
+        'cantidadNueva': nuevaCantidad,
+        'motivo': motivo,
+        'observaciones': observaciones,
+        'uuid': userUuid,
+        'idTipoOperacion': widget.operationType,
+      };
 
-      // Simular procesamiento
-      await Future.delayed(const Duration(seconds: 2));
+      print('📦 Datos del ajuste preparados:');
+      print('   - Producto: ${_selectedProduct!.denominacion} (ID: ${_selectedProduct!.id})');
+      print('   - Zona: ${_selectedZone!['denominacion']} (ID: ${_selectedZone!['id']})');
+      print('   - Presentación: ${_selectedPresentation!['denominacion']} (ID: ${_selectedPresentation!['id']})');
+      print('   - Stock actual: ${_currentStock ?? 0.0} → Nueva cantidad: $nuevaCantidad');
+      print('   - Diferencia: ${nuevaCantidad - (_currentStock ?? 0.0)}');
+      print('   - Motivo: $motivo');
+      print('   - Observaciones: $observaciones');
+      print('   - Tipo de operación: ${widget.operationType}');
+      print('   - Usuario UUID: $userUuid');
 
-      if (mounted) {
+      // Llamar al servicio para insertar el ajuste
+      print('🔄 Llamando a InventoryService.insertInventoryAdjustment...');
+      
+      // Convert string IDs to integers
+      final productId = int.tryParse(_selectedProduct!.id);
+      final zoneId = _selectedZone!['id'] as int?;
+      final presentationId = _selectedPresentation!['id'] as int?;
+      
+      if (productId == null || zoneId == null || presentationId == null) {
+        throw Exception('Error: IDs inválidos para el ajuste de inventario');
+      }
+      
+      final result = await InventoryService.insertInventoryAdjustment(
+        idProducto: productId,
+        idUbicacion: zoneId,
+        idPresentacion: presentationId,
+        cantidadAnterior: _currentStock ?? 0.0,
+        cantidadNueva: nuevaCantidad,
+        motivo: motivo,
+        observaciones: observaciones,
+        uuid: userUuid,
+        idTipoOperacion: widget.operationType,
+      );
+
+      print('📦 Resultado del servicio: $result');
+
+      if (result['status'] == 'success') {
+        final data = result['data'];
+        print('✅ ÉXITO: Ajuste de inventario registrado correctamente');
+        print('📊 Detalles del ajuste:');
+        print('   - ID Operación: ${data['id_operacion']}');
+        print('   - ID Ajuste: ${data['id_ajuste']}');
+        print('   - Diferencia aplicada: ${data['diferencia']}');
+
+        // Mostrar mensaje de éxito al usuario
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              widget.adjustmentType == 'excess'
-                  ? 'Ajuste por exceso registrado exitosamente'
-                  : 'Ajuste por faltante registrado exitosamente'
+              'Ajuste registrado exitosamente\n'
+              'Operación ID: ${data['id_operacion']}\n'
+              'Diferencia: ${data['diferencia']}',
             ),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
           ),
         );
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      if (mounted) {
+
+        // Limpiar formulario
+        _resetForm();
+        
+        // Opcional: Navegar de regreso
+        Navigator.of(context).pop();
+      } else {
+        // Error en el procesamiento
+        final errorMessage = result['message'] ?? 'Error desconocido al registrar el ajuste';
+        print('❌ Error en el ajuste: $errorMessage');
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al registrar ajuste: $e'),
+            content: Text('Error: $errorMessage'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
+    } catch (e, stackTrace) {
+      print('❌ ERROR CRÍTICO en _submitAdjustment: $e');
+      print('📍 StackTrace: $stackTrace');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error crítico: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  void _resetForm() {
+    setState(() {
+      _selectedProduct = null;
+      _selectedZone = null;
+      _selectedPresentation = null;
+      _currentStock = 0.0;
+      _newQuantityController.clear();
+      _reasonController.clear();
+      _observationsController.clear();
+      _warehousesWithZones.clear();
+      _presentations.clear();
+    });
+    print('🔄 Formulario reiniciado');
   }
 
   @override
@@ -728,7 +910,6 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                                 _selectedZone = zone;
                                 // Reset dependent selections
                                 _selectedPresentation = null;
-                                _selectedVariant = null;
                                 _currentStock = null;
                               });
                               _loadPresentationsForZone();
@@ -769,57 +950,22 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                   labelText: 'Presentación *',
                   border: OutlineInputBorder(),
                 ),
+                value: _selectedPresentation,
                 items: _presentations.map((presentation) {
                   return DropdownMenuItem(
                     value: presentation,
                     child: Text(presentation['name']),
                   );
                 }).toList(),
-                onChanged: (value) {
+                onChanged: _presentations.isEmpty ? null : (value) {
                   setState(() {
                     _selectedPresentation = value as Map<String, dynamic>?;
-                    _loadVariantsForPresentation();
+                    _loadCurrentStock();
                   });
                 },
                 validator: (value) {
                   if (_selectedPresentation == null) {
                     return 'Debe seleccionar una presentación';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 24),
-
-              // Variant selection
-              Text(
-                'Selección de Variante',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              DropdownButtonFormField(
-                decoration: const InputDecoration(
-                  labelText: 'Variante *',
-                  border: OutlineInputBorder(),
-                ),
-                items: _variants.map((variant) {
-                  return DropdownMenuItem(
-                    value: variant,
-                    child: Text(variant['name']),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedVariant = value as Map<String, dynamic>?;
-                    _loadCurrentStock();
-                  });
-                },
-                validator: (value) {
-                  if (_selectedVariant == null) {
-                    return 'Debe seleccionar una variante';
                   }
                   return null;
                 },
@@ -836,16 +982,78 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
               ),
               const SizedBox(height: 12),
 
-              Text(
-                _isLoadingStock ? 'Cargando...' : _currentStock != null ? 'Stock actual: ${_currentStock}' : 'No hay stock disponible',
-                style: const TextStyle(fontSize: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _currentStock != null && _currentStock! > 0 
+                      ? Colors.green.shade50 
+                      : Colors.orange.shade50,
+                  border: Border.all(
+                    color: _currentStock != null && _currentStock! > 0 
+                        ? Colors.green.shade300 
+                        : Colors.orange.shade300,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _currentStock != null && _currentStock! > 0 
+                          ? Icons.inventory 
+                          : Icons.warning,
+                      color: _currentStock != null && _currentStock! > 0 
+                          ? Colors.green.shade700 
+                          : Colors.orange.shade700,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _isLoadingStock 
+                                ? 'Cargando stock...' 
+                                : _currentStock != null 
+                                    ? 'Stock disponible: ${_currentStock!.toStringAsFixed(2)} unidades'
+                                    : 'Stock no disponible',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: _currentStock != null && _currentStock! > 0 
+                                  ? Colors.green.shade700 
+                                  : Colors.orange.shade700,
+                            ),
+                          ),
+                          if (_currentStock != null && _currentStock! == 0)
+                            Text(
+                              'No hay stock disponible para esta combinación',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange.shade600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (_isLoadingStock)
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
+                        ),
+                      ),
+                  ],
+                ),
               ),
 
               const SizedBox(height: 24),
 
               // Quantity
               Text(
-                'Cantidad a Ajustar',
+                'Nueva Cantidad en Inventario',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -853,13 +1061,14 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
               const SizedBox(height: 12),
 
               TextFormField(
-                controller: _quantityController,
+                controller: _newQuantityController,
                 decoration: const InputDecoration(
-                  labelText: 'Cantidad *',
-                  hintText: 'Ingrese la cantidad',
+                  labelText: 'Nueva Cantidad *',
+                  hintText: 'Ingrese la nueva cantidad total',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.inventory),
                   suffixText: 'unidades',
+                  helperText: 'Cantidad final que debe quedar en inventario',
                 ),
                 keyboardType: TextInputType.number,
                 inputFormatters: [
@@ -867,11 +1076,11 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                 ],
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return 'La cantidad es requerida';
+                    return 'La nueva cantidad es requerida';
                   }
                   final quantity = double.tryParse(value);
-                  if (quantity == null || quantity <= 0) {
-                    return 'Ingrese una cantidad válida mayor a 0';
+                  if (quantity == null || quantity < 0) {
+                    return 'Ingrese una cantidad válida mayor o igual a cero';
                   }
                   return null;
                 },

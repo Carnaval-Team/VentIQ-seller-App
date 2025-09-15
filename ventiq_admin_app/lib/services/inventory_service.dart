@@ -799,7 +799,7 @@ class InventoryService {
         params: {
           'p_id_operacion': idOperacion, // Ensure it's an integer
           'p_comentario': comentario.trim(), // Clean string
-          'p_uuid': uuid.trim(), // Clean string
+          'p_uuid_usuario': uuid.trim(), // Clean string
         },
       );
 
@@ -995,6 +995,72 @@ class InventoryService {
       print('❌ Error in getInventorySummaryByUser: $e');
       print('❌ Stack trace: $stackTrace');
       rethrow;
+    }
+  }
+
+  /// Insert inventory adjustment using fn_insertar_ajuste_inventario RPC
+  static Future<Map<String, dynamic>> insertInventoryAdjustment({
+    required int idProducto,
+    required int idUbicacion,
+    required int idPresentacion,
+    required double cantidadAnterior,
+    required double cantidadNueva,
+    required String motivo,
+    required String observaciones,
+    required String uuid,
+    required int idTipoOperacion,
+  }) async {
+    try {
+      print('🔍 Insertando ajuste de inventario...');
+      print('📦 Parámetros:');
+      print('   - ID Producto: $idProducto');
+      print('   - ID Ubicación: $idUbicacion');
+      print('   - ID Presentación: $idPresentacion');
+      print('   - Cantidad Anterior: $cantidadAnterior');
+      print('   - Cantidad Nueva: $cantidadNueva');
+      print('   - Motivo: $motivo');
+      print('   - Observaciones: $observaciones');
+      print('   - UUID Usuario: $uuid');
+      print('   - ID Tipo Operación: $idTipoOperacion');
+
+      final response = await _supabase.rpc(
+        'fn_insertar_ajuste_inventario',
+        params: {
+          'p_id_producto': idProducto,
+          'p_id_ubicacion': idUbicacion,
+          'p_id_presentacion': idPresentacion,
+          'p_cantidad_anterior': cantidadAnterior,
+          'p_cantidad_nueva': cantidadNueva,
+          'p_motivo': motivo,
+          'p_observaciones': observaciones,
+          'p_uuid_usuario': uuid,
+          'p_id_tipo_operacion': idTipoOperacion,
+        },
+      );
+
+      print('📦 Respuesta RPC: $response');
+
+      if (response == null) {
+        throw Exception('Respuesta nula de la función RPC');
+      }
+
+      final result = response as Map<String, dynamic>;
+      
+      if (result['status'] == 'success') {
+        print('✅ Ajuste de inventario registrado exitosamente');
+        print('📊 ID Operación: ${result['id_operacion']}');
+      } else {
+        print('❌ Error en ajuste: ${result['message']}');
+      }
+
+      return result;
+    } catch (e, stackTrace) {
+      print('❌ Error en insertInventoryAdjustment: $e');
+      print('📍 StackTrace: $stackTrace');
+      return {
+        'status': 'error',
+        'message': 'Error al insertar ajuste de inventario: $e',
+      };
     }
   }
 }

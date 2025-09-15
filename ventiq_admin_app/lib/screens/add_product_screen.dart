@@ -77,6 +77,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
   // Variantes
   List<Map<String, dynamic>> _selectedVariantes = [];
 
+  // New controllers for variantes
+  int? _selectedAtributoId;
+  final _variantePrecioController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -118,6 +122,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _precioVentaController.dispose();
     _cantidadPresentacionController.dispose();
     _scrollController.dispose();
+    _variantePrecioController.dispose();
     super.dispose();
   }
 
@@ -688,10 +693,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           size: 20,
                         ),
                       ),
-                      title: Text(
-                        presentacion['denominacion'],
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
+                      title: Text(presentacion['denominacion']),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -811,7 +813,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ),
         const SizedBox(height: 16),
         // Variantes
-        _buildVariantesSection(),
+        _buildVariantesStep(),
         const SizedBox(height: 16),
         // Información Adicional
         Card(
@@ -897,10 +899,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          padding: const EdgeInsets.all(12),
                         ),
                         child: _isLoadingOpenFoodFacts
                             ? const SizedBox(
@@ -930,8 +928,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
         // Multimedia
         _buildMultimediaSection(),
         const SizedBox(height: 16),
-        // Variantes
-        // _buildVariantesSection(),
       ],
     );
   }
@@ -939,6 +935,26 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Future<void> _saveProduct() async {
     if (!_formKey.currentState!.validate()) {
       _showErrorSnackBar('Por favor corrija los errores en el formulario');
+      return;
+    }
+
+    // Validaciones específicas para datos relacionados
+    if (_selectedBasePresentationId == null) {
+      _showErrorSnackBar('Debe seleccionar una presentación base');
+      return;
+    }
+
+    if (_cantidadPresentacionController.text.isEmpty || 
+        double.tryParse(_cantidadPresentacionController.text) == null ||
+        double.parse(_cantidadPresentacionController.text) <= 0) {
+      _showErrorSnackBar('La cantidad de presentación debe ser un número válido mayor a 0');
+      return;
+    }
+
+    if (_precioVentaController.text.isEmpty || 
+        double.tryParse(_precioVentaController.text) == null ||
+        double.parse(_precioVentaController.text) <= 0) {
+      _showErrorSnackBar('El precio de venta debe ser un número válido mayor a 0');
       return;
     }
 
@@ -959,10 +975,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'sku': _skuController.text,
         'id_categoria': _selectedCategoryId,
         'denominacion': _denominacionController.text,
-        'nombre_comercial': _nombreComercialController.text,
-        'denominacion_corta': _denominacionCortaController.text,
-        'description': _descripcionController.text,
+        'nombre_comercial': _nombreComercialController.text.isNotEmpty 
+            ? _nombreComercialController.text 
+            : _denominacionController.text, // Fallback al nombre principal
+        'denominacion_corta': _denominacionCortaController.text.isNotEmpty 
+            ? _denominacionCortaController.text 
+            : _denominacionController.text.substring(0, 
+                _denominacionController.text.length > 20 ? 20 : _denominacionController.text.length),
+        'descripcion': _descripcionController.text, // Fixed: matches SQL function field
         'descripcion_corta': _descripcionCortaController.text,
+        'um': _unidadMedidaController.text.isNotEmpty  // Fixed: 'um' not 'unidad_medida'
+            ? _unidadMedidaController.text 
+            : 'und', // Valor por defecto
         'es_refrigerado': _esRefrigerado,
         'es_fragil': _esFragil,
         'es_peligroso': _esPeligroso,
@@ -977,61 +1001,63 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'codigo_barras': _codigoBarrasController.text,
       };
 
-      // Preparar subcategorías
-      final subcategoriasData =
-          _selectedSubcategorias.map((id) => {'id_sub_categoria': id}).toList();
+      // Preparar subcategorías (solo si hay seleccionadas)
+      List<Map<String, dynamic>>? subcategoriasData;
+      if (_selectedSubcategorias.isNotEmpty) {
+        subcategoriasData = _selectedSubcategorias.map((id) => {'id_sub_categoria': id}).toList();
+      }
 
-      // Preparar etiquetas
-      final etiquetasData =
-          _etiquetas.map((etiqueta) => {'etiqueta': etiqueta}).toList();
+      // Preparar etiquetas (solo si hay etiquetas)
+      List<Map<String, dynamic>>? etiquetasData;
+      if (_etiquetas.isNotEmpty) {
+        etiquetasData = _etiquetas.map((etiqueta) => {'etiqueta': etiqueta}).toList();
+      }
 
-      // Preparar multimedia
-      final multimediasData =
-          _multimedias.map((media) => {'media': media}).toList();
+      // Preparar multimedia (solo si hay multimedia)
+      List<Map<String, dynamic>>? multimediasData;
+      if (_multimedias.isNotEmpty) {
+        multimediasData = _multimedias.map((media) => {'media': media}).toList();
+      }
 
-      // Preparar presentaciones
+      // Preparar presentaciones (OBLIGATORIO - siempre debe haber al menos una base)
       final presentacionesData = [
         {
-          'id_presentacion': _selectedBasePresentationId,
+          'id_presentacion': _selectedBasePresentationId!,
           'cantidad': double.parse(_cantidadPresentacionController.text),
           'es_base': true,
         },
       ];
 
-      // Preparar variantes
-      List<Map<String, dynamic>>? variantesData;
-      if (_selectedVariantes.isNotEmpty && _selectedSubcategorias.isNotEmpty) {
-        variantesData = [];
-        for (final subcategoriaId in _selectedSubcategorias) {
-          for (final variante in _selectedVariantes) {
-            variantesData.add({
-              'id_sub_categoria': subcategoriaId,
-              'id_atributo': variante['id_atributo'],
-              'opciones': (variante['opciones'] as List<dynamic>)
-                  .map((opcion) {
-                    final opcionMap = opcion as Map<String, dynamic>;
-                    return {
-                      'id_opcion': opcionMap['id'], // AGREGAR ID DE OPCIÓN EXISTENTE
-                      'valor': opcionMap['valor'],
-                      'sku_codigo': opcionMap['sku_codigo'] ?? 
-                          '${_skuController.text}-${opcionMap['valor']}'
-                              .replaceAll(' ', '').toUpperCase(),
-                    };
-                  })
-                  .toList(),
-            });
-          }
+      // Agregar presentaciones adicionales si existen
+      if (_presentacionesAdicionales.isNotEmpty) {
+        for (final presentacion in _presentacionesAdicionales) {
+          presentacionesData.add({
+            'id_presentacion': presentacion['id_presentacion'],
+            'cantidad': presentacion['cantidad'],
+            'es_base': false,
+          });
         }
       }
 
-      // Preparar precios
+      // Preparar precios (OBLIGATORIO - solo precio base y variantes simples)
       final preciosData = [
         {
           'precio_venta_cup': double.parse(_precioVentaController.text),
           'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
-          'id_variante': null,
+          'id_variante': null, // Precio base sin variante
         },
       ];
+
+      // Agregar precios por variantes simples (solo atributo + precio)
+      if (_selectedVariantes.isNotEmpty) {
+        for (final variante in _selectedVariantes) {
+          preciosData.add({
+            'precio_venta_cup': variante['precio'],
+            'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
+            'id_atributo': variante['id_atributo'],
+          });
+        }
+      }
 
       // DEBUG: Imprimir todos los datos antes de enviar
       print('=== DATOS COMPLETOS ENVIADOS A RPC ===');
@@ -1040,31 +1066,32 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('PRESENTACIONES DATA: ${jsonEncode(presentacionesData)}');
       print('ETIQUETAS DATA: ${jsonEncode(etiquetasData)}');
       print('MULTIMEDIAS DATA: ${jsonEncode(multimediasData)}');
-      print('VARIANTES DATA: ${jsonEncode(variantesData)}');
       print('PRECIOS DATA: ${jsonEncode(preciosData)}');
       print('=====================================');
 
-      // Insertar producto
+      // Insertar producto con validación de datos obligatorios
       final result = await ProductService.insertProductoCompleto(
         productoData: productoData,
-        subcategoriasData:
-            subcategoriasData.isNotEmpty ? subcategoriasData : null,
-        presentacionesData:
-            presentacionesData.isNotEmpty ? presentacionesData : null,
-        etiquetasData: etiquetasData.isNotEmpty ? etiquetasData : null,
-        multimediasData: multimediasData.isNotEmpty ? multimediasData : null,
-        variantesData: variantesData,
-        preciosData: preciosData,
+        subcategoriasData: subcategoriasData,
+        presentacionesData: presentacionesData, // OBLIGATORIO
+        etiquetasData: etiquetasData,
+        multimediasData: multimediasData,
+        preciosData: preciosData, // OBLIGATORIO
       );
 
+      if (result == null) {
+        throw Exception('No se recibió respuesta del servidor al crear el producto');
+      }
+
       // Mostrar éxito y regresar
-      _showSuccessSnackBar('Producto creado exitosamente');
+      _showSuccessSnackBar('Producto creado exitosamente con todas sus relaciones');
       if (widget.onProductSaved != null) {
         widget.onProductSaved!();
       }
       Navigator.pop(context, true); // true indica que se creó un producto
     } catch (e) {
-      _showErrorSnackBar('Error al crear producto: $e');
+      print('❌ Error completo al crear producto: $e');
+      _showErrorSnackBar('Error al crear producto: ${e.toString()}');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -1161,12 +1188,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Etiquetas',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                const Expanded(
+                  child: Text(
+                    'Etiquetas',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
                 TextButton.icon(
@@ -1254,88 +1283,252 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
-  Widget _buildVariantesSection() {
+  Widget _buildVariantesStep() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Expanded(
-                  child: Text(
-                    'Variantes del Producto',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: _selectedSubcategorias.isNotEmpty ? _addVariante : null,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Agregar', style: TextStyle(fontSize: 14)),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  ),
+                Icon(Icons.tune, color: AppColors.primary),
+                const SizedBox(width: 8),
+                const Text(
+                  'Variantes del Producto',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
-            if (_selectedSubcategorias.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                margin: const EdgeInsets.only(top: 8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.orange, size: 20),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Selecciona al menos una subcategoría para poder agregar variantes',
-                        style: TextStyle(color: Colors.orange, fontSize: 12),
+            const SizedBox(height: 16),
+            
+            // Formulario para agregar variante
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Agregar Variante',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  Row(
+                    children: [
+                      // Selector de atributo
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Atributo:', style: TextStyle(fontWeight: FontWeight.w500)),
+                            const SizedBox(height: 4),
+                            DropdownButtonFormField<int>(
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                hintText: 'Selecciona un atributo',
+                                isDense: true,
+                              ),
+                              items: _atributos.map((atributo) {
+                                return DropdownMenuItem<int>(
+                                  value: atributo['id'],
+                                  child: Text(atributo['denominacion'] ?? 'Sin nombre'),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedAtributoId = value;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 16),
+                      
+                      // Campo de precio
+                      Expanded(
+                        flex: 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Precio:', style: TextStyle(fontWeight: FontWeight.w500)),
+                            const SizedBox(height: 4),
+                            TextFormField(
+                              controller: _variantePrecioController,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                prefixText: '\$ ',
+                                hintText: '0.00',
+                                isDense: true,
+                              ),
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      
+                      // Botón agregar
+                      Column(
+                        children: [
+                          const SizedBox(height: 20), // Espacio para alinear con los campos
+                          ElevatedButton.icon(
+                            onPressed: _agregarVariante,
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Agregar'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Lista de variantes seleccionadas
+            if (_selectedVariantes.isNotEmpty) ...[
+              const Text(
+                'Variantes Agregadas:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              
+              ...List.generate(_selectedVariantes.length, (index) {
+                final variante = _selectedVariantes[index];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.label, color: AppColors.primary, size: 20),
+                      const SizedBox(width: 12),
+                      
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              variante['atributo_nombre'],
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              'Precio: \$${variante['precio'].toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      IconButton(
+                        onPressed: () => _eliminarVariante(index),
+                        icon: Icon(Icons.delete_outline, color: Colors.red[600]),
+                        tooltip: 'Eliminar variante',
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.grey[600]),
+                    const SizedBox(width: 8),
+                    Text(
+                      'No hay variantes agregadas',
+                      style: TextStyle(color: Colors.grey[600]),
                     ),
                   ],
                 ),
               ),
-            const SizedBox(height: 8),
-            if (_selectedVariantes.isEmpty)
-              const Text(
-                'No hay variantes configuradas',
-                style: TextStyle(color: AppColors.textSecondary),
-              )
-            else
-              Column(
-                children: _selectedVariantes.map((variante) {
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      title: Text(variante['atributo_nombre']),
-                      subtitle: Text('Opciones: ${variante['opciones'].length}'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () {
-                          setState(() => _selectedVariantes.remove(variante));
-                          _generateSKU(); // Regenerar SKU cuando se elimina variante
-                        },
-                      ),
-                      onTap: () => _editVariante(variante),
-                    ),
-                  );
-                }).toList(),
-              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  void _agregarVariante() {
+    if (_selectedAtributoId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona un atributo')),
+      );
+      return;
+    }
+
+    final precio = double.tryParse(_variantePrecioController.text);
+    if (precio == null || precio <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingresa un precio válido')),
+      );
+      return;
+    }
+
+    // Verificar que no esté duplicado
+    final yaExiste = _selectedVariantes.any(
+      (v) => v['id_atributo'] == _selectedAtributoId,
+    );
+
+    if (yaExiste) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este atributo ya fue agregado')),
+      );
+      return;
+    }
+
+    final atributo = _atributos.firstWhere(
+      (attr) => attr['id'] == _selectedAtributoId,
+      orElse: () => {},
+    );
+
+    setState(() {
+      _selectedVariantes.add({
+        'id_atributo': _selectedAtributoId,
+        'atributo_nombre': atributo['denominacion'] ?? 'Sin nombre',
+        'precio': precio,
+      });
+      
+      // Limpiar formulario
+      _selectedAtributoId = null;
+      _variantePrecioController.clear();
+    });
+  }
+
+  void _eliminarVariante(int index) {
+    setState(() {
+      _selectedVariantes.removeAt(index);
+    });
   }
 
   void _addEtiqueta() {
@@ -1408,41 +1601,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
-  void _addVariante() {
-    if (_atributos.isEmpty) {
-      _showErrorSnackBar('No hay atributos disponibles');
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => _VarianteDialog(
-        atributos: _atributos,
-        onSave: (variante) {
-          setState(() => _selectedVariantes.add(variante));
-          _generateSKU(); // Regenerar SKU cuando se agrega variante
-        },
-      ),
-    );
-  }
-
-  void _editVariante(Map<String, dynamic> variante) {
-    showDialog(
-      context: context,
-      builder: (context) => _VarianteDialog(
-        atributos: _atributos,
-        initialVariante: variante,
-        onSave: (updatedVariante) {
-          setState(() {
-            final index = _selectedVariantes.indexOf(variante);
-            _selectedVariantes[index] = updatedVariante;
-          });
-          _generateSKU(); // Regenerar SKU cuando se edita variante
-        },
-      ),
-    );
-  }
-
   void _addPresentacionAdicional() {
     // Validar que existe precio de venta base
     final basePrice = double.tryParse(_precioVentaController.text);
@@ -1473,8 +1631,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
           child: _PresentacionDialog(
             presentaciones: _presentaciones,
             basePresentacionId: _selectedBasePresentationId,
-            basePrice: basePrice, // Pass base price for calculations
-            presentacionesExistentes: _presentacionesAdicionales, // Pass existing presentations
+            basePrice: basePrice,
+            presentacionesExistentes: _presentacionesAdicionales,
             onSave: (presentacion) {
               setState(() => _presentacionesAdicionales.add(presentacion));
               Navigator.pop(context);
@@ -1502,7 +1660,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             child: _PresentacionDialog(
               presentaciones: _presentaciones,
               basePresentacionId: _selectedBasePresentationId,
-              basePrice: basePrice, // Pass base price for calculations
+              basePrice: basePrice,
               initialPresentacion: presentacion,
               onSave: (updatedPresentacion) {
                 setState(() {
@@ -1581,7 +1739,7 @@ class _PresentacionDialog extends StatefulWidget {
 class _PresentacionDialogState extends State<_PresentacionDialog> {
   int? _selectedPresentacionId;
   final _cantidadController = TextEditingController(text: '1');
-  final _precioController = TextEditingController(); // Agregar controlador de precio
+  final _precioController = TextEditingController();
   
   @override
   void initState() {
@@ -1592,10 +1750,8 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
       _precioController.text = widget.initialPresentacion!['precio']?.toString() ?? '0.0';
     }
     
-    // Calcular precio inicial cuando cambie la cantidad
     _cantidadController.addListener(_calculatePrice);
     
-    // Calcular precio inicial si hay precio base disponible
     if (widget.basePrice != null) {
       _calculatePrice();
     }
@@ -1633,28 +1789,17 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
       return;
     }
 
-    final precio = double.tryParse(_precioController.text);
-    if (precio == null || precio <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor ingresa un precio válido mayor a 0')),
-      );
-      return;
-    }
-
-    // Find the selected presentation
     final selectedPresentacion = widget.presentaciones.firstWhere(
       (p) => p['id'] == _selectedPresentacionId,
-      orElse: () => {},
+      orElse: () => {'denominacion': 'Presentación'},
     );
 
     final presentacion = {
       'id_presentacion': _selectedPresentacionId,
       'denominacion': selectedPresentacion['denominacion'] ?? 'Presentación',
       'cantidad': cantidad,
-      'precio': precio, // Incluir precio validado
     };
 
-    // Validar que no exista una presentación con el mismo ID
     if (widget.presentacionesExistentes != null && widget.presentacionesExistentes!.any((p) => p['id_presentacion'] == presentacion['id_presentacion'])) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ya existe una presentación con el mismo ID')),
@@ -1667,13 +1812,11 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // Get base presentation name for display
     final basePresentacion = widget.presentaciones.firstWhere(
       (p) => p['id'] == widget.basePresentacionId,
       orElse: () => {'denominacion': 'unidad'},
     );
 
-    // Get selected presentation for conversion display
     final selectedPresentacion = _selectedPresentacionId != null
         ? widget.presentaciones.firstWhere(
             (p) => p['id'] == _selectedPresentacionId,
@@ -1685,7 +1828,7 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
 
     return ConstrainedBox(
       constraints: const BoxConstraints(
-        maxHeight: 400, // Limit maximum height
+        maxHeight: 400,
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -1704,7 +1847,7 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
                 hintText: 'Selecciona una presentación',
               ),
               items: widget.presentaciones
-                  .where((p) => p['id'] != widget.basePresentacionId) // Exclude base presentation
+                  .where((p) => p['id'] != widget.basePresentacionId)
                   .map((presentacion) {
                 return DropdownMenuItem<int>(
                   value: presentacion['id'],
@@ -1718,6 +1861,7 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
               },
             ),
             const SizedBox(height: 16),
+
             const Text(
               'Cantidad de unidades base por presentación:',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -1732,7 +1876,7 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
               ),
               keyboardType: TextInputType.number,
               onChanged: (value) {
-                setState(() {}); // Trigger rebuild to update conversion display
+                setState(() {});
               },
             ),
             const SizedBox(height: 16),
@@ -1751,7 +1895,6 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
             ),
             const SizedBox(height: 16),
           
-            // Conversion preview
             if (selectedPresentacion != null && selectedPresentacion.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -1762,11 +1905,7 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.info_outline,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
+                    Icon(Icons.info_outline, color: AppColors.primary, size: 16),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1803,233 +1942,6 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _VarianteDialog extends StatefulWidget {
-  final List<Map<String, dynamic>> atributos;
-  final Function(Map<String, dynamic>) onSave;
-  final Map<String, dynamic>? initialVariante;
-
-  const _VarianteDialog({
-    required this.atributos,
-    required this.onSave,
-    this.initialVariante,
-  });
-
-  @override
-  State<_VarianteDialog> createState() => _VarianteDialogState();
-}
-
-class _VarianteDialogState extends State<_VarianteDialog> {
-  int? _selectedAtributoId;
-  String _selectedAtributoNombre = '';
-  List<Map<String, dynamic>> _opciones = [];
-  final TextEditingController _opcionController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.initialVariante != null) {
-      _selectedAtributoId = widget.initialVariante!['id_atributo'];
-      _selectedAtributoNombre = widget.initialVariante!['atributo_nombre'];
-      _opciones = List<Map<String, dynamic>>.from(widget.initialVariante!['opciones'] ?? []);
-    }
-  }
-
-  @override
-  void dispose() {
-    _opcionController.dispose();
-    super.dispose();
-  }
-
-  void _addOpcion() {
-    final opcion = _opcionController.text.trim();
-    if (opcion.isNotEmpty) {
-      setState(() {
-        _opciones.add({
-          'valor': opcion,
-          'id': DateTime.now().millisecondsSinceEpoch, // Temporary ID
-        });
-        _opcionController.clear();
-      });
-    }
-  }
-
-  void _removeOpcion(int index) {
-    setState(() {
-      _opciones.removeAt(index);
-    });
-  }
-
-  void _saveVariante() {
-    if (_selectedAtributoId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona un atributo')),
-      );
-      return;
-    }
-
-    if (_opciones.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Agrega al menos una opción')),
-      );
-      return;
-    }
-
-    final variante = {
-      'id_atributo': _selectedAtributoId,
-      'atributo_nombre': _selectedAtributoNombre,
-      'opciones': _opciones,
-    };
-
-    widget.onSave(variante);
-    Navigator.of(context).pop();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.initialVariante != null ? 'Editar Variante' : 'Agregar Variante'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Selector de atributo
-            const Text(
-              'Atributo:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              value: _selectedAtributoId,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: 'Selecciona un atributo',
-              ),
-              items: widget.atributos.map((atributo) {
-                return DropdownMenuItem<int>(
-                  value: atributo['id'],
-                  child: Text(atributo['denominacion'] ?? 'Sin nombre'),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedAtributoId = value;
-                  final atributo = widget.atributos.firstWhere(
-                    (a) => a['id'] == value,
-                    orElse: () => {},
-                  );
-                  _selectedAtributoNombre = atributo['denominacion'] ?? '';
-                  
-                  // Cargar opciones existentes del atributo seleccionado
-                  if (atributo.isNotEmpty && atributo['app_dat_atributo_opcion'] != null) {
-                    final opcionesExistentes = atributo['app_dat_atributo_opcion'] as List<dynamic>;
-                    _opciones = opcionesExistentes.map((opcion) => {
-                      'id': opcion['id'],
-                      'valor': opcion['valor'],
-                    }).toList().cast<Map<String, dynamic>>();
-                  } else {
-                    // Si no hay opciones existentes, limpiar la lista
-                    _opciones = [];
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Opciones
-            const Text(
-              'Opciones:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            
-            // Input para agregar opciones
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _opcionController,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: 'Ej: Rojo, Azul, Grande, etc.',
-                    ),
-                    autofocus: true,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _addOpcion,
-                  icon: const Icon(Icons.add),
-                  style: IconButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // Lista de opciones agregadas
-            if (_opciones.isNotEmpty) ...[
-              const Text('Opciones agregadas:'),
-              const SizedBox(height: 4),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  // Calculate adaptive height based on available space
-                  double maxHeight = constraints.maxHeight > 400 ? 150 : 100;
-                  return Container(
-                    constraints: BoxConstraints(maxHeight: maxHeight),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: _opciones.length,
-                      itemBuilder: (context, index) {
-                        final opcion = _opciones[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 4),
-                          child: ListTile(
-                            dense: true,
-                            title: Text(
-                              opcion['valor'],
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                              onPressed: () => _removeOpcion(index),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  );
-                },
-              ),
-            ] else
-              const Text(
-                'No hay opciones agregadas',
-                style: TextStyle(color: AppColors.textSecondary),
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
-        ),
-        ElevatedButton(
-          onPressed: _saveVariante,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Guardar'),
-        ),
-      ],
     );
   }
 }
