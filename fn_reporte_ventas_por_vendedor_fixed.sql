@@ -1,3 +1,27 @@
+CREATE OR REPLACE FUNCTION fn_reporte_ventas_por_vendedor(
+    p_uuid_usuario UUID DEFAULT NULL,
+    p_fecha_desde DATE DEFAULT NULL,
+    p_fecha_hasta DATE DEFAULT NULL,
+    p_id_tienda BIGINT DEFAULT NULL
+)
+RETURNS TABLE (
+    uuid_usuario UUID,
+    nombres VARCHAR,
+    apellidos VARCHAR,
+    nombre_completo VARCHAR,
+    total_ventas BIGINT,
+    total_productos_vendidos NUMERIC,
+    total_dinero_efectivo NUMERIC,
+    total_dinero_transferencia NUMERIC,
+    total_dinero_general NUMERIC,
+    total_importe_ventas NUMERIC,
+    productos_diferentes_vendidos BIGINT,
+    primera_venta TIMESTAMP WITH TIME ZONE,
+    ultima_venta TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 DECLARE
     v_fecha_inicio_filtro timestamptz;
     v_fecha_fin_filtro timestamptz;
@@ -52,7 +76,7 @@ BEGIN
         (t.nombres || ' ' || t.apellidos)::VARCHAR AS nombre_completo,
         COUNT(DISTINCT o.id) AS total_ventas,
         COALESCE(SUM(ep.cantidad), 0) AS total_productos_vendidos,
-        -- Efectivo: usando la misma lógica que la segunda función
+        -- Efectivo: usando la misma lógica que fn_resumen_diario_cierre
         COALESCE(SUM(CASE WHEN pv.id_medio_pago = 1 THEN pv.monto ELSE 0 END), 0) AS total_dinero_efectivo,
         -- No efectivo: todos los otros medios de pago
         COALESCE(SUM(CASE WHEN pv.id_medio_pago != 1 THEN pv.monto ELSE 0 END), 0) AS total_dinero_transferencia,
@@ -72,7 +96,7 @@ BEGIN
         LEFT JOIN app_dat_pago_venta pv ON ov.id_operacion = pv.id_operacion_venta
     WHERE 
         o.id_tipo_operacion = (SELECT id FROM app_nom_tipo_operacion WHERE LOWER(denominacion) = 'venta')
-        -- Usar el estado más reciente de cada operación (como en la segunda función)
+        -- Usar el estado más reciente de cada operación (como en fn_resumen_diario_cierre)
         AND eo.estado = 2  -- Solo operaciones completadas
         AND eo.id = (SELECT MAX(id) FROM app_dat_estado_operacion WHERE id_operacion = o.id)
         AND ov.es_pagada = true  -- Venta pagada
@@ -91,3 +115,15 @@ BEGIN
         total_dinero_general DESC, 
         total_ventas DESC;
 END;
+$$;
+
+-- Comentarios sobre los cambios aplicados:
+-- 1. Agregada lógica de turno abierto cuando no se especifican fechas
+-- 2. Filtro por TPV específico (ov.id_tpv = v_id_tpv) para datos precisos
+-- 3. Filtro por estado más reciente de operación para consistencia
+-- 4. Filtro por tipo de operación 'venta' explícito
+-- 5. Uso de ep.importe en lugar de ov.importe_total para consistencia
+-- 6. Manejo de fechas con timezone para precisión temporal
+-- 7. Agregado SECURITY DEFINER para permisos consistentes
+
+-- Ahora el cálculo de efectivo debería coincidir exactamente con fn_resumen_diario_cierre

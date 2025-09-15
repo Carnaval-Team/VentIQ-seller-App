@@ -28,7 +28,7 @@ class _SalesScreenState extends State<SalesScreen>
   DateTime _endDate = DateTime.now();
   String _selectedTPV = 'Todos';
   double _totalSales = 0.0;
-  int _transactionCount = 0;
+  int _totalProductsSold = 0;
   bool _isLoadingMetrics = false;
   List<ProductAnalysis> _productAnalysis = [];
   bool _isLoadingAnalysis = false;
@@ -78,17 +78,18 @@ class _SalesScreenState extends State<SalesScreen>
       // Use the selected date range
       final dateRange = {'start': _startDate, 'end': _endDate};
 
-      // Load both product sales data and metrics
+      // Load product sales data
       final productSales = await SalesService.getProductSalesReport(
         fechaDesde: dateRange['start'],
         fechaHasta: dateRange['end'],
       );
-      final metrics = await SalesService.getSalesMetrics('custom');
 
       setState(() {
         _productSalesReports = productSales;
-        _totalSales = metrics['totalSales'] ?? 0.0;
-        _transactionCount = metrics['transactionCount'] ?? 0;
+        // Calculate total sales from product sales reports
+        _totalSales = productSales.fold<double>(0.0, (sum, report) => sum + report.ingresosTotales);
+        // Calculate total products sold from product sales reports
+        _totalProductsSold = productSales.fold<int>(0, (sum, report) => sum + report.totalVendido.toInt());
         _isLoadingProducts = false;
         _isLoadingMetrics = false;
       });
@@ -125,8 +126,13 @@ class _SalesScreenState extends State<SalesScreen>
         reportsWithEgresos.add(updatedReport);
       }
 
+      // Filtrar vendedores que tengan ventas reales (productos > 0 o dinero > 0)
+      final filteredReports = reportsWithEgresos.where((report) => 
+        report.totalProductosVendidos > 0 || report.totalDineroGeneral > 0
+      ).toList();
+
       setState(() {
-        _vendorReports = reportsWithEgresos;
+        _vendorReports = filteredReports;
         _isLoadingVendors = false;
       });
     } catch (e) {
@@ -245,7 +251,7 @@ class _SalesScreenState extends State<SalesScreen>
         children: [
           _buildPeriodSelector(),
           const SizedBox(height: 16),
-          _buildRealTimeMetrics(_totalSales, _transactionCount),
+          _buildRealTimeMetrics(_totalSales, _totalProductsSold),
           const SizedBox(height: 20),
           _buildProductSalesReport(),
         ],
@@ -312,7 +318,7 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
-  Widget _buildRealTimeMetrics(double totalSales, int salesCount) {
+  Widget _buildRealTimeMetrics(double totalSales, int totalProducts) {
     String periodLabel = _formatDateRangeLabel();
     return Row(
       children: [
@@ -374,7 +380,7 @@ class _SalesScreenState extends State<SalesScreen>
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                     : Text(
-                      '$salesCount',
+                      '$totalProducts',
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -844,8 +850,8 @@ class _SalesScreenState extends State<SalesScreen>
             child: Column(
               children: [
                 _buildVendorDetailRow(
-                  'Efectivo',
-                  '\$${vendor.totalDineroEfectivo.toStringAsFixed(2)}',
+                  'Efectivo en Caja',
+                  '\$${(vendor.totalDineroEfectivo - vendor.totalEgresos).toStringAsFixed(2)}',
                   AppColors.success,
                 ),
                 _buildVendorDetailRow(
@@ -874,18 +880,34 @@ class _SalesScreenState extends State<SalesScreen>
                   AppColors.error,
                 ),
                 const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showVendorEgresosDetail(vendor),
-                    icon: const Icon(Icons.receipt_long, size: 18),
-                    label: const Text('Ver Egresos Detallados'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showVendorEgresosDetail(vendor),
+                        icon: const Icon(Icons.receipt_long, size: 18),
+                        label: const Text('Ver Egresos'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showVendorOrdersDetail(vendor),
+                        icon: const Icon(Icons.shopping_cart, size: 18),
+                        label: const Text('Ver Órdenes'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.info,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1240,6 +1262,393 @@ class _SalesScreenState extends State<SalesScreen>
     }
   }
 
+  void _showVendorOrdersDetail(SalesVendorReport vendor) async {
+    try {
+      final dateRange = _getDateRange();
+      final orders = await SalesService.getVendorOrders(
+        fechaDesde: dateRange['start']!,
+        fechaHasta: dateRange['end']!,
+        uuidUsuario: vendor.uuidUsuario,
+      );
+
+      if (!mounted) return;
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => DraggableScrollableSheet(
+          initialChildSize: 0.8,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+            ),
+            child: Column(
+              children: [
+                // Handle
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Órdenes de ${vendor.nombreCompleto}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            Text(
+                              '${orders.length} órdenes encontradas',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                // Content
+                Expanded(
+                  child: orders.isEmpty
+                      ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.shopping_cart_outlined,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'No hay órdenes',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'No se encontraron órdenes para este vendedor\nen el período seleccionado',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          itemCount: orders.length,
+                          itemBuilder: (context, index) {
+                            final order = orders[index];
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey[200]!),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: ExpansionTile(
+                                tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'Orden #${order.idOperacion}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: _getStatusColor(order.estadoNombre),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        order.estadoNombre,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.attach_money, size: 16, color: AppColors.success),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 16),
+                                            Icon(Icons.shopping_bag, size: 16, color: AppColors.info),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '${order.cantidadItems} prod.',
+                                              style: const TextStyle(fontSize: 14),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Text(
+                                        _formatOrderDate(order.fechaOperacion),
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                children: [
+                                  const Divider(),
+                                  const SizedBox(height: 8),
+                                  
+                                  // Cliente
+                                  if (order.detalles['cliente'] != null) ...[
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(Icons.person, size: 20, color: AppColors.primary),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              const Text(
+                                                'Cliente:',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                order.detalles['cliente']['nombre_completo'] ?? 'N/A',
+                                                style: const TextStyle(fontSize: 14),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                  ],
+                                  
+                                  // Productos
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(Icons.inventory_2, size: 20, color: AppColors.primary),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Productos:',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            if (order.detalles['items'] != null)
+                                              ...List.generate(
+                                                (order.detalles['items'] as List).length,
+                                                (itemIndex) {
+                                                  final item = order.detalles['items'][itemIndex];
+                                                  return Container(
+                                                    margin: const EdgeInsets.only(bottom: 6),
+                                                    padding: const EdgeInsets.all(12),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.grey[50],
+                                                      borderRadius: BorderRadius.circular(8),
+                                                      border: Border.all(color: Colors.grey[200]!),
+                                                    ),
+                                                    child: Row(
+                                                      children: [
+                                                        Expanded(
+                                                          flex: 3,
+                                                          child: Text(
+                                                            item['nombre'] ?? 'Producto',
+                                                            style: const TextStyle(
+                                                              fontSize: 13,
+                                                              fontWeight: FontWeight.w500,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Expanded(
+                                                          flex: 1,
+                                                          child: Text(
+                                                            'x${item['cantidad']}',
+                                                            textAlign: TextAlign.center,
+                                                            style: TextStyle(
+                                                              fontSize: 13,
+                                                              color: Colors.grey[600],
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Expanded(
+                                                          flex: 1,
+                                                          child: Text(
+                                                            '\$${(item['importe'] ?? 0.0).toStringAsFixed(2)}',
+                                                            textAlign: TextAlign.right,
+                                                            style: const TextStyle(
+                                                              fontWeight: FontWeight.w600,
+                                                              fontSize: 13,
+                                                              color: Color(0xFF4A90E2),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  
+                                  // Observaciones
+                                  if (order.observaciones != null && order.observaciones!.isNotEmpty) ...[
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(Icons.note, size: 20, color: AppColors.primary),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              const Text(
+                                                'Observaciones:',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(12),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue[50],
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: Colors.blue[200]!),
+                                                ),
+                                                child: Text(
+                                                  order.observaciones ?? '',
+                                                  style: const TextStyle(fontSize: 13),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar órdenes: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Color _getStatusColor(String estadoNombre) {
+    switch (estadoNombre) {
+      case 'Pendiente':
+        return AppColors.warning;
+      case 'Completado':
+      case 'Completada':
+        return AppColors.success;
+      case 'Cancelado':
+        return AppColors.error;
+      default:
+        return AppColors.textSecondary;
+    }
+  }
+
+  String _formatOrderDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  Map<String, DateTime> _getDateRange() {
+    return {'start': _startDate, 'end': _endDate};
+  }
+
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Dashboard
@@ -1249,13 +1658,15 @@ class _SalesScreenState extends State<SalesScreen>
           (route) => false,
         );
         break;
-      case 1: // Productos
+      case 1: // Ventas (current)
+        break;
+      case 2: // Productos
         Navigator.pushNamed(context, '/products');
         break;
-      case 2: // Inventario
+      case 3: // Inventario
         Navigator.pushNamed(context, '/inventory');
         break;
-      case 3: // Configuración
+      case 4: // Configuración
         Navigator.pushNamed(context, '/settings');
         break;
     }

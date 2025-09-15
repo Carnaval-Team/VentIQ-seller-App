@@ -2,6 +2,59 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
 import '../models/sales.dart';
 
+class VendorOrder {
+  final int idOperacion;
+  final String tipoOperacion;
+  final int idTienda;
+  final String tiendaNombre;
+  final int idTpv;
+  final String tpvNombre;
+  final String usuarioNombre;
+  final int estado;
+  final String estadoNombre;
+  final DateTime fechaOperacion;
+  final double totalOperacion;
+  final int cantidadItems;
+  final String? observaciones;
+  final Map<String, dynamic> detalles;
+
+  VendorOrder({
+    required this.idOperacion,
+    required this.tipoOperacion,
+    required this.idTienda,
+    required this.tiendaNombre,
+    required this.idTpv,
+    required this.tpvNombre,
+    required this.usuarioNombre,
+    required this.estado,
+    required this.estadoNombre,
+    required this.fechaOperacion,
+    required this.totalOperacion,
+    required this.cantidadItems,
+    this.observaciones,
+    required this.detalles,
+  });
+
+  factory VendorOrder.fromJson(Map<String, dynamic> json) {
+    return VendorOrder(
+      idOperacion: json['id_operacion'] ?? 0,
+      tipoOperacion: json['tipo_operacion'] ?? '',
+      idTienda: json['id_tienda'] ?? 0,
+      tiendaNombre: json['tienda_nombre'] ?? '',
+      idTpv: json['id_tpv'] ?? 0,
+      tpvNombre: json['tpv_nombre'] ?? '',
+      usuarioNombre: json['usuario_nombre'] ?? '',
+      estado: json['estado'] ?? 0,
+      estadoNombre: json['estado_nombre'] ?? '',
+      fechaOperacion: DateTime.parse(json['fecha_operacion']),
+      totalOperacion: (json['total_operacion'] ?? 0).toDouble(),
+      cantidadItems: json['cantidad_items'] ?? 0,
+      observaciones: json['observaciones'],
+      detalles: json['detalles'] ?? {},
+    );
+  }
+}
+
 class ProductSalesReport {
   final int idTienda;
   final int idProducto;
@@ -503,6 +556,81 @@ class SalesService {
       return reports;
     } catch (e) {
       print('Error in getSalesVendorReport: $e');
+      return [];
+    }
+  }
+
+  static Future<List<VendorOrder>> getVendorOrders({
+    required DateTime fechaDesde,
+    required DateTime fechaHasta,
+    required String uuidUsuario,
+  }) async {
+    try {
+      // Get store ID from preferences
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        print('Error: No se pudo obtener el ID de tienda');
+        return [];
+      }
+
+      print('Calling listar_ordenes for vendor orders with:');
+      print('- id_tienda_param: $idTienda');
+      print('- fecha_desde_param: $fechaDesde');
+      print('- fecha_hasta_param: $fechaHasta');
+      print('- id_usuario_param: $uuidUsuario');
+
+      final rpcParams = {
+        'con_inventario_param': false,
+        'fecha_desde_param': fechaDesde.toIso8601String().split('T')[0],
+        'fecha_hasta_param': fechaHasta.toIso8601String().split('T')[0],
+        'id_estado_param': null, // Todos los estados
+        'id_tienda_param': idTienda,
+        'id_tipo_operacion_param': null, // Todas las operaciones
+        'id_tpv_param': null,
+        'id_usuario_param': uuidUsuario,
+        'limite_param': null,
+        'pagina_param': null,
+        'solo_pendientes_param': false,
+      };
+
+      final response = await _supabase.rpc(
+        'listar_ordenes',
+        params: rpcParams,
+      );
+
+      print('Response received: ${response?.length ?? 0} orders');
+
+      if (response == null) {
+        print('No data received from listar_ordenes');
+        return [];
+      }
+
+      // Convert response to VendorOrder objects and filter by tipo_operacion
+      final List<VendorOrder> orders = [];
+      for (final item in response) {
+        try {
+          final order = VendorOrder.fromJson(item);
+          
+          // Filter only orders that contain "Venta" in tipo_operacion
+          final tipoOperacion = item['tipo_operacion']?.toString() ?? '';
+          if (tipoOperacion.toLowerCase().contains('venta')) {
+            orders.add(order);
+            print(
+              'Added order: #${order.idOperacion} - Total: \$${order.totalOperacion} - Items: ${order.cantidadItems} - Tipo: $tipoOperacion',
+            );
+          } else {
+            print('Filtered out order #${order.idOperacion} - Tipo: $tipoOperacion (not a Venta)');
+          }
+        } catch (e) {
+          print('Error parsing order: $e');
+          print('Item data: $item');
+        }
+      }
+
+      return orders;
+    } catch (e) {
+      print('Error in getVendorOrders: $e');
       return [];
     }
   }
