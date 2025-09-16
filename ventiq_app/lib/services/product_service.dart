@@ -17,19 +17,21 @@ class ProductService {
       // Get store ID from preferences
       final workerProfile = await _preferencesService.getWorkerProfile();
       final idTienda = workerProfile['idTienda'] as int?;
+      final idTpv = workerProfile['idTpv'] as int?;
       
       if (idTienda == null) {
         throw Exception('No se encontró el ID de la tienda en las preferencias');
       }
 
-      debugPrint('🏪 Obteniendo productos para categoría ID: $categoryId, tienda ID: $idTienda');
+      debugPrint('🏪 Obteniendo productos para categoría ID: $categoryId, tienda ID: $idTienda tpv: $idTpv');
 
       // Call the RPC function to get products by category
       final response = await _supabase.rpc(
-        'get_productos_by_categoria',
+        'get_productos_by_categoria_tpv',
         params: {
           'id_categoria_param': categoryId,
           'id_tienda_param': idTienda,
+          'id_tpv_param':idTpv
         },
       );
 

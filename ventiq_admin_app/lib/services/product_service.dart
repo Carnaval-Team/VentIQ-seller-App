@@ -36,10 +36,6 @@ class ProductService {
       );
 
       print('📦 Respuesta RPC recibida: ${response.toString()}');
-
-      // Save debug JSON to Documents folder
-      await _saveDebugJson(response, 'productos_rpc_response');
-
       if (response == null) {
         print('⚠️ Respuesta nula de la función RPC');
         return [];
@@ -286,36 +282,7 @@ class ProductService {
   }
 
   /// Save debug JSON to Documents folder for debugging large RPC responses
-  static Future<void> _saveDebugJson(dynamic data, String filename) async {
-    try {
-      // Get the Documents directory path
-      final directory = Directory('/storage/emulated/0/Download');
-      
-      // Create Documents directory if it doesn't exist
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
-
-      // Create the file path
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${directory.path}/${filename}_$timestamp.json');
-
-      // Convert data to pretty JSON
-      final jsonString = const JsonEncoder.withIndent('  ').convert(data);
-
-      // Write to file
-      await file.writeAsString(jsonString);
-
-      print('✅ Debug JSON guardado en: ${file.path}');
-      print('📄 Tamaño del archivo: ${jsonString.length} caracteres');
-
-    } catch (e, stackTrace) {
-      print('❌ Error al guardar debug JSON: $e');
-      print('📍 StackTrace: $stackTrace');
-      // Don't throw error, just log it since this is debug functionality
-    }
-  }
-
+  
   /// Elimina un producto completo y todos sus datos relacionados
   static Future<Map<String, dynamic>> deleteProductComplete(int productId) async {
     try {
