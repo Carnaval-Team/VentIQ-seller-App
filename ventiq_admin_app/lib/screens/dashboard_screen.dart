@@ -23,6 +23,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   
   String _currentStoreName = 'Cargando...';
   List<Map<String, dynamic>> _userStores = [];
+  double _usdRate = 0.0;
+  bool _isLoadingUsdRate = false;
   
   final List<String> _timeFilterOptions = [
     '5 años',
@@ -40,6 +42,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _loadStoreInfo();
     _loadDashboardData();
+    _loadUsdRate();
   }
 
   Future<void> _loadStoreInfo() async {
@@ -68,6 +71,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Fetch and update exchange rates first
       print('💱 Fetching exchange rates...');
       await CurrencyService.fetchAndUpdateExchangeRates();
+      
+      // Load USD rate after updating exchange rates
+      _loadUsdRate();
       
       // Validar que el supervisor tenga id_tienda
       final hasValidStore = await _dashboardService.validateSupervisorStore();
@@ -101,6 +107,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
   
+  Future<void> _loadUsdRate() async {
+    setState(() {
+      _isLoadingUsdRate = true;
+    });
+    
+    try {
+      print('💱 Loading USD rate from database...');
+      final rates = await CurrencyService.getCurrentRatesFromDatabase();
+      
+      // Find USD rate where moneda_origen = 'USD'
+      final usdRateData = rates.firstWhere(
+        (rate) => rate['moneda_origen'] == 'USD',
+        orElse: () => <String, dynamic>{},
+      );
+      
+      if (usdRateData.isNotEmpty) {
+        setState(() {
+          _usdRate = (usdRateData['tasa'] as num?)?.toDouble() ?? 0.0;
+          _isLoadingUsdRate = false;
+        });
+        print('✅ USD rate loaded: $_usdRate');
+      } else {
+        print('⚠️ No USD rate found in database');
+        setState(() {
+          _usdRate = 420.0; // Default fallback rate
+          _isLoadingUsdRate = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading USD rate: $e');
+      setState(() {
+        _usdRate = 420.0; // Default fallback rate
+        _isLoadingUsdRate = false;
+      });
+    }
+  }
+
   void _loadMockData() {
     // Fallback con datos básicos cuando no hay datos reales
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -298,7 +341,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-      body: _isLoading ? _buildLoadingState() : _buildDashboard(),
+      body: Stack(
+        children: [
+          _isLoading ? _buildLoadingState() : _buildDashboard(),
+          // USD Rate Chip positioned at bottom left
+          Positioned(
+            bottom: 16,
+            left: 16,
+            child: _buildUsdRateChip(),
+          ),
+        ],
+      ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 0,
@@ -1284,5 +1337,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Navigator.pushNamed(context, '/settings');
         break;
     }
+  }
+
+  Widget _buildUsdRateChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.attach_money,
+            size: 16,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 4),
+          _isLoadingUsdRate
+              ? SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
+                  ),
+                )
+              : Text(
+                  'USD: \$${_usdRate.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+        ],
+      ),
+    );
   }
 }
