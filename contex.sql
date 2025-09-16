@@ -1253,3 +1253,38 @@ CREATE TABLE public.tasas_conversion (
   CONSTRAINT tasas_conversion_moneda_origen_fkey FOREIGN KEY (moneda_origen) REFERENCES public.monedas(codigo),
   CONSTRAINT tasas_conversion_moneda_destino_fkey FOREIGN KEY (moneda_destino) REFERENCES public.monedas(codigo)
 );
+
+-- Tabla para relacionar operaciones de inventario con gastos contables
+CREATE TABLE public.app_cont_operacion_gasto (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_operacion bigint NOT NULL,
+  id_gasto bigint,
+  tipo_operacion character varying NOT NULL, -- 'recepcion', 'extraccion', 'entrega_efectivo'
+  monto_calculado numeric NOT NULL,
+  estado_registro character varying NOT NULL DEFAULT 'pendiente', -- 'pendiente', 'registrado', 'omitido'
+  motivo_omision text,
+  fecha_calculo timestamp with time zone NOT NULL DEFAULT now(),
+  fecha_registro timestamp with time zone,
+  registrado_por uuid,
+  observaciones text,
+  metadatos jsonb, -- Para almacenar datos específicos según el tipo de operación
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_cont_operacion_gasto_pkey PRIMARY KEY (id),
+  CONSTRAINT app_cont_operacion_gasto_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id),
+  CONSTRAINT app_cont_operacion_gasto_id_gasto_fkey FOREIGN KEY (id_gasto) REFERENCES public.app_cont_gastos(id),
+  CONSTRAINT app_cont_operacion_gasto_registrado_por_fkey FOREIGN KEY (registrado_por) REFERENCES auth.users(id),
+  CONSTRAINT app_cont_operacion_gasto_estado_check CHECK (estado_registro IN ('pendiente', 'registrado', 'omitido')),
+  CONSTRAINT app_cont_operacion_gasto_tipo_check CHECK (tipo_operacion IN ('recepcion', 'extraccion', 'entrega_efectivo'))
+);
+
+-- Índices para optimizar consultas
+CREATE INDEX idx_app_cont_operacion_gasto_operacion ON public.app_cont_operacion_gasto(id_operacion);
+CREATE INDEX idx_app_cont_operacion_gasto_estado ON public.app_cont_operacion_gasto(estado_registro);
+CREATE INDEX idx_app_cont_operacion_gasto_tipo ON public.app_cont_operacion_gasto(tipo_operacion);
+CREATE INDEX idx_app_cont_operacion_gasto_fecha_calculo ON public.app_cont_operacion_gasto(fecha_calculo);
+
+-- Comentarios para documentación
+COMMENT ON TABLE public.app_cont_operacion_gasto IS 'Tabla que relaciona operaciones de inventario con gastos contables para seguimiento de gastos deducibles';
+COMMENT ON COLUMN public.app_cont_operacion_gasto.tipo_operacion IS 'Tipo de operación: recepcion (compras), extraccion (salidas inventario), entrega_efectivo (extracciones caja)';
+COMMENT ON COLUMN public.app_cont_operacion_gasto.estado_registro IS 'Estado del registro contable: pendiente, registrado, omitido';
+COMMENT ON COLUMN public.app_cont_operacion_gasto.metadatos IS 'Datos específicos según tipo: productos para recepciones, motivos para extracciones, etc.';

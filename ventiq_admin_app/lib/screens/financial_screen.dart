@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 import '../config/app_colors.dart';
-import '../widgets/admin_drawer.dart';
-import '../widgets/admin_bottom_navigation.dart';
-import '../models/financial.dart';
-import '../services/mock_sales_service.dart';
+import '../widgets/financial_menu_widget.dart';
+import '../widgets/store_selector_widget.dart';
+import '../services/financial_service.dart';
+import 'financial_configuration_screen.dart';
 
 class FinancialScreen extends StatefulWidget {
   const FinancialScreen({super.key});
@@ -13,329 +12,348 @@ class FinancialScreen extends StatefulWidget {
   State<FinancialScreen> createState() => _FinancialScreenState();
 }
 
-class _FinancialScreenState extends State<FinancialScreen> with TickerProviderStateMixin {
-  late TabController _tabController;
-  List<Expense> _expenses = [];
-  List<CostCenter> _costCenters = [];
+class _FinancialScreenState extends State<FinancialScreen> {
+  final FinancialService _financialService = FinancialService();
+  bool _isInitializing = false;
+  bool _isConfigured = false;
   bool _isLoading = true;
-  String _selectedPeriod = 'Este Mes';
-  String _selectedCostCenter = 'Todos';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _loadFinancialData();
+    _checkConfigurationStatus();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  void _loadFinancialData() {
-    setState(() => _isLoading = true);
-    
-    Future.delayed(const Duration(milliseconds: 800), () {
+  Future<void> _checkConfigurationStatus() async {
+    try {
+      final isConfigured = await _financialService.isSystemConfigured();
       setState(() {
-        _expenses = MockSalesService.getMockExpenses();
-        _costCenters = MockSalesService.getMockCostCenters();
+        _isConfigured = isConfigured;
         _isLoading = false;
       });
-    });
+    } catch (e) {
+      setState(() {
+        _isConfigured = false;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
-          'Gestión Financiera',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: true,
+        title: const Text('Módulo Financiero'),
         backgroundColor: AppColors.primary,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: Colors.white),
-            onPressed: _showAddExpenseDialog,
-            tooltip: 'Agregar Gasto',
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _loadFinancialData,
-            tooltip: 'Actualizar',
-          ),
-          Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
-          ),
+        foregroundColor: Colors.white,
+        actions: const [
+          AppBarStoreSelectorWidget(),
+          FinancialMenuWidget(),
+          SizedBox(width: 8),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          tabs: const [
-            Tab(text: 'Gastos', icon: Icon(Icons.receipt_long, size: 18)),
-            Tab(text: 'Centros Costo', icon: Icon(Icons.account_balance, size: 18)),
-            Tab(text: 'Reportes', icon: Icon(Icons.analytics, size: 18)),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildWelcomeCard(),
+            const SizedBox(height: 24),
+            // Solo mostrar configuración si NO está configurado
+            if (!_isConfigured && !_isLoading) ...[
+              _buildConfigurationCard(),
+              const SizedBox(height: 24),
+            ],
+            _buildQuickStats(),
+            const SizedBox(height: 24),
+            _buildModuleGrid(),
+            const SizedBox(height: 24),
+            _buildRecentActivity(),
           ],
         ),
       ),
-      body: _isLoading ? _buildLoadingState() : TabBarView(
-        controller: _tabController,
-        children: [
-          _buildExpensesTab(),
-          _buildCostCentersTab(),
-          _buildReportsTab(),
-        ],
-      ),
-      endDrawer: const AdminDrawer(),
-      bottomNavigationBar: AdminBottomNavigation(
-        currentIndex: 3,
-        onTap: _onBottomNavTap,
+    );
+  }
+
+  Widget _buildWelcomeCard() {
+    return Card(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primary.withOpacity(0.1),
+              AppColors.primary.withOpacity(0.05),
+            ],
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.account_balance_wallet,
+                  size: 32,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Sistema Financiero VentIQ',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      Text(
+                        'Control integral de finanzas, costos y rentabilidad',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildLoadingState() {
-    return const Center(
-      child: CircularProgressIndicator(color: AppColors.primary),
+  Widget _buildConfigurationCard() {
+    if (_isLoading) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              const CircularProgressIndicator(color: AppColors.primary),
+              const SizedBox(height: 16),
+              const Text('Verificando configuración...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_isConfigured) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.check_circle,
+                    color: AppColors.success,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Sistema Configurado',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.success,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'El sistema financiero está completamente configurado y listo para usar. Accede a la configuración detallada para gestionar categorías, centros de costo y márgenes comerciales.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.pushNamed(context, '/financial-configuration'),
+                  icon: const Icon(Icons.dashboard),
+                  label: const Text('Ver Dashboard de Configuración'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.success,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.settings,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Configuración del Sistema',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Inicializa las configuraciones básicas del sistema financiero incluyendo categorías de gastos, tipos de costos, centros de costo y márgenes comerciales.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isInitializing ? null : _initializeFinancialSystem,
+                icon: _isInitializing 
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Icon(Icons.play_arrow),
+                label: Text(_isInitializing ? 'Configurando...' : 'Configurar Sistema Financiero'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildExpensesTab() {
-    return Column(
+  Future<void> _initializeFinancialSystem() async {
+    setState(() => _isInitializing = true);
+    
+    try {
+      await _financialService.initializeFinancialSystem();
+      await _checkConfigurationStatus(); // Recheck status after initialization
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Sistema financiero configurado exitosamente'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error configurando sistema: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isInitializing = false);
+      }
+    }
+  }
+
+  Widget _buildQuickStats() {
+    return Row(
       children: [
-        _buildExpenseFilters(),
-        _buildExpenseSummary(),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _expenses.length,
-            itemBuilder: (context, index) => _buildExpenseCard(_expenses[index]),
+          child: _buildStatCard(
+            'Ingresos del Mes',
+            '\$125,430',
+            Icons.trending_up,
+            Colors.green,
+            '+12.5%',
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildStatCard(
+            'Gastos del Mes',
+            '\$89,250',
+            Icons.trending_down,
+            Colors.orange,
+            '+5.2%',
           ),
         ),
       ],
     );
   }
 
-  Widget _buildCostCentersTab() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _costCenters.length,
-      itemBuilder: (context, index) => _buildCostCenterCard(_costCenters[index]),
-    );
-  }
-
-  Widget _buildReportsTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          _buildFinancialMetrics(),
-          const SizedBox(height: 20),
-          _buildExpenseChart(),
-          const SizedBox(height: 20),
-          _buildBudgetAnalysis(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExpenseFilters() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.white,
-      child: Row(
-        children: [
-          Expanded(
-            child: DropdownButtonFormField<String>(
-              value: _selectedPeriod,
-              decoration: const InputDecoration(
-                labelText: 'Período',
-                border: OutlineInputBorder(),
-              ),
-              items: ['Este Mes', 'Últimos 3 Meses', 'Este Año'].map((String value) {
-                return DropdownMenuItem<String>(value: value, child: Text(value));
-              }).toList(),
-              onChanged: (value) => setState(() => _selectedPeriod = value!),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: DropdownButtonFormField<String>(
-              value: _selectedCostCenter,
-              decoration: const InputDecoration(
-                labelText: 'Centro de Costo',
-                border: OutlineInputBorder(),
-              ),
-              items: ['Todos', ..._costCenters.map((c) => c.name)].map((String value) {
-                return DropdownMenuItem<String>(value: value, child: Text(value));
-              }).toList(),
-              onChanged: (value) => setState(() => _selectedCostCenter = value!),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExpenseSummary() {
-    final totalExpenses = _expenses.fold(0.0, (sum, expense) => sum + expense.amount);
-    final monthlyExpenses = _expenses.where((e) => e.expenseDate.month == DateTime.now().month)
-        .fold(0.0, (sum, expense) => sum + expense.amount);
-    
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: AppColors.background,
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.error.withOpacity(0.3)),
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.trending_down, color: AppColors.error, size: 32),
-                  const SizedBox(height: 8),
-                  Text('\$${totalExpenses.toStringAsFixed(2)}', 
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.error)),
-                  const Text('Total Gastos', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.warning.withOpacity(0.3)),
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.calendar_month, color: AppColors.warning, size: 32),
-                  const SizedBox(height: 8),
-                  Text('\$${monthlyExpenses.toStringAsFixed(2)}', 
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.warning)),
-                  const Text('Este Mes', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExpenseCard(Expense expense) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: AppColors.error.withOpacity(0.1),
-          child: const Icon(Icons.receipt_long, color: AppColors.error),
-        ),
-        title: Text(expense.description, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${expense.category} • ${expense.costCenter}'),
-            Text('${expense.expenseDate.day}/${expense.expenseDate.month}/${expense.expenseDate.year}'),
-          ],
-        ),
-        trailing: Text('\$${expense.amount.toStringAsFixed(2)}', 
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.error)),
-      ),
-    );
-  }
-
-  Widget _buildCostCenterCard(CostCenter costCenter) {
-    final centerExpenses = _expenses.where((e) => e.costCenter == costCenter.name)
-        .fold(0.0, (sum, expense) => sum + expense.amount);
-    final budgetUsed = centerExpenses / costCenter.budget * 100;
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
+  Widget _buildStatCard(String title, String value, IconData icon, Color color, String change) {
+    return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: Text(costCenter.name, 
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: costCenter.isActive ? AppColors.success.withOpacity(0.1) : AppColors.error.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                Icon(icon, color: color, size: 24),
+                Text(
+                  change,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
                   ),
-                  child: Text(costCenter.isActive ? 'Activo' : 'Inactivo',
-                    style: TextStyle(fontSize: 12, color: costCenter.isActive ? AppColors.success : AppColors.error)),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(costCenter.description, style: const TextStyle(color: AppColors.textSecondary)),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Presupuesto: \$${costCenter.budget.toStringAsFixed(2)}'),
-                      Text('Gastado: \$${centerExpenses.toStringAsFixed(2)}'),
-                      Text('Usado: ${budgetUsed.toStringAsFixed(1)}%'),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  width: 60,
-                  height: 60,
-                  child: CircularProgressIndicator(
-                    value: budgetUsed / 100,
-                    backgroundColor: AppColors.border,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      budgetUsed > 90 ? AppColors.error : 
-                      budgetUsed > 70 ? AppColors.warning : AppColors.success,
-                    ),
-                  ),
-                ),
-              ],
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
             ),
           ],
         ),
@@ -343,132 +361,190 @@ class _FinancialScreenState extends State<FinancialScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildFinancialMetrics() {
-    final totalBudget = _costCenters.fold(0.0, (sum, center) => sum + center.budget);
-    final totalSpent = _expenses.fold(0.0, (sum, expense) => sum + expense.amount);
-    final remaining = totalBudget - totalSpent;
-    
-    return Row(
+  Widget _buildModuleGrid() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: _buildMetricCard('Presupuesto Total', '\$${totalBudget.toStringAsFixed(2)}', AppColors.info)),
-        const SizedBox(width: 8),
-        Expanded(child: _buildMetricCard('Gastado', '\$${totalSpent.toStringAsFixed(2)}', AppColors.error)),
-        const SizedBox(width: 8),
-        Expanded(child: _buildMetricCard('Disponible', '\$${remaining.toStringAsFixed(2)}', AppColors.success)),
+        const Text(
+          'Módulos Financieros',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 16),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // Responsive grid based on screen width
+            int crossAxisCount = constraints.maxWidth > 600 ? 3 : 2;
+            double childAspectRatio = constraints.maxWidth > 600 ? 1.2 : 1.1;
+            
+            return GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: childAspectRatio,
+              children: [
+                _buildModuleCard(
+                  'Dashboard',
+                  'KPIs y métricas\nen tiempo real',
+                  Icons.dashboard,
+                  AppColors.primary,
+                  () => Navigator.pushNamed(context, '/financial-dashboard'),
+                ),
+                _buildModuleCard(
+                  'Reportes',
+                  'Análisis y\nproyecciones',
+                  Icons.analytics,
+                  Colors.green,
+                  () => Navigator.pushNamed(context, '/financial-reports'),
+                ),
+                _buildModuleCard(
+                  'Gastos',
+                  'Gestión de\ngastos operativos',
+                  Icons.receipt_long,
+                  Colors.orange,
+                  () => Navigator.pushNamed(context, '/financial-expenses'),
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
 
-  Widget _buildMetricCard(String title, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        children: [
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
-          Text(title, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExpenseChart() {
-    return Container(
-      height: 200,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
+  Widget _buildModuleCard(String title, String subtitle, IconData icon, Color color, VoidCallback onTap) {
+    return Card(
+      elevation: 2,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Gastos por Categoría', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Expanded(
-            child: PieChart(
-              PieChartData(
-                sections: [
-                  PieChartSectionData(value: 40, color: AppColors.primary, title: 'Operaciones'),
-                  PieChartSectionData(value: 25, color: AppColors.success, title: 'Marketing'),
-                  PieChartSectionData(value: 20, color: AppColors.warning, title: 'Personal'),
-                  PieChartSectionData(value: 15, color: AppColors.error, title: 'Otros'),
-                ],
-                centerSpaceRadius: 40,
-                sectionsSpace: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  size: 28,
+                  color: color,
+                ),
               ),
-            ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildBudgetAnalysis() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('Análisis Presupuestario', 
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+  Widget _buildRecentActivity() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Actividad Reciente',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
           ),
-          ...List.generate(4, (index) => ListTile(
-            leading: CircleAvatar(
-              backgroundColor: [AppColors.success, AppColors.warning, AppColors.error, AppColors.info][index].withOpacity(0.1),
-              child: Icon([Icons.trending_up, Icons.trending_flat, Icons.trending_down, Icons.analytics][index], 
-                color: [AppColors.success, AppColors.warning, AppColors.error, AppColors.info][index]),
-            ),
-            title: Text(['Centro ${index + 1}', 'Centro ${index + 2}', 'Centro ${index + 3}', 'Centro ${index + 4}'][index]),
-            subtitle: Text('${90 - index * 15}% del presupuesto usado'),
-            trailing: Text('${(index + 1) * 500}\$', style: const TextStyle(fontWeight: FontWeight.bold)),
-          )),
-        ],
-      ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Column(
+            children: [
+              _buildActivityItem(
+                'Recepción de inventario registrada',
+                'Gasto automático de \$2,450 en categoría Compras',
+                Icons.inventory,
+                Colors.blue,
+                '2 min',
+              ),
+              const Divider(height: 1),
+              _buildActivityItem(
+                'Extracción de efectivo',
+                'Gasto de \$500 en categoría Operativos',
+                Icons.money,
+                Colors.orange,
+                '15 min',
+              ),
+              const Divider(height: 1),
+              _buildActivityItem(
+                'Actualización de precios',
+                '25 productos actualizados automáticamente',
+                Icons.price_change,
+                Colors.green,
+                '1 hora',
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
-  void _showAddExpenseDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Gasto'),
-        content: const Text('Funcionalidad de agregar gasto\n(Por implementar)'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
+  Widget _buildActivityItem(String title, String subtitle, IconData icon, Color color, String time) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey[600],
+        ),
+      ),
+      trailing: Text(
+        time,
+        style: TextStyle(
+          fontSize: 11,
+          color: Colors.grey[500],
+        ),
       ),
     );
-  }
-
-  void _onBottomNavTap(int index) {
-    switch (index) {
-      case 0: // Dashboard
-        Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
-        break;
-      case 1: // Productos
-        Navigator.pushNamed(context, '/products');
-        break;
-      case 2: // Inventario
-        Navigator.pushNamed(context, '/inventory');
-        break;
-      case 3: // Configuración
-        Navigator.pushNamed(context, '/settings');
-        break;
-    }
   }
 }

@@ -18,6 +18,10 @@ import 'screens/communications_screen.dart';
 import 'screens/segments_screen.dart';
 import 'screens/loyalty_screen.dart';
 import 'screens/financial_screen.dart';
+import 'screens/financial_setup_screen.dart';
+import 'screens/financial_dashboard_screen.dart';
+import 'screens/financial_reports_screen.dart';
+import 'screens/financial_expenses_screen.dart';
 import 'screens/customers_screen.dart';
 import 'screens/workers_screen.dart';
 import 'screens/settings_screen.dart';
@@ -99,6 +103,10 @@ class MyApp extends StatelessWidget {
         '/inventory': (context) => const InventoryScreen(),
         '/sales': (context) => const SalesScreen(),
         '/financial': (context) => const FinancialScreen(),
+        '/financial-setup': (context) => const FinancialSetupScreen(),
+        '/financial-dashboard': (context) => const FinancialDashboardScreen(),
+        '/financial-reports': (context) => const FinancialReportsScreen(),
+        '/financial-expenses': (context) => const FinancialExpensesScreen(),
         '/customers': (context) => const CustomersScreen(),
         '/workers': (context) => const WorkersScreen(),
         '/settings': (context) => const SettingsScreen(),
