@@ -697,11 +697,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 ),
               ),
           // USD Rate Chip positioned at bottom left
-          Positioned(
-            bottom: 16,
-            left: 16,
-            child: _buildUsdRateChip(),
-          ),
+          // Positioned(
+          //   bottom: 0,
+          //   left: 0,
+          //   child: _buildUsdRateChip(),
+          // ),
         ],
       ),
     );
