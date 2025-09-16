@@ -6,6 +6,7 @@ import '../widgets/app_drawer.dart';
 import '../services/category_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/changelog_service.dart';
+import '../services/currency_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
 
@@ -25,12 +26,17 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
   String? _errorMessage;
   bool _categoriesLoaded = false; // Flag para controlar si ya se cargaron las categorías
 
+  // USD rate data
+  double _usdRate = 0.0;
+  bool _isLoadingUsdRate = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkForChangelog();
     _loadCategories();
+    _loadUsdRate();
   }
 
   @override
@@ -105,6 +111,72 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
     }
   }
 
+  Future<void> _loadUsdRate() async {
+    setState(() {
+      _isLoadingUsdRate = true;
+    });
+    
+    try {
+      final rate = await CurrencyService.getUsdRate();
+      setState(() {
+        _usdRate = rate;
+        _isLoadingUsdRate = false;
+      });
+    } catch (e) {
+      print('❌ Error loading USD rate: $e');
+      setState(() {
+        _usdRate = 420.0; // Default fallback rate
+        _isLoadingUsdRate = false;
+      });
+    }
+  }
+
+  Widget _buildUsdRateChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.attach_money,
+            size: 16,
+            color: Color(0xFF4A90E2),
+          ),
+          const SizedBox(width: 4),
+          _isLoadingUsdRate
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF4A90E2),
+                  ),
+                )
+              : Text(
+                  'USD: \$${_usdRate.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2C3E50),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -148,7 +220,17 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
           ),
         ],
       ),
-      body: _buildBody(),
+      body: Stack(
+        children: [
+          _buildBody(),
+          // USD Rate Chip positioned at bottom left
+          Positioned(
+            bottom: 16,
+            left: 16,
+            child: _buildUsdRateChip(),
+          ),
+        ],
+      ),
       endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 0, // Categorías tab

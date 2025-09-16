@@ -8,6 +8,7 @@ import '../services/order_service.dart';
 import '../services/bluetooth_printer_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
+import '../services/currency_service.dart';
 
 class VentaTotalScreen extends StatefulWidget {
   const VentaTotalScreen({Key? key}) : super(key: key);
@@ -35,15 +36,40 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   double _egresosEfectivo = 0.0;
   double _egresosTransferencias = 0.0;
 
+  // USD rate data
+  double _usdRate = 0.0;
+  bool _isLoadingUsdRate = false;
+
   @override
   void initState() {
     super.initState();
     _initializeData();
+    _loadUsdRate();
   }
 
   Future<void> _initializeData() async {
     await _loadExpenses();
     await _calcularVentaTotal();
+  }
+
+  Future<void> _loadUsdRate() async {
+    setState(() {
+      _isLoadingUsdRate = true;
+    });
+    
+    try {
+      final rate = await CurrencyService.getUsdRate();
+      setState(() {
+        _usdRate = rate;
+        _isLoadingUsdRate = false;
+      });
+    } catch (e) {
+      print('❌ Error loading USD rate: $e');
+      setState(() {
+        _usdRate = 420.0; // Default fallback rate
+        _isLoadingUsdRate = false;
+      });
+    }
   }
 
   Future<void> _calcularVentaTotal() async {
@@ -227,102 +253,112 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          // Resumen de ventas
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                bottom: BorderSide(color: Colors.grey, width: 0.2),
-              ),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.receipt_long,
-                      color: const Color(0xFF4A90E2),
-                      size: 24,
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Resumen de Ventas',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                  ],
+          Column(
+            children: [
+              // Resumen de ventas
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey, width: 0.2),
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: _buildSummaryCard(
-                        'Total Egresado',
-                        _egresosEfectivo.toStringAsFixed(0),
-                        Icons.attach_money,
-                        const Color.fromARGB(255, 160, 22, 22),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildSummaryCard(
-                        'Total Ventas',
-                        '\$${_totalVentas.toStringAsFixed(0)}',
-                        Icons.attach_money,
-                        const Color(0xFF4A90E2),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildSummaryCard(
-                        'Total Transferencia',
-                        '\$${(_totalEgresado - _egresosEfectivo).toStringAsFixed(0)}',
-                        Icons.credit_card,
-                        Colors.orange,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildSummaryCard(
-                        'Efectivo Real',
-                        '\$${_totalEfectivoReal.toStringAsFixed(0)}',
-                        Icons.account_balance_wallet,
-                        Colors.green,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Lista de órdenes vendidas
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Row(
                       children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Cargando datos de ventas...'),
+                        Icon(
+                          Icons.receipt_long,
+                          color: const Color(0xFF4A90E2),
+                          size: 24,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Resumen de Ventas',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
                       ],
                     ),
-                  )
-                : _ordenesVendidas.isEmpty
-                    ? _buildEmptyState()
-                    : _buildOrdersList(),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildSummaryCard(
+                            'Total Egresado',
+                            _egresosEfectivo.toStringAsFixed(0),
+                            Icons.attach_money,
+                            const Color.fromARGB(255, 160, 22, 22),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildSummaryCard(
+                            'Total Ventas',
+                            '\$${_totalVentas.toStringAsFixed(0)}',
+                            Icons.attach_money,
+                            const Color(0xFF4A90E2),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildSummaryCard(
+                            'Total Transferencia',
+                            '\$${(_totalEgresado - _egresosEfectivo).toStringAsFixed(0)}',
+                            Icons.credit_card,
+                            Colors.orange,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildSummaryCard(
+                            'Efectivo Real',
+                            '\$${_totalEfectivoReal.toStringAsFixed(0)}',
+                            Icons.account_balance_wallet,
+                            Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // Lista de órdenes vendidas
+              Expanded(
+                child: _isLoading
+                    ? const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('Cargando datos de ventas...'),
+                          ],
+                        ),
+                      )
+                    : _ordenesVendidas.isEmpty
+                        ? _buildEmptyState()
+                        : _buildOrdersList(),
+              ),
+            ],
+          ),
+          // USD Rate Chip positioned at bottom left
+          Positioned(
+            bottom: 16,
+            left: 16,
+            child: _buildUsdRateChip(),
           ),
         ],
       ),
@@ -1247,5 +1283,51 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         "${date.year} "
         "${date.hour.toString().padLeft(2, '0')}:"
         "${date.minute.toString().padLeft(2, '0')}";
+  }
+
+  Widget _buildUsdRateChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.attach_money,
+            size: 16,
+            color: Color(0xFF4A90E2),
+          ),
+          const SizedBox(width: 4),
+          _isLoadingUsdRate
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF4A90E2),
+                  ),
+                )
+              : Text(
+                  'USD: \$${_usdRate.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2C3E50),
+                  ),
+                ),
+        ],
+      ),
+    );
   }
 }

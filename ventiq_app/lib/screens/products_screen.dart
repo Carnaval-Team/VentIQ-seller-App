@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/currency_service.dart';
 import '../utils/price_utils.dart';
 import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
@@ -47,11 +48,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
   static final Map<int, DateTime> _cacheTimestamps = {};
   static const Duration _cacheExpiration = Duration(minutes: 5);
 
+  // USD rate data
+  double _usdRate = 0.0;
+  bool _isLoadingUsdRate = false;
+
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
     _loadPromotionData();
+    _loadUsdRate();
     // Asegurar que se inicialice filteredProductsBySubcategory
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadProducts();
@@ -72,6 +78,26 @@ class _ProductsScreenState extends State<ProductsScreen> {
     setState(() {
       _promotionData = promotionData;
     });
+  }
+
+  Future<void> _loadUsdRate() async {
+    setState(() {
+      _isLoadingUsdRate = true;
+    });
+    
+    try {
+      final rate = await CurrencyService.getUsdRate();
+      setState(() {
+        _usdRate = rate;
+        _isLoadingUsdRate = false;
+      });
+    } catch (e) {
+      print('❌ Error loading USD rate: $e');
+      setState(() {
+        _usdRate = 420.0; // Default fallback rate
+        _isLoadingUsdRate = false;
+      });
+    }
   }
 
   void _onSearchChanged() {
@@ -456,6 +482,58 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 ),
               ),
             ),
+          // USD Rate Chip positioned at bottom left
+          Positioned(
+            bottom: 16,
+            left: 16,
+            child: _buildUsdRateChip(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUsdRateChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.attach_money,
+            size: 16,
+            color: Color(0xFF4A90E2),
+          ),
+          const SizedBox(width: 4),
+          _isLoadingUsdRate
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF4A90E2),
+                  ),
+                )
+              : Text(
+                  'USD: \$${_usdRate.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2C3E50),
+                  ),
+                ),
         ],
       ),
     );
@@ -477,8 +555,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
       case 3: // Configuración
         Navigator.popUntil(context, (route) => route.isFirst);
         Navigator.pushNamed(context, '/settings');
+        Navigator.pushNamed(context, '/settings');
         break;
-    }
+    };
   }
 }
 
