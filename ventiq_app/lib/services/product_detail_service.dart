@@ -30,8 +30,9 @@ class ProductDetailService {
       // Transform Supabase response to Product model
       return _transformToProduct(response);
 
-    } catch (e) {
+    } catch (e,stackTrace) {
       debugPrint('❌ Error obteniendo detalles del producto: $e');
+      debugPrint('📍 Stack trace completo:\n$stackTrace');
       rethrow;
     }
   }
@@ -153,7 +154,7 @@ class ProductDetailService {
       
       if (presentacion != null) {
         final presentacionNombre = presentacion['denominacion'] as String? ?? '';
-        final cantidad = presentacion['cantidad'] as int? ?? 1;
+        final cantidad = (presentacion['cantidad'] as num?)?.toInt() ?? 1;
         if (presentacionNombre.isNotEmpty) {
           variantName += ' - $presentacionNombre';
           if (cantidad > 1) {
