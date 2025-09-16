@@ -1,38 +1,165 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
   <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
+    VentIQ Admin App - Sistema de Administración Empresarial
+    Aplicación web completa para la gestión integral de tiendas y negocios
+    
+    Base href configuration for Flutter web deployment
   -->
   <base href="$FLUTTER_BASE_HREF">
 
+  <!-- Essential Meta Tags -->
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
-
-  <!-- iOS meta tags & icons -->
+  
+  <!-- App Information -->
+  <title>VentIQ Admin - Sistema de Administración Empresarial</title>
+  <meta name="description" content="VentIQ Admin es una aplicación web completa para la administración integral de tiendas. Gestiona inventario, ventas, almacenes, finanzas, clientes, promociones y recursos humanos desde una plataforma unificada.">
+  <meta name="keywords" content="VentIQ, administración, tienda, inventario, ventas, TPV, almacén, finanzas, CRM, promociones, recursos humanos, gestión empresarial">
+  <meta name="author" content="VentIQ Team">
+  <meta name="application-name" content="VentIQ Admin">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="VentIQ Admin - Sistema de Administración Empresarial">
+  <meta property="og:description" content="Plataforma completa para la gestión integral de tiendas con módulos de inventario, ventas, almacenes, finanzas y más.">
+  <meta property="og:image" content="icons/ventas_admin.png">
+  <meta property="og:site_name" content="VentIQ Admin">
+  
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:title" content="VentIQ Admin - Sistema de Administración Empresarial">
+  <meta property="twitter:description" content="Gestiona tu tienda de forma integral con VentIQ Admin">
+  <meta property="twitter:image" content="icons/ventas_admin.png">
+  
+  <!-- App Capabilities -->
+  <meta name="theme-color" content="#4A90E2">
+  <meta name="background-color" content="#F8F9FA">
+  
+  <!-- iOS Meta Tags & Icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="ventiq_admin_app">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>ventiq_admin_app</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="VentIQ Admin">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/ventas_admin.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/ventas_admin.png">
+  <link rel="apple-touch-icon" sizes="144x144" href="icons/ventas_admin.png">
+  <link rel="apple-touch-icon" sizes="120x120" href="icons/ventas_admin.png">
+  
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/ventas_admin.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="icons/ventas_admin.png">
+  <link rel="shortcut icon" href="icons/ventas_admin.png">
+  
+  <!-- Web App Manifest -->
   <link rel="manifest" href="manifest.json">
+  
+  <!-- Preload Critical Resources -->
+  <link rel="preload" href="flutter_bootstrap.js" as="script">
+  
+  <!-- Security Headers -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: https:; img-src 'self' data: https: blob:;">
+  
+  <!-- App Loading Styles -->
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #F8F9FA;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    
+    .loading-container {
+      text-align: center;
+      padding: 2rem;
+    }
+    
+    .loading-logo {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 1rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(74, 144, 226, 0.2);
+    }
+    
+    .loading-title {
+      color: #4A90E2;
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    
+    .loading-subtitle {
+      color: #6B7280;
+      font-size: 0.9rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #E5E7EB;
+      border-top: 3px solid #4A90E2;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .features-list {
+      text-align: left;
+      max-width: 300px;
+      margin: 1rem auto 0;
+      color: #6B7280;
+      font-size: 0.8rem;
+    }
+    
+    .features-list li {
+      margin-bottom: 0.3rem;
+    }
+  </style>
 </head>
 <body>
+  <!-- Loading Screen -->
+  <div class="loading-container" id="loading-screen">
+    <img src="icons/ventas_admin.png" alt="VentIQ Admin Logo" class="loading-logo">
+    <h1 class="loading-title">VentIQ Admin</h1>
+    <p class="loading-subtitle">Sistema de Administración Empresarial</p>
+    <div class="loading-spinner"></div>
+    <ul class="features-list">
+      <li>📊 Dashboard Ejecutivo con KPIs</li>
+      <li>📦 Gestión Completa de Inventario</li>
+      <li>🏪 Control de Almacenes y Zonas</li>
+      <li>💰 Monitorización de Ventas TPV</li>
+      <li>📈 Gestión Financiera y Costos</li>
+      <li>👥 CRM de Clientes Avanzado</li>
+      <li>🎯 Marketing y Promociones</li>
+      <li>👨‍💼 Recursos Humanos</li>
+      <li>⚙️ Configuración Multi-tienda</li>
+    </ul>
+  </div>
+
+  <!-- Flutter App Bootstrap -->
   <script src="flutter_bootstrap.js" async></script>
+  
+  <!-- Hide loading screen when Flutter loads -->
+  <script>
+    window.addEventListener('flutter-first-frame', function() {
+      const loadingScreen = document.getElementById('loading-screen');
+      if (loadingScreen) {
+        loadingScreen.style.display = 'none';
+      }
+    });
+  </script>
 </body>
 </html>
