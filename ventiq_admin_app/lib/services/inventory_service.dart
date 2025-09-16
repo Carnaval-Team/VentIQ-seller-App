@@ -4,6 +4,7 @@ import '../models/warehouse.dart';
 import '../models/transfer_order.dart';
 import 'user_preferences_service.dart';
 import 'transfer_service.dart';
+import 'financial_service.dart';
 
 class InventoryService {
   static final InventoryService _instance = InventoryService._internal();
@@ -12,6 +13,7 @@ class InventoryService {
 
   static final SupabaseClient _supabase = Supabase.instance.client;
   static final UserPreferencesService _prefsService = UserPreferencesService();
+  static final FinancialService _financialService = FinancialService();
 
   /// Get motivo reception options from app_nom_motivo_recepcion table
   static Future<List<Map<String, dynamic>>> getMotivoRecepcionOptions() async {
@@ -784,6 +786,16 @@ class InventoryService {
         throw Exception('Respuesta nula de la función RPC');
       }
 
+      // TODO: Integración financiera pendiente hasta establecer módulo completo
+      // await _registerReceptionExpenses({
+      //   'id_tienda': idTienda,
+      //   'monto_total': montoTotal,
+      //   'motivo': motivo,
+      //   'observaciones': observaciones,
+      //   'uuid': uuid,
+      //   'productos': productos,
+      // });
+
       return response as Map<String, dynamic>;
     } catch (e, stackTrace) {
       print('❌ Error en insertInventoryReception: $e');
@@ -791,6 +803,68 @@ class InventoryService {
       throw Exception('Error al insertar recepción: $e');
     }
   }
+
+  // TODO: Método temporal comentado hasta establecer módulo financiero
+  /*
+  /// Registrar gastos automáticos por recepción de inventario
+  static Future<void> _registerReceptionExpenses(Map<String, dynamic> receptionData) async {
+    try {
+      print('💰 Iniciando registro de gastos por recepción...');
+      
+      // Calcular monto total de la recepción
+      final productos = receptionData['productos'] as List<Map<String, dynamic>>;
+      double montoTotal = 0.0;
+      
+      for (final producto in productos) {
+        final cantidad = (producto['cantidad'] ?? 0).toDouble();
+        final costo = (producto['costo_real'] ?? producto['precio_unitario'] ?? 0).toDouble();
+        montoTotal += cantidad * costo;
+      }
+      
+      if (montoTotal > 0) {
+        // Obtener categorías de gastos disponibles
+        final categories = await _financialService.getExpenseSubcategories();
+        final comprasCategory = categories.firstWhere(
+          (cat) => cat['denominacion'].toString().toLowerCase().contains('compra') ||
+                   cat['denominacion'].toString().toLowerCase().contains('mercancía'),
+          orElse: () => categories.isNotEmpty ? categories.first : null,
+        );
+        
+        // Obtener centros de costo disponibles
+        final costCenters = await _financialService.getCostCenters(
+          storeId: receptionData['id_tienda']
+        );
+        final defaultCostCenter = costCenters.isNotEmpty ? costCenters.first : null;
+        
+        // Obtener tipos de costo disponibles
+        final costTypes = await _financialService.getCostTypes();
+        final directCostType = costTypes.firstWhere(
+          (type) => type['denominacion'].toString().toLowerCase().contains('directo'),
+          orElse: () => costTypes.isNotEmpty ? costTypes.first : null,
+        );
+        
+        // Registrar gasto consolidado por la recepción
+        final gastoData = {
+          'id_subcategoria_gasto': comprasCategory?['id'],
+          'id_centro_costo': defaultCostCenter?['id'],
+          'id_tipo_costo': directCostType?['id'],
+          'id_tienda': receptionData['id_tienda'],
+          'monto': montoTotal,
+          'descripcion': 'Gasto por recepción de inventario - ${productos.length} productos',
+          'fecha_gasto': DateTime.now().toIso8601String().split('T')[0],
+          'uuid': receptionData['uuid'],
+        };
+        
+        await _supabase.from('app_cont_gastos').insert(gastoData);
+        
+        print('✅ Gasto registrado exitosamente: \$${montoTotal.toStringAsFixed(2)}');
+      }
+    } catch (e) {
+      print('❌ Error registrando gastos de recepción: $e');
+      // No lanzar excepción para no interrumpir el flujo principal
+    }
+  }
+  */
 
   /// Complete operation using fn_contabilizar_operacion RPC
   static Future<Map<String, dynamic>> completeOperation({

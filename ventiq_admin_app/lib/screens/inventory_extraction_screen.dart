@@ -446,9 +446,31 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
         mostrarSinStock: false, // Only show products with stock for extraction
       );
 
+      // Group products to eliminate duplicates - take first occurrence only
+      final Map<int, InventoryProduct> groupedProducts = {};
+      
+      for (final product in response.products) {
+        final productId = product.id;
+        
+        if (!groupedProducts.containsKey(productId)) {
+          // First occurrence of this product - take it as is
+          groupedProducts[productId] = product;
+          print('📦 Producto agregado: ${product.nombreProducto} - Stock: ${product.stockDisponible}');
+        } else {
+          // Product already exists - ignore duplicate
+          print('📦 Producto duplicado ignorado: ${product.nombreProducto}');
+        }
+      }
+
+      // Convert grouped products back to list
+      final uniqueProducts = groupedProducts.values.toList();
+      
+      print('📊 Productos antes de agrupar: ${response.products.length}');
+      print('📊 Productos después de agrupar: ${uniqueProducts.length}');
+
       setState(() {
-        _availableProducts = response.products;
-        _filteredProducts = response.products;
+        _availableProducts = uniqueProducts;
+        _filteredProducts = uniqueProducts;
         _isLoadingProducts = false;
       });
 
@@ -862,7 +884,17 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                           _motivoOptions.map((motivo) {
                             return DropdownMenuItem<Map<String, dynamic>>(
                               value: motivo,
-                              child: Text(motivo['denominacion'] ?? ''),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Text(
+                                  '${motivo['denominacion']}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
                             );
                           }).toList(),
                       onChanged: (value) {
@@ -1000,6 +1032,8 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
                                 ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
                               const SizedBox(height: 4),
                               Row(
@@ -1351,222 +1385,449 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(
-        'Extraer: ${widget.product.nombreProducto}',
-        style: const TextStyle(fontWeight: FontWeight.bold),
+      contentPadding: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
       ),
-      content: SingleChildScrollView(
+      content: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Product info
+            // Header
             Container(
-              padding: const EdgeInsets.all(12),
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppColors.grey.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.border),
+                color: AppColors.warning,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(
-                    widget.product.nombreProducto,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
+                  Icon(
+                    Icons.inventory_2,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Extraer Producto',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text('SKU: ${widget.product.skuProducto}'),
-                  Text('Stock: ${widget.product.stockDisponible.toInt()}'),
-                  if (widget.product.presentacion.isNotEmpty)
-                    Text('Presentación: ${widget.product.presentacion}'),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
 
-            // Variant/Presentation selection
-            if (_isLoadingVariants)
-              const Center(child: CircularProgressIndicator())
-            else if (_availableVariants.isNotEmpty) ...[
-              const Text(
-                'Variante y Presentación:',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<Map<String, dynamic>>(
-                value: _selectedVariant,
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                ),
-                items:
-                    _availableVariants.map((variant) {
-                      return DropdownMenuItem<Map<String, dynamic>>(
-                        value: variant,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${variant['variante']} - ${variant['presentacion']}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            Text(
-                              'Stock: ${variant['stock_disponible']?.toStringAsFixed(1) ?? '0.0'}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.grey.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                onChanged: _onVariantChanged,
-              ),
-              const SizedBox(height: 16),
-
-              // Stock available info
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-                ),
-                child: Row(
+            // Content
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: AppColors.primary.withOpacity(0.7),
-                      size: 20,
+                    // Product Info Card
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                color: AppColors.primary,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Información del Producto',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          _buildInfoRow('SKU', widget.product.skuProducto),
+                          _buildInfoRow(
+                            'Stock Total', 
+                            widget.product.stockDisponible.toInt().toString(),
+                            valueColor: widget.product.stockDisponible > 0 
+                                ? AppColors.success 
+                                : AppColors.error,
+                          ),
+                          if (widget.product.presentacion.isNotEmpty)
+                            _buildInfoRow('Presentación', widget.product.presentacion),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Stock disponible: ${_maxAvailableStock.toStringAsFixed(1)}',
-                        style: TextStyle(
-                          color: AppColors.primary.withOpacity(0.7),
-                          fontWeight: FontWeight.w500,
+
+                    const SizedBox(height: 20),
+
+                    // Presentation Selection
+                    if (_isLoadingVariants)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    else if (_availableVariants.isNotEmpty) ...[
+                      Text(
+                        'Seleccionar Presentación',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: AppColors.black87,
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      
+                      // Presentation Cards
+                      ..._availableVariants.map((variant) {
+                        final isSelected = _selectedVariant == variant;
+                        return GestureDetector(
+                          onTap: () => _onVariantChanged(variant),
+                          child: Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: isSelected 
+                                  ? AppColors.primary.withOpacity(0.1)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected 
+                                    ? AppColors.primary
+                                    : AppColors.border,
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: isSelected 
+                                        ? AppColors.primary
+                                        : Colors.transparent,
+                                    border: Border.all(
+                                      color: isSelected 
+                                          ? AppColors.primary
+                                          : AppColors.grey,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: isSelected
+                                      ? const Icon(
+                                          Icons.check,
+                                          color: Colors.white,
+                                          size: 12,
+                                        )
+                                      : null,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        variant['presentacion_nombre'] ?? 'Sin presentación',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 15,
+                                          color: isSelected 
+                                              ? AppColors.primary
+                                              : AppColors.black87,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Stock disponible: ${variant['stock_disponible']?.toStringAsFixed(1) ?? '0.0'}',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+
+                      const SizedBox(height: 20),
+
+                      // Stock Info
+                      if (_selectedVariant != null)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.success.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle_outline,
+                                color: AppColors.success,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Stock disponible: ${_maxAvailableStock.toStringAsFixed(1)} unidades',
+                                  style: TextStyle(
+                                    color: AppColors.success,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      const SizedBox(height: 20),
+                    ],
+
+                    // Quantity Input
+                    Text(
+                      'Cantidad a Extraer',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: AppColors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _quantityController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Ingrese la cantidad',
+                        hintStyle: TextStyle(
+                          color: AppColors.grey.shade500,
+                          fontWeight: FontWeight.normal,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.inventory,
+                          color: AppColors.primary,
+                        ),
+                        suffixText: _selectedVariant?['presentacion_nombre'] ?? '',
+                        suffixStyle: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: AppColors.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: AppColors.primary, width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Ingrese una cantidad';
+                        }
+                        final quantity = double.tryParse(value);
+                        if (quantity == null || quantity <= 0) {
+                          return 'La cantidad debe ser mayor a 0';
+                        }
+                        if (quantity > _maxAvailableStock) {
+                          return 'Cantidad excede stock disponible (Max: ${_maxAvailableStock.toStringAsFixed(1)})';
+                        }
+                        return null;
+                      },
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-            ],
-
-            // Quantity input
-            const Text(
-              'Cantidad a extraer:',
-              style: TextStyle(fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _quantityController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: InputDecoration(
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+
+            // Action Buttons
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.grey.shade50,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                hintText: 'Ingrese cantidad',
-                suffixText: _selectedVariant?['presentacion'] ?? '',
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Ingrese una cantidad';
-                }
-                final quantity = double.tryParse(value);
-                print('🔍 DEBUG VALIDATOR: Quantity entered: $quantity');
-                print(
-                  '🔍 DEBUG VALIDATOR: Max available stock: $_maxAvailableStock',
-                );
-                print(
-                  '🔍 DEBUG VALIDATOR: Selected variant: $_selectedVariant',
-                );
-                if (quantity == null || quantity <= 0) {
-                  return 'Cantidad debe ser mayor a 0';
-                }
-                if (quantity > _maxAvailableStock) {
-                  print(
-                    '❌ DEBUG VALIDATOR: Quantity $quantity > $_maxAvailableStock - FAILING',
-                  );
-                  return 'Cantidad excede stock disponible (Max: ${_maxAvailableStock.toStringAsFixed(1)})';
-                }
-                print('✅ DEBUG VALIDATOR: Validation passed');
-                return null;
-              },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: AppColors.grey.shade300),
+                        ),
+                      ),
+                      child: Text(
+                        'Cancelar',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed: _selectedVariant == null ? null : () {
+                        final quantity = double.tryParse(_quantityController.text);
+                        if (quantity == null || quantity <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Ingrese una cantidad válida')),
+                          );
+                          return;
+                        }
+                        if (quantity > _maxAvailableStock) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Cantidad excede stock disponible'),
+                            ),
+                          );
+                          return;
+                        }
+
+                        final productData = {
+                          'id_producto': widget.product.id,
+                          'id_variante': widget.product.idVariante,
+                          'id_opcion_variante': widget.product.idOpcionVariante,
+                          'id_ubicacion': widget.sourceLayoutId,
+                          'id_presentacion': widget.product.idPresentacion,
+                          'cantidad': quantity,
+                          'precio_unitario': widget.product.precioVenta ?? 0.0,
+                          'sku_producto': widget.product.skuProducto,
+                          'sku_ubicacion': widget.product.ubicacion,
+                          'nombreProducto': widget.product.nombreProducto,
+                          'variante': widget.product.variante,
+                          'opcionVariante': widget.product.opcionVariante,
+                          'presentacion': widget.product.presentacion,
+                          'nombreZona': widget.product.ubicacion,
+                          'nombreAlmacen': widget.warehouseName ?? 'Almacén',
+                        };
+
+                        widget.onAdd(productData);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.warning,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Agregar Producto',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            final quantity = double.tryParse(_quantityController.text);
-            if (quantity == null || quantity <= 0) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Ingrese una cantidad válida')),
-              );
-              return;
-            }
-            if (quantity > _maxAvailableStock) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Cantidad excede stock disponible'),
-                ),
-              );
-              return;
-            }
+    );
+  }
 
-            final productData = {
-              'id_producto': widget.product.id,
-              'id_variante': widget.product.idVariante,
-              'id_opcion_variante': widget.product.idOpcionVariante,
-              'id_ubicacion': widget.sourceLayoutId,
-              'id_presentacion': widget.product.idPresentacion,
-              'cantidad': quantity,
-              'precio_unitario': widget.product.precioVenta ?? 0.0,
-              'sku_producto': widget.product.skuProducto,
-              'sku_ubicacion': widget.product.ubicacion,
-              // Display names for UI
-              'nombreProducto': widget.product.nombreProducto,
-              'variante': widget.product.variante,
-              'opcionVariante': widget.product.opcionVariante,
-              'presentacion': widget.product.presentacion,
-              // Zone information for display
-              'nombreZona': widget.product.ubicacion,
-              'nombreAlmacen': widget.warehouseName ?? 'Almacén',
-            };
-
-            widget.onAdd(productData);
-          },
-          style: ElevatedButton.styleFrom(backgroundColor: AppColors.warning),
-          child: const Text('Agregar'),
-        ),
-      ],
+  Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: valueColor ?? AppColors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
