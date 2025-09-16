@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class UserPreferencesService {
   static final UserPreferencesService _instance =
@@ -16,6 +17,7 @@ class UserPreferencesService {
   static const String _adminRoleKey = 'admin_role';
   static const String _appVersionKey = 'app_version';
   static const String _idTiendaKey = 'id_tienda';
+  static const String _userStoresKey = 'user_stores';
 
   // Remember me keys
   static const String _rememberMeKey = 'remember_me';
@@ -31,6 +33,7 @@ class UserPreferencesService {
     String? adminName,
     String? adminRole,
     int? idTienda,
+    List<Map<String, dynamic>>? userStores,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_userIdKey, userId);
@@ -46,6 +49,9 @@ class UserPreferencesService {
     }
     if (idTienda != null) {
       await prefs.setInt(_idTiendaKey, idTienda);
+    }
+    if (userStores != null) {
+      await prefs.setString(_userStoresKey, jsonEncode(userStores));
     }
 
     // Set token expiry (24 hours from now)
@@ -96,6 +102,50 @@ class UserPreferencesService {
     return prefs.getInt(_idTiendaKey);
   }
 
+  // Guardar lista de tiendas del usuario
+  Future<void> saveUserStores(List<Map<String, dynamic>> stores) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userStoresKey, jsonEncode(stores));
+  }
+
+  // Obtener lista de tiendas del usuario
+  Future<List<Map<String, dynamic>>> getUserStores() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storesJson = prefs.getString(_userStoresKey);
+    if (storesJson == null) return [];
+    
+    try {
+      final List<dynamic> storesList = jsonDecode(storesJson);
+      return storesList.cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('❌ Error parsing user stores: $e');
+      return [];
+    }
+  }
+
+  // Actualizar tienda seleccionada
+  Future<void> updateSelectedStore(int idTienda) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_idTiendaKey, idTienda);
+    print('🏪 Updated selected store to: $idTienda');
+  }
+
+  // Obtener información de la tienda actual
+  Future<Map<String, dynamic>?> getCurrentStoreInfo() async {
+    final currentStoreId = await getIdTienda();
+    if (currentStoreId == null) return null;
+    
+    final stores = await getUserStores();
+    try {
+      return stores.firstWhere(
+        (store) => store['id_tienda'] == currentStoreId,
+      );
+    } catch (e) {
+      print('❌ Current store not found in user stores list');
+      return null;
+    }
+  }
+
   // Verificar si el usuario está logueado
   Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
@@ -111,6 +161,7 @@ class UserPreferencesService {
     await prefs.remove(_adminNameKey);
     await prefs.remove(_adminRoleKey);
     await prefs.remove(_idTiendaKey);
+    await prefs.remove(_userStoresKey);
     await prefs.setBool(_isLoggedInKey, false);
   }
 

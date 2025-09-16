@@ -60,24 +60,27 @@ class AuthService {
   // Listen to auth state changes
   Stream<AuthState> get authStateChanges => _supabase.auth.onAuthStateChange;
 
-  // Verify supervisor permissions in app_dat_supervisor table
-  Future<Map<String, dynamic>?> verifySupervisorPermissions(String userId) async {
+  // Verify supervisor permissions and get all stores for user
+  Future<List<Map<String, dynamic>>?> verifySupervisorPermissions(String userId) async {
     try {
       print('🔍 Verifying supervisor permissions for user: $userId');
       
       final response = await _supabase
           .from('app_dat_supervisor')
-          .select('*')
-          .eq('uuid', userId)
-          .maybeSingle();
+          .select('*,app_dat_tienda(id,denominacion)')
+          .eq('uuid', userId);
       
-      if (response == null) {
+      if (response.isEmpty) {
         print('❌ No supervisor record found for user: $userId');
         return null;
       }
       
-      print('✅ Supervisor found: ${response['id_tienda']}');
-      return response;
+      print('✅ Supervisor found with ${response.length} store(s)');
+      for (var store in response) {
+        print('   - Store ID: ${store['id_tienda']}, Name: ${store['app_dat_tienda']?['denominacion']}');
+      }
+      
+      return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('❌ Supervisor verification error: $e');
       return null;
@@ -102,10 +105,10 @@ class AuthService {
       
       final userId = authResponse.user!.id;
       
-      // Step 2: Verify supervisor permissions
-      final supervisorData = await verifySupervisorPermissions(userId);
+      // Step 2: Verify supervisor permissions and get all stores
+      final supervisorStores = await verifySupervisorPermissions(userId);
       
-      if (supervisorData == null) {
+      if (supervisorStores == null || supervisorStores.isEmpty) {
         // Sign out the user since they don't have supervisor privileges
         await signOut();
         throw Exception('NO_SUPERVISOR_PRIVILEGES');
@@ -115,7 +118,8 @@ class AuthService {
       return {
         'user': authResponse.user!,
         'session': authResponse.session!,
-        'supervisorData': supervisorData,
+        'supervisorStores': supervisorStores,
+        'defaultStore': supervisorStores.first, // Use first store as default
       };
     } catch (e) {
       print('❌ Complete login error: $e');

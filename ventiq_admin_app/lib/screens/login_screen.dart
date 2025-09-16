@@ -342,26 +342,36 @@ class _LoginScreenState extends State<LoginScreen> {
       
       final user = loginData['user'];
       final session = loginData['session'];
-      final supervisorData = loginData['supervisorData'];
+      final supervisorStores = loginData['supervisorStores'] as List<Map<String, dynamic>>;
+      final defaultStore = loginData['defaultStore'] as Map<String, dynamic>;
       
       // Get admin profile
       final adminProfile = await _authService.getAdminProfile(user.id);
       
-      // Save user data in preferences including id_tienda
+      // Prepare stores list for preferences
+      final storesForPreferences = supervisorStores.map((store) => {
+        'id_tienda': store['id_tienda'],
+        'denominacion': store['app_dat_tienda']?['denominacion'] ?? 'Tienda ${store['id_tienda']}',
+        'id': store['app_dat_tienda']?['id'] ?? store['id_tienda'],
+      }).toList();
+      
+      // Save user data in preferences including stores list and default store
       await _userPreferencesService.saveUserData(
         userId: user.id,
         email: user.email ?? _emailController.text.trim(),
         accessToken: session.accessToken,
         adminName: adminProfile?['name'],
         adminRole: adminProfile?['role'],
-        idTienda: supervisorData['id_tienda'],
+        idTienda: defaultStore['id_tienda'],
+        userStores: storesForPreferences,
       );
         
         print('✅ Supervisor user saved in preferences:');
         print('  - ID: ${user.id}');
         print('  - Email: ${user.email}');
         print('  - Role: ${adminProfile?['role']}');
-        print('  - ID Tienda: ${supervisorData['id_tienda']}');
+        print('  - Default Store ID: ${defaultStore['id_tienda']}');
+        print('  - Total Stores: ${supervisorStores.length}');
         
         // Save credentials if user marked "Remember me"
         if (_rememberMe) {

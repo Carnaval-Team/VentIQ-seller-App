@@ -348,8 +348,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
             ),
             onChanged: (value) {
               setState(() => _searchQuery = value);
-              // Debounce search
-              Future.delayed(const Duration(milliseconds: 500), () {
+              // Debounce search - increased delay to prevent loading while typing
+              Future.delayed(const Duration(milliseconds: 1500), () {
                 if (_searchQuery == value) {
                   _loadInventoryData();
                 }

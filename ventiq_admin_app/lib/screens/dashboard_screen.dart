@@ -5,6 +5,7 @@ import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../services/dashboard_service.dart';
 import '../services/currency_service.dart';
+import '../services/user_preferences_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,6 +19,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic> _dashboardData = {};
   String _selectedTimeFilter = '1 mes';
   final DashboardService _dashboardService = DashboardService();
+  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  
+  String _currentStoreName = 'Cargando...';
+  List<Map<String, dynamic>> _userStores = [];
   
   final List<String> _timeFilterOptions = [
     '5 años',
@@ -33,7 +38,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _loadStoreInfo();
     _loadDashboardData();
+  }
+
+  Future<void> _loadStoreInfo() async {
+    try {
+      final stores = await _userPreferencesService.getUserStores();
+      final currentStoreInfo = await _userPreferencesService.getCurrentStoreInfo();
+      
+      setState(() {
+        _userStores = stores;
+        _currentStoreName = currentStoreInfo?['denominacion'] ?? 'Tienda Principal';
+      });
+    } catch (e) {
+      print('❌ Error loading store info: $e');
+      setState(() {
+        _currentStoreName = 'Tienda Principal';
+      });
+    }
   }
 
   void _loadDashboardData() async {
@@ -106,6 +129,139 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  Future<void> _showStoreSelectionDialog() async {
+    if (_userStores.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay tiendas disponibles'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final selectedStore = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.store, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('Seleccionar Tienda'),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _userStores.length,
+              itemBuilder: (context, index) {
+                final store = _userStores[index];
+                final isCurrentStore = store['denominacion'] == _currentStoreName;
+                
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: isCurrentStore 
+                        ? AppColors.primary 
+                        : AppColors.primary.withOpacity(0.1),
+                    child: Icon(
+                      Icons.store,
+                      color: isCurrentStore ? Colors.white : AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    store['denominacion'] ?? 'Tienda ${store['id_tienda']}',
+                    style: TextStyle(
+                      fontWeight: isCurrentStore ? FontWeight.bold : FontWeight.normal,
+                      color: isCurrentStore ? AppColors.primary : null,
+                    ),
+                  ),
+                  subtitle: Text('ID: ${store['id_tienda']}'),
+                  trailing: isCurrentStore 
+                      ? const Icon(Icons.check_circle, color: AppColors.primary)
+                      : null,
+                  onTap: () {
+                    Navigator.of(context).pop(store);
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selectedStore != null && selectedStore['denominacion'] != _currentStoreName) {
+      await _switchStore(selectedStore);
+    }
+  }
+
+  Future<void> _switchStore(Map<String, dynamic> store) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Cambiando tienda...'),
+            ],
+          ),
+        ),
+      );
+
+      // Update selected store in preferences
+      await _userPreferencesService.updateSelectedStore(store['id_tienda']);
+      
+      // Update current store name
+      setState(() {
+        _currentStoreName = store['denominacion'] ?? 'Tienda ${store['id_tienda']}';
+      });
+
+      // Reload dashboard data for new store
+      _loadDashboardData();
+
+      // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+        
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cambiado a: ${store['denominacion']}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error switching store: $e');
+      
+      // Close loading dialog if still open
+      if (mounted) {
+        Navigator.of(context).pop();
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al cambiar tienda'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
 
 
   @override
@@ -126,6 +282,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          // Store selector button
+          if (_userStores.length > 1)
+            IconButton(
+              icon: const Icon(Icons.store, color: Colors.white),
+              onPressed: _showStoreSelectionDialog,
+              tooltip: 'Seleccionar Tienda: $_currentStoreName',
+            ),
           Builder(
             builder: (context) => IconButton(
               icon: const Icon(Icons.menu, color: Colors.white),
@@ -332,7 +495,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: _buildKPICard(
                 title: 'Gastos',
-                value: '\$${_dashboardData['totalExpenses']?.toStringAsFixed(2) ?? '0.00'}',
+                value: '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
                 subtitle: _getPeriodLabel(),
                 icon: Icons.money_off,
                 color: AppColors.error,
