@@ -210,7 +210,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
     } catch (e) {
       print('❌ Error loading products: $e');
       setState(() {
-        errorMessage = 'Error al cargar productos: $e';
+        // Extract just the message from the exception
+        String cleanMessage = e.toString();
+        if (cleanMessage.startsWith('Exception: ')) {
+          cleanMessage = cleanMessage.substring(11); // Remove "Exception: " prefix
+        }
+        errorMessage = cleanMessage;
         isLoading = false;
       });
     }

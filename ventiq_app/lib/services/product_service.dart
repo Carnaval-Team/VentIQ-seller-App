@@ -40,6 +40,13 @@ class ProductService {
       }
 
       debugPrint('📦 Respuesta de productos: ${response.length} productos encontrados');
+      
+      // Check if response is empty
+      if (response.isEmpty) {
+        debugPrint('📭 No hay productos en esta categoría');
+        throw Exception('No hay productos disponibles en esta categoría');
+      }
+      
       debugPrint('🔍 Estructura de respuesta: ${response[0]}');
 
       // Group products by subcategory_nombre
