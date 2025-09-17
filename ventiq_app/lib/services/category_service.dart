@@ -10,24 +10,30 @@ class CategoryService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final UserPreferencesService _preferencesService = UserPreferencesService();
 
-  /// Fetch categories from Supabase using the RPC function
+  /// Fetch categories from Supabase using the RPC function with TPV filtering
   Future<List<Category>> getCategories() async {
     try {
-      // Get store ID from preferences
+      // Get store ID and TPV ID from preferences
       final workerProfile = await _preferencesService.getWorkerProfile();
       final idTienda = workerProfile['idTienda'] as int?;
+      final idTpv = await _preferencesService.getIdTpv();
       
       if (idTienda == null) {
         throw Exception('No se encontró el ID de la tienda en las preferencias');
       }
 
-      debugPrint('🏪 Obteniendo categorías para tienda ID: $idTienda');
+      if (idTpv == null) {
+        throw Exception('No se encontró el ID del TPV en las preferencias');
+      }
 
-      // Call the RPC function to get categories by store
+      debugPrint('🏪 Obteniendo categorías para tienda ID: $idTienda, TPV ID: $idTpv');
+
+      // Call the new RPC function to get categories by store and TPV with product count
       final response = await _supabase.rpc(
-        'get_categorias_by_tienda',
+        'get_categorias_by_tienda_tpv',
         params: {
-          'p_tienda_id': idTienda
+          'p_tienda_id': idTienda,
+          'p_tpv_id': idTpv
         },
       );
 
@@ -41,7 +47,7 @@ class CategoryService {
       final List<Category> categories = [];
       for (final item in response) {
         final category = Category.fromJson(item as Map<String, dynamic>);
-        print("${category}");
+        debugPrint('📋 Categoría: ${category.name} - ${category.productCount} productos');
         categories.add(category);
       }
 
@@ -85,6 +91,7 @@ class Category {
   final String? imageUrl;
   final Color color;
   final bool isActive;
+  final int productCount;
 
   Category({
     required this.id,
@@ -93,6 +100,7 @@ class Category {
     required this.imageUrl,
     required this.color,
     this.isActive = true,
+    this.productCount = 0,
   });
 
   /// Create Category from JSON response
@@ -107,6 +115,7 @@ class Category {
       imageUrl: json['imagen'] as String?,
       color: categoryService._generateCategoryColor(name),
       isActive: json['activo'] as bool? ?? true,
+      productCount: json['total_productos'] as int? ?? 0,
     );
   }
 
@@ -118,11 +127,12 @@ class Category {
       'descripcion': description,
       'image': imageUrl,
       'activo': isActive,
+      'total_productos': productCount,
     };
   }
 
   @override
   String toString() {
-    return 'Category(id: $id, name: $name, description: $description, isActive: $isActive, imageUrl: $imageUrl)';
+    return 'Category(id: $id, name: $name, description: $description, isActive: $isActive, imageUrl: $imageUrl, productCount: $productCount)';
   }
 }
