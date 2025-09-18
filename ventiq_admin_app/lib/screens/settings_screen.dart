@@ -16,6 +16,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final GlobalKey<State<CategoriesTabView>> _categoriesTabKey = GlobalKey<State<CategoriesTabView>>();
   final GlobalKey<State<VariantsTabView>> _variantsTabKey = GlobalKey<State<VariantsTabView>>();
   final GlobalKey<State<PresentationsTabView>> _presentationsTabKey = GlobalKey<State<PresentationsTabView>>();
 
@@ -72,7 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       body: TabBarView(
         controller: _tabController,
         children: [
-          CategoriesTabView(),
+          CategoriesTabView(key: _categoriesTabKey),
           VariantsTabView(key: _variantsTabKey),
           PresentationsTabView(key: _presentationsTabKey),
         ],
@@ -106,55 +107,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   }
 
   void _showAddCategoryDialog() {
-    final nameController = TextEditingController();
-    final descriptionController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Categoría'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre',
-                  prefixIcon: Icon(Icons.category),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Descripción',
-                  prefixIcon: Icon(Icons.description),
-                ),
-                maxLines: 2,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (nameController.text.isNotEmpty && descriptionController.text.isNotEmpty) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Categoría agregada exitosamente')),
-                );
-              }
-            },
-            child: const Text('Agregar'),
-          ),
-        ],
-      ),
-    );
+    // Llamar directamente al método del CategoriesTabView usando la key
+    (_categoriesTabKey.currentState as dynamic)?.showAddCategoryDialog();
   }
 
   void _onBottomNavTap(int index) {

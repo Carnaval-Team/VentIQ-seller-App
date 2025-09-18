@@ -23,6 +23,7 @@ dependencies:
   
   # File handling
   file_picker: ^8.0.0+1
+  image_picker: ^1.0.4
   
   # HTTP requests
   http: ^1.2.0
