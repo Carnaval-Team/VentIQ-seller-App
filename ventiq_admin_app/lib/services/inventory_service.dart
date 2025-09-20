@@ -329,9 +329,10 @@ class InventoryService {
       }
 
       // Handle nested response structure from fn_listar_inventario_productos_paged
-      final data = response is List 
-          ? response as List<dynamic>
-          : (response['data'] as List<dynamic>? ?? []);
+      final data =
+          response is List
+              ? response as List<dynamic>
+              : (response['data'] as List<dynamic>? ?? []);
       print('📦 Encontradas ${data.length} variantes con stock');
 
       final List<InventoryProduct> products = [];
@@ -433,10 +434,12 @@ class InventoryService {
                   'id_producto': p['id_producto'],
                   'id_variante': p['id_variante'],
                   'id_opcion_variante': p['id_opcion_variante'],
-                  'id_presentacion': p['id_presentacion'], // Add missing presentation ID
+                  'id_presentacion':
+                      p['id_presentacion'], // Add missing presentation ID
                   'cantidad': p['cantidad'],
                   'precio_unitario': p['precio_unitario'] ?? 0.0,
-                  'id_ubicacion': idLayoutOrigen, // Source location for extraction
+                  'id_ubicacion':
+                      idLayoutOrigen, // Source location for extraction
                 },
               )
               .toList();
@@ -469,7 +472,8 @@ class InventoryService {
                   'id_producto': p['id_producto'],
                   'id_variante': p['id_variante'],
                   'id_opcion_variante': p['id_opcion_variante'],
-                  'id_presentacion': p['id_presentacion'], // Add missing presentation ID
+                  'id_presentacion':
+                      p['id_presentacion'], // Add missing presentation ID
                   'cantidad': p['cantidad'],
                   'precio_unitario': p['precio_unitario'] ?? 0.0,
                   'id_ubicacion':
@@ -894,18 +898,15 @@ class InventoryService {
 
       if (response == null) {
         print('❌ Respuesta nula de fn_contabilizar_operacion');
-        return {
-          'status': 'error',
-          'message': 'Respuesta nula del servidor',
-        };
+        return {'status': 'error', 'message': 'Respuesta nula del servidor'};
       }
 
       final result = response as Map<String, dynamic>;
-      
+
       print('📊 Resultado parseado:');
       print('   - Status: ${result['status']}');
       print('   - Message: ${result['message']}');
-      
+
       if (result['status'] == 'success') {
         print('✅ Operación completada exitosamente');
       } else {
@@ -917,10 +918,7 @@ class InventoryService {
     } catch (e, stackTrace) {
       print('❌ Error en completeOperation: $e');
       print('📍 StackTrace: $stackTrace');
-      return {
-        'status': 'error',
-        'message': 'Error al completar operación: $e',
-      };
+      return {'status': 'error', 'message': 'Error al completar operación: $e'};
     }
   }
 
@@ -939,9 +937,10 @@ class InventoryService {
         'fn_listar_inventario_productos_paged',
         params: {
           'p_id_producto': idProducto,
-          'p_id_ubicacion': idLayout,  // Fix: use p_id_ubicacion instead of p_id_layout
+          'p_id_ubicacion':
+              idLayout, // Fix: use p_id_ubicacion instead of p_id_layout
           'p_mostrar_sin_stock': false, // Solo con stock
-          'p_pagina': 1,  // Fix: use p_pagina instead of p_page
+          'p_pagina': 1, // Fix: use p_pagina instead of p_page
           'p_limite': 100, // Fix: use p_limite instead of p_page_size
         },
       );
@@ -952,9 +951,10 @@ class InventoryService {
       }
 
       // Handle nested response structure from fn_listar_inventario_productos_paged
-      final data = response is List 
-          ? response as List<dynamic>
-          : (response['data'] as List<dynamic>? ?? []);
+      final data =
+          response is List
+              ? response as List<dynamic>
+              : (response['data'] as List<dynamic>? ?? []);
       print('📦 Encontradas ${data.length} variantes con stock');
 
       final variants =
@@ -962,14 +962,14 @@ class InventoryService {
             final stockDisponible = (item['stock_disponible'] ?? 0).toDouble();
 
             // Debug logging for variant data analysis
-            print('🔍 Processing item:');
+            /* print('🔍 Processing item:');
             print('   - id_variante: ${item['id_variante']} (${item['id_variante'].runtimeType})');
             print('   - variante: ${item['variante']} (${item['variante'].runtimeType})');
             print('   - id_opcion_variante: ${item['id_opcion_variante']} (${item['id_opcion_variante'].runtimeType})');
             print('   - opcion_variante: ${item['opcion_variante']} (${item['opcion_variante'].runtimeType})');
             print('   - id_presentacion: ${item['id_presentacion']} (${item['id_presentacion'].runtimeType})');
             print('   - um: ${item['um']} (${item['um'].runtimeType})');
-            print('   - stock_disponible: ${item['stock_disponible']}');
+            print('   - stock_disponible: ${item['stock_disponible']}');*/
 
             return {
               'id_producto': item['id_producto'] ?? idProducto,
@@ -983,13 +983,20 @@ class InventoryService {
               'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
 
               // Información de presentación - Handle null id_presentacion
-              'id_presentacion': item['id_presentacion'], // Keep original null value
-              'presentacion_nombre': item['id_presentacion'] != null 
-                  ? _safeSubstring(item['um'] ?? 'UN', 0, 3) // Safe substring to prevent RangeError
-                  : 'Sin presentación',
-              'presentacion_codigo': item['id_presentacion'] != null
-                  ? (item['um_codigo'] ?? 'UN')
-                  : 'SIN_PRES',
+              'id_presentacion':
+                  item['id_presentacion'], // Keep original null value
+              'presentacion_nombre':
+                  item['id_presentacion'] != null
+                      ? _safeSubstring(
+                        item['um'] ?? 'UN',
+                        0,
+                        3,
+                      ) // Safe substring to prevent RangeError
+                      : 'Sin presentación',
+              'presentacion_codigo':
+                  item['id_presentacion'] != null
+                      ? (item['um_codigo'] ?? 'UN')
+                      : 'SIN_PRES',
 
               // Stock disponible
               'stock_disponible': stockDisponible,
@@ -1007,22 +1014,30 @@ class InventoryService {
 
       // Agrupar por presentación únicamente (ignorar variantes)
       final Map<String, Map<String, dynamic>> groupedPresentations = {};
-      
+
       for (final variant in variants) {
         final presentationKey = variant['presentation_key'];
-        
+
         if (!groupedPresentations.containsKey(presentationKey)) {
           // Tomar la primera ocurrencia de cada presentación (stocks ya consolidados en SQL)
-          groupedPresentations[presentationKey] = Map<String, dynamic>.from(variant);
-          print('📦 Agregando presentación: ${variant['presentacion_nombre']} (key: $presentationKey, stock: ${variant['stock_disponible']})');
+          groupedPresentations[presentationKey] = Map<String, dynamic>.from(
+            variant,
+          );
+          print(
+            '📦 Agregando presentación: ${variant['presentacion_nombre']} (key: $presentationKey, stock: ${variant['stock_disponible']})',
+          );
         } else {
           // No sumar stocks - ya vienen consolidados de la función SQL
-          print('📦 Ignorando duplicado de presentación: ${variant['presentacion_nombre']} (key: $presentationKey, stock: ${variant['stock_disponible']})');
+          print(
+            '📦 Ignorando duplicado de presentación: ${variant['presentacion_nombre']} (key: $presentationKey, stock: ${variant['stock_disponible']})',
+          );
         }
       }
 
       final groupedVariants = groupedPresentations.values.toList();
-      print('📦 Después de agrupar: ${groupedVariants.length} presentaciones únicas');
+      print(
+        '📦 Después de agrupar: ${groupedVariants.length} presentaciones únicas',
+      );
 
       return groupedVariants;
     } catch (e) {
@@ -1039,14 +1054,17 @@ class InventoryService {
     required int idLayout,
   }) async {
     try {
-      print('🔍 Obteniendo presentaciones del producto $idProducto en zona $idLayout...');
+      print(
+        '🔍 Obteniendo presentaciones del producto $idProducto en zona $idLayout...',
+      );
 
       // Query to get all presentations configured for this product in this zone
       final response = await _supabase.rpc(
         'fn_listar_inventario_productos_paged',
         params: {
           'p_id_producto': idProducto,
-          'p_id_ubicacion': idLayout, // Fix: use p_id_ubicacion instead of p_id_layout
+          'p_id_ubicacion':
+              idLayout, // Fix: use p_id_ubicacion instead of p_id_layout
           'p_mostrar_sin_stock': true, // Include zero stock items
           'p_pagina': 1, // Fix: use p_pagina instead of p_page
           'p_limite': 100, // Fix: use p_limite instead of p_page_size
@@ -1061,45 +1079,55 @@ class InventoryService {
       final data = response['data'] as List<dynamic>? ?? [];
       print('📦 Encontradas ${data.length} presentaciones configuradas');
 
-      final presentations = data.map<Map<String, dynamic>>((item) {
-        return {
-          'id_producto': item['id_producto'] ?? idProducto,
-          'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
-          'sku_producto': item['sku_producto'] ?? '',
+      final presentations =
+          data.map<Map<String, dynamic>>((item) {
+            return {
+              'id_producto': item['id_producto'] ?? idProducto,
+              'nombre_producto': item['denominacion'] ?? 'Producto sin nombre',
+              'sku_producto': item['sku_producto'] ?? '',
 
-          // Información de variante
-          'id_variante': item['id_variante'],
-          'variante_nombre': item['variante'] ?? 'Sin variante',
-          'id_opcion_variante': item['id_opcion_variante'],
-          'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
+              // Información de variante
+              'id_variante': item['id_variante'],
+              'variante_nombre': item['variante'] ?? 'Sin variante',
+              'id_opcion_variante': item['id_opcion_variante'],
+              'opcion_variante_nombre': item['opcion_variante'] ?? 'Única',
 
-          // Información de presentación
-          'id_presentacion': item['id_presentacion'], // Keep original null value
-          'presentacion_nombre': item['id_presentacion'] != null 
-              ? _safeSubstring(item['um'] ?? 'UN', 0, 3) // Safe substring to prevent RangeError
-              : 'Sin presentación',
-          'presentacion_codigo': item['id_presentacion'] != null
-              ? (item['um_codigo'] ?? 'UN')
-              : 'SIN_PRES',
+              // Información de presentación
+              'id_presentacion':
+                  item['id_presentacion'], // Keep original null value
+              'presentacion_nombre':
+                  item['id_presentacion'] != null
+                      ? _safeSubstring(
+                        item['um'] ?? 'UN',
+                        0,
+                        3,
+                      ) // Safe substring to prevent RangeError
+                      : 'Sin presentación',
+              'presentacion_codigo':
+                  item['id_presentacion'] != null
+                      ? (item['um_codigo'] ?? 'UN')
+                      : 'SIN_PRES',
 
-          // Stock (puede ser 0)
-          'stock_disponible': (item['stock_disponible'] ?? 0).toDouble(),
-          'stock_reservado': (item['stock_reservado'] ?? 0).toDouble(),
-          'stock_actual': (item['stock_actual'] ?? 0).toDouble(),
+              // Stock (puede ser 0)
+              'stock_disponible': (item['stock_disponible'] ?? 0).toDouble(),
+              'stock_reservado': (item['stock_reservado'] ?? 0).toDouble(),
+              'stock_actual': (item['stock_actual'] ?? 0).toDouble(),
 
-          // Información adicional
-          'precio_unitario': (item['precio_venta'] ?? 0).toDouble(),
-          'id_layout': idLayout,
+              // Información adicional
+              'precio_unitario': (item['precio_venta'] ?? 0).toDouble(),
+              'id_layout': idLayout,
 
-          // Clave única
-          'variant_key':
-              '${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
-        };
-      }).toList();
+              // Clave única
+              'variant_key':
+                  '${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
+            };
+          }).toList();
 
       print('📊 Presentaciones encontradas: ${presentations.length}');
       for (final pres in presentations) {
-        print('   - ID: ${pres['id_presentacion']}, Nombre: ${pres['presentacion_nombre']}, Stock: ${pres['stock_disponible']}');
+        print(
+          '   - ID: ${pres['id_presentacion']}, Nombre: ${pres['presentacion_nombre']}, Stock: ${pres['stock_disponible']}',
+        );
       }
 
       return presentations;
@@ -1139,15 +1167,15 @@ class InventoryService {
 
       for (int i = 0; i < responseList.length; i++) {
         final item = responseList[i];
-        print('🔍 Processing item $i: $item');
-        print('🔍 Item type: ${item.runtimeType}');
+        /*  print('🔍 Processing item $i: $item');
+        print('🔍 Item type: ${item.runtimeType}');*/
 
         if (item is Map<String, dynamic>) {
-          print('🔍 Item keys: ${item.keys.toList()}');
-          print('🔍 Item values: ${item.values.toList()}');
+          /*    print('🔍 Item keys: ${item.keys.toList()}');
+          print('🔍 Item values: ${item.values.toList()}');*/
 
           // Log each field individually
-          print(
+          /*  print(
             '  - id_producto: ${item['id_producto']} (${item['id_producto'].runtimeType})',
           );
           print(
@@ -1170,13 +1198,10 @@ class InventoryService {
           );
           print(
             '  - cantidad_total_en_unidades_base: ${item['cantidad_total_en_unidades_base']} (${item['cantidad_total_en_unidades_base'].runtimeType})',
-          );
+          );*/
 
           try {
             final summary = InventorySummaryByUser.fromJson(item);
-            print(
-              '✅ Successfully created InventorySummaryByUser: ${summary.productoNombre} - ${summary.cantidadTotalEnAlmacen} units',
-            );
             summaries.add(summary);
           } catch (e, stackTrace) {
             print('❌ Error creating InventorySummaryByUser from item $i: $e');
@@ -1217,7 +1242,7 @@ class InventoryService {
     required int idTipoOperacion,
   }) async {
     try {
-      print('🔍 Insertando ajuste de inventario...');
+      /*print('🔍 Insertando ajuste de inventario...');
       print('📦 Parámetros:');
       print('   - ID Producto: $idProducto');
       print('   - ID Ubicación: $idUbicacion');
@@ -1227,7 +1252,7 @@ class InventoryService {
       print('   - Motivo: $motivo');
       print('   - Observaciones: $observaciones');
       print('   - UUID Usuario: $uuid');
-      print('   - ID Tipo Operación: $idTipoOperacion');
+      print('   - ID Tipo Operación: $idTipoOperacion');*/
 
       final response = await _supabase.rpc(
         'fn_insertar_ajuste_inventario',
@@ -1251,7 +1276,7 @@ class InventoryService {
       }
 
       final result = response as Map<String, dynamic>;
-      
+
       if (result['status'] == 'success') {
         print('✅ Ajuste de inventario registrado exitosamente');
         print('📊 ID Operación: ${result['id_operacion']}');

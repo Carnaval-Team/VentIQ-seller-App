@@ -582,18 +582,18 @@ class VariantService {
       
       // Return subcategories with category hierarchy information
       final result = data.map((item) {
-        print(' [getSubcategoriesByVariant] Processing item: $item');
+       // print(' [getSubcategoriesByVariant] Processing item: $item');
         
         final subcategoryId = item['id_subcategoria'];
         final subcategoryName = item['denominacion_subcategoria'] ?? '';
         final categoryName = item['denominacion_categoria'] ?? '';
         final categoryId = item['id_categoria'];
         
-        print(' [getSubcategoriesByVariant] Extracted values:');
+       /* print(' [getSubcategoriesByVariant] Extracted values:');
         print('   - subcategoryId: $subcategoryId');
         print('   - subcategoryName: "$subcategoryName"');
         print('   - categoryName: "$categoryName"');
-        print('   - categoryId: $categoryId');
+        print('   - categoryId: $categoryId');*/
         
         final processedItem = {
           'id': subcategoryId,
@@ -603,7 +603,7 @@ class VariantService {
           'hierarchy': '$categoryName > $subcategoryName',
         };
         
-        print(' [getSubcategoriesByVariant] Processed item: $processedItem');
+       // print(' [getSubcategoriesByVariant] Processed item: $processedItem');
         return processedItem;
       }).toList();
       

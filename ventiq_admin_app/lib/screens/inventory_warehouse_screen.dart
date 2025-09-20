@@ -5,6 +5,8 @@ import '../models/warehouse.dart';
 import '../services/inventory_service.dart';
 import '../services/warehouse_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/export_service.dart';
+import '../widgets/export_dialog.dart';
 
 class InventoryWarehouseScreen extends StatefulWidget {
   const InventoryWarehouseScreen({super.key});
@@ -18,6 +20,7 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
   // Services
   final InventoryService _inventoryService = InventoryService();
   final WarehouseService _warehouseService = WarehouseService();
+  final ExportService _exportService = ExportService();
 
   // State variables
   bool _isLoading = false;
@@ -749,58 +752,108 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
 
               const SizedBox(height: 16),
 
-              // Botón "Ver productos"
+              // Botones "Ver productos" y "Exportar"
               if (productCount > 0)
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          _expandedLayouts[layoutKey] = !isExpanded;
-                        });
-                        if (!isExpanded &&
-                            _layoutInventory[layoutKey] == null) {
-                          _loadLayoutInventory(layoutKey, zone.id);
-                        }
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.05),
+                  child: Column(
+                    children: [
+                      // Botón "Ver productos"
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _expandedLayouts[layoutKey] = !isExpanded;
+                            });
+                            if (!isExpanded &&
+                                _layoutInventory[layoutKey] == null) {
+                              _loadLayoutInventory(layoutKey, zone.id);
+                            }
+                          },
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: AppColors.primary.withOpacity(0.2),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Ver productos ($productCount)',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.primary,
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: AppColors.primary.withOpacity(0.2),
                               ),
                             ),
-                            Icon(
-                              isExpanded
-                                  ? Icons.keyboard_arrow_up
-                                  : Icons.keyboard_arrow_down,
-                              color: AppColors.primary,
-                              size: 20,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Ver productos ($productCount)',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                Icon(
+                                  isExpanded
+                                      ? Icons.keyboard_arrow_up
+                                      : Icons.keyboard_arrow_down,
+                                  color: AppColors.primary,
+                                  size: 20,
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
+                      
+                      // Botón de exportación (solo visible cuando los productos están expandidos)
+                      if (isExpanded && inventory.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _showExportDialog(warehouseId, zone, inventory),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.success.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.file_download_outlined,
+                                    color: AppColors.success,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Exportar Lista',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: AppColors.success,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
 
@@ -1031,5 +1084,35 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
         );
       }
     }
+  }
+
+  /// Muestra el diálogo de exportación y maneja la exportación
+  Future<void> _showExportDialog(String warehouseId, WarehouseZone zone, List<InventoryProduct> products) async {
+    // Encontrar el warehouse completo
+    final warehouse = _warehouses.firstWhere((w) => w.id == warehouseId);
+    
+    await showExportDialog(
+      context: context,
+      warehouseName: warehouse.name,
+      zoneName: zone.name,
+      onPdfSelected: () => _exportProducts(warehouse.name, zone.name, products, ExportFormat.pdf),
+      onExcelSelected: () => _exportProducts(warehouse.name, zone.name, products, ExportFormat.excel),
+    );
+  }
+  
+  /// Exporta los productos en el formato seleccionado
+  Future<void> _exportProducts(
+    String warehouseName,
+    String zoneName,
+    List<InventoryProduct> products,
+    ExportFormat format,
+  ) async {
+    await _exportService.exportInventoryProducts(
+      context: context,
+      warehouseName: warehouseName,
+      zoneName: zoneName,
+      products: products,
+      format: format,
+    );
   }
 }
