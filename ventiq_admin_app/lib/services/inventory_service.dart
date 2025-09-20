@@ -4,6 +4,7 @@ import '../models/warehouse.dart';
 import '../models/transfer_order.dart';
 import 'user_preferences_service.dart';
 import 'transfer_service.dart';
+import 'product_service.dart';
 import 'financial_service.dart';
 
 class InventoryService {
@@ -156,6 +157,18 @@ class InventoryService {
       print('🔍 Insertando extracción completa...');
       print('📦 Productos a extraer: ${productos.length}');
       print('idMotivoOperacion: $idMotivoOperacion');
+      // NUEVO: Procesar productos para conversión automática a presentación base
+      print('🔄 Procesando productos para conversión a presentación base...');
+      final productosConvertidos = await processProductsForExtraction(productos);
+      // Verificar si productos son elaborados
+      for (final producto in productosConvertidos) {
+        final productId = producto['id_producto'] as int;
+        final isElaborated = await _isProductElaborated(productId);
+        if (isElaborated) {
+          print('🔍 Producto $productId es elaborado');
+          // Agregar lógica para productos elaborados
+        }
+      }
       final response = await _supabase.rpc(
         'fn_insertar_extraccion_completa',
         params: {
@@ -164,7 +177,7 @@ class InventoryService {
           'p_id_motivo_operacion': idMotivoOperacion,
           'p_id_tienda': idTienda,
           'p_observaciones': observaciones,
-          'p_productos': productos,
+          'p_productos': productosConvertidos, // Usar productos convertidos
           'p_uuid': uuid,
         },
       );
@@ -427,22 +440,7 @@ class InventoryService {
       // Step 1: Create extraction operation (ID 7 - salida de almacén origen)
       print('📋 Paso 1: Creando operación de extracción (Tipo 7)...');
 
-      final extractionProducts =
-          productos
-              .map(
-                (p) => {
-                  'id_producto': p['id_producto'],
-                  'id_variante': p['id_variante'],
-                  'id_opcion_variante': p['id_opcion_variante'],
-                  'id_presentacion':
-                      p['id_presentacion'], // Add missing presentation ID
-                  'cantidad': p['cantidad'],
-                  'precio_unitario': p['precio_unitario'] ?? 0.0,
-                  'id_ubicacion':
-                      idLayoutOrigen, // Source location for extraction
-                },
-              )
-              .toList();
+      final extractionProducts = await processProductsForExtraction(productos);
 
       final extractionResult = await insertCompleteExtraction(
         autorizadoPor: autorizadoPor,
@@ -484,10 +482,12 @@ class InventoryService {
               )
               .toList();
 
+      final processedReceptionProducts = await processProductsForReception(receptionProducts);
+
       final receptionResult = await insertInventoryReception(
         entregadoPor: autorizadoPor,
         idTienda: idTienda,
-        montoTotal: receptionProducts.fold<double>(
+        montoTotal: processedReceptionProducts.fold<double>(
           0.0,
           (sum, p) =>
               sum +
@@ -495,7 +495,7 @@ class InventoryService {
         ),
         motivo: 2, // ID del motivo de recepción por transferencia
         observaciones: 'Transferencia: $observaciones',
-        productos: receptionProducts,
+        productos: processedReceptionProducts,
         recibidoPor: autorizadoPor,
         uuid: userUuid,
       );
@@ -754,6 +754,7 @@ class InventoryService {
   }
 
   /// Inserta una recepción completa de inventario usando RPC
+  /// Inserta una recepción completa de inventario usando RPC
   static Future<Map<String, dynamic>> insertInventoryReception({
     required String entregadoPor,
     required int idTienda,
@@ -770,6 +771,10 @@ class InventoryService {
         '📦 Parámetros: entregadoPor=$entregadoPor, idTienda=$idTienda, productos=${productos.length}',
       );
 
+      // NUEVO: Procesar productos para conversión automática a presentación base
+      print('🔄 Procesando productos para conversión a presentación base...');
+      final productosConvertidos = await processProductsForReception(productos);
+
       final response = await _supabase.rpc(
         'fn_insertar_recepcion_completa',
         params: {
@@ -778,7 +783,7 @@ class InventoryService {
           'p_monto_total': montoTotal,
           'p_motivo': motivo,
           'p_observaciones': observaciones,
-          'p_productos': productos,
+          'p_productos': productosConvertidos, // Usar productos convertidos
           'p_recibido_por': recibidoPor,
           'p_uuid': uuid,
         },
@@ -790,16 +795,6 @@ class InventoryService {
         throw Exception('Respuesta nula de la función RPC');
       }
 
-      // TODO: Integración financiera pendiente hasta establecer módulo completo
-      // await _registerReceptionExpenses({
-      //   'id_tienda': idTienda,
-      //   'monto_total': montoTotal,
-      //   'motivo': motivo,
-      //   'observaciones': observaciones,
-      //   'uuid': uuid,
-      //   'productos': productos,
-      // });
-
       return response as Map<String, dynamic>;
     } catch (e, stackTrace) {
       print('❌ Error en insertInventoryReception: $e');
@@ -808,67 +803,23 @@ class InventoryService {
     }
   }
 
-  // TODO: Método temporal comentado hasta establecer módulo financiero
-  /*
-  /// Registrar gastos automáticos por recepción de inventario
-  static Future<void> _registerReceptionExpenses(Map<String, dynamic> receptionData) async {
+  /// Verifica si un producto es elaborado
+  static Future<bool> _isProductElaborated(int productId) async {
     try {
-      print('💰 Iniciando registro de gastos por recepción...');
+      final response = await _supabase
+          .from('app_dat_producto')
+          .select('es_elaborado')
+          .eq('id', productId)
+          .single();
       
-      // Calcular monto total de la recepción
-      final productos = receptionData['productos'] as List<Map<String, dynamic>>;
-      double montoTotal = 0.0;
-      
-      for (final producto in productos) {
-        final cantidad = (producto['cantidad'] ?? 0).toDouble();
-        final costo = (producto['costo_real'] ?? producto['precio_unitario'] ?? 0).toDouble();
-        montoTotal += cantidad * costo;
-      }
-      
-      if (montoTotal > 0) {
-        // Obtener categorías de gastos disponibles
-        final categories = await _financialService.getExpenseSubcategories();
-        final comprasCategory = categories.firstWhere(
-          (cat) => cat['denominacion'].toString().toLowerCase().contains('compra') ||
-                   cat['denominacion'].toString().toLowerCase().contains('mercancía'),
-          orElse: () => categories.isNotEmpty ? categories.first : null,
-        );
-        
-        // Obtener centros de costo disponibles
-        final costCenters = await _financialService.getCostCenters(
-          storeId: receptionData['id_tienda']
-        );
-        final defaultCostCenter = costCenters.isNotEmpty ? costCenters.first : null;
-        
-        // Obtener tipos de costo disponibles
-        final costTypes = await _financialService.getCostTypes();
-        final directCostType = costTypes.firstWhere(
-          (type) => type['denominacion'].toString().toLowerCase().contains('directo'),
-          orElse: () => costTypes.isNotEmpty ? costTypes.first : null,
-        );
-        
-        // Registrar gasto consolidado por la recepción
-        final gastoData = {
-          'id_subcategoria_gasto': comprasCategory?['id'],
-          'id_centro_costo': defaultCostCenter?['id'],
-          'id_tipo_costo': directCostType?['id'],
-          'id_tienda': receptionData['id_tienda'],
-          'monto': montoTotal,
-          'descripcion': 'Gasto por recepción de inventario - ${productos.length} productos',
-          'fecha_gasto': DateTime.now().toIso8601String().split('T')[0],
-          'uuid': receptionData['uuid'],
-        };
-        
-        await _supabase.from('app_cont_gastos').insert(gastoData);
-        
-        print('✅ Gasto registrado exitosamente: \$${montoTotal.toStringAsFixed(2)}');
-      }
+      final isElaborated = response['es_elaborado'] ?? false;
+      print('🔍 Producto $productId es elaborado: $isElaborated');
+      return isElaborated;
     } catch (e) {
-      print('❌ Error registrando gastos de recepción: $e');
-      // No lanzar excepción para no interrumpir el flujo principal
+      print('⚠️ Error verificando si producto $productId es elaborado: $e');
+      return false;
     }
   }
-  */
 
   /// Complete operation using fn_contabilizar_operacion RPC
   static Future<Map<String, dynamic>> completeOperation({
@@ -1136,6 +1087,241 @@ class InventoryService {
       return [];
     }
   }
+
+  /// Procesa productos para recepción convirtiendo a presentación base
+  static Future<List<Map<String, dynamic>>> processProductsForReception(
+    List<Map<String, dynamic>> productos
+  ) async {
+    final processedProducts = <Map<String, dynamic>>[];
+    
+    print('🔄 ===== PROCESANDO PRODUCTOS PARA RECEPCIÓN =====');
+    print('🔄 Total productos a procesar: ${productos.length}');
+    
+    for (final producto in productos) {
+      try {
+        final productId = producto['id_producto'] as int;
+        final presentacionId = producto['id_presentacion'] as int?;
+        final cantidadOriginal = (producto['cantidad'] as num).toDouble();
+        
+        print('🔄 Procesando producto ID: $productId');
+        print('🔄 Presentación seleccionada: $presentacionId');
+        print('🔄 Cantidad original: $cantidadOriginal');
+        
+        if (presentacionId == null) {
+          print('⚠️ No hay presentación seleccionada, usando cantidad original');
+          processedProducts.add(producto);
+          continue;
+        }
+        
+        // Convertir a presentación base
+        final cantidadEnBase = await ProductService.convertToBasePresentacion(
+          productId: productId,
+          fromPresentacionId: presentacionId,
+          cantidad: cantidadOriginal,
+        );
+        
+        // Obtener presentación base
+        final basePresentation = await ProductService.getBasePresentacion(productId);
+        
+        if (basePresentation != null) {
+          // Crear producto procesado con presentación base
+          final processedProduct = Map<String, dynamic>.from(producto);
+          processedProduct['id_presentacion'] = basePresentation['id_presentacion'];
+          processedProduct['cantidad'] = cantidadEnBase;
+          processedProduct['cantidad_original'] = cantidadOriginal;
+          processedProduct['presentacion_original'] = presentacionId;
+          processedProduct['conversion_applied'] = cantidadEnBase != cantidadOriginal;
+          
+          processedProducts.add(processedProduct);
+          
+          print('✅ Producto procesado:');
+          print('   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)');
+          print('   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})');
+          print('   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}');
+        } else {
+          print('⚠️ No se pudo obtener presentación base, usando original');
+          processedProducts.add(producto);
+        }
+        
+      } catch (e) {
+        print('❌ Error procesando producto: $e');
+        processedProducts.add(producto); // Agregar original en caso de error
+      }
+    }
+    
+    print('✅ Procesamiento completado: ${processedProducts.length} productos');
+    return processedProducts;
+  }
+
+  /// Procesa productos para extracción convirtiendo a presentación base
+  static Future<List<Map<String, dynamic>>> processProductsForExtraction(
+    List<Map<String, dynamic>> productos
+  ) async {
+    print('🔄 ===== PROCESANDO PRODUCTOS PARA EXTRACCIÓN =====');
+    print('🔄 Total productos a procesar: ${productos.length}');
+    
+    // NUEVO: Descomponer productos elaborados ANTES de conversión de presentaciones
+    print('🍽️ Descomponiendo productos elaborados...');
+    final productosDescompuestos = await decomposeElaboratedProducts(productos);
+    print('🍽️ Productos después de descomposición: ${productosDescompuestos.length}');
+    
+    final processedProducts = <Map<String, dynamic>>[];
+    
+    for (final producto in productosDescompuestos) {
+      try {
+        final productId = producto['id_producto'] as int;
+        final presentacionId = producto['id_presentacion'] as int?;
+        final cantidadOriginal = (producto['cantidad'] as num).toDouble();
+        
+        print('🔄 Procesando extracción producto ID: $productId');
+        print('🔄 Presentación seleccionada: $presentacionId');
+        print('🔄 Cantidad a extraer: $cantidadOriginal');
+        
+        if (presentacionId == null) {
+          print('⚠️ No hay presentación seleccionada, usando cantidad original');
+          processedProducts.add(producto);
+          continue;
+        }
+        
+        // Convertir a presentación base
+        final cantidadEnBase = await ProductService.convertToBasePresentacion(
+          productId: productId,
+          fromPresentacionId: presentacionId,
+          cantidad: cantidadOriginal,
+        );
+        
+        // Obtener presentación base
+        final basePresentation = await ProductService.getBasePresentacion(productId);
+        
+        if (basePresentation != null) {
+          // Crear producto procesado con presentación base
+          final processedProduct = Map<String, dynamic>.from(producto);
+          processedProduct['id_presentacion'] = basePresentation['id_presentacion'];
+          processedProduct['cantidad'] = cantidadEnBase;
+          processedProduct['cantidad_original'] = cantidadOriginal;
+          processedProduct['presentacion_original'] = presentacionId;
+          processedProduct['conversion_applied'] = cantidadEnBase != cantidadOriginal;
+          
+          processedProducts.add(processedProduct);
+          
+          print('✅ Extracción procesada:');
+          print('   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)');
+          print('   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})');
+          print('   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}');
+        } else {
+          print('⚠️ No se pudo obtener presentación base, usando original');
+          processedProducts.add(producto);
+        }
+        
+      } catch (e) {
+        print('❌ Error procesando extracción: $e');
+        processedProducts.add(producto); // Agregar original en caso de error
+      }
+    }
+    
+    print('✅ Procesamiento de extracción completado: ${processedProducts.length} productos');
+    return processedProducts;
+  }
+
+  /// Descompone un producto elaborado recursivamente
+  static Future<void> _decomposeRecursively(
+    int productId, 
+    double quantity, 
+    Map<int, double> consolidatedIngredients
+  ) async {
+    print('🔄 Descomponiendo producto $productId con cantidad $quantity');
+    
+    final ingredients = await ProductService.getProductIngredients(productId.toString());
+    
+    if (ingredients.isEmpty) {
+      print('⚠️ Producto $productId sin ingredientes - tratando como simple');
+      _addToConsolidated(consolidatedIngredients, productId, quantity);
+      return;
+    }
+    
+    for (final ingredient in ingredients) {
+      final ingredientId = ingredient['producto_id'] as int;
+      final cantidadNecesaria = (ingredient['cantidad_necesaria'] as num).toDouble();
+      final totalQuantity = cantidadNecesaria * quantity;
+      
+      final isElaborated = await _isProductElaborated(ingredientId);
+      
+      if (isElaborated) {
+        await _decomposeRecursively(ingredientId, totalQuantity, consolidatedIngredients);
+      } else {
+        _addToConsolidated(consolidatedIngredients, ingredientId, totalQuantity);
+      }
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> decomposeElaboratedProducts(
+    List<Map<String, dynamic>> productos
+  ) async {
+    final decomposedProducts = <Map<String, dynamic>>[];
+    
+    print('🔄 Descomponiendo productos elaborados...');
+    
+    for (final producto in productos) {
+      final productId = producto['id_producto'] as int;
+      final cantidadOriginal = (producto['cantidad'] as num).toDouble();
+      
+      print('🔄 Procesando producto ID: $productId');
+      print('🔄 Cantidad original: $cantidadOriginal');
+      
+      final isElaborated = await _isProductElaborated(productId);
+      
+      if (isElaborated) {
+        print('🔍 Producto $productId es elaborado');
+        
+        final consolidatedIngredients = <int, double>{};
+        
+        await _decomposeRecursively(productId, cantidadOriginal, consolidatedIngredients);
+        
+        print('📦 Ingredientes consolidados:');
+        for (final entry in consolidatedIngredients.entries) {
+          print('   - ID: ${entry.key}, Cantidad: ${entry.value}');
+        }
+        
+        for (final entry in consolidatedIngredients.entries) {
+          final ingredientId = entry.key;
+          final cantidad = entry.value;
+          
+          final ingredientProduct = Map<String, dynamic>.from(producto);
+          ingredientProduct['id_producto'] = ingredientId;
+          ingredientProduct['cantidad'] = cantidad;
+          ingredientProduct['cantidad_original'] = cantidadOriginal;
+          ingredientProduct['producto_elaborado'] = productId;
+          ingredientProduct['conversion_applied'] = true;
+          
+          decomposedProducts.add(ingredientProduct);
+        }
+      } else {
+        decomposedProducts.add(producto);
+      }
+    }
+    
+    print('✅ Descomposición completada: ${decomposedProducts.length} productos');
+    return decomposedProducts;
+  }
+
+  /// Consolida ingredientes sumando cantidades de productos repetidos
+  static void _addToConsolidated(
+    Map<int, double> consolidatedIngredients,
+    int productId,
+    double quantity,
+  ) {
+    if (consolidatedIngredients.containsKey(productId)) {
+      // Si el producto ya existe, sumar la cantidad
+      consolidatedIngredients[productId] = consolidatedIngredients[productId]! + quantity;
+      print('📦 Consolidando producto $productId: ${consolidatedIngredients[productId]}');
+    } else {
+      // Si es nuevo, agregarlo al mapa
+      consolidatedIngredients[productId] = quantity;
+      print('📦 Agregando nuevo ingrediente $productId: $quantity');
+    }
+  }
+
+
 
   /// Get inventory summary by user using fn_inventario_resumen_por_usuario RPC
   /// Returns aggregated inventory data with product names, variants, and location/presentation counts

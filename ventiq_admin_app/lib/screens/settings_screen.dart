@@ -5,6 +5,7 @@ import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/categories_tab_view.dart';
 import '../widgets/variants_tab_view.dart';
 import '../widgets/presentations_tab_view.dart';
+import '../widgets/units_tab_view.dart';
 import '../services/variant_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -19,11 +20,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   final GlobalKey<State<CategoriesTabView>> _categoriesTabKey = GlobalKey<State<CategoriesTabView>>();
   final GlobalKey<State<VariantsTabView>> _variantsTabKey = GlobalKey<State<VariantsTabView>>();
   final GlobalKey<State<PresentationsTabView>> _presentationsTabKey = GlobalKey<State<PresentationsTabView>>();
+  final GlobalKey<State<UnitsTabView>> _unitsTabKey = GlobalKey<State<UnitsTabView>>();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -63,10 +65,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           indicatorColor: Colors.white,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
+          isScrollable: true,
           tabs: const [
             Tab(text: 'Categorías', icon: Icon(Icons.category)),
             Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
             Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
+            Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
           ],
         ),
       ),
@@ -76,6 +80,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           CategoriesTabView(key: _categoriesTabKey),
           VariantsTabView(key: _variantsTabKey),
           PresentationsTabView(key: _presentationsTabKey),
+          UnitsTabView(key: _unitsTabKey),
         ],
       ),
       endDrawer: const AdminDrawer(),
@@ -102,6 +107,9 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         break;
       case 2:
         (_presentationsTabKey.currentState as dynamic)?.showAddPresentationDialog();
+        break;
+      case 3:
+        (_unitsTabKey.currentState as dynamic)?.showAddDialog();
         break;
     }
   }

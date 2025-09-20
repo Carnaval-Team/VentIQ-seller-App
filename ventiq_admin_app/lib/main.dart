@@ -22,6 +22,7 @@ import 'screens/financial_setup_screen.dart';
 import 'screens/financial_dashboard_screen.dart';
 import 'screens/financial_reports_screen.dart';
 import 'screens/financial_expenses_screen.dart';
+import 'screens/production_costs_screen.dart';
 import 'screens/customers_screen.dart';
 import 'screens/workers_screen.dart';
 import 'screens/settings_screen.dart';
@@ -107,6 +108,7 @@ class MyApp extends StatelessWidget {
         '/financial-dashboard': (context) => const FinancialDashboardScreen(),
         '/financial-reports': (context) => const FinancialReportsScreen(),
         '/financial-expenses': (context) => const FinancialExpensesScreen(),
+        '/restaurant-costs': (context) => const ProductionCostsScreen(),
         '/customers': (context) => const CustomersScreen(),
         '/workers': (context) => const WorkersScreen(),
         '/settings': (context) => const SettingsScreen(),

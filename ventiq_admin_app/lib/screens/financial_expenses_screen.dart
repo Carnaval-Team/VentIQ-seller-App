@@ -21,9 +21,11 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
   List<Map<String, dynamic>> _pendingOperations = [];
   List<Map<String, dynamic>> _categoriesHierarchy = [];
   List<Map<String, dynamic>> _costCenters = [];
+  List<Map<String, dynamic>> _costTypes = []; // Agregar lista de tipos de costo
   bool _isLoading = true;
   String _selectedPeriod = 'month';
   Set<String> _selectedCategoryIds = <String>{};
+  int _pendingOperationsCount = 0;
 
   @override
   void initState() {
@@ -35,6 +37,7 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
       }
     });
     _loadExpensesData();
+    // Eliminar _loadPendingOperationsCount() - se carga cuando sea necesario
   }
 
   @override
@@ -43,11 +46,11 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
     super.dispose();
   }
 
-  void _loadDataForCurrentTab() {
+  Future<void> _loadDataForCurrentTab() async {
     if (_tabController.index == 0) {
-      _loadExpensesData();
+      await _loadExpensesData();
     } else {
-      _loadPendingOperations();
+      await _loadPendingOperations();
     }
   }
 
@@ -63,29 +66,37 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
       final futures = await Future.wait([
         _financialService.getExpenseCategoriesHierarchy(),
         _financialService.getCostCenters(storeId: storeId),
+        _financialService.getCostTypes(), // Agregar carga de tipos de costo
         _getExpensesByPeriod(),
       ]);
 
       final categoriesHierarchy = futures[0] as List<Map<String, dynamic>>;
       final costCenters = futures[1] as List<Map<String, dynamic>>;
-      final expenses = futures[2] as List<Map<String, dynamic>>;
+      final costTypes = futures[2] as List<Map<String, dynamic>>;
+      final expenses = futures[3] as List<Map<String, dynamic>>;
 
       print(' Datos cargados:');
       print('  - Categorías: ${categoriesHierarchy.length}');
       print('  - Centros de costo: ${costCenters.length}');
+      print('  - Tipos de costo: ${costTypes.length}');
       print('  - Gastos: ${expenses.length}');
 
       setState(() {
         _categoriesHierarchy = categoriesHierarchy;
         _costCenters = costCenters;
+        _costTypes = costTypes;
         _expenses = expenses;
         _isLoading = false;
       });
+      
+      // Actualizar conteo después de cargar gastos
+      _loadPendingOperationsCount();
     } catch (e) {
       print(' Error loading expenses data: $e');
       setState(() {
         _categoriesHierarchy = [];
         _costCenters = [];
+        _costTypes = [];
         _expenses = [];
         _isLoading = false;
       });
@@ -112,9 +123,12 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
       }
 
       setState(() {
-        _pendingOperations = operations;
-        _isLoading = false;
-      });
+          _pendingOperations = operations;
+          _pendingOperationsCount = operations.length; // AGREGAR ESTA LÍNEA
+          _isLoading = false;
+});
+      
+      // Ya no necesitamos llamar _loadPendingOperationsCount() aquí
     } catch (e) {
       print(' Error loading pending operations: $e');
       setState(() {
@@ -124,30 +138,33 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
     }
   }
 
+  Future<void> _loadPendingOperationsCount() async {
+    try {
+      final count = await _financialService.getPendingOperationsCount();
+      setState(() {
+        _pendingOperationsCount = count;
+      });
+      print(' Conteo de operaciones pendientes: $count');
+    } catch (e) {
+      print(' Error loading pending operations count: $e');
+      setState(() {
+        _pendingOperationsCount = 0;
+      });
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _getExpensesByPeriod() async {
     try {
       final userPrefs = UserPreferencesService();
       final storeId = await userPrefs.getIdTienda() ?? 1;
       
-      // Construir query base
-      var query = Supabase.instance.client
-          .from('app_cont_gastos')
-          .select('''
-            *,
-            app_nom_subcategoria_gasto!inner(denominacion),
-            app_cont_centro_costo!inner(denominacion)
-          ''')
-          .eq('id_tienda', storeId)
-          .gte('fecha_gasto', _getPeriodStartDate())
-          .lte('fecha_gasto', _getPeriodEndDate());
-
-      // Solo aplicar filtro de categorías si hay categorías seleccionadas
-      if (_selectedCategoryIds.isNotEmpty) {
-        query = query.inFilter('id_subcategoria_gasto', _selectedCategoryIds.toList());
-      }
-
-      final response = await query.order('fecha_gasto', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
+      // Usar el nuevo método del FinancialService
+      return await _financialService.getExpensesByPeriod(
+        storeId: storeId,
+        startDate: _getPeriodStartDate(),
+        endDate: _getPeriodEndDate(),
+        categoryIds: _selectedCategoryIds.isNotEmpty ? _selectedCategoryIds.toList() : null,
+      );
     } catch (e) {
       print('Error getting expenses: $e');
       return [];
@@ -441,6 +458,13 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
                       fontSize: 12,
                     ),
                   ),
+                  Text(
+                    'Operaciones pendientes: $_pendingOperationsCount',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.9),
+                      fontSize: 12,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -540,7 +564,8 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
     final amount = expense['monto'] as num? ?? 0.0;
     final category = expense['app_nom_subcategoria_gasto']?['denominacion'] ?? 'Sin categoría';
     final costCenter = expense['app_cont_centro_costo']?['denominacion'] ?? 'Sin centro';
-    final date = expense['fecha_gasto'] ?? '';
+    final date = expense['fecha'] ?? '';
+    final costType = expense['app_cont_tipo_costo']?['denominacion'] ?? 'Sin tipo de costo';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -609,6 +634,26 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
                           ),
                         ],
                       ),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.price_change,
+                            size: 14,
+                            color: Colors.grey[500],
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              costType,
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 13,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -652,8 +697,8 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
                   Text(
                     date,
                     style: TextStyle(
-                      color: Colors.grey[700],
                       fontSize: 13,
+                      color: Colors.grey[700],
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -770,6 +815,15 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
                 ],
               ],
             ),
+            
+            // Mostrar detalles específicos según el tipo de operación
+            // Remover carga automática de detalles - solo mostrar cuando el usuario procese
+            // if (isRecepcion && operation['original_data'] != null) 
+            //   _buildReceptionDetails(operation['original_data']),
+            
+            // if (isEntregaEfectivo && operation['original_data'] != null)
+            //   _buildCashWithdrawalDetails(operation['original_data']),
+            
             const SizedBox(height: 12),
             Row(
               children: [
@@ -804,35 +858,424 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
     );
   }
 
-  void _registerExpenseFromOperation(Map<String, dynamic> operation) {
-    final descriptionController = TextEditingController(text: operation['descripcion']);
-    final amountController = TextEditingController(text: operation['monto'].toString());
-    String? selectedCategory = operation['id_subcategoria_gasto']?.toString();
-    String? selectedCostCenter = operation['id_centro_costo']?.toString();
+  Widget _buildReceptionDetails(Map<String, dynamic> receptionData) {
+    final products = receptionData['app_dat_recepcion_productos'] as List<dynamic>? ?? [];
+    final receptionInfo = receptionData['app_dat_operacion_recepcion'] as Map<String, dynamic>? ?? {};
+    
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.inventory_2, size: 16, color: Colors.blue[700]),
+              const SizedBox(width: 6),
+              Text(
+                'Detalles de la Recepción',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blue[700],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          
+          // Información general
+          if (receptionInfo['entregado_por'] != null) ...[
+            _buildDetailRow('Proveedor:', receptionInfo['entregado_por']),
+          ],
+          if (receptionInfo['recibido_por'] != null) ...[
+            _buildDetailRow('Recibido por:', receptionInfo['recibido_por']),
+          ],
+          if (receptionInfo['observaciones_compra'] != null) ...[
+            _buildDetailRow('Observaciones:', receptionInfo['observaciones_compra']),
+          ],
+          
+          const SizedBox(height: 8),
+          Text(
+            'Productos (${products.length}):',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.blue[700],
+            ),
+          ),
+          const SizedBox(height: 4),
+          
+          // Lista de productos
+          ...products.take(5).map((product) {
+            final productData = product as Map<String, dynamic>;
+            final productName = productData['app_dat_producto']?['denominacion'] ?? 'Producto';
+            final cantidad = productData['cantidad'] ?? 0;
+            final precioUnitario = (productData['precio_unitario'] as num?)?.toDouble() ?? 0.0;
+            final descuento = (productData['descuento_monto'] as num?)?.toDouble() ?? 0.0;
+            final bonificacion = productData['bonificacion_cantidad'] ?? 0;
+            final costoReal = (productData['costo_real'] as num?)?.toDouble() ?? 0.0;
+            
+            return Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    productName,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Text(
+                        'Cant: $cantidad',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'P.Unit: \$${precioUnitario.toStringAsFixed(2)}',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ),
+                      if (descuento > 0) ...[
+                        const SizedBox(width: 12),
+                        Text(
+                          'Desc: \$${descuento.toStringAsFixed(2)}',
+                          style: const TextStyle(fontSize: 11, color: Colors.orange),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (bonificacion > 0 || costoReal > 0) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        if (bonificacion > 0) ...[
+                          Text(
+                            'Bonif: $bonificacion',
+                            style: const TextStyle(fontSize: 11, color: Colors.green),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        Text(
+                          'Costo Real: \$${costoReal.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 11, 
+                            color: Colors.blue[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }).toList(),
+          
+          if (products.length > 5) ...[
+            const SizedBox(height: 4),
+            Text(
+              '... y ${products.length - 5} productos más',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Registrar Gasto desde Operación'),
-          content: SingleChildScrollView(
+  Widget _buildCashWithdrawalDetails(Map<String, dynamic> withdrawalData) {
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.green.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.green.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.money_off, size: 16, color: Colors.green[700]),
+              const SizedBox(width: 6),
+              Text(
+                'Detalles del Egreso de Efectivo',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green[700],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          
+          _buildDetailRow('Motivo:', withdrawalData['motivo_entrega'] ?? 'Sin especificar'),
+          _buildDetailRow('Recibe:', withdrawalData['nombre_recibe'] ?? 'Sin especificar'),
+          _buildDetailRow('Autoriza:', withdrawalData['nombre_autoriza'] ?? 'Sin especificar'),
+          _buildDetailRow('Monto:', '\$${((withdrawalData['monto_entrega'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(2)}'),
+          
+          if (withdrawalData['id_turno'] != null) ...[
+            _buildDetailRow('Turno ID:', withdrawalData['id_turno'].toString()),
+          ],
+          if (withdrawalData['id_medio_pago'] != null) ...[
+            _buildDetailRow('Medio de Pago ID:', withdrawalData['id_medio_pago'].toString()),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _registerExpenseFromOperation(Map<String, dynamic> operation) {
+  final descriptionController = TextEditingController(text: operation['descripcion']);
+  final amountController = TextEditingController(text: operation['monto'].toString());
+  
+  // Inicializar como null para que el usuario seleccione
+  String? selectedCategory = operation['id_subcategoria_gasto']?.toString();
+  String? selectedCostCenter = operation['id_centro_costo']?.toString();
+  String? selectedCostType = operation['id_tipo_costo']?.toString();
+  
+  // Validar que los valores existan en las listas disponibles
+  if (selectedCategory != null && !_categoriesHierarchy.any((cat) => 
+      cat['children']?.any((sub) => sub['subcategory_id'].toString() == selectedCategory) ?? false)) {
+    selectedCategory = null; // Reset si no existe
+  }
+  if (selectedCostCenter != null && !_costCenters.any((cc) => cc['id'].toString() == selectedCostCenter)) {
+    selectedCostCenter = null; // Reset si no existe
+  }
+  if (selectedCostType != null && !_costTypes.any((ct) => ct['id'].toString() == selectedCostType)) {
+    selectedCostType = null; // Reset si no existe
+  }
+  
+  // Variables para el preview de asignaciones
+  Map<String, dynamic>? assignmentsPreview;
+  bool isLoadingPreview = false;
+  
+  showDialog(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: Text('Registrar Gasto: ${operation['tipo_operacion']}'),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+            maxWidth: MediaQuery.of(context).size.width * 0.9,
+          ),
+          child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Información de la operación
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Información de la Operación:', 
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue[700])),
+                      const SizedBox(height: 8),
+                      Text('Tipo: ${operation['tipo_operacion']}'),
+                      Text('Fecha: ${operation['fecha_operacion']}'),
+                      if (operation['proveedor'] != null)
+                        Text('Proveedor: ${operation['proveedor']}'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Preview de asignaciones de costos
+                if (assignmentsPreview != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: (assignmentsPreview!['is_fully_assigned'] ?? false)
+                        ? Colors.green.withOpacity(0.1) 
+                        : Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: (assignmentsPreview!['is_fully_assigned'] ?? false)
+                          ? Colors.green.withOpacity(0.3) 
+                          : Colors.orange.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              (assignmentsPreview!['is_fully_assigned'] ?? false)
+                                ? Icons.check_circle 
+                                : Icons.warning,
+                              color: (assignmentsPreview!['is_fully_assigned'] ?? false)
+                                ? Colors.green[700] 
+                                : Colors.orange[700],
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Preview de Asignaciones de Costos',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: (assignmentsPreview!['is_fully_assigned'] ?? false)
+                                  ? Colors.green[700] 
+                                  : Colors.orange[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text('Monto del Gasto: \$${(assignmentsPreview!['expense_amount'] ?? 0.0).toStringAsFixed(2)}'),
+                        Text('Total Asignado: \$${(assignmentsPreview!['total_assigned'] ?? 0.0).toStringAsFixed(2)}'),
+                        Text(
+                          (assignmentsPreview!['is_fully_assigned'] ?? false)
+                            ? '✅ Completamente asignado' 
+                            : '⚠️ Asignación parcial',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: (assignmentsPreview!['is_fully_assigned'] ?? false)
+                              ? Colors.green[700] 
+                              : Colors.orange[700],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        
+                        // Lista de asignaciones
+                        const Text('Detalle de Asignaciones:', 
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        const SizedBox(height: 8),
+                        ...((assignmentsPreview!['assignments'] as List<dynamic>? ?? []).map((assignment) => 
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 4),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        (assignment as Map<String, dynamic>)['centro_costo_nombre'] ?? 'Desconocido',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ),
+                                    Text(
+                                      '\$${((assignment as Map<String, dynamic>)['monto_asignado'] ?? 0.0).toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold, 
+                                        color: AppColors.primary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text('${(assignment as Map<String, dynamic>)['porcentaje_asignacion'] ?? 0}% • ${(assignment as Map<String, dynamic>)['metodo_asignacion_nombre'] ?? 'Desconocido'}',
+                                  style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+                                if ((assignment as Map<String, dynamic>)['is_auto_created'] == true)
+                                  Container(
+                                    margin: const EdgeInsets.only(top: 2),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: const Text(
+                                      'Auto-creada',
+                                      style: TextStyle(fontSize: 9, color: Colors.blue),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Campos del formulario
                 TextField(
                   controller: descriptionController,
                   decoration: const InputDecoration(
                     labelText: 'Descripción',
                     border: OutlineInputBorder(),
+                    isDense: true,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 TextField(
                   controller: amountController,
                   decoration: const InputDecoration(
                     labelText: 'Monto',
                     border: OutlineInputBorder(),
                     prefixText: '\$',
+                    isDense: true,
                   ),
                   keyboardType: TextInputType.number,
                   enabled: false, // No permitir editar el monto
@@ -848,16 +1291,31 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
                       .expand((cat) => [
                             DropdownMenuItem(
                               value: cat['id'].toString(),
-                              child: Text(cat['name'] ?? ''),
+                              child: Text(
+                                cat['name'] ?? '',
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: const TextStyle(fontSize: 14),
+                              ),
                             ),
                             ...(cat['children'] as List<Map<String, dynamic>>? ?? [])
                                 .map((sub) => DropdownMenuItem(
                                       value: sub['subcategory_id'].toString(),
-                                      child: Text('  • ${sub['name'] ?? ''}'),
+                                      child: Text(
+                                        '  • ${sub['name'] ?? ''}',
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
                                     )),
-                          ])
+                        ])
                       .toList(),
-                  onChanged: (value) => setDialogState(() => selectedCategory = value),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedCategory = value;
+                      assignmentsPreview = null; // Reset preview
+                    });
+                  },
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
@@ -868,75 +1326,172 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
                   ),
                   items: _costCenters.map((cc) => DropdownMenuItem(
                     value: cc['id'].toString(),
-                    child: Text(cc['denominacion'] ?? ''),
+                    child: Text(
+                      cc['denominacion'] ?? '',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(fontSize: 14),
+                    ),
                   )).toList(),
-                  onChanged: (value) => setDialogState(() => selectedCostCenter = value),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedCostCenter = value;
+                      assignmentsPreview = null; // Reset preview
+                    });
+                  },
                 ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedCostType,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo de Costo',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _costTypes.map((ct) => DropdownMenuItem(
+                    value: ct['id'].toString(),
+                    child: Text(
+                      ct['denominacion'] ?? '',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  )).toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedCostType = value;
+                      assignmentsPreview = null; // Reset preview
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                // Botón para generar preview
+                if (selectedCostType != null && selectedCostCenter != null && amountController.text.isNotEmpty)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: isLoadingPreview ? null : () async {
+                        setDialogState(() => isLoadingPreview = true);
+                        
+                        try {
+                          final tempOperation = Map<String, dynamic>.from(operation);
+                          tempOperation['monto'] = double.tryParse(amountController.text) ?? 0.0;
+                          tempOperation['descripcion'] = descriptionController.text;
+
+                          final preview = await _financialService.previewExpenseAssignments(
+                            tempOperation,
+                            subcategoryId: selectedCategory != null ? int.parse(selectedCategory!) : null,
+                            costCenterId: int.parse(selectedCostCenter!),
+                            costTypeId: int.parse(selectedCostType!),
+                          );
+
+                          setDialogState(() {
+                            assignmentsPreview = preview;
+                            isLoadingPreview = false;
+                          });
+                        } catch (e) {
+                          setDialogState(() => isLoadingPreview = false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error generando preview: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      icon: isLoadingPreview 
+                        ? const SizedBox(
+                            width: 16, 
+                            height: 16, 
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                          )
+                        : const Icon(Icons.preview),
+                      label: Text(isLoadingPreview ? 'Calculando...' : 'Ver Asignaciones de Costos'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (descriptionController.text.trim().isEmpty ||
-                    selectedCategory == null ||
-                    selectedCostCenter == null) {
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (descriptionController.text.trim().isEmpty ||
+                  amountController.text.trim().isEmpty ||
+                  selectedCategory == null ||
+                  selectedCostCenter == null ||
+                  selectedCostType == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Todos los campos son obligatorios'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+
+              try {
+                // Validar que los valores se puedan parsear
+                final subcategoryId = selectedCategory != null ? int.parse(selectedCategory!) : null;
+                final costCenterId = int.parse(selectedCostCenter!);
+                final costTypeId = int.parse(selectedCostType!);
+                
+                final success = await _financialService.registerExpenseFromOperation(
+                  operation,
+                  subcategoryId: subcategoryId,
+                  costCenterId: costCenterId,
+                  costTypeId: costTypeId,
+                  customDescription: descriptionController.text.trim(),
+                );
+
+                Navigator.pop(context);
+                
+                if (success) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Todos los campos son obligatorios'),
-                      backgroundColor: Colors.orange,
+                      content: Text('Gasto registrado exitosamente'),
+                      backgroundColor: Colors.green,
                     ),
                   );
-                  return;
-                }
-
-                try {
-                  final success = await _financialService.registerExpenseFromOperation(
-                    operation,
-                    subcategoryId: int.parse(selectedCategory!),
-                    costCenterId: int.parse(selectedCostCenter!),
-                    customDescription: descriptionController.text.trim(),
-                  );
-
-                  Navigator.pop(context);
-                  
-                  if (success) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Gasto registrado exitosamente'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    _loadDataForCurrentTab();
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Error al registrar el gasto'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  Navigator.pop(context);
+                  _loadDataForCurrentTab();
+                } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al registrar gasto: $e'),
+                    const SnackBar(
+                      content: Text('Error al registrar el gasto'),
                       backgroundColor: Colors.red,
                     ),
                   );
                 }
-              },
-              child: const Text('Registrar'),
+              } catch (e) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error al registrar gasto: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
             ),
-          ],
-        ),
+            child: const Text('Registrar'),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _skipOperationExpense(Map<String, dynamic> operation) {
     final reasonController = TextEditingController();
@@ -1013,22 +1568,12 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
     );
   }
 
-  void _editExpense(Map<String, dynamic> expense) {
-    // TODO: Implement edit expense functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Función de edición en desarrollo'),
-        backgroundColor: Colors.orange,
-      ),
-    );
-  }
-
   void _deleteExpense(Map<String, dynamic> expense) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmar Eliminación'),
-        content: Text('¿Estás seguro de que deseas eliminar este gasto?\n\n"${expense['descripcion']}"'),
+        content: Text('¿Estás seguro de que deseas eliminar este gasto?\n\nMonto: \$${expense['monto']}\nFecha: ${expense['fecha']}'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -1037,24 +1582,31 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
           ElevatedButton(
             onPressed: () async {
               try {
-                await Supabase.instance.client
-                    .from('app_cont_gastos')
-                    .delete()
-                    .eq('id', expense['id']);
+                final success = await _financialService.deleteExpense(expense['id']);
                 
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Gasto eliminado exitosamente'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-                _loadDataForCurrentTab();
+                
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Gasto eliminado exitosamente'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  _loadDataForCurrentTab();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Error al eliminar el gasto'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               } catch (e) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Error al eliminar gasto: $e'),
+                    content: Text('Error: $e'),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -1068,8 +1620,8 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
     );
   }
 
-  void _editPendingOperation(Map<String, dynamic> operation) {
-    // TODO: Implement edit pending operation functionality
+  void _editExpense(Map<String, dynamic> expense) {
+    // TODO: Implement edit expense functionality
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Función de edición en desarrollo'),
@@ -1123,74 +1675,125 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
     );
   }
 
+  void _editPendingOperation(Map<String, dynamic> operation) {
+    // TODO: Implement edit pending operation functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Función de edición en desarrollo'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+  }
+
   void _showAddExpenseDialog() {
     final descriptionController = TextEditingController();
     final amountController = TextEditingController();
     String? selectedCategory;
     String? selectedCostCenter;
+    String? selectedCostType;
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Agregar Gasto'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción',
-                    border: OutlineInputBorder(),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(
+                      labelText: 'Descripción',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: amountController,
-                  decoration: const InputDecoration(
-                    labelText: 'Monto',
-                    border: OutlineInputBorder(),
-                    prefixText: '\$',
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountController,
+                    decoration: const InputDecoration(
+                      labelText: 'Monto',
+                      border: OutlineInputBorder(),
+                      prefixText: '\$',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
                   ),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: selectedCategory,
-                  decoration: const InputDecoration(
-                    labelText: 'Categoría',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _categoriesHierarchy
-                      .expand((cat) => [
-                            DropdownMenuItem(
-                              value: cat['id'].toString(),
-                              child: Text(cat['name'] ?? ''),
-                            ),
-                            ...(cat['children'] as List<Map<String, dynamic>>? ?? [])
-                                .map((sub) => DropdownMenuItem(
-                                      value: sub['subcategory_id'].toString(),
-                                      child: Text('  • ${sub['name'] ?? ''}'),
-                                    )),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedCategory,
+                    decoration: const InputDecoration(
+                      labelText: 'Categoría',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _categoriesHierarchy
+                        .expand((cat) => [
+                              DropdownMenuItem(
+                                value: cat['id'].toString(),
+                                child: Text(
+                                  cat['name'] ?? '',
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              ),
+                              ...(cat['children'] as List<Map<String, dynamic>>? ?? [])
+                                  .map((sub) => DropdownMenuItem(
+                                        value: sub['subcategory_id'].toString(),
+                                        child: Text(
+                                          '  • ${sub['name'] ?? ''}',
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      )),
                           ])
-                      .toList(),
-                  onChanged: (value) => setDialogState(() => selectedCategory = value),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: selectedCostCenter,
-                  decoration: const InputDecoration(
-                    labelText: 'Centro de Costo',
-                    border: OutlineInputBorder(),
+                        .toList(),
+                    onChanged: (value) => setDialogState(() => selectedCategory = value),
                   ),
-                  items: _costCenters.map((cc) => DropdownMenuItem(
-                    value: cc['id'].toString(),
-                    child: Text(cc['denominacion'] ?? ''),
-                  )).toList(),
-                  onChanged: (value) => setDialogState(() => selectedCostCenter = value),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedCostCenter,
+                    decoration: const InputDecoration(
+                      labelText: 'Centro de Costo',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _costCenters.map((cc) => DropdownMenuItem(
+                      value: cc['id'].toString(),
+                      child: Text(
+                        cc['denominacion'] ?? '',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    )).toList(),
+                    onChanged: (value) => setDialogState(() => selectedCostCenter = value),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedCostType,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de Costo',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _costTypes.map((ct) => DropdownMenuItem(
+                      value: ct['id'].toString(),
+                      child: Text(
+                        ct['denominacion'] ?? '',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    )).toList(),
+                    onChanged: (value) => setDialogState(() => selectedCostType = value),
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [
@@ -1203,7 +1806,8 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
                 if (descriptionController.text.trim().isEmpty ||
                     amountController.text.trim().isEmpty ||
                     selectedCategory == null ||
-                    selectedCostCenter == null) {
+                    selectedCostCenter == null ||
+                    selectedCostType == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Todos los campos son obligatorios'),
@@ -1216,14 +1820,20 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
                 try {
                   final userPrefs = UserPreferencesService();
                   final storeId = await userPrefs.getIdTienda() ?? 1;
+                  final userId = Supabase.instance.client.auth.currentUser?.id;
                   
                   await Supabase.instance.client.from('app_cont_gastos').insert({
-                    'descripcion': descriptionController.text.trim(),
                     'monto': double.parse(amountController.text.trim()),
-                    'id_subcategoria_gasto': int.parse(selectedCategory!),
-                    'id_centro_costo': int.parse(selectedCostCenter!),
+                    'id_subcategoria_gasto': int.tryParse(selectedCategory!) ?? 1,
+                    'id_centro_costo': int.tryParse(selectedCostCenter!) ?? 1,
+                    'id_tipo_costo': int.tryParse(selectedCostType!) ?? 1,
                     'id_tienda': storeId,
-                    'fecha_gasto': DateTime.now().toIso8601String().split('T')[0],
+                    'uuid': userId,
+                    'fecha': DateTime.now().toIso8601String().split('T')[0],
+                    // Campos de tracking para gastos manuales
+                    'tipo_origen': 'manual',
+                    'origen_operacion': null, // No hay operación origen para gastos manuales
+                    'id_referencia_origen': null, // No hay referencia para gastos manuales
                   });
 
                   Navigator.pop(context);
@@ -1249,5 +1859,26 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _refreshAllData() async {
+    await _loadPendingOperationsCount();
+    await _loadDataForCurrentTab();
+  }
+
+  Future<void> _onOperationProcessed() async {
+    // Refrescar datos después de procesar una operación
+    await _refreshAllData();
+    
+    // Mostrar mensaje de confirmación
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Operación procesada correctamente'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }

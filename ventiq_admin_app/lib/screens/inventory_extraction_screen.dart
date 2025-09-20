@@ -5,7 +5,10 @@ import '../models/warehouse.dart';
 import '../models/inventory.dart';
 import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
+import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../widgets/conversion_info_widget.dart';
+import '../utils/presentation_converter.dart';
 
 class InventoryExtractionScreen extends StatefulWidget {
   const InventoryExtractionScreen({super.key});
@@ -645,6 +648,9 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
               children: [
                 Text('SKU: ${product.skuProducto}'),
                 Text('Categoría: ${product.categoria}'),
+                // Badge para producto elaborado
+                if (product.esElaborado == true)
+                  Text('🍽️ Elaborado', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w600)),
               ],
             ),
             trailing: IconButton(
@@ -850,6 +856,11 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                       ),
                     ),
                   ],
+                  // NUEVO: Agregar widget de conversiones después de la lista de productos
+                  ConversionInfoWidget(
+                    conversions: _selectedProducts,
+                    showDetails: true,
+                  ),
                 ],
               ),
             ),
@@ -1323,6 +1334,11 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   bool _isLoadingVariants = false;
   double _maxAvailableStock = 0.0;
 
+  // Variables para presentaciones
+  Map<String, dynamic>? _selectedPresentation;
+  List<Map<String, dynamic>> _availablePresentations = [];
+  bool _isLoadingPresentations = false;
+
   @override
   void initState() {
     super.initState();
@@ -1330,6 +1346,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     _maxAvailableStock = widget.product.cantidadFinal;
     print('🔍 DEBUG: Stock inicial del producto: $_maxAvailableStock');
     _loadLocationSpecificVariants();
+    _loadAvailablePresentations(); // NUEVO: Cargar presentaciones disponibles
   }
 
   Future<void> _loadLocationSpecificVariants() async {
@@ -1380,6 +1397,72 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       _maxAvailableStock = variant?['stock_disponible']?.toDouble() ?? 0.0;
       _quantityController.clear();
     });
+  }
+
+  Future<void> _loadAvailablePresentations() async {
+  if (widget.sourceLayoutId == null) return;
+
+  setState(() => _isLoadingPresentations = true);
+
+  try {
+    print('🔍 DEBUG: Cargando presentaciones para producto ${widget.product.id}');
+    
+    final presentations = await InventoryService.getProductPresentationsInZone(
+      idProducto: widget.product.id,
+      idLayout: widget.sourceLayoutId!,
+    );
+
+    setState(() {
+      _availablePresentations = presentations;
+      
+      // Seleccionar la primera presentación disponible
+      if (presentations.isNotEmpty) {
+        _selectedPresentation = presentations.first;
+        print('🔍 DEBUG: Presentación seleccionada: $_selectedPresentation');
+      }
+      
+      _isLoadingPresentations = false;
+    });
+    
+    print('✅ Presentaciones cargadas: ${presentations.length}');
+    
+  } catch (e) {
+    print('❌ Error cargando presentaciones: $e');
+    setState(() => _isLoadingPresentations = false);
+    
+    // Fallback: usar presentación del producto
+    _availablePresentations = [
+      {
+        'id': widget.product.idPresentacion,
+        'denominacion': widget.product.presentacion ?? 'Unidad',
+        'cantidad': 1.0,
+        'stock_disponible': _maxAvailableStock,
+      }
+    ];
+    _selectedPresentation = _availablePresentations.first;
+  }
+}
+
+  /// Valida si hay stock suficiente de ingredientes para un producto elaborado
+  Future<bool> _validateIngredientStock(int productId, double quantity) async {
+    try {
+      final ingredients = await ProductService.getProductIngredients(productId.toString());
+      
+      for (final ingredient in ingredients) {
+        final ingredientId = ingredient['producto_id'] as int;
+        final cantidadNecesaria = (ingredient['cantidad_necesaria'] as num).toDouble();
+        final totalRequired = cantidadNecesaria * quantity;
+        
+        // Aquí se podría verificar stock real del ingrediente
+        // Por ahora retorna true, pero se puede extender
+        print('🔍 Ingrediente $ingredientId requiere: $totalRequired');
+      }
+      
+      return true;
+    } catch (e) {
+      print('❌ Error validando stock de ingredientes: $e');
+      return false;
+    }
   }
 
   @override
@@ -1491,6 +1574,22 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         ],
                       ),
                     ),
+
+                    const SizedBox(height: 20),
+
+                    // Aviso para producto elaborado
+                    if (widget.product.esElaborado == true)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '⚠️ Producto elaborado - se extraerán ingredientes automáticamente',
+                          style: TextStyle(color: Colors.orange.shade700, fontSize: 13),
+                        ),
+                      ),
 
                     const SizedBox(height: 20),
 
@@ -1628,6 +1727,88 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         ),
 
                       const SizedBox(height: 20),
+                      // Presentation Selection Section
+if (_isLoadingPresentations)
+  const Center(
+    child: Padding(
+      padding: EdgeInsets.all(20),
+      child: CircularProgressIndicator(),
+    ),
+  )
+else if (_availablePresentations.isNotEmpty) ...[
+  Text(
+    'Seleccionar Presentación para Venta',
+    style: const TextStyle(
+      fontWeight: FontWeight.w600,
+      fontSize: 16,
+      color: AppColors.black87,
+    ),
+  ),
+  const SizedBox(height: 12),
+  
+  // Presentation Dropdown
+  DropdownButtonFormField<Map<String, dynamic>>(
+    value: _selectedPresentation,
+    decoration: InputDecoration(
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 12,
+      ),
+      prefixIcon: Icon(
+        Icons.category,
+        color: AppColors.primary,
+        size: 20,
+      ),
+    ),
+    hint: const Text('Seleccionar presentación'),
+    items: _availablePresentations.map((presentation) {
+      return DropdownMenuItem<Map<String, dynamic>>(
+        value: presentation,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              presentation['denominacion'] ?? 'Sin nombre',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+            if (presentation['cantidad'] != null)
+              Text(
+                '${presentation['cantidad']} unidades base',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.grey.shade600,
+                ),
+              ),
+            if (presentation['stock_disponible'] != null)
+              Text(
+                'Stock: ${presentation['stock_disponible']}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.success,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+          ],
+        ),
+      );
+    }).toList(),
+    onChanged: (value) {
+      setState(() {
+        _selectedPresentation = value;
+        _quantityController.clear();
+      });
+    },
+  ),
+
+  const SizedBox(height: 20),
+],
                     ],
 
                     // Quantity Input
@@ -1735,43 +1916,58 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                   Expanded(
                     flex: 2,
                     child: ElevatedButton(
-                      onPressed: _selectedVariant == null ? null : () {
-                        final quantity = double.tryParse(_quantityController.text);
-                        if (quantity == null || quantity <= 0) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Ingrese una cantidad válida')),
-                          );
-                          return;
-                        }
-                        if (quantity > _maxAvailableStock) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Cantidad excede stock disponible'),
-                            ),
-                          );
-                          return;
-                        }
+                      onPressed: _selectedVariant == null ? null : () async {
+  final quantity = double.tryParse(_quantityController.text);
+  if (quantity == null || quantity <= 0) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Ingrese una cantidad válida')),
+    );
+    return;
+  }
+  if (quantity > _maxAvailableStock) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Cantidad excede stock disponible'),
+      ),
+    );
+    return;
+  }
 
-                        final productData = {
-                          'id_producto': widget.product.id,
-                          'id_variante': widget.product.idVariante,
-                          'id_opcion_variante': widget.product.idOpcionVariante,
-                          'id_ubicacion': widget.sourceLayoutId,
-                          'id_presentacion': widget.product.idPresentacion,
-                          'cantidad': quantity,
-                          'precio_unitario': widget.product.precioVenta ?? 0.0,
-                          'sku_producto': widget.product.skuProducto,
-                          'sku_ubicacion': widget.product.ubicacion,
-                          'nombreProducto': widget.product.nombreProducto,
-                          'variante': widget.product.variante,
-                          'opcionVariante': widget.product.opcionVariante,
-                          'presentacion': widget.product.presentacion,
-                          'nombreZona': widget.product.ubicacion,
-                          'nombreAlmacen': widget.warehouseName ?? 'Almacén',
-                        };
+  try {
+    // Datos base del producto
+    final baseProductData = {
+      'id_producto': widget.product.id,
+      'id_variante': widget.product.idVariante,
+      'id_opcion_variante': widget.product.idOpcionVariante,
+      'id_ubicacion': widget.sourceLayoutId,
+      'precio_unitario': widget.product.precioVenta ?? 0.0,
+      'sku_producto': widget.product.skuProducto,
+      'sku_ubicacion': widget.product.ubicacion,
+      'nombreProducto': widget.product.nombreProducto,
+      'variante': widget.product.variante,
+      'opcionVariante': widget.product.opcionVariante,
+      'nombreZona': widget.product.ubicacion,
+      'nombreAlmacen': widget.warehouseName ?? 'Almacén',
+    };
 
-                        widget.onAdd(productData);
-                      },
+    // Usar PresentationConverter para procesar el producto
+    final processedProductData = await PresentationConverter.processProductForExtraction(
+      productId: widget.product.id.toString(),
+      selectedPresentation: _selectedPresentation,
+      cantidad: quantity,
+      baseProductData: baseProductData,
+    );
+
+    print('✅ Producto procesado para extracción: $processedProductData');
+
+    widget.onAdd(processedProductData);
+  } catch (e) {
+    print('❌ Error procesando producto para extracción: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error procesando producto: $e')),
+    );
+  }
+},
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.warning,
                         foregroundColor: Colors.white,
@@ -1828,6 +2024,22 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Muestra ingredientes de producto elaborado
+  Widget _buildIngredientsList() {
+    if (widget.product.esElaborado != true) return const SizedBox.shrink();
+    
+    return FutureBuilder(
+      future: ProductService.getProductIngredients(widget.product.id.toString()),
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+          return Text('Ingredientes: ${snapshot.data!.length}', 
+                      style: const TextStyle(fontSize: 12, color: Colors.grey));
+        }
+        return const SizedBox.shrink();
+      },
     );
   }
 }

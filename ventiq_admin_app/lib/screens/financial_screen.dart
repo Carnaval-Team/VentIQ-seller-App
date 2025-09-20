@@ -4,6 +4,9 @@ import '../widgets/financial_menu_widget.dart';
 import '../widgets/store_selector_widget.dart';
 import '../services/financial_service.dart';
 import 'financial_configuration_screen.dart';
+import 'financial_expenses_screen.dart';
+import 'financial_activity_history_screen.dart';
+import 'cost_assignments_screen.dart';
 
 class FinancialScreen extends StatefulWidget {
   const FinancialScreen({super.key});
@@ -17,11 +20,19 @@ class _FinancialScreenState extends State<FinancialScreen> {
   bool _isInitializing = false;
   bool _isConfigured = false;
   bool _isLoading = true;
+  int _pendingOperationsCount = 0;
+  List<Map<String, dynamic>> _recentActivities = [];
 
   @override
   void initState() {
     super.initState();
-    _checkConfigurationStatus();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await _checkConfigurationStatus();
+    await _loadPendingOperationsCount();
+    await _loadRecentActivities();
   }
 
   Future<void> _checkConfigurationStatus() async {
@@ -35,6 +46,34 @@ class _FinancialScreenState extends State<FinancialScreen> {
       setState(() {
         _isConfigured = false;
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadPendingOperationsCount() async {
+    try {
+      final count = await _financialService.getPendingOperationsCount();
+      setState(() {
+        _pendingOperationsCount = count;
+      });
+    } catch (e) {
+      print('❌ Error cargando operaciones pendientes: $e');
+      setState(() {
+        _pendingOperationsCount = 0;
+      });
+    }
+  }
+
+  Future<void> _loadRecentActivities() async {
+    try {
+      final activities = await _financialService.getRecentActivities();
+      setState(() {
+        _recentActivities = activities;
+      });
+    } catch (e) {
+      print('❌ Error cargando actividades recientes: $e');
+      setState(() {
+        _recentActivities = [];
       });
     }
   }
@@ -69,6 +108,8 @@ class _FinancialScreenState extends State<FinancialScreen> {
             _buildModuleGrid(),
             const SizedBox(height: 24),
             _buildRecentActivity(),
+            const SizedBox(height: 24),
+            _buildPendingOperationsCard(),
           ],
         ),
       ),
@@ -293,32 +334,6 @@ class _FinancialScreenState extends State<FinancialScreen> {
   }
 
   Widget _buildQuickStats() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
-            'Ingresos del Mes',
-            '\$125,430',
-            Icons.trending_up,
-            Colors.green,
-            '+12.5%',
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatCard(
-            'Gastos del Mes',
-            '\$89,250',
-            Icons.trending_down,
-            Colors.orange,
-            '+5.2%',
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard(String title, String value, IconData icon, Color color, String change) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -326,34 +341,122 @@ class _FinancialScreenState extends State<FinancialScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(icon, color: color, size: 24),
-                Text(
-                  change,
+                Icon(Icons.dashboard, color: AppColors.primary),
+                const SizedBox(width: 8),
+                const Text(
+                  'Resumen Rápido',
                   style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                // Contador de operaciones pendientes - destacado
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _pendingOperationsCount > 0 
+                          ? Colors.orange.withOpacity(0.1)
+                          : Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _pendingOperationsCount > 0 
+                            ? Colors.orange
+                            : Colors.green,
+                        width: 2,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.pending_actions,
+                          size: 32,
+                          color: _pendingOperationsCount > 0 
+                              ? Colors.orange
+                              : Colors.green,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '$_pendingOperationsCount',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: _pendingOperationsCount > 0 
+                                ? Colors.orange
+                                : Colors.green,
+                          ),
+                        ),
+                        const Text(
+                          'Operaciones\nPendientes',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (_pendingOperationsCount > 0) ...[
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const FinancialExpensesScreen(),
+                                ),
+                              ).then((_) => _loadData());
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            ),
+                            child: const Text(
+                              'Procesar',
+                              style: TextStyle(fontSize: 12, color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Actividades recientes
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.history, color: AppColors.primary),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${_recentActivities.length}',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const Text(
+                          'Actividades\nRecientes',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -408,6 +511,13 @@ class _FinancialScreenState extends State<FinancialScreen> {
                   Icons.receipt_long,
                   Colors.orange,
                   () => Navigator.pushNamed(context, '/financial-expenses'),
+                ),
+                _buildModuleCard(
+                  'Costos de Producción',
+                  'Análisis de costos\nde platos elaborados',
+                  Icons.restaurant_menu,
+                  Colors.purple,
+                  () => Navigator.pushNamed(context, '/restaurant-costs'),
                 ),
               ],
             );
@@ -483,66 +593,154 @@ class _FinancialScreenState extends State<FinancialScreen> {
         const SizedBox(height: 16),
         Card(
           child: Column(
-            children: [
-              _buildActivityItem(
-                'Recepción de inventario registrada',
-                'Gasto automático de \$2,450 en categoría Compras',
-                Icons.inventory,
-                Colors.blue,
-                '2 min',
-              ),
-              const Divider(height: 1),
-              _buildActivityItem(
-                'Extracción de efectivo',
-                'Gasto de \$500 en categoría Operativos',
-                Icons.money,
-                Colors.orange,
-                '15 min',
-              ),
-              const Divider(height: 1),
-              _buildActivityItem(
-                'Actualización de precios',
-                '25 productos actualizados automáticamente',
-                Icons.price_change,
-                Colors.green,
-                '1 hora',
-              ),
-            ],
+            children: _recentActivities.map((activity) => _buildActivityItem(activity)).toList(),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildActivityItem(String title, String subtitle, IconData icon, Color color, String time) {
-    return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(icon, color: color, size: 20),
+  Widget _buildActivityItem(Map<String, dynamic> activity) {
+    final tipoActividad = activity['tipo_actividad'] as String? ?? 'unknown';
+    final descripcion = activity['descripcion'] as String? ?? 'Sin descripción';
+    final fechaActividad = activity['fecha_actividad'] != null 
+        ? DateTime.tryParse(activity['fecha_actividad']) ?? DateTime.now()
+        : DateTime.now();
+    final monto = activity['monto'];
+
+    IconData icon;
+    Color color;
+
+    switch (tipoActividad) {
+      case 'gasto_registrado':
+        icon = Icons.add_circle;
+        color = Colors.green;
+        break;
+      case 'gasto_eliminado':
+        icon = Icons.remove_circle;
+        color = Colors.red;
+        break;
+      case 'operacion_procesada':
+        icon = Icons.check_circle;
+        color = Colors.blue;
+        break;
+      default:
+        icon = Icons.info;
+        color = Colors.grey;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  descripcion,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _formatTimeAgo(fechaActividad),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (monto != null)
+            Text(
+              '\$${monto}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+        ],
       ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
-        ),
-      ),
-      trailing: Text(
-        time,
-        style: TextStyle(
-          fontSize: 11,
-          color: Colors.grey[500],
+    );
+  }
+
+  String _formatTimeAgo(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays} días';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} horas';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} minutos';
+    } else {
+      return '${difference.inSeconds} segundos';
+    }
+  }
+
+  Widget _buildPendingOperationsCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.pending_actions,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Operaciones Pendientes',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Hay $_pendingOperationsCount operaciones pendientes de procesar.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.pushNamed(context, '/financial-pending-operations'),
+                icon: const Icon(Icons.arrow_forward),
+                label: const Text('Ver Operaciones Pendientes'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -78,6 +78,7 @@ class InventoryProduct {
   final double stockDisponibleAjustado;
   final bool esVendible;
   final bool esInventariable;
+  final bool esElaborado;
   final double? precioVenta;
   final double? costoPromedio;
   final double? margenActual;
@@ -133,6 +134,7 @@ class InventoryProduct {
     required this.stockDisponibleAjustado,
     required this.esVendible,
     required this.esInventariable,
+    this.esElaborado = false,
     this.precioVenta,
     this.costoPromedio,
     this.margenActual,
@@ -213,6 +215,7 @@ class InventoryProduct {
           (map['stock_disponible_ajustado'] ?? 0).toDouble(),
       esVendible: map['es_vendible'] ?? false,
       esInventariable: map['es_inventariable'] ?? false,
+      esElaborado: map['es_elaborado'] ?? false,
       precioVenta: map['precio_venta']?.toDouble(),
       costoPromedio: map['costo_promedio']?.toDouble(),
       margenActual: map['margen_actual']?.toDouble(),
@@ -256,22 +259,23 @@ class InventoryProduct {
       stockDisponibleAjustado: (row[23] ?? 0).toDouble(),
       esVendible: row[24] ?? false,
       esInventariable: row[25] ?? false,
-      precioVenta: row[26]?.toDouble(),
-      costoPromedio: row[27]?.toDouble(),
-      margenActual: row[28]?.toDouble(),
-      clasificacionAbc: row[29] ?? 3,
-      abcDescripcion: row[30] ?? 'No clasificado',
+      esElaborado: row[26] ?? false,
+      precioVenta: row[27]?.toDouble(),
+      costoPromedio: row[28]?.toDouble(),
+      margenActual: row[29]?.toDouble(),
+      clasificacionAbc: row[30] ?? 3,
+      abcDescripcion: row[31] ?? 'No clasificado',
       fechaUltimaActualizacion: DateTime.parse(
-        row[31] ?? DateTime.now().toIso8601String(),
+        row[32] ?? DateTime.now().toIso8601String(),
       ),
-      totalCount: row[32] ?? 0,
+      totalCount: row[33] ?? 0,
       resumenInventario:
-          row.length > 33 && row[33] != null
-              ? InventorySummary.fromJson(Map<String, dynamic>.from(row[33]))
+          row.length > 34 && row[34] != null
+              ? InventorySummary.fromJson(Map<String, dynamic>.from(row[34]))
               : null,
       infoPaginacion:
-          row.length > 34 && row[34] != null
-              ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[34]))
+          row.length > 35 && row[35] != null
+              ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[35]))
               : null,
     );
   }

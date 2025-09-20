@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../screens/financial_configuration_screen.dart';
+import '../screens/cost_assignments_screen.dart';
 
 class FinancialMenuWidget extends StatelessWidget {
   const FinancialMenuWidget({super.key});
@@ -78,6 +79,16 @@ class FinancialMenuWidget extends StatelessWidget {
           ),
         ),
         const PopupMenuItem(
+          value: 'cost_assignments',
+          child: Row(
+            children: [
+              Icon(Icons.attach_money, color: AppColors.primary),
+              SizedBox(width: 12),
+              Text('Asignación de Costos'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
           value: 'configuration',
           child: Row(
             children: [
@@ -112,6 +123,14 @@ class FinancialMenuWidget extends StatelessWidget {
       case 'projections':
         // Navegar a la pestaña de proyecciones en reportes
         Navigator.pushNamed(context, '/financial-reports');
+        break;
+      case 'cost_assignments':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CostAssignmentsScreen(),
+          ),
+        );
         break;
       case 'configuration':
         Navigator.push(

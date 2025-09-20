@@ -48,6 +48,11 @@ class Product {
   final String? tipoProducto;
   final String? tipoInventario;
 
+  // Campos para productos elaborados
+  final bool esElaborado;
+  final List<ProductIngredient> ingredientes;
+  final double? costoProduccion;
+
   Product({
     required this.id,
     required this.name,
@@ -96,6 +101,10 @@ class Product {
     this.unidadMedida,
     this.tipoProducto,
     this.tipoInventario,
+    // Campos para productos elaborados
+    this.esElaborado = false,
+    this.ingredientes = const [],
+    this.costoProduccion,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -149,6 +158,10 @@ class Product {
       unidadMedida: json['unidadMedida'],
       tipoProducto: json['tipoProducto'],
       tipoInventario: json['tipoInventario'],
+      // Campos para productos elaborados
+      esElaborado: json['esElaborado'] ?? false,
+      ingredientes: (json['ingredientes'] as List<dynamic>?)?.map((i) => ProductIngredient.fromJson(i)).toList() ?? [],
+      costoProduccion: json['costoProduccion'],
     );
   }
 
@@ -188,7 +201,151 @@ class Product {
       'unidadMedida': unidadMedida,
       'tipoProducto': tipoProducto,
       'tipoInventario': tipoInventario,
+      'esElaborado': esElaborado,
+      'ingredientes': ingredientes.map((i) => i.toJson()).toList(),
+      'costoProduccion': costoProduccion,
     };
+  }
+
+  /// Calcula el costo de producción basado en los ingredientes
+  double calcularCostoProduccion() {
+    if (!esElaborado || ingredientes.isEmpty) return 0.0;
+    
+    return ingredientes.fold(0.0, (total, ingrediente) {
+      return total + (ingrediente.cantidadNecesaria * ingrediente.costoUnitario);
+    });
+  }
+
+  /// Verifica si hay suficientes ingredientes en stock para producir una cantidad específica
+  bool verificarDisponibilidadIngredientes(double cantidadAProducir) {
+    if (!esElaborado || ingredientes.isEmpty) return true;
+    
+    for (final ingrediente in ingredientes) {
+      final cantidadRequerida = ingrediente.cantidadNecesaria * cantidadAProducir;
+      if (ingrediente.stockDisponible < cantidadRequerida) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Obtiene la lista de ingredientes faltantes para producir una cantidad específica
+  List<ProductIngredient> obtenerIngredientesFaltantes(double cantidadAProcir) {
+    if (!esElaborado || ingredientes.isEmpty) return [];
+    
+    final faltantes = <ProductIngredient>[];
+    for (final ingrediente in ingredientes) {
+      final cantidadRequerida = ingrediente.cantidadNecesaria * cantidadAProcir;
+      if (ingrediente.stockDisponible < cantidadRequerida) {
+        faltantes.add(ingrediente);
+      }
+    }
+    return faltantes;
+  }
+
+  /// Crea una copia del producto con nuevos valores
+  Product copyWith({
+    String? id,
+    String? name,
+    String? denominacion,
+    String? denominacionCorta,
+    String? description,
+    String? descripcionCorta,
+    String? categoryId,
+    String? categoryName,
+    String? brand,
+    String? sku,
+    String? barcode,
+    String? codigoBarras,
+    double? basePrice,
+    String? imageUrl,
+    bool? isActive,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    List<ProductVariant>? variants,
+    String? nombreComercial,
+    String? um,
+    bool? esRefrigerado,
+    bool? esFragil,
+    bool? esPeligroso,
+    bool? esVendible,
+    bool? esComprable,
+    bool? esInventariable,
+    bool? esPorLotes,
+    double? precioVenta,
+    int? stockDisponible,
+    bool? tieneStock,
+    List<Map<String, dynamic>>? subcategorias,
+    List<Map<String, dynamic>>? presentaciones,
+    List<Map<String, dynamic>>? multimedias,
+    List<String>? etiquetas,
+    List<Map<String, dynamic>>? inventario,
+    List<Map<String, dynamic>>? variantesDisponibles,
+    bool? esOferta,
+    double? precioOferta,
+    DateTime? fechaInicioOferta,
+    DateTime? fechaFinOferta,
+    int? stockMinimo,
+    int? stockMaximo,
+    int? diasAlertCaducidad,
+    String? unidadMedida,
+    String? tipoProducto,
+    String? tipoInventario,
+    bool? esElaborado,
+    List<ProductIngredient>? ingredientes,
+    double? costoProduccion,
+  }) {
+    return Product(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      denominacion: denominacion ?? this.denominacion,
+      denominacionCorta: denominacionCorta ?? this.denominacionCorta,
+      description: description ?? this.description,
+      descripcionCorta: descripcionCorta ?? this.descripcionCorta,
+      categoryId: categoryId ?? this.categoryId,
+      categoryName: categoryName ?? this.categoryName,
+      brand: brand ?? this.brand,
+      sku: sku ?? this.sku,
+      barcode: barcode ?? this.barcode,
+      codigoBarras: codigoBarras ?? this.codigoBarras,
+      basePrice: basePrice ?? this.basePrice,
+      imageUrl: imageUrl ?? this.imageUrl,
+      isActive: isActive ?? this.isActive,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      variants: variants ?? this.variants,
+      nombreComercial: nombreComercial ?? this.nombreComercial,
+      um: um ?? this.um,
+      esRefrigerado: esRefrigerado ?? this.esRefrigerado,
+      esFragil: esFragil ?? this.esFragil,
+      esPeligroso: esPeligroso ?? this.esPeligroso,
+      esVendible: esVendible ?? this.esVendible,
+      esComprable: esComprable ?? this.esComprable,
+      esInventariable: esInventariable ?? this.esInventariable,
+      esPorLotes: esPorLotes ?? this.esPorLotes,
+      precioVenta: precioVenta ?? this.precioVenta,
+      stockDisponible: stockDisponible ?? this.stockDisponible,
+      tieneStock: tieneStock ?? this.tieneStock,
+      subcategorias: subcategorias ?? this.subcategorias,
+      presentaciones: presentaciones ?? this.presentaciones,
+      multimedias: multimedias ?? this.multimedias,
+      etiquetas: etiquetas ?? this.etiquetas,
+      inventario: inventario ?? this.inventario,
+      variantesDisponibles: variantesDisponibles ?? this.variantesDisponibles,
+      esOferta: esOferta ?? this.esOferta,
+      precioOferta: precioOferta ?? this.precioOferta,
+      fechaInicioOferta: fechaInicioOferta ?? this.fechaInicioOferta,
+      fechaFinOferta: fechaFinOferta ?? this.fechaFinOferta,
+      stockMinimo: stockMinimo ?? this.stockMinimo,
+      stockMaximo: stockMaximo ?? this.stockMaximo,
+      diasAlertCaducidad: diasAlertCaducidad ?? this.diasAlertCaducidad,
+      unidadMedida: unidadMedida ?? this.unidadMedida,
+      tipoProducto: tipoProducto ?? this.tipoProducto,
+      tipoInventario: tipoInventario ?? this.tipoInventario,
+      esElaborado: esElaborado ?? this.esElaborado,
+      ingredientes: ingredientes ?? this.ingredientes,
+      costoProduccion: costoProduccion ?? this.costoProduccion,
+    );
   }
 }
 
@@ -241,5 +398,97 @@ class ProductVariant {
       'barcode': barcode,
       'isActive': isActive,
     };
+  }
+}
+
+class ProductIngredient {
+  final String id;
+  final String idProductoElaborado;
+  final String idIngrediente;
+  final String nombreIngrediente;
+  final String denominacionIngrediente;
+  final double cantidadNecesaria;
+  final String unidadMedida;
+  final double costoUnitario;
+  final int stockDisponible;
+  final String? imagenIngrediente;
+
+  ProductIngredient({
+    required this.id,
+    required this.idProductoElaborado,
+    required this.idIngrediente,
+    required this.nombreIngrediente,
+    required this.denominacionIngrediente,
+    required this.cantidadNecesaria,
+    required this.unidadMedida,
+    required this.costoUnitario,
+    required this.stockDisponible,
+    this.imagenIngrediente,
+  });
+
+  /// Calcula el costo total de este ingrediente
+  double get costoTotal => cantidadNecesaria * costoUnitario;
+
+  /// Verifica si hay suficiente stock para la cantidad necesaria
+  bool get tieneStockSuficiente => stockDisponible >= cantidadNecesaria;
+
+  /// Calcula cuántas unidades del producto elaborado se pueden hacer con el stock disponible
+  double get unidadesPosibles => stockDisponible / cantidadNecesaria;
+
+  factory ProductIngredient.fromJson(Map<String, dynamic> json) {
+    return ProductIngredient(
+      id: json['id']?.toString() ?? '',
+      idProductoElaborado: json['id_producto_elaborado']?.toString() ?? '',
+      idIngrediente: json['id_ingrediente']?.toString() ?? '',
+      nombreIngrediente: json['nombre_ingrediente'] ?? json['denominacion'] ?? '',
+      denominacionIngrediente: json['denominacion_ingrediente'] ?? json['denominacion'] ?? '',
+      cantidadNecesaria: (json['cantidad_necesaria'] ?? 0.0).toDouble(),
+      unidadMedida: json['unidad_medida'] ?? 'und',
+      costoUnitario: (json['costo_unitario'] ?? 0.0).toDouble(),
+      stockDisponible: json['stock_disponible'] ?? 0,
+      imagenIngrediente: json['imagen_ingrediente'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'id_producto_elaborado': idProductoElaborado,
+      'id_ingrediente': idIngrediente,
+      'nombre_ingrediente': nombreIngrediente,
+      'denominacion_ingrediente': denominacionIngrediente,
+      'cantidad_necesaria': cantidadNecesaria,
+      'unidad_medida': unidadMedida,
+      'costo_unitario': costoUnitario,
+      'stock_disponible': stockDisponible,
+      'imagen_ingrediente': imagenIngrediente,
+    };
+  }
+
+  /// Crea una copia con nuevos valores
+  ProductIngredient copyWith({
+    String? id,
+    String? idProductoElaborado,
+    String? idIngrediente,
+    String? nombreIngrediente,
+    String? denominacionIngrediente,
+    double? cantidadNecesaria,
+    String? unidadMedida,
+    double? costoUnitario,
+    int? stockDisponible,
+    String? imagenIngrediente,
+  }) {
+    return ProductIngredient(
+      id: id ?? this.id,
+      idProductoElaborado: idProductoElaborado ?? this.idProductoElaborado,
+      idIngrediente: idIngrediente ?? this.idIngrediente,
+      nombreIngrediente: nombreIngrediente ?? this.nombreIngrediente,
+      denominacionIngrediente: denominacionIngrediente ?? this.denominacionIngrediente,
+      cantidadNecesaria: cantidadNecesaria ?? this.cantidadNecesaria,
+      unidadMedida: unidadMedida ?? this.unidadMedida,
+      costoUnitario: costoUnitario ?? this.costoUnitario,
+      stockDisponible: stockDisponible ?? this.stockDisponible,
+      imagenIngrediente: imagenIngrediente ?? this.imagenIngrediente,
+    );
   }
 }

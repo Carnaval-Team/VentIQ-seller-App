@@ -12,9 +12,9 @@ CREATE TABLE public.app_cont_asignacion_costos (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_cont_asignacion_costos_pkey PRIMARY KEY (id),
   CONSTRAINT app_cont_asignacion_costos_id_tipo_costo_fkey FOREIGN KEY (id_tipo_costo) REFERENCES public.app_cont_tipo_costo(id),
-  CONSTRAINT app_cont_asignacion_costos_id_centro_costo_fkey FOREIGN KEY (id_centro_costo) REFERENCES public.app_cont_centro_costo(id),
+  CONSTRAINT app_cont_asignacion_costos_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_cont_asignacion_costos_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
-  CONSTRAINT app_cont_asignacion_costos_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id)
+  CONSTRAINT app_cont_asignacion_costos_id_centro_costo_fkey FOREIGN KEY (id_centro_costo) REFERENCES public.app_cont_centro_costo(id)
 );
 CREATE TABLE public.app_cont_centro_costo (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -28,14 +28,26 @@ CREATE TABLE public.app_cont_centro_costo (
   CONSTRAINT app_cont_centro_costo_pkey PRIMARY KEY (id),
   CONSTRAINT app_cont_centro_costo_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
+CREATE TABLE public.app_cont_egresos_procesados (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_egreso bigint NOT NULL UNIQUE,
+  estado character varying NOT NULL CHECK (estado::text = ANY (ARRAY['aceptado'::character varying, 'rechazado'::character varying]::text[])),
+  procesado_por uuid NOT NULL,
+  fecha_procesado timestamp with time zone NOT NULL DEFAULT now(),
+  motivo_rechazo text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_cont_egresos_procesados_pkey PRIMARY KEY (id),
+  CONSTRAINT app_cont_egresos_procesados_id_egreso_fkey FOREIGN KEY (id_egreso) REFERENCES public.app_dat_entregas_parciales_caja(id),
+  CONSTRAINT app_cont_egresos_procesados_procesado_por_fkey FOREIGN KEY (procesado_por) REFERENCES auth.users(id)
+);
 CREATE TABLE public.app_cont_gasto_asignacion (
   id_gasto bigint NOT NULL,
   id_asignacion bigint NOT NULL,
   monto_asignado numeric NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT app_cont_gasto_asignacion_pkey PRIMARY KEY (id_gasto, id_asignacion),
-  CONSTRAINT app_cont_gasto_asignacion_id_asignacion_fkey FOREIGN KEY (id_asignacion) REFERENCES public.app_cont_asignacion_costos(id),
-  CONSTRAINT app_cont_gasto_asignacion_id_gasto_fkey FOREIGN KEY (id_gasto) REFERENCES public.app_cont_gastos(id)
+  CONSTRAINT app_cont_gasto_asignacion_pkey PRIMARY KEY (id_asignacion, id_gasto),
+  CONSTRAINT app_cont_gasto_asignacion_id_gasto_fkey FOREIGN KEY (id_gasto) REFERENCES public.app_cont_gastos(id),
+  CONSTRAINT app_cont_gasto_asignacion_id_asignacion_fkey FOREIGN KEY (id_asignacion) REFERENCES public.app_cont_asignacion_costos(id)
 );
 CREATE TABLE public.app_cont_gastos (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -47,12 +59,32 @@ CREATE TABLE public.app_cont_gastos (
   id_tienda bigint,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   id_tipo_costo bigint,
+  origen_operacion bigint,
+  tipo_origen text,
+  id_referencia_origen bigint,
   CONSTRAINT app_cont_gastos_pkey PRIMARY KEY (id),
-  CONSTRAINT app_cont_gastos_id_tipo_costo_fkey FOREIGN KEY (id_tipo_costo) REFERENCES public.app_cont_tipo_costo(id),
-  CONSTRAINT app_cont_gastos_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
   CONSTRAINT app_cont_gastos_id_subcategoria_gasto_fkey FOREIGN KEY (id_subcategoria_gasto) REFERENCES public.app_nom_subcategoria_gasto(id),
+  CONSTRAINT app_cont_gastos_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
+  CONSTRAINT app_cont_gastos_id_centro_costo_fkey FOREIGN KEY (id_centro_costo) REFERENCES public.app_cont_centro_costo(id),
   CONSTRAINT app_cont_gastos_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
-  CONSTRAINT app_cont_gastos_id_centro_costo_fkey FOREIGN KEY (id_centro_costo) REFERENCES public.app_cont_centro_costo(id)
+  CONSTRAINT app_cont_gastos_id_tipo_costo_fkey FOREIGN KEY (id_tipo_costo) REFERENCES public.app_cont_tipo_costo(id),
+  CONSTRAINT app_cont_gastos_origen_operacion_fkey FOREIGN KEY (origen_operacion) REFERENCES public.app_dat_recepcion_productos(id)
+);
+CREATE TABLE public.app_cont_historial_actividades (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  tipo_actividad text NOT NULL CHECK (tipo_actividad = ANY (ARRAY['gasto_registrado'::character varying::text, 'gasto_eliminado'::character varying::text, 'gasto_actualizado'::character varying::text, 'operacion_procesada'::character varying::text, 'operacion_omitida'::character varying::text, 'operacion_eliminada'::character varying::text, 'asignacion_creada'::character varying::text, 'asignacion_actualizada'::character varying::text, 'asignacion_eliminada'::character varying::text, 'categoria_creada'::character varying::text, 'categoria_actualizada'::character varying::text, 'categoria_eliminada'::character varying::text, 'centro_costo_creado'::character varying::text, 'centro_costo_actualizado'::character varying::text, 'centro_costo_eliminado'::character varying::text, 'tipo_costo_creado'::character varying::text, 'tipo_costo_actualizado'::character varying::text, 'tipo_costo_eliminado'::character varying::text, 'sistema_inicializado'::character varying::text, 'configuracion_actualizada'::character varying::text])),
+  descripcion text NOT NULL,
+  entidad_tipo character varying NOT NULL CHECK (entidad_tipo::text = ANY (ARRAY['gasto'::character varying, 'operacion'::character varying, 'asignacion'::character varying, 'categoria'::character varying, 'subcategoria'::character varying, 'centro_costo'::character varying, 'tipo_costo'::character varying, 'sistema'::character varying]::text[])),
+  entidad_id bigint,
+  monto numeric,
+  usuario_id uuid NOT NULL,
+  id_tienda bigint NOT NULL,
+  metadata jsonb,
+  fecha_actividad timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_cont_historial_actividades_pkey PRIMARY KEY (id),
+  CONSTRAINT app_cont_historial_actividades_usuario_fkey FOREIGN KEY (usuario_id) REFERENCES auth.users(id),
+  CONSTRAINT app_cont_historial_actividades_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
 CREATE TABLE public.app_cont_historial_asignacion_costos (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -85,17 +117,17 @@ CREATE TABLE public.app_cont_historial_gastos (
   comprobante text,
   detalles_asignacion jsonb,
   CONSTRAINT app_cont_historial_gastos_pkey PRIMARY KEY (id),
-  CONSTRAINT app_cont_historial_gastos_id_tipo_costo_fkey FOREIGN KEY (id_tipo_costo) REFERENCES public.app_cont_tipo_costo(id),
-  CONSTRAINT app_cont_historial_gastos_realizado_por_fkey FOREIGN KEY (realizado_por) REFERENCES auth.users(id),
   CONSTRAINT app_cont_historial_gastos_id_subcategoria_gasto_fkey FOREIGN KEY (id_subcategoria_gasto) REFERENCES public.app_nom_subcategoria_gasto(id),
   CONSTRAINT app_cont_historial_gastos_id_centro_costo_fkey FOREIGN KEY (id_centro_costo) REFERENCES public.app_cont_centro_costo(id),
-  CONSTRAINT app_cont_historial_gastos_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
+  CONSTRAINT app_cont_historial_gastos_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_cont_historial_gastos_id_tipo_costo_fkey FOREIGN KEY (id_tipo_costo) REFERENCES public.app_cont_tipo_costo(id),
+  CONSTRAINT app_cont_historial_gastos_realizado_por_fkey FOREIGN KEY (realizado_por) REFERENCES auth.users(id)
 );
 CREATE TABLE public.app_cont_log_costos (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   id_asignacion bigint NOT NULL,
   id_historico bigint,
-  accion character varying NOT NULL,
+  accion text NOT NULL,
   cambios text,
   realizado_por uuid NOT NULL,
   fecha_operacion timestamp with time zone NOT NULL,
@@ -115,8 +147,8 @@ CREATE TABLE public.app_cont_margen_comercial (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_cont_margen_comercial_pkey PRIMARY KEY (id),
   CONSTRAINT app_cont_margen_comercial_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
-  CONSTRAINT app_cont_margen_comercial_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
-  CONSTRAINT app_cont_margen_comercial_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id)
+  CONSTRAINT app_cont_margen_comercial_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
+  CONSTRAINT app_cont_margen_comercial_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
 CREATE TABLE public.app_cont_tipo_costo (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -135,13 +167,13 @@ CREATE TABLE public.app_dat_ajuste_inventario (
   id_ubicacion bigint,
   cantidad_anterior numeric NOT NULL,
   cantidad_nueva numeric NOT NULL,
-  diferencia numeric DEFAULT (cantidad_nueva - cantidad_anterior),
   id_control bigint,
   uuid_usuario uuid,
   created_at timestamp with time zone DEFAULT now(),
+  diferencia numeric,
   CONSTRAINT app_dat_ajuste_inventario_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_ajuste_inventario_id_control_fkey FOREIGN KEY (id_control) REFERENCES public.app_dat_control_productos(id),
-  CONSTRAINT app_dat_ajuste_inventario_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id)
+  CONSTRAINT app_dat_ajuste_inventario_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_dat_ajuste_inventario_id_control_fkey FOREIGN KEY (id_control) REFERENCES public.app_dat_control_productos(id)
 );
 CREATE TABLE public.app_dat_almacen (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -172,8 +204,8 @@ CREATE TABLE public.app_dat_almacenero (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   id_trabajador bigint,
   CONSTRAINT app_dat_almacenero_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_almacenero_id_almacen_fkey FOREIGN KEY (id_almacen) REFERENCES public.app_dat_almacen(id),
   CONSTRAINT app_dat_almacenero_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_almacenero_id_almacen_fkey FOREIGN KEY (id_almacen) REFERENCES public.app_dat_almacen(id),
   CONSTRAINT app_dat_almacenero_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id)
 );
 CREATE TABLE public.app_dat_atributo_opcion (
@@ -211,12 +243,12 @@ CREATE TABLE public.app_dat_caja_turno (
   fecha_cierre timestamp with time zone,
   maneja_inventario boolean,
   CONSTRAINT app_dat_caja_turno_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_caja_turno_cerrado_por_fkey FOREIGN KEY (cerrado_por) REFERENCES auth.users(id),
-  CONSTRAINT app_dat_caja_turno_creado_por_fkey FOREIGN KEY (creado_por) REFERENCES auth.users(id),
-  CONSTRAINT app_dat_caja_turno_id_vendedor_fkey FOREIGN KEY (id_vendedor) REFERENCES public.app_dat_vendedor(id),
-  CONSTRAINT app_dat_caja_turno_id_tpv_fkey FOREIGN KEY (id_tpv) REFERENCES public.app_dat_tpv(id),
-  CONSTRAINT app_dat_caja_turno_id_operacion_cierre_fkey FOREIGN KEY (id_operacion_cierre) REFERENCES public.app_dat_operaciones(id),
   CONSTRAINT app_dat_caja_turno_id_operacion_apertura_fkey FOREIGN KEY (id_operacion_apertura) REFERENCES public.app_dat_operaciones(id),
+  CONSTRAINT app_dat_caja_turno_id_operacion_cierre_fkey FOREIGN KEY (id_operacion_cierre) REFERENCES public.app_dat_operaciones(id),
+  CONSTRAINT app_dat_caja_turno_id_tpv_fkey FOREIGN KEY (id_tpv) REFERENCES public.app_dat_tpv(id),
+  CONSTRAINT app_dat_caja_turno_id_vendedor_fkey FOREIGN KEY (id_vendedor) REFERENCES public.app_dat_vendedor(id),
+  CONSTRAINT app_dat_caja_turno_creado_por_fkey FOREIGN KEY (creado_por) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_caja_turno_cerrado_por_fkey FOREIGN KEY (cerrado_por) REFERENCES auth.users(id),
   CONSTRAINT app_dat_caja_turno_estado_fkey FOREIGN KEY (estado) REFERENCES public.app_nom_estado_operacion(id)
 );
 CREATE TABLE public.app_dat_categoria (
@@ -276,11 +308,11 @@ CREATE TABLE public.app_dat_codigos_barras (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   created_by uuid,
   CONSTRAINT app_dat_codigos_barras_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_codigos_barras_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id),
   CONSTRAINT app_dat_codigos_barras_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),
   CONSTRAINT app_dat_codigos_barras_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_codigos_barras_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
-  CONSTRAINT app_dat_codigos_barras_opcion_fkey FOREIGN KEY (id_opcion_variante) REFERENCES public.app_dat_atributo_opcion(id)
+  CONSTRAINT app_dat_codigos_barras_opcion_fkey FOREIGN KEY (id_opcion_variante) REFERENCES public.app_dat_atributo_opcion(id),
+  CONSTRAINT app_dat_codigos_barras_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id)
 );
 CREATE TABLE public.app_dat_contactos_clientes (
   id bigint NOT NULL DEFAULT nextval('app_dat_contactos_clientes_id_seq'::regclass),
@@ -306,11 +338,11 @@ CREATE TABLE public.app_dat_control_productos (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_control_productos_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_control_productos_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id),
-  CONSTRAINT app_dat_control_productos_id_opcion_variante_fkey FOREIGN KEY (id_opcion_variante) REFERENCES public.app_dat_atributo_opcion(id),
-  CONSTRAINT app_dat_control_productos_id_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id),
-  CONSTRAINT app_dat_control_productos_id_ubicacion_fkey FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id),
+  CONSTRAINT app_dat_control_productos_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_control_productos_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
-  CONSTRAINT app_dat_control_productos_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id)
+  CONSTRAINT app_dat_control_productos_id_opcion_variante_fkey FOREIGN KEY (id_opcion_variante) REFERENCES public.app_dat_atributo_opcion(id),
+  CONSTRAINT app_dat_control_productos_id_ubicacion_fkey FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id),
+  CONSTRAINT app_dat_control_productos_id_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id)
 );
 CREATE TABLE public.app_dat_entregas_parciales_caja (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -334,9 +366,9 @@ CREATE TABLE public.app_dat_estado_operacion (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   comentario text,
   CONSTRAINT app_dat_estado_operacion_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_estado_operacion_estado_fkey FOREIGN KEY (estado) REFERENCES public.app_nom_estado_operacion(id),
   CONSTRAINT app_dat_estado_operacion_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id),
-  CONSTRAINT app_dat_estado_operacion_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
+  CONSTRAINT app_dat_estado_operacion_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_estado_operacion_estado_fkey FOREIGN KEY (estado) REFERENCES public.app_nom_estado_operacion(id)
 );
 CREATE TABLE public.app_dat_extraccion_productos (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -371,8 +403,8 @@ CREATE TABLE public.app_dat_garantia_uso (
   fecha_uso date NOT NULL DEFAULT CURRENT_DATE,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT app_dat_garantia_uso_pkey PRIMARY KEY (id),
-  CONSTRAINT fk_garantia_uso_devolucion FOREIGN KEY (id_operacion_devolucion) REFERENCES public.app_dat_operaciones(id),
-  CONSTRAINT fk_garantia_uso_garantia FOREIGN KEY (id_garantia_venta) REFERENCES public.app_dat_garantia_venta(id)
+  CONSTRAINT fk_garantia_uso_garantia FOREIGN KEY (id_garantia_venta) REFERENCES public.app_dat_garantia_venta(id),
+  CONSTRAINT fk_garantia_uso_devolucion FOREIGN KEY (id_operacion_devolucion) REFERENCES public.app_dat_operaciones(id)
 );
 CREATE TABLE public.app_dat_garantia_venta (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -385,9 +417,9 @@ CREATE TABLE public.app_dat_garantia_venta (
   estado_garantia smallint NOT NULL DEFAULT 1,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT app_dat_garantia_venta_pkey PRIMARY KEY (id),
-  CONSTRAINT fk_garantia_venta_tipo FOREIGN KEY (id_tipo_garantia) REFERENCES public.app_nom_tipo_garantia(id),
   CONSTRAINT fk_garantia_venta_venta FOREIGN KEY (id_venta_original) REFERENCES public.app_dat_operaciones(id),
-  CONSTRAINT fk_garantia_venta_producto FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id)
+  CONSTRAINT fk_garantia_venta_producto FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT fk_garantia_venta_tipo FOREIGN KEY (id_tipo_garantia) REFERENCES public.app_nom_tipo_garantia(id)
 );
 CREATE TABLE public.app_dat_gerente (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -397,8 +429,8 @@ CREATE TABLE public.app_dat_gerente (
   id_trabajador bigint,
   CONSTRAINT app_dat_gerente_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_dueños_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
-  CONSTRAINT app_dat_gerente_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id),
-  CONSTRAINT app_dat_dueños_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
+  CONSTRAINT app_dat_dueños_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_dat_gerente_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id)
 );
 CREATE TABLE public.app_dat_historial_pre_asignaciones (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -435,7 +467,6 @@ CREATE TABLE public.app_dat_inventario_productos (
   id_control bigint,
   id_proveedor bigint,
   CONSTRAINT app_dat_inventario_productos_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_inventario_productos_id_proveedor_fkey FOREIGN KEY (id_proveedor) REFERENCES public.app_dat_proveedor(id),
   CONSTRAINT app_dat_inventario_productos_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_inventario_productos_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
   CONSTRAINT app_dat_inventario_productos_id_opcion_variante_fkey FOREIGN KEY (id_opcion_variante) REFERENCES public.app_dat_atributo_opcion(id),
@@ -443,7 +474,8 @@ CREATE TABLE public.app_dat_inventario_productos (
   CONSTRAINT app_dat_inventario_productos_id_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id),
   CONSTRAINT app_dat_inventario_productos_id_recepcion_fkey FOREIGN KEY (id_recepcion) REFERENCES public.app_dat_recepcion_productos(id),
   CONSTRAINT app_dat_inventario_productos_id_extraccion_fkey FOREIGN KEY (id_extraccion) REFERENCES public.app_dat_extraccion_productos(id),
-  CONSTRAINT app_dat_inventario_productos_id_control_fkey FOREIGN KEY (id_control) REFERENCES public.app_dat_control_productos(id)
+  CONSTRAINT app_dat_inventario_productos_id_control_fkey FOREIGN KEY (id_control) REFERENCES public.app_dat_control_productos(id),
+  CONSTRAINT app_dat_inventario_productos_id_proveedor_fkey FOREIGN KEY (id_proveedor) REFERENCES public.app_dat_proveedor(id)
 );
 CREATE TABLE public.app_dat_layout_abc (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -473,8 +505,8 @@ CREATE TABLE public.app_dat_layout_condiciones (
   id_condicion bigint,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_layout_condiciones_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_layout_condiciones_id_condicion_fkey FOREIGN KEY (id_condicion) REFERENCES public.app_nom_tipo_condicion(id),
-  CONSTRAINT app_dat_layout_condiciones_id_layout_fkey FOREIGN KEY (id_layout) REFERENCES public.app_dat_layout_almacen(id)
+  CONSTRAINT app_dat_layout_condiciones_id_layout_fkey FOREIGN KEY (id_layout) REFERENCES public.app_dat_layout_almacen(id),
+  CONSTRAINT app_dat_layout_condiciones_id_condicion_fkey FOREIGN KEY (id_condicion) REFERENCES public.app_nom_tipo_condicion(id)
 );
 CREATE TABLE public.app_dat_operacion_extraccion (
   id_operacion bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -510,9 +542,9 @@ CREATE TABLE public.app_dat_operacion_transferencia (
   autorizado_por character varying,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_operacion_transferencia_pkey PRIMARY KEY (id_operacion),
+  CONSTRAINT app_dat_operacion_transferencia_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id),
   CONSTRAINT app_dat_operacion_transferencia_id_recepcion_fkey FOREIGN KEY (id_recepcion) REFERENCES public.app_dat_operaciones(id),
-  CONSTRAINT app_dat_operacion_transferencia_id_extraccion_fkey FOREIGN KEY (id_extraccion) REFERENCES public.app_dat_operaciones(id),
-  CONSTRAINT app_dat_operacion_transferencia_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id)
+  CONSTRAINT app_dat_operacion_transferencia_id_extraccion_fkey FOREIGN KEY (id_extraccion) REFERENCES public.app_dat_operaciones(id)
 );
 CREATE TABLE public.app_dat_operacion_venta (
   id_operacion bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -526,11 +558,11 @@ CREATE TABLE public.app_dat_operacion_venta (
   es_pagada boolean NOT NULL DEFAULT true,
   id_turno_apertura bigint,
   CONSTRAINT app_dat_operacion_venta_pkey PRIMARY KEY (id_operacion),
-  CONSTRAINT app_dat_operacion_venta_id_turno_apertura_fkey FOREIGN KEY (id_turno_apertura) REFERENCES public.app_dat_caja_turno(id),
   CONSTRAINT app_operacion_extraccion_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id),
   CONSTRAINT app_operacion_extraccion_id_tpv_fkey FOREIGN KEY (id_tpv) REFERENCES public.app_dat_tpv(id),
   CONSTRAINT app_dat_operacion_venta_id_promocion_fkey FOREIGN KEY (id_promocion) REFERENCES public.app_mkt_promociones(id),
-  CONSTRAINT app_dat_operacion_venta_id_cliente_fkey FOREIGN KEY (id_cliente) REFERENCES public.app_dat_clientes(id)
+  CONSTRAINT app_dat_operacion_venta_id_cliente_fkey FOREIGN KEY (id_cliente) REFERENCES public.app_dat_clientes(id),
+  CONSTRAINT app_dat_operacion_venta_id_turno_apertura_fkey FOREIGN KEY (id_turno_apertura) REFERENCES public.app_dat_caja_turno(id)
 );
 CREATE TABLE public.app_dat_operaciones (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -540,9 +572,9 @@ CREATE TABLE public.app_dat_operaciones (
   observaciones character varying,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_operaciones_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_operaciones_id_tipo_operacion_fkey FOREIGN KEY (id_tipo_operacion) REFERENCES public.app_nom_tipo_operacion(id),
   CONSTRAINT app_dat_operaciones_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
-  CONSTRAINT app_dat_operaciones_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
-  CONSTRAINT app_dat_operaciones_id_tipo_operacion_fkey FOREIGN KEY (id_tipo_operacion) REFERENCES public.app_nom_tipo_operacion(id)
+  CONSTRAINT app_dat_operaciones_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
 CREATE TABLE public.app_dat_pago_venta (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -554,9 +586,9 @@ CREATE TABLE public.app_dat_pago_venta (
   fecha_pago timestamp with time zone NOT NULL DEFAULT now(),
   creado_por uuid NOT NULL,
   CONSTRAINT app_dat_pago_venta_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_pago_venta_creado_por_fkey FOREIGN KEY (creado_por) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_pago_venta_id_operacion_venta_fkey FOREIGN KEY (id_operacion_venta) REFERENCES public.app_dat_operacion_venta(id_operacion),
   CONSTRAINT app_dat_pago_venta_id_medio_pago_fkey FOREIGN KEY (id_medio_pago) REFERENCES public.app_nom_medio_pago(id),
-  CONSTRAINT app_dat_pago_venta_id_operacion_venta_fkey FOREIGN KEY (id_operacion_venta) REFERENCES public.app_dat_operacion_venta(id_operacion)
+  CONSTRAINT app_dat_pago_venta_creado_por_fkey FOREIGN KEY (creado_por) REFERENCES auth.users(id)
 );
 CREATE TABLE public.app_dat_pre_asignaciones (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -578,14 +610,14 @@ CREATE TABLE public.app_dat_pre_asignaciones (
   fecha_confirmacion timestamp with time zone,
   CONSTRAINT app_dat_pre_asignaciones_pkey PRIMARY KEY (id),
   CONSTRAINT fk_pre_asignacion_producto FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT fk_pre_asignacion_variante FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
   CONSTRAINT fk_pre_asignacion_opcion FOREIGN KEY (id_opcion_variante) REFERENCES public.app_dat_atributo_opcion(id),
-  CONSTRAINT fk_pre_asignacion_creado_por FOREIGN KEY (creado_por) REFERENCES auth.users(id),
-  CONSTRAINT fk_pre_asignacion_ubicacion_destino FOREIGN KEY (id_ubicacion_destino) REFERENCES public.app_dat_layout_almacen(id),
   CONSTRAINT fk_pre_asignacion_presentacion FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id),
   CONSTRAINT fk_pre_asignacion_ubicacion_origen FOREIGN KEY (id_ubicacion_origen) REFERENCES public.app_dat_layout_almacen(id),
+  CONSTRAINT fk_pre_asignacion_ubicacion_destino FOREIGN KEY (id_ubicacion_destino) REFERENCES public.app_dat_layout_almacen(id),
   CONSTRAINT fk_pre_asignacion_tienda_destino FOREIGN KEY (id_tienda_destino) REFERENCES public.app_dat_tienda(id),
-  CONSTRAINT fk_pre_asignacion_confirmado_por FOREIGN KEY (confirmado_por) REFERENCES auth.users(id),
-  CONSTRAINT fk_pre_asignacion_variante FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id)
+  CONSTRAINT fk_pre_asignacion_creado_por FOREIGN KEY (creado_por) REFERENCES auth.users(id),
+  CONSTRAINT fk_pre_asignacion_confirmado_por FOREIGN KEY (confirmado_por) REFERENCES auth.users(id)
 );
 CREATE TABLE public.app_dat_precio_venta (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -596,8 +628,8 @@ CREATE TABLE public.app_dat_precio_venta (
   fecha_hasta date,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_precio_venta_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_precio_venta_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
-  CONSTRAINT app_dat_precio_venta_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id)
+  CONSTRAINT app_dat_precio_venta_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_dat_precio_venta_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id)
 );
 CREATE TABLE public.app_dat_producto (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -622,8 +654,8 @@ CREATE TABLE public.app_dat_producto (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   imagen text,
   CONSTRAINT app_dat_producto_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_producto_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_dat_categoria(id),
-  CONSTRAINT app_dat_producto_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
+  CONSTRAINT app_dat_producto_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_dat_producto_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_dat_categoria(id)
 );
 CREATE TABLE public.app_dat_producto_abc (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -653,8 +685,8 @@ CREATE TABLE public.app_dat_producto_garantia (
   es_activo boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT app_dat_producto_garantia_pkey PRIMARY KEY (id),
-  CONSTRAINT fk_producto_garantia_tipo FOREIGN KEY (id_tipo_garantia) REFERENCES public.app_nom_tipo_garantia(id),
-  CONSTRAINT fk_producto_garantia_producto FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id)
+  CONSTRAINT fk_producto_garantia_producto FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT fk_producto_garantia_tipo FOREIGN KEY (id_tipo_garantia) REFERENCES public.app_nom_tipo_garantia(id)
 );
 CREATE TABLE public.app_dat_producto_multimedias (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -675,14 +707,28 @@ CREATE TABLE public.app_dat_producto_presentacion (
   CONSTRAINT app_dat_producto_presentacion_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_producto_presentacion_id_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_nom_presentacion(id)
 );
+CREATE TABLE public.app_dat_producto_unidades (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_producto bigint NOT NULL,
+  id_unidad_medida bigint NOT NULL,
+  factor_producto numeric NOT NULL DEFAULT 1.0,
+  es_unidad_compra boolean NOT NULL DEFAULT false,
+  es_unidad_venta boolean NOT NULL DEFAULT false,
+  es_unidad_inventario boolean NOT NULL DEFAULT false,
+  observaciones text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_producto_unidades_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_producto_unidades_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_dat_producto_unidades_unidad_fkey FOREIGN KEY (id_unidad_medida) REFERENCES public.app_nom_unidades_medida(id)
+);
 CREATE TABLE public.app_dat_productos_subcategorias (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   id_producto bigint NOT NULL,
   id_sub_categoria bigint NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_productos_subcategorias_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_productos_subcategorias_id_sub_categoria_fkey FOREIGN KEY (id_sub_categoria) REFERENCES public.app_dat_subcategorias(id),
-  CONSTRAINT app_dat_productos_subcategorias_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id)
+  CONSTRAINT app_dat_productos_subcategorias_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_dat_productos_subcategorias_id_sub_categoria_fkey FOREIGN KEY (id_sub_categoria) REFERENCES public.app_dat_subcategorias(id)
 );
 CREATE TABLE public.app_dat_proveedor (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -714,13 +760,13 @@ CREATE TABLE public.app_dat_recepcion_productos (
   costo_real numeric DEFAULT ((precio_unitario - COALESCE(descuento_monto, (0)::numeric)) - ((precio_referencia * descuento_porcentaje) / (100)::numeric)),
   bonificacion_cantidad numeric DEFAULT 0,
   CONSTRAINT app_dat_recepcion_productos_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_recepcion_productos_id_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id),
   CONSTRAINT app_dat_recepcion_productos_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id),
   CONSTRAINT app_dat_recepcion_productos_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_recepcion_productos_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
   CONSTRAINT app_dat_recepcion_productos_id_opcion_variante_fkey FOREIGN KEY (id_opcion_variante) REFERENCES public.app_dat_atributo_opcion(id),
   CONSTRAINT app_dat_recepcion_productos_id_proveedor_fkey FOREIGN KEY (id_proveedor) REFERENCES public.app_dat_proveedor(id),
-  CONSTRAINT app_dat_recepcion_productos_id_ubicacion_fkey FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id)
+  CONSTRAINT app_dat_recepcion_productos_id_ubicacion_fkey FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id),
+  CONSTRAINT app_dat_recepcion_productos_id_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id)
 );
 CREATE TABLE public.app_dat_subcategorias (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -757,8 +803,8 @@ CREATE TABLE public.app_dat_tpv (
   denominacion character varying NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_tpv_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_tpv_id_almacen_fkey FOREIGN KEY (id_almacen) REFERENCES public.app_dat_almacen(id),
-  CONSTRAINT app_dat_tpv_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
+  CONSTRAINT app_dat_tpv_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_dat_tpv_id_almacen_fkey FOREIGN KEY (id_almacen) REFERENCES public.app_dat_almacen(id)
 );
 CREATE TABLE public.app_dat_tpv_dispositivos (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -778,8 +824,8 @@ CREATE TABLE public.app_dat_trabajadores (
   apellidos character varying,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_trabajadores_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_trabajadores_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
-  CONSTRAINT app_dat_trabajadores_id_roll_fkey FOREIGN KEY (id_roll) REFERENCES public.seg_roll(id)
+  CONSTRAINT app_dat_trabajadores_id_roll_fkey FOREIGN KEY (id_roll) REFERENCES public.seg_roll(id),
+  CONSTRAINT app_dat_trabajadores_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
 CREATE TABLE public.app_dat_variantes (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -799,8 +845,8 @@ CREATE TABLE public.app_dat_vendedor (
   id_trabajador bigint,
   CONSTRAINT app_dat_vendedor_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_vendedor_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id),
-  CONSTRAINT app_dat_vendedor_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id),
-  CONSTRAINT app_dat_vendedor_id_tpv_fkey FOREIGN KEY (id_tpv) REFERENCES public.app_dat_tpv(id)
+  CONSTRAINT app_dat_vendedor_id_tpv_fkey FOREIGN KEY (id_tpv) REFERENCES public.app_dat_tpv(id),
+  CONSTRAINT app_dat_vendedor_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id)
 );
 CREATE TABLE public.app_mkt_campanas (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -814,8 +860,8 @@ CREATE TABLE public.app_mkt_campanas (
   estado smallint NOT NULL DEFAULT 1,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_mkt_campanas_pkey PRIMARY KEY (id),
-  CONSTRAINT app_mkt_campanas_id_tipo_campana_fkey FOREIGN KEY (id_tipo_campana) REFERENCES public.app_mkt_tipo_campana(id),
-  CONSTRAINT app_mkt_campanas_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
+  CONSTRAINT app_mkt_campanas_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_mkt_campanas_id_tipo_campana_fkey FOREIGN KEY (id_tipo_campana) REFERENCES public.app_mkt_tipo_campana(id)
 );
 CREATE TABLE public.app_mkt_cliente_promociones (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -840,8 +886,8 @@ CREATE TABLE public.app_mkt_comunicacion_clientes (
   interacciones jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_mkt_comunicacion_clientes_pkey PRIMARY KEY (id),
-  CONSTRAINT app_mkt_comunicacion_clientes_id_cliente_fkey FOREIGN KEY (id_cliente) REFERENCES public.app_dat_clientes(id),
-  CONSTRAINT app_mkt_comunicacion_clientes_id_comunicacion_fkey FOREIGN KEY (id_comunicacion) REFERENCES public.app_mkt_comunicaciones(id)
+  CONSTRAINT app_mkt_comunicacion_clientes_id_comunicacion_fkey FOREIGN KEY (id_comunicacion) REFERENCES public.app_mkt_comunicaciones(id),
+  CONSTRAINT app_mkt_comunicacion_clientes_id_cliente_fkey FOREIGN KEY (id_cliente) REFERENCES public.app_dat_clientes(id)
 );
 CREATE TABLE public.app_mkt_comunicaciones (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -857,8 +903,8 @@ CREATE TABLE public.app_mkt_comunicaciones (
   metricas jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_mkt_comunicaciones_pkey PRIMARY KEY (id),
-  CONSTRAINT app_mkt_comunicaciones_id_segmento_fkey FOREIGN KEY (id_segmento) REFERENCES public.app_mkt_segmentos(id),
   CONSTRAINT app_mkt_comunicaciones_id_campana_fkey FOREIGN KEY (id_campana) REFERENCES public.app_mkt_campanas(id),
+  CONSTRAINT app_mkt_comunicaciones_id_segmento_fkey FOREIGN KEY (id_segmento) REFERENCES public.app_mkt_segmentos(id),
   CONSTRAINT app_mkt_comunicaciones_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_mkt_comunicaciones_id_tipo_campana_fkey FOREIGN KEY (id_tipo_campana) REFERENCES public.app_mkt_tipo_campana(id)
 );
@@ -906,9 +952,9 @@ CREATE TABLE public.app_mkt_promocion_productos (
   id_subcategoria bigint,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_mkt_promocion_productos_pkey PRIMARY KEY (id),
-  CONSTRAINT app_mkt_promocion_productos_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_dat_categoria(id),
   CONSTRAINT app_mkt_promocion_productos_id_promocion_fkey FOREIGN KEY (id_promocion) REFERENCES public.app_mkt_promociones(id),
   CONSTRAINT app_mkt_promocion_productos_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_mkt_promocion_productos_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_dat_categoria(id),
   CONSTRAINT app_mkt_promocion_productos_id_subcategoria_fkey FOREIGN KEY (id_subcategoria) REFERENCES public.app_dat_subcategorias(id)
 );
 CREATE TABLE public.app_mkt_promocion_segmento (
@@ -939,8 +985,8 @@ CREATE TABLE public.app_mkt_promociones (
   requiere_medio_pago boolean NOT NULL DEFAULT false,
   id_medio_pago_requerido smallint,
   CONSTRAINT app_mkt_promociones_pkey PRIMARY KEY (id),
-  CONSTRAINT app_mkt_promociones_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_mkt_promociones_id_campana_fkey FOREIGN KEY (id_campana) REFERENCES public.app_mkt_campanas(id),
+  CONSTRAINT app_mkt_promociones_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_mkt_promociones_id_tipo_promocion_fkey FOREIGN KEY (id_tipo_promocion) REFERENCES public.app_mkt_tipo_promocion(id),
   CONSTRAINT fk_promocion_medio_pago FOREIGN KEY (id_medio_pago_requerido) REFERENCES public.app_nom_medio_pago(id)
 );
@@ -986,6 +1032,18 @@ CREATE TABLE public.app_nom_categoria_gasto (
   descripcion character varying,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_nom_categoria_gasto_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.app_nom_conversiones_unidades (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_unidad_origen bigint NOT NULL,
+  id_unidad_destino bigint NOT NULL,
+  factor_conversion numeric NOT NULL,
+  es_aproximada boolean NOT NULL DEFAULT false,
+  observaciones text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_nom_conversiones_unidades_pkey PRIMARY KEY (id),
+  CONSTRAINT app_nom_conversiones_unidades_origen_fkey FOREIGN KEY (id_unidad_origen) REFERENCES public.app_nom_unidades_medida(id),
+  CONSTRAINT app_nom_conversiones_unidades_destino_fkey FOREIGN KEY (id_unidad_destino) REFERENCES public.app_nom_unidades_medida(id)
 );
 CREATE TABLE public.app_nom_estado_operacion (
   id smallint NOT NULL,
@@ -1080,6 +1138,17 @@ CREATE TABLE public.app_nom_tipo_operacion (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_nom_tipo_operacion_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.app_nom_unidades_medida (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  denominacion character varying NOT NULL UNIQUE,
+  abreviatura character varying NOT NULL UNIQUE,
+  tipo_unidad smallint NOT NULL,
+  es_base boolean NOT NULL DEFAULT false,
+  factor_base numeric,
+  descripcion text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_nom_unidades_medida_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.app_rest_categorias_platos (
   id bigint NOT NULL DEFAULT nextval('app_rest_categorias_platos_id_seq'::regclass),
   nombre character varying NOT NULL,
@@ -1089,6 +1158,90 @@ CREATE TABLE public.app_rest_categorias_platos (
   imagen text,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT app_rest_categorias_platos_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.app_rest_costos_produccion (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_plato bigint NOT NULL,
+  fecha_calculo date NOT NULL,
+  costo_ingredientes numeric NOT NULL DEFAULT 0,
+  costo_mano_obra numeric NOT NULL DEFAULT 0,
+  costo_indirecto numeric NOT NULL DEFAULT 0,
+  costo_total numeric DEFAULT ((costo_ingredientes + costo_mano_obra) + costo_indirecto),
+  margen_deseado numeric NOT NULL DEFAULT 30.0,
+  precio_sugerido numeric DEFAULT (((costo_ingredientes + costo_mano_obra) + costo_indirecto) * ((1)::numeric + (margen_deseado / (100)::numeric))),
+  calculado_por uuid NOT NULL,
+  observaciones text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_rest_costos_produccion_pkey PRIMARY KEY (id),
+  CONSTRAINT app_rest_costos_produccion_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id),
+  CONSTRAINT app_rest_costos_produccion_usuario_fkey FOREIGN KEY (calculado_por) REFERENCES auth.users(id)
+);
+CREATE TABLE public.app_rest_descuentos_inventario (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_venta_plato bigint NOT NULL,
+  id_producto_inventario bigint NOT NULL,
+  cantidad_descontada numeric NOT NULL,
+  id_unidad_medida bigint NOT NULL,
+  id_ubicacion bigint NOT NULL,
+  precio_costo numeric,
+  fecha_descuento timestamp with time zone NOT NULL DEFAULT now(),
+  procesado_por uuid NOT NULL,
+  observaciones text,
+  CONSTRAINT app_rest_descuentos_inventario_pkey PRIMARY KEY (id),
+  CONSTRAINT app_rest_descuentos_inventario_venta_plato_fkey FOREIGN KEY (id_venta_plato) REFERENCES public.app_rest_venta_platos(id),
+  CONSTRAINT app_rest_descuentos_inventario_producto_fkey FOREIGN KEY (id_producto_inventario) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_rest_descuentos_inventario_unidad_fkey FOREIGN KEY (id_unidad_medida) REFERENCES public.app_nom_unidades_medida(id),
+  CONSTRAINT app_rest_descuentos_inventario_ubicacion_fkey FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id),
+  CONSTRAINT app_rest_descuentos_inventario_usuario_fkey FOREIGN KEY (procesado_por) REFERENCES auth.users(id)
+);
+CREATE TABLE public.app_rest_desperdicios (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_producto_inventario bigint NOT NULL,
+  id_plato bigint,
+  cantidad_desperdiciada numeric NOT NULL,
+  id_unidad_medida bigint NOT NULL,
+  motivo_desperdicio text NOT NULL,
+  costo_desperdicio numeric,
+  fecha_desperdicio timestamp with time zone NOT NULL DEFAULT now(),
+  registrado_por uuid NOT NULL,
+  observaciones text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_rest_desperdicios_pkey PRIMARY KEY (id),
+  CONSTRAINT app_rest_desperdicios_producto_fkey FOREIGN KEY (id_producto_inventario) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_rest_desperdicios_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id),
+  CONSTRAINT app_rest_desperdicios_unidad_fkey FOREIGN KEY (id_unidad_medida) REFERENCES public.app_nom_unidades_medida(id),
+  CONSTRAINT app_rest_desperdicios_usuario_fkey FOREIGN KEY (registrado_por) REFERENCES auth.users(id)
+);
+CREATE TABLE public.app_rest_disponibilidad_platos (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_plato bigint NOT NULL,
+  id_tienda bigint NOT NULL,
+  fecha_revision date NOT NULL DEFAULT CURRENT_DATE,
+  stock_disponible integer NOT NULL DEFAULT 0,
+  ingredientes_suficientes boolean NOT NULL DEFAULT true,
+  motivo_no_disponible text,
+  revisado_por uuid NOT NULL,
+  proxima_revision timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_rest_disponibilidad_platos_pkey PRIMARY KEY (id),
+  CONSTRAINT app_rest_disponibilidad_platos_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_rest_disponibilidad_platos_usuario_fkey FOREIGN KEY (revisado_por) REFERENCES auth.users(id),
+  CONSTRAINT app_rest_disponibilidad_platos_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id)
+);
+CREATE TABLE public.app_rest_estados_preparacion (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_venta_plato bigint NOT NULL,
+  estado smallint NOT NULL DEFAULT 1,
+  tiempo_estimado integer,
+  tiempo_real integer,
+  asignado_a uuid,
+  observaciones_cocina text,
+  fecha_cambio_estado timestamp with time zone NOT NULL DEFAULT now(),
+  cambiado_por uuid NOT NULL,
+  CONSTRAINT app_rest_estados_preparacion_pkey PRIMARY KEY (id),
+  CONSTRAINT app_rest_estados_preparacion_venta_plato_fkey FOREIGN KEY (id_venta_plato) REFERENCES public.app_rest_venta_platos(id),
+  CONSTRAINT app_rest_estados_preparacion_asignado_fkey FOREIGN KEY (asignado_a) REFERENCES auth.users(id),
+  CONSTRAINT app_rest_estados_preparacion_cambiado_fkey FOREIGN KEY (cambiado_por) REFERENCES auth.users(id)
 );
 CREATE TABLE public.app_rest_modificaciones (
   id bigint NOT NULL DEFAULT nextval('app_rest_modificaciones_id_seq'::regclass),
@@ -1113,9 +1266,9 @@ CREATE TABLE public.app_rest_modificaciones_platos (
   es_activo boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT app_rest_modificaciones_platos_pkey PRIMARY KEY (id),
+  CONSTRAINT app_rest_modificaciones_platos_id_modificacion_fkey FOREIGN KEY (id_modificacion) REFERENCES public.app_rest_modificaciones(id),
   CONSTRAINT app_rest_modificaciones_platos_id_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id),
-  CONSTRAINT app_rest_modificaciones_platos_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_rest_categorias_platos(id),
-  CONSTRAINT app_rest_modificaciones_platos_id_modificacion_fkey FOREIGN KEY (id_modificacion) REFERENCES public.app_rest_modificaciones(id)
+  CONSTRAINT app_rest_modificaciones_platos_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_rest_categorias_platos(id)
 );
 CREATE TABLE public.app_rest_platos_elaborados (
   id bigint NOT NULL DEFAULT nextval('app_rest_platos_elaborados_id_seq'::regclass),
@@ -1141,8 +1294,8 @@ CREATE TABLE public.app_rest_recetas (
   orden integer DEFAULT 1,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT app_rest_recetas_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_recetas_id_producto_inventario_fkey FOREIGN KEY (id_producto_inventario) REFERENCES public.app_dat_producto(id),
-  CONSTRAINT app_rest_recetas_id_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id)
+  CONSTRAINT app_rest_recetas_id_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id),
+  CONSTRAINT app_rest_recetas_id_producto_inventario_fkey FOREIGN KEY (id_producto_inventario) REFERENCES public.app_dat_producto(id)
 );
 CREATE TABLE public.app_rest_venta_modificaciones (
   id bigint NOT NULL DEFAULT nextval('app_rest_venta_modificaciones_id_seq'::regclass),
@@ -1153,8 +1306,8 @@ CREATE TABLE public.app_rest_venta_modificaciones (
   observaciones text,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT app_rest_venta_modificaciones_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_venta_modificaciones_id_modificacion_fkey FOREIGN KEY (id_modificacion) REFERENCES public.app_rest_modificaciones(id),
-  CONSTRAINT app_rest_venta_modificaciones_id_venta_plato_fkey FOREIGN KEY (id_venta_plato) REFERENCES public.app_rest_venta_platos(id)
+  CONSTRAINT app_rest_venta_modificaciones_id_venta_plato_fkey FOREIGN KEY (id_venta_plato) REFERENCES public.app_rest_venta_platos(id),
+  CONSTRAINT app_rest_venta_modificaciones_id_modificacion_fkey FOREIGN KEY (id_modificacion) REFERENCES public.app_rest_modificaciones(id)
 );
 CREATE TABLE public.app_rest_venta_platos (
   id bigint NOT NULL DEFAULT nextval('app_rest_venta_platos_id_seq'::regclass),
@@ -1166,8 +1319,8 @@ CREATE TABLE public.app_rest_venta_platos (
   created_at timestamp with time zone DEFAULT now(),
   precio_final numeric,
   CONSTRAINT app_rest_venta_platos_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_venta_platos_id_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id),
-  CONSTRAINT app_rest_venta_platos_id_operacion_venta_fkey FOREIGN KEY (id_operacion_venta) REFERENCES public.app_dat_operaciones(id)
+  CONSTRAINT app_rest_venta_platos_id_operacion_venta_fkey FOREIGN KEY (id_operacion_venta) REFERENCES public.app_dat_operaciones(id),
+  CONSTRAINT app_rest_venta_platos_id_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id)
 );
 CREATE TABLE public.app_suscripciones (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -1253,38 +1406,3 @@ CREATE TABLE public.tasas_conversion (
   CONSTRAINT tasas_conversion_moneda_origen_fkey FOREIGN KEY (moneda_origen) REFERENCES public.monedas(codigo),
   CONSTRAINT tasas_conversion_moneda_destino_fkey FOREIGN KEY (moneda_destino) REFERENCES public.monedas(codigo)
 );
-
--- Tabla para relacionar operaciones de inventario con gastos contables
-CREATE TABLE public.app_cont_operacion_gasto (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  id_operacion bigint NOT NULL,
-  id_gasto bigint,
-  tipo_operacion character varying NOT NULL, -- 'recepcion', 'extraccion', 'entrega_efectivo'
-  monto_calculado numeric NOT NULL,
-  estado_registro character varying NOT NULL DEFAULT 'pendiente', -- 'pendiente', 'registrado', 'omitido'
-  motivo_omision text,
-  fecha_calculo timestamp with time zone NOT NULL DEFAULT now(),
-  fecha_registro timestamp with time zone,
-  registrado_por uuid,
-  observaciones text,
-  metadatos jsonb, -- Para almacenar datos específicos según el tipo de operación
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT app_cont_operacion_gasto_pkey PRIMARY KEY (id),
-  CONSTRAINT app_cont_operacion_gasto_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id),
-  CONSTRAINT app_cont_operacion_gasto_id_gasto_fkey FOREIGN KEY (id_gasto) REFERENCES public.app_cont_gastos(id),
-  CONSTRAINT app_cont_operacion_gasto_registrado_por_fkey FOREIGN KEY (registrado_por) REFERENCES auth.users(id),
-  CONSTRAINT app_cont_operacion_gasto_estado_check CHECK (estado_registro IN ('pendiente', 'registrado', 'omitido')),
-  CONSTRAINT app_cont_operacion_gasto_tipo_check CHECK (tipo_operacion IN ('recepcion', 'extraccion', 'entrega_efectivo'))
-);
-
--- Índices para optimizar consultas
-CREATE INDEX idx_app_cont_operacion_gasto_operacion ON public.app_cont_operacion_gasto(id_operacion);
-CREATE INDEX idx_app_cont_operacion_gasto_estado ON public.app_cont_operacion_gasto(estado_registro);
-CREATE INDEX idx_app_cont_operacion_gasto_tipo ON public.app_cont_operacion_gasto(tipo_operacion);
-CREATE INDEX idx_app_cont_operacion_gasto_fecha_calculo ON public.app_cont_operacion_gasto(fecha_calculo);
-
--- Comentarios para documentación
-COMMENT ON TABLE public.app_cont_operacion_gasto IS 'Tabla que relaciona operaciones de inventario con gastos contables para seguimiento de gastos deducibles';
-COMMENT ON COLUMN public.app_cont_operacion_gasto.tipo_operacion IS 'Tipo de operación: recepcion (compras), extraccion (salidas inventario), entrega_efectivo (extracciones caja)';
-COMMENT ON COLUMN public.app_cont_operacion_gasto.estado_registro IS 'Estado del registro contable: pendiente, registrado, omitido';
-COMMENT ON COLUMN public.app_cont_operacion_gasto.metadatos IS 'Datos específicos según tipo: productos para recepciones, motivos para extracciones, etc.';

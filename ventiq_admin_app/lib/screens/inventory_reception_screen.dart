@@ -8,6 +8,8 @@ import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/warehouse_service.dart';
 import '../models/warehouse.dart';
+import '../widgets/conversion_info_widget.dart';
+import '../utils/presentation_converter.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
   const InventoryReceptionScreen({super.key});
@@ -218,7 +220,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   Future<void> _submitReception() async {
     if (!_formKey.currentState!.validate() || _selectedProducts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'Complete todos los campos y agregue al menos un producto',
           ),
@@ -548,7 +550,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                         ),
                         SizedBox(height: 4),
                         Text(
-                          'Cantidad: ${item['cantidad']} | Precio: \$${item['precio_unitario']?.toStringAsFixed(2) ?? '0.00'}',
+                          _buildQuantityDisplay(item),
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
                         if (item['precio_referencia'] != null && item['precio_referencia'] > 0)
@@ -604,11 +606,51 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                   );
                 },
               ),
+              // NUEVO: Agregar widget de conversiones después de la lista de productos
+            ConversionInfoWidget(
+              conversions: _selectedProducts,
+              showDetails: true,
+            ),
           ],
         ),
       ),
     );
   }
+
+  String _buildQuantityDisplay(Map<String, dynamic> item) {
+  final cantidad = item['cantidad'] as double;
+  final precio = item['precio_unitario'] as double? ?? 0.0;
+  
+  // Verificar si se aplicó conversión
+  final conversionApplied = item['conversion_applied'] == true;
+  final cantidadOriginal = item['cantidad_original'] as double?;
+  
+  String quantityText;
+  if (conversionApplied && cantidadOriginal != null) {
+    // Obtener nombres de presentaciones
+    final presentacionOriginal = item['presentacion_original_info'];
+    final presentacionFinal = item['presentation_info'];
+    
+    String presentacionOriginalText = 'unidades';
+    String presentacionFinalText = 'unidades base';
+    
+    if (presentacionOriginal != null && presentacionOriginal['denominacion'] != null) {
+      presentacionOriginalText = presentacionOriginal['denominacion'];
+    }
+    
+    if (presentacionFinal != null && presentacionFinal['denominacion'] != null) {
+      presentacionFinalText = presentacionFinal['denominacion'];
+    }
+    
+    // Mostrar conversión con nombres de presentaciones
+    quantityText = 'Cantidad: ${cantidadOriginal.toInt()} $presentacionOriginalText → ${cantidad.toInt()} $presentacionFinalText';
+  } else {
+    // Mostrar cantidad normal
+    quantityText = 'Cantidad: ${cantidad.toInt()}';
+  }
+  
+  return '$quantityText | Precio: \$${precio.toStringAsFixed(2)}';
+}
 
   Widget _buildBottomSection() {
     return Container(
@@ -836,8 +878,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     // Priority 1: Use stored variant_info and presentation_info (from dialog selection)
     if (item['variant_info'] != null) {
       final variantInfo = item['variant_info'];
-      final atributo = variantInfo['atributo']?['denominacion'] ?? 
-                     variantInfo['atributo']?['label'] ?? '';
+      final atributo = variantInfo['atributo']?['denominacion'] ?? variantInfo['atributo']?['label'] ?? '';
       final opcion = variantInfo['opcion']?['valor'] ?? '';
       
       if (atributo.isNotEmpty && opcion.isNotEmpty) {
@@ -1099,9 +1140,13 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       // Check variant match
       if (_selectedVariant != null && inventoryItem['variante'] != null) {
         final itemVariant = inventoryItem['variante'];
-        variantMatches =
-            itemVariant['id'] == _selectedVariant!['id'] &&
-            itemVariant['opcion']?['id'] == _selectedVariant!['opcion']?['id'];
+        
+        if (variantMatches && itemVariant['id'] == _selectedVariant!['id'] &&
+            itemVariant['opcion']?['id'] == _selectedVariant!['opcion']?['id']) {
+          variantMatches = true;
+        } else {
+          variantMatches = false;
+        }
       } else if (_selectedVariant != null ||
           inventoryItem['variante'] != null) {
         variantMatches = false;
@@ -1146,19 +1191,24 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     super.dispose();
   }
 
-  void _submitForm() {
-    if (_formKey.currentState!.validate()) {
-      final cantidad = double.tryParse(_quantityController.text) ?? 0;
-      final precioUnitario = double.tryParse(_precioUnitarioController.text) ?? 0;
-      final precioReferencia = double.tryParse(_precioReferenciaController.text) ?? 0;
-      final descuentoPorcentaje = double.tryParse(_descuentoPorcentajeController.text) ?? 0;
-      final descuentoMonto = double.tryParse(_descuentoMontoController.text) ?? 0;
-      final bonificacionCantidad = double.tryParse(_bonificacionCantidadController.text) ?? 0;
+  void _submitForm() async {
+  if (_formKey.currentState!.validate()) {
+    final cantidad = double.tryParse(_quantityController.text) ?? 0;
+    final precioUnitario = double.tryParse(_precioUnitarioController.text) ?? 0;
+    final precioReferencia = double.tryParse(_precioReferenciaController.text) ?? 0;
+    final descuentoPorcentaje = double.tryParse(_descuentoPorcentajeController.text) ?? 0;
+    final descuentoMonto = double.tryParse(_descuentoMontoController.text) ?? 0;
+    final bonificacionCantidad = double.tryParse(_bonificacionCantidadController.text) ?? 0;
 
-      final productData = {
+    try {
+      print('🔍 DEBUG: Presentación seleccionada: $_selectedPresentation');
+      print('🔍 DEBUG: Variante seleccionada: $_selectedVariant');
+      print('🔍 DEBUG: Denominación presentación: ${_selectedPresentation?['denominacion']}');
+      print('🔍 DEBUG: Otros campos presentación: ${_selectedPresentation?.keys.toList()}');
+      
+      // Datos base del producto
+      final baseProductData = {
         'id_producto': widget.product.id,
-        'cantidad': cantidad,
-        'precio_unitario': precioUnitario,
         'precio_referencia': precioReferencia,
         'descuento_porcentaje': descuentoPorcentaje,
         'descuento_monto': descuentoMonto,
@@ -1167,28 +1217,33 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
         'sku': widget.product.sku,
       };
 
-      // Add variant information if selected
+      // AGREGAR INFORMACIÓN DE VARIANTES
       if (_selectedVariant != null) {
-        productData['id_variante'] = _selectedVariant!['id'];
+        baseProductData['id_variante'] = _selectedVariant!['id'];
         if (_selectedVariant!['opcion'] != null) {
-          productData['id_opcion_variante'] = _selectedVariant!['opcion']['id'];
+          baseProductData['id_opcion_variante'] = _selectedVariant!['opcion']['id'];
         }
-        // Store variant info for display purposes
-        productData['variant_info'] = _selectedVariant! as Object;
+        baseProductData['variant_info'] = _selectedVariant!;
       }
 
-      // Add presentation information if selected
-      if (_selectedPresentation != null) {
-        productData['id_presentacion'] = _selectedPresentation!['id'];
-        // Store presentation info for display purposes
-        productData['presentation_info'] = _selectedPresentation! as Object;
-      }
+      // Procesar producto con conversión automática
+      final productData = await PresentationConverter.processProductForReception(
+        productId: widget.product.id,
+        selectedPresentation: _selectedPresentation,
+        cantidad: cantidad,
+        precioUnitario: precioUnitario,
+        baseProductData: baseProductData,
+      );
+
+      print('🔍 DEBUG: Producto procesado: $productData');
 
       widget.onProductAdded(productData);
       Navigator.of(context).pop();
+    } catch (e) {
+      print('Error al agregar producto: $e');
     }
   }
-
+}
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -1466,7 +1521,8 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                             TextFormField(
                               controller: _precioUnitarioController,
                               decoration: InputDecoration(
-                                labelText: 'Precio de Compra',
+                                labelText: 'Precio de Compra (por presentación seleccionada)',
+                                hintText: 'Se convertirá automáticamente a precio base',
                                 border: OutlineInputBorder(
                                   borderSide: BorderSide(color: AppColors.border),
                                 ),
@@ -1666,46 +1722,46 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       ),
       child: isCollapsible
           ? ExpansionTile(
-              leading: Icon(icon, color: AppColors.primary),
-              title: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                ),
-              ),
-              children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: child,
-                ),
-              ],
-            )
-          : Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(icon, color: AppColors.primary),
-                      SizedBox(width: 8),
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-                  child,
-                ],
+            leading: Icon(icon, color: AppColors.primary),
+            title: Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
               ),
             ),
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: child,
+              ),
+            ],
+          )
+          : Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16),
+                child,
+              ],
+            ),
+          ),
     );
   }
 }

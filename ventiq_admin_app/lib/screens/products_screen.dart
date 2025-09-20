@@ -657,7 +657,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   void _showAddProductDialog() {
     Navigator.pushNamed(context, '/add-product').then((result) {
       // Si se creó un producto, recargar la lista
-      if (result == true) {
+      if (result != null && result == true) {
         _loadProducts();
       }
     });

@@ -29,7 +29,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   List<Map<String, dynamic>> _priceHistory = [];
   List<Map<String, dynamic>> _promotionalPrices = [];
   List<Map<String, dynamic>> _stockHistory = [];
-
+  List<Map<String, dynamic>> _ingredientes = [];
+  bool _isLoadingIngredients = false;
   // Pagination and filtering for reception operations
   int _currentPage = 1;
   int _totalPages = 0;
@@ -47,14 +48,40 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _loadAdditionalData() async {
+    print('🔍 ===== INICIANDO CARGA DE DATOS ADICIONALES =====');
+    print('🔍 Producto ID: ${_product.id}');
+    print('🔍 Producto nombre: ${_product.denominacion}');
+    print('🔍 Es elaborado (desde modelo): ${_product.esElaborado}');
+    print('🔍 Verificando si debe cargar ingredientes...');
+    
     await Future.wait([
       _loadStockLocations(),
       _loadReceptionOperations(),
       _loadPriceHistory(),
       _loadPromotionalPrices(),
       _loadStockHistory(),
+      if (_product.esElaborado) _loadIngredients(),
     ]);
+    
+    print('✅ Carga de datos adicionales completada');
+    if (_product.esElaborado) {
+      print('📊 Producto elaborado - Ingredientes cargados: ${_ingredientes.length}');
+    } else {
+      print('📊 Producto NO elaborado - No se cargan ingredientes');
+    }
   }
+
+Future<void> _loadIngredients() async {
+  setState(() => _isLoadingIngredients = true);
+  try {
+    _ingredientes = await ProductService.getProductIngredients(_product.id);
+  } catch (e) {
+    print('Error loading ingredients: $e');
+    _ingredientes = [];
+  } finally {
+    setState(() => _isLoadingIngredients = false);
+  }
+}
 
   Future<void> _loadStockLocations() async {
     setState(() => _isLoadingLocations = true);
@@ -202,6 +229,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   const SizedBox(height: 20),
                   _buildInventoryInfo(),
                   const SizedBox(height: 20),
+  _buildIngredientsSection(),
+                  const SizedBox(height: 20),
                   _buildStockLocationsSection(),
                   const SizedBox(height: 20),
                   _buildReceptionOperationsSection(),
@@ -294,6 +323,227 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
+Widget _buildIngredientsSection() {
+  // Solo mostrar si el producto es elaborado
+  if (!(_product.esElaborado ?? false)) {
+    return const SizedBox.shrink();
+  }
+  
+  return _buildInfoCard(
+    title: 'Ingredientes${_ingredientes.isNotEmpty ? ' (${_ingredientes.length})' : ''}',
+    icon: Icons.restaurant_menu,
+    children: [
+      if (_isLoadingIngredients)
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: CircularProgressIndicator(),
+          ),
+        )
+      else if (_ingredientes.isEmpty)
+        Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 48,
+                color: Colors.grey[400],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Este producto elaborado aún no tiene ingredientes registrados',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Los ingredientes se pueden agregar durante la creación del producto',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.grey[500],
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        )
+      else
+        ...[
+          // Lista de ingredientes
+          ..._ingredientes.map((ingredient) => Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[200]!),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  spreadRadius: 1,
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // Imagen del ingrediente
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey[200]!),
+                  ),
+                  child: ingredient['producto_imagen'] != null && 
+                         ingredient['producto_imagen'].toString().isNotEmpty
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(
+                            ingredient['producto_imagen'],
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                Icon(Icons.fastfood, color: Colors.grey[400], size: 30),
+                          ),
+                        )
+                      : Icon(Icons.fastfood, color: Colors.grey[400], size: 30),
+                ),
+                const SizedBox(width: 16),
+                
+                // Información del ingrediente
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        ingredient['producto_nombre'] ?? 'Ingrediente sin nombre',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      if (ingredient['producto_sku'] != null && 
+                          ingredient['producto_sku'].toString().isNotEmpty)
+                        Text(
+                          'SKU: ${ingredient['producto_sku']}',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 13,
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      
+                      // Cantidad y unidad
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.blue[200]!),
+                        ),
+                        child: Text(
+                          '${ingredient['cantidad_necesaria']} ${ingredient['unidad_medida']}',
+                          style: TextStyle(
+                            color: Colors.blue[700],
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Icono indicador
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.check_circle_outline,
+                    color: Colors.green[600],
+                    size: 20,
+                  ),
+                ),
+              ],
+            ),
+          )).toList(),
+          
+          // Resumen de ingredientes
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.blue[50]!, Colors.blue[100]!],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.summarize,
+                  color: Colors.blue[700],
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Resumen de Ingredientes',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue[800],
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Total de componentes: ${_ingredientes.length}',
+                        style: TextStyle(
+                          color: Colors.blue[700],
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[600],
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${_ingredientes.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+    ],
+  );
+}
   Widget _buildReceptionOperationsSection() {
     return _buildInfoCard(
       title: 'Operaciones de Entrada',

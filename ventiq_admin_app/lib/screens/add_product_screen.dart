@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/openfoodfacts_service.dart';
 import 'barcode_scanner_screen.dart';
-
+final _supabase = Supabase.instance.client;
 class AddProductScreen extends StatefulWidget {
   final Product? product;
   final VoidCallback? onProductSaved;
@@ -19,6 +20,21 @@ class AddProductScreen extends StatefulWidget {
 
   @override
   State<AddProductScreen> createState() => _AddProductScreenState();
+}
+
+class _IngredientDialog extends StatefulWidget {
+  final Map<String, dynamic>? ingrediente;
+  final List<Map<String, dynamic>>? ingredientesExistentes;
+  final Function(Map<String, dynamic>) onSave;
+  
+  const _IngredientDialog({
+    this.ingrediente,
+    this.ingredientesExistentes,
+    required this.onSave,
+  });
+  
+  @override
+  State<_IngredientDialog> createState() => _IngredientDialogState();
 }
 
 class _AddProductScreenState extends State<AddProductScreen> {
@@ -37,6 +53,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final _codigoBarrasController = TextEditingController();
   final _precioVentaController = TextEditingController();
   final _cantidadPresentacionController = TextEditingController(text: '1'); // Controller for presentation quantity
+  final _cantidadUnidadMedidaController = TextEditingController(text: '1'); // NUEVO CONTROLLER
 
   // Variables de estado
   bool _isLoading = false;
@@ -57,7 +74,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
   String _unidadMedida = ''; // New field for unit of measure
 
   // Presentation management - Removed complex presentation management
-  // int? _basePresentationId; // Removed - using _selectedBasePresentationId instead
+  // Unidad de medida seleccionada
+  int? _selectedUnidadMedidaId;
 
   // Checkboxes
   bool _esRefrigerado = false;
@@ -67,6 +85,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _esComprable = true;
   bool _esInventariable = true;
   bool _esPorLotes = false;
+
+// Campos para productos elaborados
+bool _esElaborado = false;
+List<Map<String, dynamic>> _ingredientes = [];
+double _costoProduccionCalculado = 0.0;
 
   // Listas dinámicas
   List<String> _etiquetas = [];
@@ -104,6 +127,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _esPorLotes = widget.product!.esPorLotes ?? false;
       _etiquetas = widget.product!.etiquetas ?? [];
       _multimedias = widget.product!.multimedias ?? [];
+} else {
+      // MODO CREACIÓN - Inicializar valores por defecto para nuevo producto
+      print('🆕 ===== MODO CREACIÓN DE NUEVO PRODUCTO =====');
+      // Los controladores ya están inicializados con valores por defecto
+      // Solo establecer valores por defecto para campos específicos
+      _cantidadPresentacionController.text = '1';
+      _cantidadUnidadMedidaController.text = '1';
     }
     _loadInitialData();
   }
@@ -121,6 +151,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _codigoBarrasController.dispose();
     _precioVentaController.dispose();
     _cantidadPresentacionController.dispose();
+    _cantidadUnidadMedidaController.dispose(); // Dispose del nuevo controller
     _scrollController.dispose();
     _variantePrecioController.dispose();
     super.dispose();
@@ -189,6 +220,188 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
     }
   }
+
+
+/// Carga datos específicos para modo edición (precios, presentaciones, etc.)
+Future<void> _loadProductEditData() async {
+  if (widget.product?.id == null) return;
+  
+  try {
+    final productId = int.tryParse(widget.product!.id);
+    if (productId == null) {
+      print('❌ ID de producto inválido: ${widget.product!.id}');
+      return;
+    }
+    
+    print('🔄 Cargando datos específicos de edición para producto: $productId');
+    
+    // 1. Cargar precio de venta actual
+    await _loadCurrentPrice(productId);
+    
+    // 2. Cargar presentación base actual
+    await _loadCurrentPresentation(productId);
+    
+    // 3. Cargar unidades de medida por presentación
+    await _loadPresentacionUnidadMedida();
+    
+    // 4. Cargar ingredientes si es elaborado
+    if (_esElaborado) {
+      await _loadCurrentIngredients(productId);
+    }
+    
+    print('✅ Todos los datos de edición cargados');
+    
+  } catch (e) {
+    print('❌ Error cargando datos de edición: $e');
+  }
+}
+/// Carga el precio de venta actual del producto
+Future<void> _loadCurrentPrice(int productId) async {
+  try {
+    print('🔄 Cargando precio actual...');
+    
+    final response = await _supabase
+        .from('app_dat_producto_precio')
+        .select('precio_venta_cup')
+        .eq('id_producto', productId)
+        .eq('activo', true)
+        .order('fecha_desde', ascending: false)
+        .limit(1);
+    
+    if (response.isNotEmpty) {
+      final precio = response.first['precio_venta_cup'];
+      setState(() {
+        _precioVentaController.text = precio.toString();
+      });
+      print('✅ Precio cargado: $precio');
+    } else {
+      print('⚠️ No se encontró precio para el producto');
+    }
+    
+  } catch (e) {
+    print('❌ Error cargando precio: $e');
+  }
+}
+/// Carga la presentación base actual del producto
+Future<void> _loadCurrentPresentation(int productId) async {
+  try {
+    print('🔄 Cargando presentación base actual...');
+    
+    final response = await _supabase
+        .from('app_dat_producto_presentacion')
+        .select('id_presentacion, cantidad')
+        .eq('id_producto', productId)
+        .eq('es_base', true)
+        .limit(1);
+    
+    if (response.isNotEmpty) {
+      final presentacion = response.first;
+      setState(() {
+        _selectedBasePresentationId = presentacion['id_presentacion'];
+        _cantidadPresentacionController.text = presentacion['cantidad'].toString();
+      });
+      print('✅ Presentación base cargada: ID=${presentacion['id_presentacion']}, Cantidad=${presentacion['cantidad']}');
+    } else {
+      print('⚠️ No se encontró presentación base para el producto');
+    }
+    
+  } catch (e) {
+    print('❌ Error cargando presentación: $e');
+  }
+}
+/// Carga los ingredientes actuales del producto elaborado
+Future<void> _loadCurrentIngredients(int productId) async {
+  try {
+    print('🔄 Cargando ingredientes actuales...');
+    
+    final ingredientes = await ProductService.getProductIngredients(productId.toString());
+    
+    setState(() {
+      _ingredientes = ingredientes.map((ing) => {
+        'id_producto': ing['producto_id'],
+        'nombre': ing['producto_nombre'],
+        'cantidad': ing['cantidad_necesaria'],
+        'unidad': ing['unidad_medida'],
+        'imagen': ing['producto_imagen'],
+      }).toList();
+    });
+    
+    print('✅ Ingredientes cargados: ${_ingredientes.length}');
+    
+  } catch (e) {
+    print('❌ Error cargando ingredientes: $e');
+  }
+}
+  /// Carga las unidades de medida por presentación existentes (modo edición)
+Future<void> _loadPresentacionUnidadMedida() async {
+  if (widget.product?.id == null) return;
+  
+  try {
+    print('🔄 Cargando unidades de medida existentes para producto: ${widget.product!.id}');
+    
+    final productId = int.tryParse(widget.product!.id);
+    if (productId == null) {
+      print('❌ ID de producto inválido: ${widget.product!.id}');
+      return;
+    }
+    
+    final umData = await ProductService.getPresentacionUnidadMedida(productId);
+    
+    if (umData.isNotEmpty) {
+      final firstUM = umData.first;
+      final unidadMedida = firstUM['app_nom_unidades_medida'] as Map<String, dynamic>;
+      
+      setState(() {
+        _selectedUnidadMedidaId = firstUM['id_unidad_medida'];
+        _unidadMedidaController.text = unidadMedida['abreviatura'] ?? 'und';
+        _cantidadUnidadMedidaController.text = firstUM['cantidad_um']?.toString() ?? '1';
+      });
+      
+      print('✅ Datos de UM cargados: ${unidadMedida['denominacion']} (${unidadMedida['abreviatura']}) - ${firstUM['cantidad_um']}');
+    } else {
+      print('⚠️ No se encontraron datos de UM para este producto');
+    }
+    
+  } catch (e) {
+    print('❌ Error cargando unidades de medida: $e');
+  }
+}
+  /// Actualiza las unidades de medida por presentación (modo edición)
+Future<void> _updatePresentacionUnidadMedida(int productId) async {
+  if (_selectedUnidadMedidaId == null) return;
+  
+  try {
+    print('🔄 Actualizando unidades de medida para producto: $productId');
+    
+    // Primero eliminar registros existentes
+    await _supabase
+        .from('app_dat_presentacion_unidad_medida')
+        .delete()
+        .eq('id_producto', productId);
+    
+    print('🗑️ Registros existentes eliminados');
+    
+    // Insertar nuevos datos
+    final presentacionUnidadMedidaData = [{
+      'id_presentacion': _selectedBasePresentationId!,
+      'id_unidad_medida': _selectedUnidadMedidaId!,
+      'cantidad_um': double.parse(_cantidadUnidadMedidaController.text),
+    }];
+    
+    print('🔄 Insertando nuevos datos: $presentacionUnidadMedidaData');
+    
+    await ProductService.insertPresentacionUnidadMedida(
+      productId: productId,
+      presentacionUnidadMedidaData: presentacionUnidadMedidaData,
+    );
+    
+    print('✅ Unidades de medida actualizadas exitosamente');
+    
+  } catch (e) {
+    print('❌ Error actualizando unidades de medida: $e');
+    // No lanzar excepción para no interrumpir el flujo
+  }
+}
 
   Future<void> _loadSubcategorias(int categoryId) async {
     try {
@@ -540,63 +753,175 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ),
         const SizedBox(height: 16),
         if (_presentaciones.isEmpty)
-          const Text(
-            'Cargando presentaciones...',
-            style: TextStyle(color: AppColors.textSecondary),
-          )
-        else
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<int>(
-                  value: _selectedBasePresentationId,
-                  decoration: const InputDecoration(
-                    labelText: 'Tipo de Presentación *',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _presentaciones.map((presentacion) {
-                    return DropdownMenuItem<int>(
-                      value: presentacion['id'],
-                      child: Text(presentacion['denominacion']),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedBasePresentationId = value;
-                    });
-                  },
-                  validator: (value) {
-                    if (value == null) {
-                      return 'Selecciona una presentación base';
-                    }
-                    return null;
-                  },
+  const Text(
+    'Cargando presentaciones...',
+    style: TextStyle(color: AppColors.textSecondary),
+  )
+else
+  Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Configuración de Presentación Base',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primary,
+        ),
+      ),
+      const SizedBox(height: 12),
+      Row(
+  children: [
+    // Dropdown de presentación
+    Expanded(
+      flex: 2,
+      child: DropdownButtonFormField<int>(
+        value: _selectedBasePresentationId,
+        decoration: const InputDecoration(
+          labelText: 'Tipo de Presentación *',
+          border: OutlineInputBorder(),
+        ),
+        items: _presentaciones.map((presentacion) {
+          return DropdownMenuItem<int>(
+            value: presentacion['id'],
+            child: Text(presentacion['denominacion']),
+          );
+        }).toList(),
+        onChanged: (value) {
+          setState(() => _selectedBasePresentationId = value);
+        },
+        validator: (value) => value == null ? 'Seleccione una presentación' : null,
+      ),
+    ),
+    const SizedBox(width: 12),
+    // Campo de cantidad
+    Expanded(
+      flex: 1,
+      child: TextFormField(
+        controller: _cantidadPresentacionController,
+        decoration: const InputDecoration(
+          labelText: 'Cantidad *',
+          border: OutlineInputBorder(),
+          helperText: 'Unidades por presentación',
+        ),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        validator: (value) {
+          if (value == null || value.isEmpty) return 'Requerido';
+          final cantidad = double.tryParse(value);
+          if (cantidad == null || cantidad <= 0) return 'Cantidad inválida';
+          return null;
+        },
+      ),
+    ),
+  ],
+),
+const SizedBox(height: 12),
+// Segunda fila: Unidad de medida y cantidad por unidad
+Row(
+  children: [
+    // Dropdown de unidad de medida
+    Expanded(
+      flex: 2,
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: ProductService.getUnidadesMedida(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const SizedBox(
+              height: 56,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          
+          final unidades = snapshot.data ?? [];
+          if (unidades.isEmpty) {
+            return TextFormField(
+              controller: _unidadMedidaController,
+              decoration: const InputDecoration(
+                labelText: 'Unidad de Medida *',
+                border: OutlineInputBorder(),
+                hintText: 'ej: kg, l, und',
+              ),
+              validator: (value) => value?.isEmpty == true ? 'Requerido' : null,
+            );
+          }
+          
+          return DropdownButtonFormField<String>(
+            value: _unidadMedidaController.text.isNotEmpty ? _unidadMedidaController.text : null,
+            decoration: const InputDecoration(
+              labelText: 'Unidad de Medida *',
+              border: OutlineInputBorder(),
+            ),
+            items: unidades.map((unidad) {
+              return DropdownMenuItem<String>(
+                value: unidad['abreviatura'],
+                child: Text('${unidad['denominacion']} (${unidad['abreviatura']})'),
+              );
+            }).toList(),
+            onChanged: (value) {
+  setState(() {
+    _unidadMedidaController.text = value ?? 'und';
+    // Buscar el ID de la unidad de medida seleccionada
+    final unidadSeleccionada = unidades.firstWhere(
+      (unidad) => unidad['abreviatura'] == value,
+      orElse: () => {'id': 1}, // Default a 'unidad'
+    );
+    _selectedUnidadMedidaId = unidadSeleccionada['id'];
+  });
+},
+            validator: (value) => value == null ? 'Seleccione una unidad' : null,
+          );
+        },
+      ),
+    ),
+    const SizedBox(width: 12),
+    // Campo de cantidad de unidad de medida
+    Expanded(
+      flex: 1,
+      child: TextFormField(
+        controller: _cantidadUnidadMedidaController,
+        decoration: const InputDecoration(
+          labelText: 'Cantidad UM *',
+          border: OutlineInputBorder(),
+          helperText: 'Cantidad de UM por presentación',
+        ),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        validator: (value) {
+          if (value == null || value.isEmpty) return 'Requerido';
+          final cantidad = double.tryParse(value);
+          if (cantidad == null || cantidad <= 0) return 'Cantidad inválida';
+          return null;
+        },
+      ),
+    ),
+  ],
+),
+const SizedBox(height: 12),
+      // Información adicional
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.blue[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.blue[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'La presentación base define la unidad mínima de venta. Ejemplo: 1 Unidad = 1 und, 1 Caja = 24 und',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.blue[700],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  controller: _cantidadPresentacionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Cantidad *',
-                    border: OutlineInputBorder(),
-                    helperText: 'Unidades por presentación',
-                  ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Cantidad requerida';
-                    }
-                    final cantidad = double.tryParse(value);
-                    if (cantidad == null || cantidad <= 0) {
-                      return 'Cantidad inválida';
-                    }
-                    return null;
-                  },
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  ),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.all(12),
@@ -792,6 +1117,134 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   onChanged: (value) => setState(() => _esInventariable = value ?? true),
                 ),
                 CheckboxListTile(
+  title: const Text('Es Elaborado'),
+  subtitle: const Text('Producto elaborado con ingredientes'),
+  value: _esElaborado,
+  onChanged: (value) => setState(() {
+    _esElaborado = value ?? false;
+    if (!_esElaborado) {
+      _ingredientes.clear();
+      _costoProduccionCalculado = 0.0;
+    }
+  }),
+),
+// Sección de ingredientes para productos elaborados
+if (_esElaborado) ...[
+  const SizedBox(height: 16),
+  Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Ingredientes',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: _agregarIngrediente,
+                icon: const Icon(Icons.add),
+                label: const Text('Agregar'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_ingredientes.isEmpty)
+            const Text(
+              'No hay ingredientes agregados',
+              style: TextStyle(
+                color: Colors.grey,
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else
+            ListView.builder(
+  shrinkWrap: true,
+  physics: const NeverScrollableScrollPhysics(),
+  itemCount: _ingredientes.length,
+  itemBuilder: (context, index) {
+    final ingrediente = _ingredientes[index];
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: AppColors.primary.withOpacity(0.1),
+          child: Text(
+            (ingrediente['nombre'] ?? 'I')[0].toUpperCase(),
+            style: TextStyle(color: AppColors.primary),
+          ),
+        ),
+        title: Text(ingrediente['nombre'] ?? 'Ingrediente'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Cantidad: ${ingrediente['cantidad']} ${ingrediente['unidad'] ?? 'und'}'),
+            Text('Costo: \$${ingrediente['costo_unitario']?.toStringAsFixed(2) ?? '0.00'}'),
+            if ((ingrediente['stock_disponible'] ?? 0) > 0)
+              Text('Stock: ${ingrediente['stock_disponible']}', 
+                   style: TextStyle(color: Colors.green.shade600)),
+            if (ingrediente['denominacion_unidad'] != null)
+              Text('Unidad: ${ingrediente['denominacion_unidad']}',
+                   style: TextStyle(color: Colors.blue.shade600, fontSize: 12)),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.blue),
+              onPressed: () => _editarIngrediente(index),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: () => _eliminarIngrediente(index),
+            ),
+          ],
+        ),
+      ),
+    );
+  },
+),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Costo de Producción:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '\$${_costoProduccionCalculado.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  ),
+],
+                CheckboxListTile(
                   title: const Text('Es por Lotes'),
                   subtitle: const Text('Se maneja por lotes con fechas'),
                   value: _esPorLotes,
@@ -931,171 +1384,409 @@ class _AddProductScreenState extends State<AddProductScreen> {
       ],
     );
   }
+Future<void> _saveProduct() async {
+  if (!_formKey.currentState!.validate()) {
+    _showErrorSnackBar('Por favor corrija los errores en el formulario');
+    return;
+  }
 
-  Future<void> _saveProduct() async {
-    if (!_formKey.currentState!.validate()) {
-      _showErrorSnackBar('Por favor corrija los errores en el formulario');
-      return;
+  // Validaciones específicas para datos relacionados
+  if (_selectedBasePresentationId == null) {
+    _showErrorSnackBar('Debe seleccionar una presentación base');
+    return;
+  }
+
+  if (_cantidadPresentacionController.text.isEmpty || 
+      double.tryParse(_cantidadPresentacionController.text) == null ||
+      double.parse(_cantidadPresentacionController.text) <= 0) {
+    _showErrorSnackBar('La cantidad de presentación debe ser un número válido mayor a 0');
+    return;
+  }
+
+  if (_precioVentaController.text.isEmpty || 
+      double.tryParse(_precioVentaController.text) == null ||
+      double.parse(_precioVentaController.text) <= 0) {
+    _showErrorSnackBar('El precio de venta debe ser un número válido mayor a 0');
+    return;
+  }
+
+  setState(() => _isLoading = true);
+
+  try {
+    final isEditing = widget.product != null;
+    
+    if (isEditing) {
+      print('🔄 ===== MODO EDICIÓN =====');
+      await _updateProduct();
+    } else {
+      print('🆕 ===== MODO CREACIÓN =====');
+      await _createProduct();
     }
+    
+  } catch (e) {
+    print('❌ Error en _saveProduct: $e');
+    _showErrorSnackBar('Error al ${widget.product != null ? 'actualizar' : 'crear'} producto: $e');
+  } finally {
+    setState(() => _isLoading = false);
+  }
+}
+  
+  Future<void> _createProduct() async {
+  // Obtener ID de tienda
+  final userPrefs = UserPreferencesService();
+  final idTienda = await userPrefs.getIdTienda();
 
-    // Validaciones específicas para datos relacionados
-    if (_selectedBasePresentationId == null) {
-      _showErrorSnackBar('Debe seleccionar una presentación base');
-      return;
-    }
+  if (idTienda == null) {
+    throw Exception('No se encontró ID de tienda');
+  }
 
-    if (_cantidadPresentacionController.text.isEmpty || 
-        double.tryParse(_cantidadPresentacionController.text) == null ||
-        double.parse(_cantidadPresentacionController.text) <= 0) {
-      _showErrorSnackBar('La cantidad de presentación debe ser un número válido mayor a 0');
-      return;
-    }
+  // Preparar datos del producto
+  final productoData = {
+    'id_tienda': idTienda,
+    'sku': _skuController.text,
+    'id_categoria': _selectedCategoryId,
+    'denominacion': _denominacionController.text,
+    'nombre_comercial': _nombreComercialController.text.isNotEmpty 
+        ? _nombreComercialController.text 
+        : _denominacionController.text,
+    'denominacion_corta': _denominacionCortaController.text.isNotEmpty 
+        ? _denominacionCortaController.text 
+        : _denominacionController.text.substring(0, 
+            _denominacionController.text.length > 20 ? 20 : _denominacionController.text.length),
+    'descripcion': _descripcionController.text,
+    'descripcion_corta': _descripcionCortaController.text,
+    'um': _unidadMedidaController.text.isNotEmpty  
+        ? _unidadMedidaController.text 
+        : 'und',
+    'es_refrigerado': _esRefrigerado,
+    'es_fragil': _esFragil,
+    'es_peligroso': _esPeligroso,
+    'es_vendible': _esVendible,
+    'es_comprable': _esComprable,
+    'es_inventariable': _esInventariable,
+    'es_elaborado': _esElaborado,
+    'es_por_lotes': _esPorLotes,
+    'dias_alert_caducidad': _diasAlertController.text.isNotEmpty
+        ? int.tryParse(_diasAlertController.text)
+        : null,
+    'codigo_barras': _codigoBarrasController.text,
+  };
 
-    if (_precioVentaController.text.isEmpty || 
-        double.tryParse(_precioVentaController.text) == null ||
-        double.parse(_precioVentaController.text) <= 0) {
-      _showErrorSnackBar('El precio de venta debe ser un número válido mayor a 0');
-      return;
-    }
+  // Preparar subcategorías
+  List<Map<String, dynamic>>? subcategoriasData;
+  if (_selectedSubcategorias.isNotEmpty) {
+    subcategoriasData = _selectedSubcategorias.map((id) => {'id_sub_categoria': id}).toList();
+  }
 
-    setState(() => _isLoading = true);
+  // Preparar etiquetas
+  List<Map<String, dynamic>>? etiquetasData;
+  if (_etiquetas.isNotEmpty) {
+    etiquetasData = _etiquetas.map((etiqueta) => {'etiqueta': etiqueta}).toList();
+  }
 
-    try {
-      // Obtener ID de tienda
-      final userPrefs = UserPreferencesService();
-      final idTienda = await userPrefs.getIdTienda();
+  // Preparar multimedia
+  List<Map<String, dynamic>>? multimediasData;
+  if (_multimedias.isNotEmpty) {
+    multimediasData = _multimedias.map((media) => {'media': media}).toList();
+  }
 
-      if (idTienda == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
+  // Preparar presentaciones (OBLIGATORIO)
+  final presentacionesData = [
+    {
+      'id_presentacion': _selectedBasePresentationId!,
+      'cantidad': double.parse(_cantidadPresentacionController.text),
+      'es_base': true,
+    },
+  ];
 
-      // Preparar datos del producto
-      final productoData = {
-        'id_tienda': idTienda,
-        'sku': _skuController.text,
-        'id_categoria': _selectedCategoryId,
-        'denominacion': _denominacionController.text,
-        'nombre_comercial': _nombreComercialController.text.isNotEmpty 
-            ? _nombreComercialController.text 
-            : _denominacionController.text, // Fallback al nombre principal
-        'denominacion_corta': _denominacionCortaController.text.isNotEmpty 
-            ? _denominacionCortaController.text 
-            : _denominacionController.text.substring(0, 
-                _denominacionController.text.length > 20 ? 20 : _denominacionController.text.length),
-        'descripcion': _descripcionController.text, // Fixed: matches SQL function field
-        'descripcion_corta': _descripcionCortaController.text,
-        'um': _unidadMedidaController.text.isNotEmpty  // Fixed: 'um' not 'unidad_medida'
-            ? _unidadMedidaController.text 
-            : 'und', // Valor por defecto
-        'es_refrigerado': _esRefrigerado,
-        'es_fragil': _esFragil,
-        'es_peligroso': _esPeligroso,
-        'es_vendible': _esVendible,
-        'es_comprable': _esComprable,
-        'es_inventariable': _esInventariable,
-        'es_por_lotes': _esPorLotes,
-        'dias_alert_caducidad':
-            _diasAlertController.text.isNotEmpty
-                ? int.tryParse(_diasAlertController.text)
-                : null,
-        'codigo_barras': _codigoBarrasController.text,
-      };
-
-      // Preparar subcategorías (solo si hay seleccionadas)
-      List<Map<String, dynamic>>? subcategoriasData;
-      if (_selectedSubcategorias.isNotEmpty) {
-        subcategoriasData = _selectedSubcategorias.map((id) => {'id_sub_categoria': id}).toList();
-      }
-
-      // Preparar etiquetas (solo si hay etiquetas)
-      List<Map<String, dynamic>>? etiquetasData;
-      if (_etiquetas.isNotEmpty) {
-        etiquetasData = _etiquetas.map((etiqueta) => {'etiqueta': etiqueta}).toList();
-      }
-
-      // Preparar multimedia (solo si hay multimedia)
-      List<Map<String, dynamic>>? multimediasData;
-      if (_multimedias.isNotEmpty) {
-        multimediasData = _multimedias.map((media) => {'media': media}).toList();
-      }
-
-      // Preparar presentaciones (OBLIGATORIO - siempre debe haber al menos una base)
-      final presentacionesData = [
-        {
-          'id_presentacion': _selectedBasePresentationId!,
-          'cantidad': double.parse(_cantidadPresentacionController.text),
-          'es_base': true,
-        },
-      ];
-
-      // Agregar presentaciones adicionales si existen
-      if (_presentacionesAdicionales.isNotEmpty) {
-        for (final presentacion in _presentacionesAdicionales) {
-          presentacionesData.add({
-            'id_presentacion': presentacion['id_presentacion'],
-            'cantidad': presentacion['cantidad'],
-            'es_base': false,
-          });
-        }
-      }
-
-      // Preparar precios (OBLIGATORIO - solo precio base y variantes simples)
-      final preciosData = [
-        {
-          'precio_venta_cup': double.parse(_precioVentaController.text),
-          'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
-          'id_variante': null, // Precio base sin variante
-        },
-      ];
-
-      // Agregar precios por variantes simples (solo atributo + precio)
-      if (_selectedVariantes.isNotEmpty) {
-        for (final variante in _selectedVariantes) {
-          preciosData.add({
-            'precio_venta_cup': variante['precio'],
-            'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
-            'id_atributo': variante['id_atributo'],
-          });
-        }
-      }
-
-      // DEBUG: Imprimir todos los datos antes de enviar
-      print('=== DATOS COMPLETOS ENVIADOS A RPC ===');
-      print('PRODUCTO DATA: ${jsonEncode(productoData)}');
-      print('SUBCATEGORIAS DATA: ${jsonEncode(subcategoriasData)}');
-      print('PRESENTACIONES DATA: ${jsonEncode(presentacionesData)}');
-      print('ETIQUETAS DATA: ${jsonEncode(etiquetasData)}');
-      print('MULTIMEDIAS DATA: ${jsonEncode(multimediasData)}');
-      print('PRECIOS DATA: ${jsonEncode(preciosData)}');
-      print('=====================================');
-
-      // Insertar producto con validación de datos obligatorios
-      final result = await ProductService.insertProductoCompleto(
-        productoData: productoData,
-        subcategoriasData: subcategoriasData,
-        presentacionesData: presentacionesData, // OBLIGATORIO
-        etiquetasData: etiquetasData,
-        multimediasData: multimediasData,
-        preciosData: preciosData, // OBLIGATORIO
-      );
-
-      if (result == null) {
-        throw Exception('No se recibió respuesta del servidor al crear el producto');
-      }
-
-      // Mostrar éxito y regresar
-      _showSuccessSnackBar('Producto creado exitosamente con todas sus relaciones');
-      if (widget.onProductSaved != null) {
-        widget.onProductSaved!();
-      }
-      Navigator.pop(context, true); // true indica que se creó un producto
-    } catch (e) {
-      print('❌ Error completo al crear producto: $e');
-      _showErrorSnackBar('Error al crear producto: ${e.toString()}');
-    } finally {
-      setState(() => _isLoading = false);
+  // Agregar presentaciones adicionales
+  if (_presentacionesAdicionales.isNotEmpty) {
+    for (final presentacion in _presentacionesAdicionales) {
+      presentacionesData.add({
+        'id_presentacion': presentacion['id_presentacion'],
+        'cantidad': presentacion['cantidad'],
+        'es_base': false,
+      });
     }
   }
+
+  // Preparar datos de unidades de medida por presentación
+  final presentacionUnidadMedidaData = <Map<String, dynamic>>[];
+  
+  print('🔧 ===== PREPARANDO DATOS DE UNIDADES DE MEDIDA =====');
+  print('🔧 Presentación base: $_selectedBasePresentationId');
+  print('🔧 Unidad de medida: $_selectedUnidadMedidaId');
+  print('🔧 Cantidad UM: ${_cantidadUnidadMedidaController.text}');
+  
+  if (_selectedUnidadMedidaId != null) {
+    final umData = {
+      'id_presentacion': _selectedBasePresentationId!,
+      'id_unidad_medida': _selectedUnidadMedidaId!,
+      'cantidad_um': double.parse(_cantidadUnidadMedidaController.text),
+    };
+    presentacionUnidadMedidaData.add(umData);
+    print('✅ Datos de UM preparados: $umData');
+  } else {
+    print('⚠️ ADVERTENCIA: No se seleccionó unidad de medida');
+  }
+
+  // Preparar precios
+  final preciosData = [
+    {
+      'precio_venta_cup': double.parse(_precioVentaController.text),
+      'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
+      'id_variante': null,
+    },
+  ];
+
+  // Agregar precios por variantes
+  if (_selectedVariantes.isNotEmpty) {
+    for (final variante in _selectedVariantes) {
+      preciosData.add({
+        'precio_venta_cup': variante['precio'],
+        'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
+        'id_atributo': variante['id_atributo'],
+      });
+    }
+  }
+
+  // DEBUG: Imprimir datos
+  print('=== DATOS COMPLETOS ENVIADOS A RPC ===');
+  print('PRODUCTO DATA: ${jsonEncode(productoData)}');
+  print('PRESENTACIONES DATA: ${jsonEncode(presentacionesData)}');
+  print('PRESENTACION UNIDAD MEDIDA DATA: ${jsonEncode(presentacionUnidadMedidaData)}');
+  print('=====================================');
+
+  // Insertar producto
+  final result = await ProductService.insertProductoCompleto(
+    productoData: productoData,
+    subcategoriasData: subcategoriasData,
+    presentacionesData: presentacionesData,
+    etiquetasData: etiquetasData,
+    multimediasData: multimediasData,
+    preciosData: preciosData,
+  );
+
+  if (result == null) {
+    throw Exception('No se recibió respuesta del servidor');
+  }
+
+  // DEBUG: Imprimir respuesta completa para entender estructura
+print('🔍 RESPUESTA COMPLETA DEL RPC: ${jsonEncode(result)}');
+print('🔍 TIPO DE RESPUESTA: ${result.runtimeType}');
+print('🔍 CLAVES DISPONIBLES: ${result.keys.toList()}');
+
+// Intentar obtener el ID del producto de diferentes ubicaciones posibles
+int? productId;
+
+// Opción 1: Directamente en la raíz
+productId = result['producto_id'] as int?;
+
+// Opción 2: En data
+if (productId == null) {
+  final data = result['data'];
+  if (data != null && data is Map<String, dynamic>) {
+    productId = data['producto_id'] as int? ?? data['id_producto'] as int? ?? data['id'] as int?;
+  }
+}
+
+// Opción 3: En result
+if (productId == null) {
+  final resultData = result['result'];
+  if (resultData != null && resultData is Map<String, dynamic>) {
+    productId = resultData['producto_id'] as int? ?? resultData['id_producto'] as int? ?? resultData['id'] as int?;
+  }
+}
+
+// Opción 4: Directamente como id
+if (productId == null) {
+  productId = result['id'] as int? ?? result['id_producto'] as int?;
+}
+
+print('🔍 ID DEL PRODUCTO EXTRAÍDO: $productId');
+
+if (productId == null) {
+  print('❌ ESTRUCTURA DE RESPUESTA NO RECONOCIDA');
+  print('❌ Respuesta completa: ${jsonEncode(result)}');
+  throw Exception('No se pudo obtener el ID del producto creado. Estructura de respuesta: ${result.keys.toList()}');
+}
+
+  print('✅ Producto creado exitosamente con ID: $productId');
+
+  // Insertar unidades de medida por presentación
+  if (presentacionUnidadMedidaData.isNotEmpty) {
+    print('🔧 Insertando unidades de medida por presentación...');
+    try {
+      await ProductService.insertPresentacionUnidadMedida(
+        productId: productId,
+        presentacionUnidadMedidaData: presentacionUnidadMedidaData,
+      );
+      print('✅ Unidades de medida insertadas exitosamente');
+    } catch (e) {
+      print('❌ ERROR insertando unidades de medida: $e');
+    }
+  }
+
+  // Insertar ingredientes si es elaborado
+  if (_esElaborado && _ingredientes.isNotEmpty) {
+    print('🍽️ Insertando ingredientes...');
+    final ingredientesData = _ingredientes.map((ingrediente) => {
+      'id_producto': ingrediente['id_producto'],
+      'cantidad': ingrediente['cantidad'],
+      'unidad_medida': ingrediente['unidad'],
+    }).toList();
+    
+    try {
+      await ProductService.insertProductIngredients(
+        productId: productId,
+        ingredientes: ingredientesData,
+      );
+      print('✅ Ingredientes insertados exitosamente');
+    } catch (e) {
+      print('❌ ERROR insertando ingredientes: $e');
+    }
+  }
+
+  _showSuccessSnackBar('Producto creado exitosamente');
+  if (widget.onProductSaved != null) {
+    widget.onProductSaved!();
+  }
+  Navigator.of(context).pop();
+}
+  Future<void> _updateProduct() async {
+  final productId = int.tryParse(widget.product!.id);
+  if (productId == null) {
+    throw Exception('ID de producto inválido');
+  }
+
+  print('🔄 ===== ACTUALIZANDO PRODUCTO ID: $productId =====');
+  
+  // Obtener ID de tienda
+  final userPrefs = UserPreferencesService();
+  final idTienda = await userPrefs.getIdTienda();
+
+  if (idTienda == null) {
+    throw Exception('No se encontró ID de tienda');
+  }
+
+  // Preparar datos del producto para actualización
+  final productoData = {
+    'id': productId,
+    'id_tienda': idTienda,
+    'sku': _skuController.text,
+    'id_categoria': _selectedCategoryId,
+    'denominacion': _denominacionController.text,
+    'nombre_comercial': _nombreComercialController.text.isNotEmpty 
+        ? _nombreComercialController.text 
+        : _denominacionController.text,
+    'denominacion_corta': _denominacionCortaController.text.isNotEmpty 
+        ? _denominacionCortaController.text 
+        : _denominacionController.text.substring(0, 
+            _denominacionController.text.length > 20 ? 20 : _denominacionController.text.length),
+    'descripcion': _descripcionController.text,
+    'descripcion_corta': _descripcionCortaController.text,
+    'um': _unidadMedidaController.text.isNotEmpty  
+        ? _unidadMedidaController.text 
+        : 'und',
+    'es_refrigerado': _esRefrigerado,
+    'es_fragil': _esFragil,
+    'es_peligroso': _esPeligroso,
+    'es_vendible': _esVendible,
+    'es_comprable': _esComprable,
+    'es_inventariable': _esInventariable,
+    'es_elaborado': _esElaborado,
+    'es_por_lotes': _esPorLotes,
+    'dias_alert_caducidad': _diasAlertController.text.isNotEmpty
+        ? int.tryParse(_diasAlertController.text)
+        : null,
+    'codigo_barras': _codigoBarrasController.text,
+  };
+
+  print('🔄 Datos del producto a actualizar: ${jsonEncode(productoData)}');
+
+  try {
+    // Actualizar datos básicos del producto
+    await _supabase
+        .from('app_dat_producto')
+        .update(productoData)
+        .eq('id', productId);
+    
+    print('✅ Datos básicos del producto actualizados');
+
+    // Actualizar unidades de medida por presentación
+    await _updatePresentacionUnidadMedida(productId);
+    
+    // Actualizar presentación base si cambió
+    if (_selectedBasePresentationId != null) {
+      print('🔄 Actualizando presentación base...');
+      
+      // Primero, quitar es_base=true de todas las presentaciones
+      await _supabase
+          .from('app_dat_producto_presentacion')
+          .update({'es_base': false})
+          .eq('id_producto', productId);
+      
+      // Luego, establecer la nueva presentación base
+      await _supabase
+          .from('app_dat_producto_presentacion')
+          .update({
+            'es_base': true,
+            'cantidad': double.parse(_cantidadPresentacionController.text),
+          })
+          .eq('id_producto', productId)
+          .eq('id_presentacion', _selectedBasePresentationId!);
+      
+      print('✅ Presentación base actualizada');
+    }
+
+    // Actualizar ingredientes si es producto elaborado
+    if (_esElaborado && _ingredientes.isNotEmpty) {
+      print('🍽️ Actualizando ingredientes...');
+      
+      // Eliminar ingredientes existentes
+      await _supabase
+          .from('app_dat_producto_ingredientes')
+          .delete()
+          .eq('id_producto_elaborado', productId);
+      
+      // Insertar nuevos ingredientes
+      final ingredientesData = _ingredientes.map((ingrediente) => {
+        'id_producto_elaborado': productId,
+        'id_ingrediente': ingrediente['id_producto'],
+        'cantidad_necesaria': ingrediente['cantidad'],
+        'unidad_medida': ingrediente['unidad'],
+      }).toList();
+      
+      if (ingredientesData.isNotEmpty) {
+        await _supabase
+            .from('app_dat_producto_ingredientes')
+            .insert(ingredientesData);
+        
+        print('✅ Ingredientes actualizados exitosamente');
+      }
+    } else if (!_esElaborado) {
+      // Si ya no es elaborado, eliminar todos los ingredientes
+      await _supabase
+          .from('app_dat_producto_ingredientes')
+          .delete()
+          .eq('id_producto_elaborado', productId);
+      
+      print('✅ Ingredientes eliminados (producto ya no es elaborado)');
+    }
+
+    print('✅ Producto actualizado exitosamente');
+    
+  } catch (e) {
+    print('❌ Error actualizando producto: $e');
+    throw Exception('Error actualizando producto: $e');
+  }
+
+  _showSuccessSnackBar('Producto actualizado exitosamente');
+  if (widget.onProductSaved != null) {
+    widget.onProductSaved!();
+  }
+  Navigator.of(context).pop();
+}
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1713,6 +2404,62 @@ class _AddProductScreenState extends State<AddProductScreen> {
       );
     }
   }
+  // Métodos para gestionar ingredientes
+void _agregarIngrediente() {
+  print('🔍 DEBUG: _agregarIngrediente llamado');
+  print('🔍 DEBUG: _esElaborado: $_esElaborado');
+  print('🔍 DEBUG: Lista actual de ingredientes: ${_ingredientes.length}');
+  
+  showDialog(
+    context: context,
+        builder: (context) => _IngredientDialog(
+      ingrediente: null, // Nuevo ingrediente vacío
+      ingredientesExistentes: _ingredientes,
+      onSave: (ingrediente) {
+        print('🔍 DEBUG: onSave callback ejecutado');
+        print('🔍 DEBUG: Ingrediente recibido: $ingrediente');
+        
+        setState(() {
+          _ingredientes.add(ingrediente); // Agregar nuevo ingrediente
+          _calcularCostoProduccion();
+        });
+        
+        print('🔍 DEBUG: Ingrediente agregado. Total: ${_ingredientes.length}');
+      },
+    ),
+  );
+}
+
+void _editarIngrediente(int index) {
+  showDialog(
+    context: context,
+        builder: (context) => _IngredientDialog(
+      ingrediente: _ingredientes[index],
+      ingredientesExistentes: _ingredientes.where((ing) => ing != _ingredientes[index]).toList(),
+      onSave: (ingrediente) {
+        setState(() {
+          _ingredientes[index] = ingrediente;
+          _calcularCostoProduccion();
+        });
+      },
+    ),
+  );
+}
+
+void _eliminarIngrediente(int index) {
+  setState(() {
+    _ingredientes.removeAt(index);
+    _calcularCostoProduccion();
+  });
+}
+
+void _calcularCostoProduccion() {
+  _costoProduccionCalculado = _ingredientes.fold(0.0, (total, ingrediente) {
+    final cantidad = ingrediente['cantidad'] ?? 0.0;
+    final costo = ingrediente['costo_unitario'] ?? 0.0;
+    return total + (cantidad * costo);
+  });
+}
 }
 
 class _PresentacionDialog extends StatefulWidget {
@@ -1736,6 +2483,379 @@ class _PresentacionDialog extends StatefulWidget {
   State<_PresentacionDialog> createState() => _PresentacionDialogState();
 }
 
+class _IngredientDialogState extends State<_IngredientDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _cantidadController = TextEditingController();
+
+  // Variables para selección de producto
+  List<Map<String, dynamic>> _productosDisponibles = [];
+  Map<String, dynamic>? _productoSeleccionado;
+  bool _isLoadingProducts = true;
+  String _searchQuery = '';
+
+  // Variables para unidades de medida
+  List<Map<String, dynamic>> _unidadesMedida = [];
+  Map<String, dynamic>? _unidadSeleccionada;
+  bool _isLoadingUnidades = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProductosDisponibles();
+    _loadUnidadesMedida();
+    
+    if (widget.ingrediente != null) {
+      _cantidadController.text = widget.ingrediente!['cantidad']?.toString() ?? '';
+      
+      // Si es edición, buscar el producto y unidad seleccionados
+      _productoSeleccionado = {
+        'id': widget.ingrediente!['id_producto'],
+        'denominacion': widget.ingrediente!['nombre'],
+        'precio_venta': widget.ingrediente!['costo_unitario'],
+        'stock_disponible': widget.ingrediente!['stock_disponible'],
+      };
+      
+      // Buscar la unidad seleccionada por abreviatura
+      final unidadAbrev = widget.ingrediente!['unidad'] ?? 'und';
+      _unidadSeleccionada = {
+        'abreviatura': unidadAbrev,
+        'denominacion': unidadAbrev,
+      };
+    }
+  }
+
+  Future<void> _loadProductosDisponibles() async {
+    try {
+      setState(() => _isLoadingProducts = true);
+      
+      final productos = await ProductService.getProductsForIngredients();
+      
+      setState(() {
+        _productosDisponibles = productos;
+        _isLoadingProducts = false;
+      });
+    } catch (e) {
+      print('Error cargando productos: $e');
+      setState(() => _isLoadingProducts = false);
+    }
+  }
+
+  Future<void> _loadUnidadesMedida() async {
+    try {
+      setState(() => _isLoadingUnidades = true);
+      
+      final unidades = await ProductService.getUnidadesMedida();
+      
+      setState(() {
+        _unidadesMedida = unidades;
+        _isLoadingUnidades = false;
+        
+        // Si no hay unidad seleccionada, usar la primera (generalmente "Unidad")
+        if (_unidadSeleccionada == null && unidades.isNotEmpty) {
+          _unidadSeleccionada = unidades.first;
+        }
+      });
+    } catch (e) {
+      print('Error cargando unidades de medida: $e');
+      setState(() => _isLoadingUnidades = false);
+    }
+  }
+
+  List<Map<String, dynamic>> get _productosFiltrados {
+    if (_searchQuery.isEmpty) return _productosDisponibles;
+    
+    return _productosDisponibles.where((producto) {
+      final denominacion = (producto['denominacion'] ?? '').toLowerCase();
+      final sku = (producto['sku'] ?? '').toLowerCase();
+      final query = _searchQuery.toLowerCase();
+      return denominacion.contains(query) || sku.contains(query);
+    }).toList();
+  }
+
+
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.ingrediente == null ? 'Agregar Ingrediente' : 'Editar Ingrediente'),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+          maxWidth: MediaQuery.of(context).size.width * 0.85,
+          minHeight: 300,
+        ),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Selector de producto
+                  const Text(
+                    'Seleccionar Producto:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  
+                  // Campo de búsqueda
+                  TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Buscar producto...',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.search),
+                      isDense: true,
+                    ),
+                    onChanged: (value) {
+                      setState(() => _searchQuery = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // Lista de productos
+                  if (_isLoadingProducts)
+                    const Center(child: CircularProgressIndicator())
+                  else if (_productosFiltrados.isEmpty)
+                    const Text('No se encontraron productos disponibles')
+                  else
+                    Container(
+                      height: 150,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _productosFiltrados.length,
+                        itemBuilder: (context, index) {
+                          final producto = _productosFiltrados[index];
+                          final isSelected = _productoSeleccionado?['id'] == producto['id'];
+                          
+                          return ListTile(
+                            dense: true,
+                            selected: isSelected,
+                            selectedTileColor: AppColors.primary.withOpacity(0.1),
+                            leading: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: AppColors.primary.withOpacity(0.1),
+                              child: Text(
+                                (producto['denominacion'] ?? 'P')[0].toUpperCase(),
+                                style: TextStyle(color: AppColors.primary),
+                              ),
+                            ),
+                            title: Text(
+                              producto['denominacion'] ?? 'Sin nombre',
+                              style: TextStyle(
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'SKU: ${producto['sku'] ?? 'N/A'} | Stock: ${producto['stock_disponible'] ?? 0}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            trailing: isSelected 
+                              ? Icon(Icons.check_circle, color: AppColors.primary, size: 20)
+                              : null,
+                            onTap: () {
+                              setState(() {
+                                _productoSeleccionado = producto;
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Información del producto seleccionado
+                  if (_productoSeleccionado != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Producto Seleccionado:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          Text(_productoSeleccionado!['denominacion'] ?? ''),
+                          Text('Stock disponible: ${_productoSeleccionado!['stock_disponible'] ?? 0}'),
+                          Text('Costo unitario: \$${(_productoSeleccionado!['precio_venta'] ?? 0.0).toStringAsFixed(2)}'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  
+                  // Campos de cantidad y unidad
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: _cantidadController,
+                          decoration: const InputDecoration(
+                            labelText: 'Cantidad Necesaria',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Requerido';
+                            }
+                            final cantidad = double.tryParse(value);
+                            if (cantidad == null || cantidad <= 0) {
+                              return 'Cantidad inválida';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _isLoadingUnidades
+                          ? const Center(child: CircularProgressIndicator())
+                          : DropdownButtonFormField<Map<String, dynamic>>(
+                              value: _unidadSeleccionada,
+                              decoration: const InputDecoration(
+                                labelText: 'Unidad',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              items: _unidadesMedida.map((unidad) {
+                                return DropdownMenuItem<Map<String, dynamic>>(
+                                  value: unidad,
+                                  child: Text(
+                                    '${unidad['abreviatura']} - ${unidad['denominacion']}',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _unidadSeleccionada = value;
+                                });
+                              },
+                              validator: (value) {
+                                if (value == null) {
+                                  return 'Seleccione una unidad';
+                                }
+                                return null;
+                              },
+                            ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  // Cálculo del costo total
+                  if (_productoSeleccionado != null && _cantidadController.text.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Costo Total:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Text(
+                            '\$${_calcularCostoTotal().toStringAsFixed(2)}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+ElevatedButton(
+  onPressed: (_productoSeleccionado == null || _unidadSeleccionada == null) ? null : () {
+    if (_formKey.currentState!.validate()) {
+      // Verificar si el producto ya está agregado (solo para nuevos ingredientes)
+      if (widget.ingrediente == null) {
+        final productosExistentes = widget.ingredientesExistentes ?? [];
+        final productoYaExiste = productosExistentes.any((ing) => 
+          ing['id_producto']?.toString() == _productoSeleccionado!['id']?.toString()
+        );
+        
+        if (productoYaExiste) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Este producto ya está agregado como ingrediente'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+      
+      final ingrediente = {
+        'id_producto': _productoSeleccionado!['id'],
+        'nombre': _productoSeleccionado!['denominacion'],
+        'cantidad': double.parse(_cantidadController.text),
+        'unidad': _unidadSeleccionada!['abreviatura'],
+        'id_unidad_medida': _unidadSeleccionada!['id'],
+        'denominacion_unidad': _unidadSeleccionada!['denominacion'],
+        'costo_unitario': _productoSeleccionado!['precio_venta'] ?? 0.0,
+        'stock_disponible': _productoSeleccionado!['stock_disponible'] ?? 0,
+        'imagen': _productoSeleccionado!['imagen'],
+      };
+      widget.onSave(ingrediente);
+      Navigator.of(context).pop();
+    }
+  },
+  // ... resto del botón
+//),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Guardar'),
+        ),
+      ],
+    );
+  }
+
+  double _calcularCostoTotal() {
+    if (_productoSeleccionado == null || _cantidadController.text.isEmpty) {
+      return 0.0;
+    }
+    
+    final cantidad = double.tryParse(_cantidadController.text) ?? 0.0;
+    final costoUnitario = _productoSeleccionado!['precio_venta'] ?? 0.0;
+    return cantidad * costoUnitario;
+  }
+
+  @override
+  void dispose() {
+    _cantidadController.dispose();
+    super.dispose();
+  }
+}
 class _PresentacionDialogState extends State<_PresentacionDialog> {
   int? _selectedPresentacionId;
   final _cantidadController = TextEditingController(text: '1');
@@ -1837,7 +2957,7 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
           children: [
             const Text(
               'Seleccionar Presentación:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<int>(
@@ -1864,7 +2984,7 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
 
             const Text(
               'Cantidad de unidades base por presentación:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             TextFormField(
@@ -1882,7 +3002,7 @@ class _PresentacionDialogState extends State<_PresentacionDialog> {
             const SizedBox(height: 16),
             const Text(
               'Precio por presentación:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             TextFormField(

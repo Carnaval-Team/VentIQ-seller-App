@@ -7,6 +7,10 @@ import 'store_selector_service.dart';
 
 class ProductService {
   static final SupabaseClient _supabase = Supabase.instance.client;
+  
+  // Getter público para acceder al cliente Supabase
+  static SupabaseClient get supabase => _supabase;
+
   static StoreSelectorService? _storeSelectorService;
 
   /// Obtiene productos completos por tienda usando la función RPC optimizada
@@ -44,11 +48,47 @@ class ProductService {
       // Extraer la lista de productos del JSON de respuesta
       final productosData = response['productos'] as List<dynamic>? ?? [];
       print('📊 Total productos encontrados: ${productosData.length}');
+      
+      // DEBUG: Verificar el primer producto para ver qué campos contiene
+      if (productosData.isNotEmpty) {
+        final primerProducto = productosData.first as Map<String, dynamic>;
+        print('🔍 ===== ANÁLISIS DEL PRIMER PRODUCTO =====');
+        print('🔍 Claves disponibles: ${primerProducto.keys.toList()}');
+        print('🔍 Campo es_elaborado existe: ${primerProducto.containsKey('es_elaborado')}');
+        print('🔍 Valor de es_elaborado: ${primerProducto['es_elaborado']}');
+        print('🔍 Tipo de es_elaborado: ${primerProducto['es_elaborado'].runtimeType}');
+        print('🔍 Denominación: ${primerProducto['denominacion']}');
+        print('🔍 ID: ${primerProducto['id']}');
+        print('=======================================');
+      }
 
       // Convertir cada producto del JSON al modelo Product
       final productos = productosData.map((productoJson) {
         return _convertToProduct(productoJson as Map<String, dynamic>);
       }).toList();
+
+      // TEMPORAL: Obtener el campo es_elaborado para cada producto
+      print('🔧 OBTENIENDO CAMPO es_elaborado PARA CADA PRODUCTO...');
+      for (int i = 0; i < productos.length; i++) {
+        try {
+          final productId = int.tryParse(productos[i].id);
+          if (productId != null) {
+            final elaboradoResponse = await _supabase
+                .from('app_dat_producto')
+                .select('es_elaborado')
+                .eq('id', productId)
+                .single();
+            
+            final esElaborado = elaboradoResponse['es_elaborado'] ?? false;
+            print('🔧 Producto ${productos[i].denominacion} (ID: $productId) - es_elaborado: $esElaborado');
+            
+            // Actualizar el producto con el valor correcto
+            productos[i] = productos[i].copyWith(esElaborado: esElaborado);
+          }
+        } catch (e) {
+          print('⚠️ Error obteniendo es_elaborado para producto ${productos[i].id}: $e');
+        }
+      }
 
       print('✅ Productos convertidos exitosamente: ${productos.length}');
       return productos;
@@ -96,6 +136,7 @@ class ProductService {
       final result = response as Map<String, dynamic>;
       
       if (result['success'] == true) {
+        
         print('✅ Producto insertado exitosamente');
         return result;
       } else {
@@ -271,7 +312,10 @@ class ProductService {
         etiquetas: (json['etiquetas'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
         inventario: (json['inventario'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
         variantesDisponibles: (json['variantes_disponibles'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>(),
+        esElaborado: json['es_elaborado'] ?? false,
       );
+      
+      print('✅ Producto convertido - ID: ${json['id']}, esElaborado final: ${json['es_elaborado'] ?? false}');
 
     } catch (e, stackTrace) {
       print('❌ Error al convertir producto: $e');
@@ -1092,6 +1136,412 @@ class ProductService {
     } catch (e) {
       print('❌ Error obteniendo producto por ID $productId: $e');
       return null;
+    }
+  }
+
+  /// Obtiene productos para ingredientes filtrados por tienda del usuario
+  static Future<List<Map<String, dynamic>>> getProductsForIngredients() async {
+    try {
+      // Obtener ID de tienda desde las preferencias del usuario
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda en las preferencias del usuario');
+      }
+
+      final response = await _supabase
+          .from('app_dat_producto')
+          .select('''
+            id,
+            denominacion,
+            sku,
+            imagen,
+            es_elaborado
+          ''')
+          .eq('es_inventariable', true)
+          .eq('id_tienda', idTienda) // Filtrar por tienda del usuario
+          .order('denominacion');
+
+      return response.map<Map<String, dynamic>>((item) => {
+        'id': item['id'],
+        'denominacion': item['denominacion'],
+        'sku': item['sku'],
+        'imagen': item['imagen'],
+        'es_elaborado': item['es_elaborado'] ?? false,
+        'precio_venta': 0.0, // Por ahora sin precio
+        'stock_disponible': 0, // Por ahora sin stock
+      }).toList();
+    } catch (e) {
+      print('Error obteniendo productos para ingredientes: $e');
+      return [];
+    }
+  }
+
+  /// Obtiene unidades de medida disponibles
+  static Future<List<Map<String, dynamic>>> getUnidadesMedida() async {
+    try {
+      final response = await _supabase
+          .from('app_nom_unidades_medida')
+          .select('''
+            id,
+            denominacion,
+            abreviatura,
+            tipo_unidad,
+            es_base
+          ''')
+          .order('denominacion');
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error obteniendo unidades de medida: $e');
+      return [
+        {'id': 1, 'denominacion': 'Unidad', 'abreviatura': 'und'},
+        {'id': 2, 'denominacion': 'Kilogramo', 'abreviatura': 'kg'},
+        {'id': 3, 'denominacion': 'Litro', 'abreviatura': 'l'},
+        {'id': 4, 'denominacion': 'Gramo', 'abreviatura': 'g'},
+        {'id': 5, 'denominacion': 'Mililitro', 'abreviatura': 'ml'},
+      ];
+    }
+  }
+/// Obtiene la presentación base de un producto
+static Future<Map<String, dynamic>?> getBasePresentacion(int productId) async {
+  try {
+    print('🔍 Obteniendo presentación base para producto: $productId');
+    
+    final response = await _supabase
+        .from('app_dat_producto_presentacion')
+        .select('''
+          id,
+          id_presentacion,
+          cantidad,
+          app_nom_presentacion!inner(id, denominacion)
+        ''')
+        .eq('id_producto', productId)
+        .eq('es_base', true)
+        .limit(1);
+    
+    if (response.isNotEmpty) {
+      final basePresentation = response.first;
+      print('✅ Presentación base encontrada: ${basePresentation['app_nom_presentacion']['denominacion']}');
+      return {
+        'id_presentacion': basePresentation['id'],
+        'cantidad': basePresentation['cantidad'],
+        'denominacion': basePresentation['app_nom_presentacion']['denominacion'],
+      };
+    }
+    
+    print('⚠️ No se encontró presentación base para producto: $productId');
+    return null;
+    
+  } catch (e) {
+    print('❌ Error obteniendo presentación base: $e');
+    return null;
+  }
+}
+
+/// Convierte cantidad de cualquier presentación a presentación base
+static Future<double> convertToBasePresentacion({
+  required int productId,
+  required int fromPresentacionId,
+  required double cantidad,
+}) async {
+  try {
+    print('🔄 ===== CONVERSIÓN A PRESENTACIÓN BASE =====');
+    print('🔄 Producto: $productId');
+    print('🔄 Desde presentación: $fromPresentacionId');
+    print('🔄 Cantidad original: $cantidad');
+    
+    // Obtener presentación base
+    final basePresentation = await getBasePresentacion(productId);
+    if (basePresentation == null) {
+      print('❌ No se pudo obtener presentación base');
+      return cantidad; // Retornar cantidad original si no hay presentación base
+    }
+    
+    final basePresentacionId = basePresentation['id_presentacion'];
+    
+    // Si ya es la presentación base, no convertir
+    if (fromPresentacionId == basePresentacionId) {
+      print('✅ Ya es presentación base, no se requiere conversión');
+      return cantidad;
+    }
+    
+    // Obtener datos de la presentación origen
+    final fromResponse = await _supabase
+        .from('app_dat_producto_presentacion')
+        .select('cantidad')
+        .eq('id_producto', productId)
+        .eq('id_presentacion', fromPresentacionId)
+        .limit(1);
+    
+    if (fromResponse.isEmpty) {
+      print('❌ No se encontró presentación origen: $fromPresentacionId');
+      return cantidad;
+    }
+    
+    final fromCantidad = fromResponse.first['cantidad'] as double;
+    final baseCantidad = basePresentation['cantidad'] as double;
+    
+    // Calcular conversión
+    // Ejemplo: 1 Caja = 24 Unidades, 1 Unidad = 1 Unidad base
+    // Si tengo 2 Cajas, necesito: 2 * 24 / 1 = 48 Unidades base
+    final cantidadEnBase = (cantidad * fromCantidad) / baseCantidad;
+    
+    print('🔄 Presentación origen: $fromCantidad unidades base por presentación');
+    print('🔄 Presentación base: $baseCantidad unidades base por presentación');
+    print('🔄 Cálculo: ($cantidad * $fromCantidad) / $baseCantidad = $cantidadEnBase');
+    print('✅ Cantidad convertida a presentación base: $cantidadEnBase');
+    
+    return cantidadEnBase;
+    
+  } catch (e) {
+    print('❌ Error en conversión a presentación base: $e');
+    return cantidad; // Retornar cantidad original en caso de error
+  }
+}
+
+/// Obtiene información completa de presentaciones de un producto
+static Future<List<Map<String, dynamic>>> getPresentacionesCompletas(int productId) async {
+  try {
+    print('🔍 Obteniendo presentaciones completas para producto: $productId');
+    
+    final response = await _supabase
+        .from('app_dat_producto_presentacion')
+        .select('''
+          id_presentacion,
+          cantidad,
+          es_base,
+          app_nom_presentacion!inner(id, denominacion)
+        ''')
+        .eq('id_producto', productId)
+        .order('es_base', ascending: false); // Base primero
+    
+    final presentaciones = response.map<Map<String, dynamic>>((item) => {
+      'id_presentacion': item['id_presentacion'],
+      'cantidad': item['cantidad'],
+      'es_base': item['es_base'],
+      'denominacion': item['app_nom_presentacion']['denominacion'],
+    }).toList();
+    
+    print('✅ Presentaciones obtenidas: ${presentaciones.length}');
+    for (final pres in presentaciones) {
+      print('   - ${pres['denominacion']}: ${pres['cantidad']} ${pres['es_base'] ? '(BASE)' : ''}');
+    }
+    
+    return presentaciones;
+    
+  } catch (e) {
+    print('❌ Error obteniendo presentaciones completas: $e');
+    return [];
+  }
+}
+  /// Obtiene las unidades de medida por presentación de un producto
+  static Future<List<Map<String, dynamic>>> getPresentacionUnidadMedida(int productId) async {
+    try {
+      print('🔍 Obteniendo unidades de medida por presentación para producto: $productId');
+      
+      final response = await _supabase
+          .from('app_dat_presentacion_unidad_medida')
+          .select('''
+            id,
+            id_presentacion,
+            id_unidad_medida,
+            cantidad_um,
+            app_nom_presentacion!inner(id, denominacion),
+            app_nom_unidades_medida!inner(id, denominacion, abreviatura)
+          ''')
+          .eq('id_producto', productId);
+      
+      print('📦 Unidades de medida por presentación obtenidas: ${response.length}');
+      return List<Map<String, dynamic>>.from(response);
+      
+    } catch (e, stackTrace) {
+      print('❌ Error obteniendo unidades de medida por presentación: $e');
+      print('📍 StackTrace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Obtiene los ingredientes de un producto elaborado
+  static Future<List<Map<String, dynamic>>> getProductIngredients(String productId) async {
+    try {
+      print('🍽️ Obteniendo ingredientes para producto elaborado: $productId');
+
+      final response = await _supabase
+          .from('app_dat_producto_ingredientes')
+          .select('''
+            id,
+            cantidad_necesaria,
+            unidad_medida,
+            app_dat_producto!app_dat_producto_ingredientes_ingrediente_fkey(
+              id,
+              denominacion,
+              sku,
+              imagen
+            )
+          ''')
+          .eq('id_producto_elaborado', int.tryParse(productId) ?? 0);
+
+      print('📦 Ingredientes obtenidos: ${response.length}');
+
+      return response.map<Map<String, dynamic>>((item) {
+        final producto = item['app_dat_producto'] as Map<String, dynamic>;
+
+        return {
+          'id': item['id'],
+          'cantidad_necesaria': (item['cantidad_necesaria'] ?? 0.0).toDouble(),
+          'unidad_medida': item['unidad_medida'] ?? 'und',
+          'producto_id': producto['id'],
+          'producto_nombre': producto['denominacion'] ?? 'Sin nombre',
+          'producto_sku': producto['sku'] ?? '',
+          'producto_imagen': producto['imagen'] ?? '',
+        };
+      }).toList();
+
+    } catch (e, stackTrace) {
+      print('❌ Error al obtener ingredientes: $e');
+      print('📍 StackTrace: $stackTrace');
+      return [];
+    }
+  }
+
+  /// Inserta las unidades de medida por presentación en la nueva tabla
+  static Future<void> insertPresentacionUnidadMedida({
+    required int productId,
+    required List<Map<String, dynamic>> presentacionUnidadMedidaData,
+  }) async {
+    try {
+      print('🔧 ===== INSERTANDO UNIDADES DE MEDIDA POR PRESENTACIÓN =====');
+      print('🔧 Producto ID: $productId');
+      print('🔧 Total registros a insertar: ${presentacionUnidadMedidaData.length}');
+      
+      if (presentacionUnidadMedidaData.isEmpty) {
+        print('⚠️ No hay datos de unidades de medida por presentación para insertar');
+        return;
+      }
+      
+      // Insertar cada registro individualmente para mejor control de errores
+      for (int i = 0; i < presentacionUnidadMedidaData.length; i++) {
+        final data = presentacionUnidadMedidaData[i];
+        
+        try {
+          print('🔧 Insertando registro ${i + 1}: $data');
+          
+          final response = await _supabase
+              .from('app_dat_presentacion_unidad_medida')
+              .insert({
+                'id_producto': productId,
+                'id_presentacion': data['id_presentacion'],
+                'id_unidad_medida': data['id_unidad_medida'],
+                'cantidad_um': data['cantidad_um'],
+              })
+              .select()
+              .single();
+          
+          print('✅ Registro ${i + 1} insertado exitosamente: ${response['id']}');
+          
+        } catch (e) {
+          print('❌ Error insertando registro ${i + 1}: $e');
+          print('❌ Datos del registro: $data');
+          // Continuar con los demás registros
+        }
+      }
+      
+      print('✅ Proceso de inserción de unidades de medida por presentación completado');
+      
+    } catch (e, stackTrace) {
+      print('❌ Error general en insertPresentacionUnidadMedida: $e');
+      print('📍 StackTrace: $stackTrace');
+      throw Exception('Error al insertar unidades de medida por presentación: $e');
+    }
+  }
+
+  /// Inserta ingredientes para un producto elaborado
+  static Future<bool> insertProductIngredients({
+    required int productId,
+    required List<Map<String, dynamic>> ingredientes,
+  }) async {
+    try {
+      print('🍽️ ===== INICIANDO INSERCIÓN DE INGREDIENTES =====');
+      print('🍽️ Producto elaborado ID: $productId');
+      print('🍽️ Total ingredientes recibidos: ${ingredientes.length}');
+      print('🍽️ Datos completos recibidos: $ingredientes');
+
+      if (ingredientes.isEmpty) {
+        print('⚠️ ADVERTENCIA: Lista de ingredientes está vacía');
+        return false;
+      }
+
+      // Preparar datos para la inserción
+      final ingredientesData = ingredientes.map((ingrediente) {
+        print('🔍 Procesando ingrediente: $ingrediente');
+        
+        final data = {
+          'id_producto_elaborado': productId,
+          'id_ingrediente': ingrediente['id_producto'], // ID del producto ingrediente
+          'cantidad_necesaria': ingrediente['cantidad'], // Cantidad necesaria
+          'unidad_medida': ingrediente['unidad_medida'], // Unidad de medida
+        };
+        
+        print('🔍 Datos preparados para inserción: $data');
+        return data;
+      }).toList();
+
+      print('🍽️ Datos finales para insertar: $ingredientesData');
+
+      // Insertar cada ingrediente individualmente para mejor control de errores
+      int insertedCount = 0;
+      for (final ingredienteData in ingredientesData) {
+        try {
+          print('📤 Insertando ingrediente: $ingredienteData');
+          
+          await _supabase
+              .from('app_dat_producto_ingredientes')
+              .insert(ingredienteData);
+          
+          insertedCount++;
+          print('✅ Ingrediente insertado exitosamente: ${ingredienteData['id_ingrediente']} - Cantidad: ${ingredienteData['cantidad_necesaria']}');
+        } catch (e) {
+          print('❌ ERROR insertando ingrediente específico ${ingredienteData['id_ingrediente']}: $e');
+          print('❌ Datos que causaron error: $ingredienteData');
+          // Continuar con los demás ingredientes
+        }
+      }
+
+      print('📊 ===== RESUMEN INSERCIÓN INGREDIENTES =====');
+      print('📊 Ingredientes procesados: ${ingredientes.length}');
+      print('📊 Ingredientes insertados exitosamente: $insertedCount');
+      print('📊 Ingredientes con error: ${ingredientes.length - insertedCount}');
+      
+      final success = insertedCount > 0;
+      print('📊 Resultado final: ${success ? "ÉXITO" : "FALLO"}');
+      
+      // Si se insertaron ingredientes exitosamente, actualizar el campo es_elaborado del producto
+      if (success) {
+        try {
+          print('🔄 Actualizando campo es_elaborado = true para producto ID: $productId');
+          
+          await _supabase
+              .from('app_dat_producto')
+              .update({'es_elaborado': true})
+              .eq('id', productId);
+          
+          print('✅ Campo es_elaborado actualizado exitosamente a TRUE');
+        } catch (e) {
+          print('❌ ERROR al actualizar campo es_elaborado: $e');
+          // No fallar la operación completa por este error
+        }
+      }
+      
+      return success; // Retorna true si al menos un ingrediente se insertó
+
+    } catch (e, stackTrace) {
+      print('❌ ===== ERROR CRÍTICO EN insertProductIngredients =====');
+      print('❌ Error: $e');
+      print('❌ StackTrace: $stackTrace');
+      print('❌ ProductId: $productId');
+      print('❌ Ingredientes: $ingredientes');
+      return false;
     }
   }
 }
