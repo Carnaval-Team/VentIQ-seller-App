@@ -133,7 +133,7 @@ class ExportDialog extends StatelessWidget {
                   child: _ExportFormatButton(
                     icon: Icons.picture_as_pdf,
                     label: 'PDF',
-                    description: 'Documento portable',
+                    description: 'Doc. portable',
                     color: Colors.red,
                     onTap: () {
                       Navigator.of(context).pop();

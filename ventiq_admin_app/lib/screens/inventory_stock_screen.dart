@@ -3,6 +3,7 @@ import '../config/app_colors.dart';
 import '../models/inventory.dart';
 import '../services/inventory_service.dart';
 import '../widgets/inventory_summary_card.dart';
+import '../widgets/inventory_export_dialog.dart';
 import 'inventory_reception_screen.dart';
 
 class InventoryStockScreen extends StatefulWidget {
@@ -153,17 +154,21 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       return _buildErrorState();
     }
 
-    return Column(
-      children: [
-        _buildSearchAndFilters(),
-        _buildViewToggle(),
-        if (_isDetailedView) ...[
-          _buildInventorySummary(),
-          Expanded(child: _buildDetailedInventoryList()),
-        ] else ...[
-          Expanded(child: _buildSummaryInventoryList()),
+    return Scaffold(
+      body: Column(
+        children: [
+          _buildSearchAndFilters(),
+          _buildViewToggle(),
+          if (_isDetailedView) ...[
+            _buildInventorySummary(),
+            Expanded(child: _buildDetailedInventoryList()),
+          ] else ...[
+            Expanded(child: _buildSummaryInventoryList()),
+          ],
         ],
-      ],
+      ),
+      floatingActionButton: _buildExportFAB(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
     );
   }
 
@@ -1178,6 +1183,18 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
               ),
             ),
           ),
+    );
+  }
+
+  /// Construye el FAB de exportación en la parte izquierda
+  Widget _buildExportFAB() {
+    return FloatingActionButton.extended(
+      onPressed: () => showInventoryExportDialog(context),
+      backgroundColor: AppColors.success,
+      foregroundColor: Colors.white,
+      icon: const Icon(Icons.file_download_outlined),
+      label: const Text('Exportar'),
+      tooltip: 'Exportar inventario',
     );
   }
 }

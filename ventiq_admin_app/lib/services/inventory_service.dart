@@ -1295,8 +1295,53 @@ class InventoryService {
     }
   }
 
-  static String _safeSubstring(String? text, int start, int end) {
-    if (text == null) {
+  /// Obtiene inventario simple para exportación
+  static Future<List<Map<String, dynamic>>> getInventarioSimple({
+    int? idAlmacen,
+    int? idTienda,
+    DateTime? fechaHasta,
+  }) async {
+    try {
+      print('🔍 Calling fn_listar_inventario_simple with params:');
+      print('  - idAlmacen: $idAlmacen');
+      print('  - idTienda: $idTienda');
+      print('  - fechaHasta: $fechaHasta');
+
+      final response = await _supabase.rpc('fn_listar_inventario_simple', params: {
+        'p_id_almacen': idAlmacen,
+        'p_id_tienda': idTienda,
+        'p_fecha_hasta': fechaHasta?.toIso8601String(),
+      });
+
+      print('📦 Response received: ${response?.length ?? 0} items');
+
+      if (response == null) {
+        print('❌ Response is null');
+        return [];
+      }
+
+      if (response is! List) {
+        print('❌ Response is not a List, got: ${response.runtimeType}');
+        return [];
+      }
+
+      final List<Map<String, dynamic>> inventoryList = [];
+      for (final item in response) {
+        if (item is Map<String, dynamic>) {
+          inventoryList.add(item);
+        }
+      }
+
+      print('✅ Processed ${inventoryList.length} inventory items');
+      return inventoryList;
+    } catch (e) {
+      print('❌ Error in getInventarioSimple: $e');
+      rethrow;
+    }
+  }
+
+  static String _safeSubstring(String text, int start, int end) {
+    if (text.isEmpty) {
       return '';
     }
 

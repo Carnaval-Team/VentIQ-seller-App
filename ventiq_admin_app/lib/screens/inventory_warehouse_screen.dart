@@ -810,49 +810,49 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                       ),
                       
                       // Botón de exportación (solo visible cuando los productos están expandidos)
-                      if (isExpanded && inventory.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _showExportDialog(warehouseId, zone, inventory),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.success.withOpacity(0.05),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: AppColors.success.withOpacity(0.3),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.file_download_outlined,
-                                    color: AppColors.success,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Exportar Lista',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: AppColors.success,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                      // if (isExpanded && inventory.isNotEmpty) ...[
+                      //   const SizedBox(height: 8),
+                      //   Material(
+                      //     color: Colors.transparent,
+                      //     child: InkWell(
+                      //       onTap: () => _showExportDialog(warehouseId, zone, inventory),
+                      //       borderRadius: BorderRadius.circular(8),
+                      //       child: Container(
+                      //         width: double.infinity,
+                      //         padding: const EdgeInsets.symmetric(
+                      //           horizontal: 12,
+                      //           vertical: 10,
+                      //         ),
+                      //         decoration: BoxDecoration(
+                      //           color: AppColors.success.withOpacity(0.05),
+                      //           borderRadius: BorderRadius.circular(8),
+                      //           border: Border.all(
+                      //             color: AppColors.success.withOpacity(0.3),
+                      //           ),
+                      //         ),
+                      //         child: Row(
+                      //           mainAxisAlignment: MainAxisAlignment.center,
+                      //           children: [
+                      //             Icon(
+                      //               Icons.file_download_outlined,
+                      //               color: AppColors.success,
+                      //               size: 18,
+                      //             ),
+                      //             const SizedBox(width: 8),
+                      //             Text(
+                      //               'Exportar Lista',
+                      //               style: const TextStyle(
+                      //                 fontSize: 14,
+                      //                 fontWeight: FontWeight.w500,
+                      //                 color: AppColors.success,
+                      //               ),
+                      //             ),
+                      //           ],
+                      //         ),
+                      //       ),
+                      //     ),
+                      //   ),
+                      // ],
                     ],
                   ),
                 ),
