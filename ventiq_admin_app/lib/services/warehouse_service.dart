@@ -148,15 +148,15 @@ class WarehouseService {
         params: {'p_almacen_id': int.parse(id)},
       );
 
-      print('🔍 ===== RESPUESTA get_detalle_almacen_completo =====');
-      print('🔍 Tipo de respuesta: ${response.runtimeType}');
-      print('🔍 Respuesta completa: $response');
-      print('🔍 ===============================================');
+      // print('🔍 ===== RESPUESTA get_detalle_almacen_completo =====');
+      // print('🔍 Tipo de respuesta: ${response.runtimeType}');
+      // print('🔍 Respuesta completa: $response');
+      // print('🔍 ===============================================');
 
       if (response == null) {
-        print(
-          '⚠️ No se recibió respuesta del RPC get_detalle_almacen_completo',
-        );
+        // print(
+        //   '⚠️ No se recibió respuesta del RPC get_detalle_almacen_completo',
+        // );
         throw Exception('No se pudo obtener el detalle del almacén');
       }
 
@@ -166,29 +166,29 @@ class WarehouseService {
       // Si la respuesta es una lista, tomar el primer elemento
       if (response is List && response.isNotEmpty) {
         warehouseData = response[0];
-        print('🔍 Respuesta es lista, tomando primer elemento');
+        // print('🔍 Respuesta es lista, tomando primer elemento');
       } else if (response is Map) {
         warehouseData = response;
-        print('🔍 Respuesta es mapa directo');
+        // print('🔍 Respuesta es mapa directo');
       } else {
-        print(
-          '🔍 Respuesta tiene estructura inesperada: ${response.runtimeType}',
-        );
+        // print(
+        //   '🔍 Respuesta tiene estructura inesperada: ${response.runtimeType}',
+        // );
         warehouseData = response;
       }
 
-      print('🔍 ===== WAREHOUSE DATA DETALLE =====');
-      print('🔍 warehouseData completo: $warehouseData');
-      print('🔍 ================================');
+      // print('🔍 ===== WAREHOUSE DATA DETALLE =====');
+      // print('🔍 warehouseData completo: $warehouseData');
+      // print('🔍 ================================');
 
-      print('🔍 Estructura de warehouseData:');
-      print('  - id: ${warehouseData['almacen_id']}');
-      print('  - denominacion: ${warehouseData['almacen_nombre']}');
-      print('  - layouts: ${warehouseData['layouts']}');
-      print('  - layouts type: ${warehouseData['layouts']?.runtimeType}');
-      print('  - condiciones: ${warehouseData['condiciones']}');
-      print('  - tienda: ${warehouseData['tienda_nombre']}');
-      print('  - limites_stock: ${warehouseData['limites_stock']}');
+      // print('🔍 Estructura de warehouseData:');
+      // print('  - id: ${warehouseData['almacen_id']}');
+      // print('  - denominacion: ${warehouseData['almacen_nombre']}');
+      // print('  - layouts: ${warehouseData['layouts']}');
+      // print('  - layouts type: ${warehouseData['layouts']?.runtimeType}');
+      // print('  - condiciones: ${warehouseData['condiciones']}');
+      // print('  - tienda: ${warehouseData['tienda_nombre']}');
+      // print('  - limites_stock: ${warehouseData['limites_stock']}');
 
       // Crear el objeto Warehouse con los datos del detalle completo
       final warehouse = Warehouse(
@@ -1011,15 +1011,12 @@ class WarehouseService {
         if (!groupedProducts.containsKey(productKey)) {
           // Tomar la primera ocurrencia (más reciente por el ORDER BY de la función SQL)
           groupedProducts[productKey] = Map<String, dynamic>.from(product);
-          print('📦 Agregando producto: ${product['denominacion']} (key: $productKey, stock: ${product['stock_actual']})');
-        } else {
-          // Ignorar duplicados históricos
-          print('📦 Ignorando duplicado histórico: ${product['denominacion']} (key: $productKey, stock: ${product['stock_actual']})');
-        }
+          // print('📦 Agregando producto: ${product['denominacion']} (key: $productKey, stock: ${product['stock_actual']})');
+        } 
       }
 
       final products = groupedProducts.values.toList();
-      print('📦 Productos únicos después de agrupar: ${products.length}');
+      //print('📦 Productos únicos después de agrupar: ${products.length}');
       // Log algunos productos para debug
       if (products.isNotEmpty) {
         print(

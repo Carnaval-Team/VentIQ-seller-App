@@ -11,10 +11,10 @@ class InventorySummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print('🎨 Building InventorySummaryCard for: ${summary.productoNombre}');
-    print(
-      '🎨 Card data - ID: ${summary.idProducto}, Quantity: ${summary.cantidadTotalEnAlmacen}, Zones: ${summary.zonasDiferentes}, Presentations: ${summary.presentacionesDiferentes}',
-    );
+    // print('🎨 Building InventorySummaryCard for: ${summary.productoNombre}');
+    // print(
+    //   '🎨 Card data - ID: ${summary.idProducto}, Quantity: ${summary.cantidadTotalEnAlmacen}, Zones: ${summary.zonasDiferentes}, Presentations: ${summary.presentacionesDiferentes}',
+    // );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),

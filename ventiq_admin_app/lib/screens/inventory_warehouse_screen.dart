@@ -76,15 +76,15 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
 
       for (final warehouse in basicWarehouses) {
         try {
-          print(
-            '🔍 Obteniendo detalle completo para warehouse: ${warehouse.name} (ID: ${warehouse.id})',
-          );
+          // print(
+          //   '🔍 Obteniendo detalle completo para warehouse: ${warehouse.name} (ID: ${warehouse.id})',
+          // );
           final detailedWarehouse = await _warehouseService.getWarehouseDetail(
             warehouse.id,
           );
           detailedWarehouses.add(detailedWarehouse);
         } catch (e) {
-          print('⚠️ Error obteniendo detalle de warehouse ${warehouse.id}: $e');
+          // print('⚠️ Error obteniendo detalle de warehouse ${warehouse.id}: $e');
           // Si falla el detalle, usar el warehouse básico
           detailedWarehouses.add(warehouse);
         }

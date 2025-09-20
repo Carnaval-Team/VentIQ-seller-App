@@ -807,7 +807,9 @@ class ExportService {
         sheet.setColumnWidth(2, 15); // Cantidad Inicial
         sheet.setColumnWidth(3, 15); // Cantidad Final
         sheet.setColumnWidth(4, 15); // Precio Venta
-        sheet.setColumnWidth(5, 15); // Costo Promedio
+        sheet.setColumnWidth(5, 15); // Costo Promedio USD
+        sheet.setColumnWidth(6, 15); // Costo Promedio CUP
+        sheet.setColumnWidth(7, 12); // Tasa USD
         
         int currentRow = 0;
         
@@ -887,7 +889,9 @@ class ExportService {
               'Cantidad Inicial',
               'Cantidad Final',
               'Precio Venta',
-              'Costo Promedio',
+              'Costo Promedio USD',
+              'Costo Promedio CUP',
+              'Tasa USD',
             ];
             
             for (int i = 0; i < headers.length; i++) {
@@ -910,6 +914,8 @@ class ExportService {
                 (producto['cantidad_final'] ?? 0).toString(),
                 '\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}',
                 '\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}',
+                '\$${(producto['costo_promedio_cup'] ?? 0).toStringAsFixed(2)} CUP',
+                '${(producto['tasa_usd'] ?? 1).toStringAsFixed(2)}',
               ];
               
               for (int i = 0; i < rowData.length; i++) {
@@ -1060,12 +1066,14 @@ class ExportService {
                     pw.Table(
                       border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
                       columnWidths: {
-                        0: const pw.FlexColumnWidth(3), // Nombre
-                        1: const pw.FlexColumnWidth(1.5), // Stock Disponible
-                        2: const pw.FlexColumnWidth(1.5), // Cant. Inicial
-                        3: const pw.FlexColumnWidth(1.5), // Cant. Final
-                        4: const pw.FlexColumnWidth(1.5), // Precio Venta
-                        5: const pw.FlexColumnWidth(1.5), // Costo Promedio
+                        0: const pw.FlexColumnWidth(2.5), // Nombre
+                        1: const pw.FlexColumnWidth(1.2), // Stock Disponible
+                        2: const pw.FlexColumnWidth(1.2), // Cant. Inicial
+                        3: const pw.FlexColumnWidth(1.2), // Cant. Final
+                        4: const pw.FlexColumnWidth(1.2), // Precio Venta
+                        5: const pw.FlexColumnWidth(1.2), // Costo Promedio USD
+                        6: const pw.FlexColumnWidth(1.2), // Costo Promedio CUP
+                        7: const pw.FlexColumnWidth(1), // Tasa USD
                       },
                       children: [
                         // Encabezado de la tabla
@@ -1077,7 +1085,9 @@ class ExportService {
                             _buildTableHeader('Cant. Inicial'),
                             _buildTableHeader('Cant. Final'),
                             _buildTableHeader('Precio Venta'),
-                            _buildTableHeader('Costo Promedio'),
+                            _buildTableHeader('Costo USD'),
+                            _buildTableHeader('Costo CUP'),
+                            _buildTableHeader('Tasa USD'),
                           ],
                         ),
                         
@@ -1090,6 +1100,8 @@ class ExportService {
                             _buildTableCell((producto['cantidad_final'] ?? 0).toString()),
                             _buildTableCell('\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}'),
                             _buildTableCell('\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}'),
+                            _buildTableCell('\$${(producto['costo_promedio_cup'] ?? 0).toStringAsFixed(2)}'),
+                            _buildTableCell('${(producto['tasa_usd'] ?? 1).toStringAsFixed(2)}'),
                           ],
                         )),
                       ],
