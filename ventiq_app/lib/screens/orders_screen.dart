@@ -632,8 +632,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            // Lista de productos
-                            ...order.items.map(
+                            // Lista de productos (filtrar productos con precio 0)
+                            ...order.items.where((item) => item.subtotal > 0).map(
                               (item) => Container(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 padding: const EdgeInsets.all(12),

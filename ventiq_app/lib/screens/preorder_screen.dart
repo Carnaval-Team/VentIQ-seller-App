@@ -4,6 +4,7 @@ import '../models/payment_method.dart' as pm;
 import '../services/order_service.dart';
 import '../services/turno_service.dart';
 import '../services/payment_method_service.dart';
+import '../services/product_detail_service.dart';
 import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
@@ -19,10 +20,12 @@ class PreorderScreen extends StatefulWidget {
 
 class _PreorderScreenState extends State<PreorderScreen> {
   final OrderService _orderService = OrderService();
+  final ProductDetailService _productDetailService = ProductDetailService();
   List<pm.PaymentMethod> _paymentMethods = [];
   bool _loadingPaymentMethods = false;
   bool _checkingShift = true;
   bool _hasOpenShift = false;
+  bool _elaboratingProducts = false;
   pm.PaymentMethod? _globalPaymentMethod;
 
   @override
@@ -486,7 +489,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
               Expanded(
                 flex: 2,
                 child: ElevatedButton(
-                  onPressed: _finalizeOrder,
+                  onPressed: _elaboratingProducts ? null : _finalizeOrder,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4A90E2),
                     foregroundColor: Colors.white,
@@ -732,7 +735,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
     );
   }
 
-  void _finalizeOrder() {
+  void _finalizeOrder() async {
     final currentOrder = _orderService.currentOrder;
     if (currentOrder == null || currentOrder.items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -784,6 +787,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
       return;
     }
 
+    // Check for elaborated products and process them
+    await _processElaboratedProducts(currentOrder);
+
     // Navigate to checkout screen
     Navigator.push(
       context,
@@ -794,6 +800,301 @@ class _PreorderScreenState extends State<PreorderScreen> {
       // Refresh the screen when returning from checkout
       setState(() {});
     });
+  }
+
+  /// Procesa productos elaborados en la orden
+  Future<void> _processElaboratedProducts(Order order) async {
+    try {
+      setState(() {
+        _elaboratingProducts = true;
+      });
+
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.orange[600]!),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Elaborando productos...',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Descomponiendo ingredientes y verificando stock',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      // Convert order items to the format expected by decomposition functions
+      final productos = order.items.map((item) {
+        // Use the product ID from the Product object, not the OrderItem ID
+        final productId = item.producto.id;
+        debugPrint('🔄 Convirtiendo OrderItem - ID: ${item.id}, ProductoID: $productId, Nombre: ${item.nombre}');
+        return {
+          'id_producto': productId,
+          'cantidad': item.cantidad,
+          'nombre': item.nombre,
+          'precio_unitario': item.precioUnitario,
+        };
+      }).where((producto) => producto['id_producto'] != 0).toList();
+
+      debugPrint('🔄 Procesando ${productos.length} productos para elaboración');
+      
+      // Log all products being processed
+      for (final producto in productos) {
+        debugPrint('📋 Producto en orden: ID=${producto['id_producto']}, Nombre=${producto['nombre']}, Cantidad=${producto['cantidad']}');
+      }
+
+      // Decompose elaborated products using the same logic as inventory service
+      final productosDescompuestos = await _decomposeElaboratedProducts(productos);
+      
+      debugPrint('✅ Descomposición completada: ${productosDescompuestos.length} productos finales');
+      
+      // Update the order with decomposed products for inventory management
+      await _updateOrderWithDecomposedProducts(order, productosDescompuestos);
+      
+      // Show detailed results
+      final elaboratedCount = productosDescompuestos.where((p) => p['producto_elaborado'] != null).length;
+      final simpleCount = productosDescompuestos.length - elaboratedCount;
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      // Show success message with details
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 8),
+                  const Text('Productos elaborados procesados'),
+                ],
+              ),
+              if (elaboratedCount > 0) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '🍽️ $elaboratedCount ingredientes de productos elaborados',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+              if (simpleCount > 0) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '📦 $simpleCount productos simples',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+          backgroundColor: Colors.green[600],
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+    } catch (e) {
+      // Close loading dialog if still open
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      
+      debugPrint('❌ Error procesando productos elaborados: $e');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.error, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Error procesando productos: $e')),
+            ],
+          ),
+          backgroundColor: Colors.red[600],
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      setState(() {
+        _elaboratingProducts = false;
+      });
+    }
+  }
+
+  /// Descompone productos elaborados recursivamente (similar a inventory_service.dart)
+  Future<List<Map<String, dynamic>>> _decomposeElaboratedProducts(
+    List<Map<String, dynamic>> productos
+  ) async {
+    final decomposedProducts = <Map<String, dynamic>>[];
+    
+    debugPrint('🔄 Descomponiendo productos elaborados...');
+    
+    for (final producto in productos) {
+      final productId = producto['id_producto'] as int;
+      final cantidadOriginal = (producto['cantidad'] as num).toDouble();
+      
+      debugPrint('🔄 Procesando producto ID: $productId');
+      debugPrint('🔄 Cantidad original: $cantidadOriginal');
+      debugPrint('🔄 Nombre producto: ${producto['nombre']}');
+      
+      final isElaborated = await _productDetailService.isProductElaborated(productId);
+      debugPrint('🔄 Resultado isElaborated para producto $productId: $isElaborated');
+      
+      if (isElaborated) {
+        debugPrint('🔍 Producto $productId es elaborado');
+        
+        final consolidatedIngredients = <int, double>{};
+        
+        await _decomposeRecursively(productId, cantidadOriginal, consolidatedIngredients);
+        
+        debugPrint('📦 Ingredientes consolidados:');
+        for (final entry in consolidatedIngredients.entries) {
+          debugPrint('   - ID: ${entry.key}, Cantidad: ${entry.value}');
+        }
+        
+        // Create decomposed products for each ingredient
+        for (final entry in consolidatedIngredients.entries) {
+          final ingredientId = entry.key;
+          final cantidad = entry.value;
+          
+          final ingredientProduct = Map<String, dynamic>.from(producto);
+          ingredientProduct['id_producto'] = ingredientId;
+          ingredientProduct['cantidad'] = cantidad;
+          ingredientProduct['cantidad_original'] = cantidadOriginal;
+          ingredientProduct['producto_elaborado'] = productId;
+          ingredientProduct['conversion_applied'] = true;
+          
+          decomposedProducts.add(ingredientProduct);
+        }
+      } else {
+        debugPrint('🔄 Producto $productId NO es elaborado - agregando como simple');
+        // Add simple products as-is
+        decomposedProducts.add(producto);
+      }
+    }
+    
+    debugPrint('✅ Descomposición completada: ${decomposedProducts.length} productos');
+    return decomposedProducts;
+  }
+
+  /// Descompone un producto elaborado recursivamente
+  Future<void> _decomposeRecursively(
+    int productId, 
+    double quantity, 
+    Map<int, double> consolidatedIngredients
+  ) async {
+    debugPrint('🔄 Descomponiendo producto $productId con cantidad $quantity');
+    
+    final ingredients = await _productDetailService.getProductIngredients(productId);
+    
+    if (ingredients.isEmpty) {
+      debugPrint('⚠️ Producto $productId sin ingredientes - tratando como simple');
+      _addToConsolidated(consolidatedIngredients, productId, quantity);
+      return;
+    }
+    
+    for (final ingredient in ingredients) {
+      final ingredientId = ingredient['producto_id'] as int;
+      final cantidadNecesaria = (ingredient['cantidad_necesaria'] as num).toDouble();
+      final totalQuantity = cantidadNecesaria * quantity;
+      
+      final isElaborated = await _productDetailService.isProductElaborated(ingredientId);
+      
+      if (isElaborated) {
+        await _decomposeRecursively(ingredientId, totalQuantity, consolidatedIngredients);
+      } else {
+        _addToConsolidated(consolidatedIngredients, ingredientId, totalQuantity);
+      }
+    }
+  }
+
+  /// Agrega cantidad a ingredientes consolidados
+  void _addToConsolidated(Map<int, double> consolidatedIngredients, int productId, double quantity) {
+    if (consolidatedIngredients.containsKey(productId)) {
+      consolidatedIngredients[productId] = consolidatedIngredients[productId]! + quantity;
+    } else {
+      consolidatedIngredients[productId] = quantity;
+    }
+    debugPrint('📦 Consolidado: Producto $productId -> ${consolidatedIngredients[productId]}');
+  }
+
+  /// Actualiza la orden con los productos descompuestos para manejo de inventario
+  Future<void> _updateOrderWithDecomposedProducts(
+    Order order, 
+    List<Map<String, dynamic>> productosDescompuestos
+  ) async {
+    debugPrint('🔄 Actualizando orden con productos descompuestos...');
+    
+    // Store the decomposed products in the order for later use by OrderService
+    // This allows the OrderService to send both elaborated products (for sales record)
+    // and their ingredients (for inventory deduction) to fn_registrar_venta
+    
+    final elaboratedProductsData = <String, dynamic>{};
+    final ingredientsData = <Map<String, dynamic>>[];
+    
+    for (final producto in productosDescompuestos) {
+      if (producto['producto_elaborado'] != null) {
+        // This is an ingredient from an elaborated product
+        ingredientsData.add({
+          'id_producto': producto['id_producto'],
+          'cantidad': producto['cantidad'],
+          'producto_elaborado_id': producto['producto_elaborado'],
+          'es_ingrediente': true,
+        });
+        
+        // Group by elaborated product
+        final elaboratedId = producto['producto_elaborado'].toString();
+        if (!elaboratedProductsData.containsKey(elaboratedId)) {
+          elaboratedProductsData[elaboratedId] = {
+            'id_producto': producto['producto_elaborado'],
+            'cantidad_original': producto['cantidad_original'],
+            'ingredientes': <Map<String, dynamic>>[],
+          };
+        }
+        elaboratedProductsData[elaboratedId]['ingredientes'].add({
+          'id_producto': producto['id_producto'],
+          'cantidad': producto['cantidad'],
+        });
+      }
+    }
+    
+    // Store the decomposition data in the order for OrderService to use
+    // This will be used when calling fn_registrar_venta
+    for (final item in order.items) {
+      final productId = item.producto.id;
+      final elaboratedId = productId.toString();
+      
+      if (elaboratedProductsData.containsKey(elaboratedId)) {
+        // Add decomposition metadata to the order item
+        final decompositionData = {
+          'es_elaborado': true,
+          'ingredientes_descompuestos': elaboratedProductsData[elaboratedId]['ingredientes'],
+          'requiere_descomposicion_inventario': true,
+        };
+        
+        // Store in inventoryData or create a new field for this
+        final currentInventoryData = item.inventoryData ?? {};
+        currentInventoryData['decomposition_data'] = decompositionData;
+        
+        debugPrint('📦 Producto elaborado ${item.nombre} actualizado con ${elaboratedProductsData[elaboratedId]['ingredientes'].length} ingredientes');
+      }
+    }
+    
+    debugPrint('✅ Orden actualizada con datos de descomposición');
   }
 
   Widget _buildGlobalPaymentMethodSelector() {

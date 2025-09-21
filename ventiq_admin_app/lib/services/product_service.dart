@@ -67,29 +67,6 @@ class ProductService {
         return _convertToProduct(productoJson as Map<String, dynamic>);
       }).toList();
 
-      // TEMPORAL: Obtener el campo es_elaborado para cada producto
-      print('🔧 OBTENIENDO CAMPO es_elaborado PARA CADA PRODUCTO...');
-      for (int i = 0; i < productos.length; i++) {
-        try {
-          final productId = int.tryParse(productos[i].id);
-          if (productId != null) {
-            final elaboradoResponse = await _supabase
-                .from('app_dat_producto')
-                .select('es_elaborado')
-                .eq('id', productId)
-                .single();
-            
-            final esElaborado = elaboradoResponse['es_elaborado'] ?? false;
-            print('🔧 Producto ${productos[i].denominacion} (ID: $productId) - es_elaborado: $esElaborado');
-            
-            // Actualizar el producto con el valor correcto
-            productos[i] = productos[i].copyWith(esElaborado: esElaborado);
-          }
-        } catch (e) {
-          print('⚠️ Error obteniendo es_elaborado para producto ${productos[i].id}: $e');
-        }
-      }
-
       print('✅ Productos convertidos exitosamente: ${productos.length}');
       return productos;
 
@@ -315,7 +292,11 @@ class ProductService {
         esElaborado: json['es_elaborado'] ?? false,
       );
       
-      print('✅ Producto convertido - ID: ${json['id']}, esElaborado final: ${json['es_elaborado'] ?? false}');
+      // Log para verificar que el campo es_elaborado se lee correctamente del RPC
+      // final esElaborado = json['es_elaborado'] ?? false;
+      // if (esElaborado) {
+      //   print('🍽️ Producto ELABORADO detectado - ID: ${json['id']}, Nombre: ${json['denominacion']}');
+      // }
 
     } catch (e, stackTrace) {
       print('❌ Error al convertir producto: $e');

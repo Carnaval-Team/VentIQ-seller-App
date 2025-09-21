@@ -7,6 +7,7 @@ import '../services/user_preferences_service.dart';
 import '../services/currency_service.dart';
 import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/elaborated_product_chip.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
   final Product product;
@@ -133,7 +134,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     setState(() {
       _isLoadingUsdRate = true;
     });
-    
+
     try {
       final rate = await CurrencyService.getUsdRate();
       setState(() {
@@ -352,11 +353,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 
   int get maxQuantityForProduct {
-    return currentProduct.cantidad;
+    return currentProduct.cantidad.toInt();
   }
 
   int maxQuantityForVariant(ProductVariant variant) {
-    return variant.cantidad;
+    return variant.cantidad.toInt();
   }
 
   @override
@@ -374,13 +375,26 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          currentProduct.denominacion,
-          style: const TextStyle(
-            color: Color.fromARGB(255, 255, 255, 255),
-            fontSize: 18,
-            fontWeight: FontWeight.w500,
-          ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                currentProduct.denominacion,
+                style: const TextStyle(
+                  color: Color.fromARGB(255, 255, 255, 255),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            // const SizedBox(width: 8),
+            // ElaboratedProductChip(
+            //   productId: currentProduct.id,
+            //   productName: currentProduct.denominacion,
+            // ),
+          ],
         ),
         centerTitle: true,
       ),
@@ -525,17 +539,28 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Denominación
-                              Text(
-                                currentProduct.denominacion,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                  height: 1.2,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                              // Denominación con chip de producto elaborado
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      currentProduct.denominacion,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1F2937),
+                                        height: 1.2,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElaboratedProductChip(
+                                    productId: currentProduct.id,
+                                    productName: currentProduct.denominacion,
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 4),
                               // Categoría
@@ -1327,7 +1352,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
   /// Get total stock for a location group
   int _getLocationStock(List<ProductVariant> variants) {
-    return variants.fold(0, (sum, variant) => sum + variant.cantidad);
+    return variants.fold(0, (sum, variant) => sum + variant.cantidad.toInt());
   }
 
   String _compressImageUrl(String url) {
@@ -1595,29 +1620,25 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.attach_money,
-            size: 16,
-            color: Color(0xFF4A90E2),
-          ),
+          const Icon(Icons.attach_money, size: 16, color: Color(0xFF4A90E2)),
           const SizedBox(width: 4),
           _isLoadingUsdRate
               ? const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF4A90E2),
-                  ),
-                )
-              : Text(
-                  'USD: ${_usdRate.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2C3E50),
-                  ),
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFF4A90E2),
                 ),
+              )
+              : Text(
+                'USD: ${_usdRate.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
         ],
       ),
     );

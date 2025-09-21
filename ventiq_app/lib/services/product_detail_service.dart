@@ -41,7 +41,7 @@ class ProductDetailService {
   Product _transformToProduct(Map<String, dynamic> response) {
     final productData = response['producto'] as Map<String, dynamic>;
     final inventoryData = response['inventario'] as List<dynamic>? ?? [];
-
+    print('elaborado: ${productData['es_elaborado']}');
     debugPrint('🔍 Transformando producto con ${inventoryData.length} items de inventario');
 
     // Extract basic product information
@@ -52,6 +52,7 @@ class ProductDetailService {
     final esRefrigerado = productData['es_refrigerado'] as bool? ?? false;
     final esFragil = productData['es_fragil'] as bool? ?? false;
     final esPeligroso = productData['es_peligroso'] as bool? ?? false;
+    final esElaborado = productData['es_elaborado'] as bool? ?? false;
 
     // Extract category information
     final categoria = productData['categoria'] as Map<String, dynamic>?;
@@ -65,12 +66,12 @@ class ProductDetailService {
     Map<String, dynamic>? productInventoryMetadata;
     
     if (variants.isNotEmpty) {
-      totalStock = variants.fold(0, (sum, variant) => sum + variant.cantidad);
+      totalStock = variants.fold(0, (sum, variant) => sum + variant.cantidad.toInt());
     } else {
       // If no variants, use inventory data for the product itself
       if (inventoryData.isNotEmpty) {
         final firstInventory = inventoryData.first as Map<String, dynamic>;
-        totalStock = firstInventory['cantidad_disponible'] as int? ?? 0;
+        totalStock = (firstInventory['cantidad_disponible'] as num?)?.toInt() ?? 0;
         
         // Store inventory metadata for products without variants
         productInventoryMetadata = _extractInventoryMetadata(firstInventory);
@@ -118,6 +119,7 @@ class ProductDetailService {
       esComprable: true, // Default value
       esInventariable: true, // Default value
       esPorLotes: false, // Default value
+      esElaborado: productData['es_elaborado'] as bool? ?? false,
       categoria: categoryName,
       variantes: variants,
       inventoryMetadata: productInventoryMetadata,
@@ -134,7 +136,7 @@ class ProductDetailService {
       // Extract variant information
       final variante = item['variante'] as Map<String, dynamic>?;
       final presentacion = item['presentacion'] as Map<String, dynamic>?;
-      final cantidadDisponible = item['cantidad_disponible'] as int? ?? 0;
+      final cantidadDisponible = (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
       
       
       String variantName = 'Variante ${i + 1}';
@@ -210,5 +212,155 @@ class ProductDetailService {
       'ubicacion_nombre': ubicacion?['denominacion'],
       'almacen_nombre': ubicacion?['almacen']?['denominacion'],
     };
+  }
+
+  /// Verifica si un producto es elaborado
+  Future<bool> isProductElaborated(int productId) async {
+    try {
+      debugPrint('🔍 Verificando si producto $productId es elaborado...');
+      
+      final response = await _supabase
+          .from('app_dat_producto')
+          .select('es_elaborado')
+          .eq('id', productId)
+          .single();
+      
+      final isElaborated = response['es_elaborado'] ?? false;
+      debugPrint('🔍 Producto $productId - es_elaborado: $isElaborated');
+      debugPrint('🔍 Respuesta completa: $response');
+      
+      return isElaborated;
+    } catch (e) {
+      debugPrint('❌ Error verificando si producto $productId es elaborado: $e');
+      return false;
+    }
+  }
+
+  /// Obtiene los ingredientes de un producto elaborado
+  Future<List<Map<String, dynamic>>> getProductIngredients(int productId) async {
+    try {
+      debugPrint('🍽️ Obteniendo ingredientes para producto elaborado: $productId');
+
+      final response = await _supabase
+          .from('app_dat_producto_ingredientes')
+          .select('''
+            id,
+            cantidad_necesaria,
+            unidad_medida,
+            app_dat_producto!app_dat_producto_ingredientes_ingrediente_fkey(
+              id,
+              denominacion,
+              sku,
+              imagen
+            )
+          ''')
+          .eq('id_producto_elaborado', productId);
+
+      if (response.isEmpty) {
+        debugPrint('⚠️ No se encontraron ingredientes para el producto $productId');
+        return [];
+      }
+
+      // Transform the response to match the expected format
+      final ingredients = response.map((item) {
+        final producto = item['app_dat_producto'] as Map<String, dynamic>? ?? {};
+        return {
+          'producto_id': producto['id'],
+          'producto_nombre': producto['denominacion'] ?? 'Ingrediente desconocido',
+          'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
+          'unidad_medida': item['unidad_medida'] ?? '',
+          'sku': producto['sku'] ?? '',
+          'imagen': producto['imagen'],
+        };
+      }).toList();
+
+      debugPrint('✅ Encontrados ${ingredients.length} ingredientes');
+      
+      return ingredients;
+    } catch (e) {
+      debugPrint('❌ Error obteniendo ingredientes del producto $productId: $e');
+      return [];
+    }
+  }
+
+  /// Muestra un diálogo con los ingredientes del producto elaborado
+  static void showIngredientsPreview(BuildContext context, List<Map<String, dynamic>> ingredients, String productName) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.restaurant_menu,
+                color: Colors.orange[600],
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Ingredientes - $productName',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ingredients.isEmpty
+                ? const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.info_outline, size: 48, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'No se encontraron ingredientes para este producto',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: ingredients.length,
+                    itemBuilder: (context, index) {
+                      final ingredient = ingredients[index];
+                      final nombre = ingredient['producto_nombre'] ?? 'Ingrediente desconocido';
+                      final cantidad = ingredient['cantidad_necesaria'] ?? 0;
+                      final unidad = ingredient['unidad_medida'] ?? '';
+                      
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.orange[100],
+                            child: Icon(
+                              Icons.inventory_2,
+                              color: Colors.orange[600],
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            nombre,
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                          subtitle: Text(
+                            'Cantidad: $cantidad $unidad',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

@@ -49,6 +49,7 @@ class BarcodeService {
       esComprable: data['es_comprable'] ?? true,
       esInventariable: data['es_inventariable'] ?? true,
       esPorLotes: data['es_por_lotes'] ?? false,
+      esElaborado: data['es_elaborado'] ?? false,
     );
   }
 }

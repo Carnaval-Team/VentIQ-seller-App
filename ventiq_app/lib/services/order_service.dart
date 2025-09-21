@@ -380,40 +380,69 @@ class OrderService {
       }
 
       // Preparar productos para fn_registrar_venta
-      final productos =
-          order.items.map((item) {
-            final inventoryData = item.inventoryData ?? {};
+      final productos = <Map<String, dynamic>>[];
+      
+      for (final item in order.items) {
+        final inventoryData = item.inventoryData ?? {};
+        final decompositionData = inventoryData['decomposition_data'] as Map<String, dynamic>?;
 
-            print('ID del producto: ${item.producto.id}');
-            print(
-              'ID de la variante (si aplica): ${inventoryData['id_variante']}',
-            );
-            print('ID de la ubicación: ${inventoryData['id_ubicacion']}');
-            print('Cantidad a descontar: ${item.cantidad}');
+        print('ID del producto: ${item.producto.id}');
+        print('ID de la variante (si aplica): ${inventoryData['id_variante']}');
+        print('ID de la ubicación: ${inventoryData['id_ubicacion']}');
+        print('Cantidad a descontar: ${item.cantidad}');
 
-            // Use the correct price based on payment method
-            // Use the final calculated price that includes payment method discount
-            double correctPrice = item.displayPrice;
+        // Use the correct price based on payment method
+        double correctPrice = item.displayPrice;
 
-            print('🏷️ Item: ${item.nombre}');
-            print('💰 Payment Method: ${item.paymentMethod?.displayName ?? 'None'} (ID: ${item.paymentMethod?.id})');
-            print('💵 Precio Base: ${item.precioBase}');
-            print('💸 Precio Unitario (con descuento): ${item.precioUnitario}');
-            print('✅ Precio Final Enviado: $correctPrice');
+        print('🏷️ Item: ${item.nombre}');
+        print('💰 Payment Method: ${item.paymentMethod?.displayName ?? 'None'} (ID: ${item.paymentMethod?.id})');
+        print('💵 Precio Base: ${item.precioBase}');
+        print('💸 Precio Unitario (con descuento): ${item.precioUnitario}');
+        print('✅ Precio Final Enviado: $correctPrice');
 
-            return {
-              'id_producto': item.producto.id,
-              'id_variante': inventoryData['id_variante'],
-              'id_opcion_variante': inventoryData['id_opcion_variante'],
-              'id_ubicacion': inventoryData['id_ubicacion'],
-              'id_presentacion': inventoryData['id_presentacion'],
-              'cantidad': item.cantidad,
-              'precio_unitario': correctPrice,
-              'sku_producto':
-                  inventoryData['sku_producto'] ?? item.producto.id.toString(),
+        // Add the main product (for sales record)
+        final mainProduct = {
+          'id_producto': item.producto.id,
+          'id_variante': inventoryData['id_variante'],
+          'id_opcion_variante': inventoryData['id_opcion_variante'],
+          'id_ubicacion': inventoryData['id_ubicacion'],
+          'id_presentacion': inventoryData['id_presentacion'],
+          'cantidad': item.cantidad,
+          'precio_unitario': correctPrice,
+          'sku_producto': inventoryData['sku_producto'] ?? item.producto.id.toString(),
+          'sku_ubicacion': inventoryData['sku_ubicacion'],
+          'es_producto_venta': true, // Mark as sales product
+        };
+        
+        productos.add(mainProduct);
+
+        // If this is an elaborated product, add its ingredients for inventory deduction
+        if (decompositionData != null && decompositionData['es_elaborado'] == true) {
+          print('🍽️ Producto elaborado detectado: ${item.nombre}');
+          
+          final ingredientes = decompositionData['ingredientes_descompuestos'] as List<dynamic>? ?? [];
+          print('📦 Agregando ${ingredientes.length} ingredientes para rebaja de inventario');
+          
+          for (final ingrediente in ingredientes) {
+            final ingredientProduct = {
+              'id_producto': ingrediente['id_producto'],
+              'id_variante': null, // Ingredients typically don't have variants
+              'id_opcion_variante': null,
+              'id_ubicacion': inventoryData['id_ubicacion'], // Use same location as main product
+              'id_presentacion': null, // Will be handled by base presentation logic
+              'cantidad': ingrediente['cantidad'],
+              'precio_unitario': 0.0, // Ingredients don't have individual prices
+              'sku_producto': ingrediente['id_producto'].toString(),
               'sku_ubicacion': inventoryData['sku_ubicacion'],
+              'es_ingrediente_elaborado': true, // Mark as ingredient for inventory
+              'producto_elaborado_id': item.producto.id, // Reference to parent product
             };
-          }).toList();
+            
+            productos.add(ingredientProduct);
+            print('📦 Ingrediente agregado: ID=${ingrediente['id_producto']}, Cantidad=${ingrediente['cantidad']}');
+          }
+        }
+      }
 
       // Preparar parámetros para fn_registrar_venta
       final rpcParams = {
@@ -701,6 +730,7 @@ class OrderService {
               esComprable: true,
               esInventariable: true,
               esPorLotes: false,
+              esElaborado: false, // Default value for order items
               categoria: 'General',
               descripcion: item['presentacion'] ?? '',
               foto: null,

@@ -76,8 +76,9 @@ class ProductService {
 
       return productsBySubcategory;
 
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('❌ Error obteniendo productos: $e');
+      debugPrint('❌ Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -90,7 +91,7 @@ class ProductService {
       descripcion: data['descripcion'] as String?,
       foto: data['imagen'] ?? _generateProductImage(data['denominacion'] as String? ?? 'producto'),
       precio: (data['precio_venta'] as num?)?.toDouble() ?? 0.0,
-      cantidad: data['tiene_stock'] ? data['stock_disponible']:0, // Default stock since it's not in the response
+      cantidad: data['tiene_stock'] ? (data['stock_disponible'] as num?) ?? 0 : 0, // Preserve original type (int or double)
       esRefrigerado: data['es_refrigerado'] as bool? ?? false,
       esFragil: data['es_fragil'] as bool? ?? false,
       esPeligroso: false, // Default value
@@ -98,6 +99,7 @@ class ProductService {
       esComprable: true, // Default value
       esInventariable: true, // Default value
       esPorLotes: false, // Default value
+      esElaborado: data['es_elaborado'] as bool? ?? false,
       categoria: data['categoria_nombre'] as String? ?? 'Sin categoría',
       variantes: [], // Empty variants for now
     );
