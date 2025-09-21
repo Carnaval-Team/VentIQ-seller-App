@@ -9,6 +9,7 @@ import 'inventory_stock_screen.dart';
 import 'inventory_transfer_screen.dart';
 import 'inventory_extraction_screen.dart';
 import 'inventory_adjustment_screen.dart'; // Importar la pantalla de ajuste de inventario
+import 'elaborated_products_extraction_screen.dart'; // Nueva pantalla
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -167,6 +168,17 @@ class _InventoryScreenState extends State<InventoryScreen>
                     ),
 
                     _buildMenuOption(
+                      icon: Icons.output,
+                      title: 'Extracción de Productos Elaborados',
+                      subtitle: 'Registrar salida de productos elaborados',
+                      color: const Color(0xFFEF4444),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _navigateToElaboratedProductsExtraction();
+                      },
+                    ),
+
+                    _buildMenuOption(
                       icon: Icons.filter_list,
                       title: 'Filtro de Búsqueda',
                       subtitle: 'Filtrar y buscar productos',
@@ -207,6 +219,15 @@ class _InventoryScreenState extends State<InventoryScreen>
       context,
       MaterialPageRoute(
         builder: (context) => const InventoryExtractionScreen(),
+      ),
+    );
+  }
+
+  void _navigateToElaboratedProductsExtraction() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ElaboratedProductsExtractionScreen(),
       ),
     );
   }

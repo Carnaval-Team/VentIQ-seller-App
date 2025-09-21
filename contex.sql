@@ -45,7 +45,7 @@ CREATE TABLE public.app_cont_gasto_asignacion (
   id_asignacion bigint NOT NULL,
   monto_asignado numeric NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT app_cont_gasto_asignacion_pkey PRIMARY KEY (id_asignacion, id_gasto),
+  CONSTRAINT app_cont_gasto_asignacion_pkey PRIMARY KEY (id_gasto, id_asignacion),
   CONSTRAINT app_cont_gasto_asignacion_id_gasto_fkey FOREIGN KEY (id_gasto) REFERENCES public.app_cont_gastos(id),
   CONSTRAINT app_cont_gasto_asignacion_id_asignacion_fkey FOREIGN KEY (id_asignacion) REFERENCES public.app_cont_asignacion_costos(id)
 );
@@ -631,6 +631,19 @@ CREATE TABLE public.app_dat_precio_venta (
   CONSTRAINT app_dat_precio_venta_id_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_precio_venta_id_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id)
 );
+CREATE TABLE public.app_dat_presentacion_unidad_medida (
+  id integer NOT NULL DEFAULT nextval('app_dat_presentacion_unidad_medida_id_seq'::regclass),
+  id_producto integer NOT NULL,
+  id_presentacion integer NOT NULL,
+  id_unidad_medida integer NOT NULL,
+  cantidad_um numeric NOT NULL DEFAULT 1.0 CHECK (cantidad_um > 0::numeric),
+  created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT app_dat_presentacion_unidad_medida_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_presentacion_um_producto FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT fk_presentacion_um_presentacion FOREIGN KEY (id_presentacion) REFERENCES public.app_nom_presentacion(id),
+  CONSTRAINT fk_presentacion_um_unidad_medida FOREIGN KEY (id_unidad_medida) REFERENCES public.app_nom_unidades_medida(id)
+);
 CREATE TABLE public.app_dat_producto (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   id_tienda bigint NOT NULL,
@@ -653,6 +666,7 @@ CREATE TABLE public.app_dat_producto (
   codigo_barras character varying,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   imagen text,
+  es_elaborado boolean DEFAULT false,
   CONSTRAINT app_dat_producto_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_producto_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_dat_producto_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_dat_categoria(id)
@@ -687,6 +701,18 @@ CREATE TABLE public.app_dat_producto_garantia (
   CONSTRAINT app_dat_producto_garantia_pkey PRIMARY KEY (id),
   CONSTRAINT fk_producto_garantia_producto FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT fk_producto_garantia_tipo FOREIGN KEY (id_tipo_garantia) REFERENCES public.app_nom_tipo_garantia(id)
+);
+CREATE TABLE public.app_dat_producto_ingredientes (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_producto_elaborado bigint NOT NULL,
+  id_ingrediente bigint NOT NULL,
+  cantidad_necesaria numeric NOT NULL,
+  unidad_medida character varying DEFAULT 'und'::character varying,
+  costo_unitario numeric,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_producto_ingredientes_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_producto_ingredientes_ingrediente_fkey FOREIGN KEY (id_ingrediente) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_dat_producto_ingredientes_id_producto_elaborado_fkey FOREIGN KEY (id_producto_elaborado) REFERENCES public.app_dat_producto(id)
 );
 CREATE TABLE public.app_dat_producto_multimedias (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
