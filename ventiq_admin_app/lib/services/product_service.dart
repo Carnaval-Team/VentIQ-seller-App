@@ -4,6 +4,7 @@ import 'dart:io';
 import '../models/product.dart';
 import 'user_preferences_service.dart';
 import 'store_selector_service.dart';
+import 'restaurant_service.dart';
 
 class ProductService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -1525,4 +1526,70 @@ static Future<List<Map<String, dynamic>>> getPresentacionesCompletas(int product
       return false;
     }
   }
+  /// Obtiene la unidad de medida base de un producto
+/// Obtiene la unidad de medida base de un producto
+static Future<int?> getUnidadMedidaProducto(int productId) async {
+  try {
+    print('🔍 Obteniendo unidad de medida para producto $productId');
+    
+    final response = await _supabase
+        .from('app_dat_producto')
+        .select('um')
+        .eq('id', productId)
+        .single();
+    
+    final umRaw = response['um'];
+    print('🔍 DEBUG: um raw = $umRaw (tipo: ${umRaw.runtimeType})');
+    
+    int? unidadMedida;
+    if (umRaw is int) {
+      unidadMedida = umRaw;
+    } else if (umRaw is String) {
+      // Si es string, convertir a int
+      unidadMedida = int.tryParse(umRaw);
+      if (unidadMedida == null) {
+        print('⚠️ No se pudo convertir "$umRaw" a int, usando mapeo de string');
+        // Usar el mismo mapeo que para ingredientes
+        unidadMedida = await _getUnidadIdFromString(umRaw);
+      }
+    }
+    
+    print('📦 Unidad de medida del producto $productId: $unidadMedida');
+    
+    return unidadMedida;
+    
+  } catch (e) {
+    print('❌ Error obteniendo unidad de medida del producto $productId: $e');
+    return null;
+  }
+}
+
+/// Obtiene ID de unidad usando RestaurantService (método correcto)
+static Future<int?> _getUnidadIdFromString(String unidadString) async {
+  try {
+    final unidades = await RestaurantService.getUnidadesMedida();
+    
+    // Buscar por abreviatura primero
+    for (final unidad in unidades) {
+      if (unidad.abreviatura.toLowerCase() == unidadString.toLowerCase()) {
+        print('✅ Unidad encontrada por abreviatura: "$unidadString" → ID ${unidad.id}');
+        return unidad.id;
+      }
+    }
+    
+    // Buscar por denominación
+    for (final unidad in unidades) {
+      if (unidad.denominacion.toLowerCase().contains(unidadString.toLowerCase())) {
+        print('✅ Unidad encontrada por denominación: "$unidadString" → ID ${unidad.id}');
+        return unidad.id;
+      }
+    }
+    
+    print('⚠️ Unidad no encontrada: "$unidadString"');
+    return 17; // ID de "Unidad" como fallback
+  } catch (e) {
+    print('❌ Error obteniendo unidad: $e');
+    return 17;
+  }
+}
 }

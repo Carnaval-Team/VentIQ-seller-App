@@ -22,12 +22,85 @@ class RestaurantService {
           .select('*')
           .order('tipo_unidad, denominacion');
 
-      return (response as List)
+      final unidades = (response as List)
           .map((json) => UnidadMedida.fromJson(json))
           .toList();
+          
+      print('🔍 DEBUG: Unidades cargadas desde BD: ${unidades.length}');
+      for (final unidad in unidades) {
+        print('📋 DEBUG: ID=${unidad.id}, denominacion="${unidad.denominacion}", abreviatura="${unidad.abreviatura}", tipo=${unidad.tipoUnidad}');
+      }
+      
+      // Si no hay unidades, inicializar con unidades básicas
+      if (unidades.isEmpty) {
+        print('⚠️ No hay unidades en BD, inicializando unidades básicas...');
+        await _initializeBasicUnits();
+        // Volver a cargar después de inicializar
+        return await getUnidadesMedida();
+      }
+
+      return unidades;
     } catch (e) {
       print('❌ Error obteniendo unidades de medida: $e');
       throw Exception('Error al obtener unidades de medida: $e');
+    }
+  }
+
+  /// Inicializa unidades básicas si la tabla está vacía
+  static Future<void> _initializeBasicUnits() async {
+    try {
+      final basicUnits = [
+        {
+          'denominacion': 'Gramos',
+          'abreviatura': 'g',
+          'tipo_unidad': 1, // Peso
+          'es_base': true,
+          'factor_base': 1.0,
+          'descripcion': 'Unidad básica de peso'
+        },
+        {
+          'denominacion': 'Kilogramos',
+          'abreviatura': 'kg',
+          'tipo_unidad': 1, // Peso
+          'es_base': false,
+          'factor_base': 1000.0,
+          'descripcion': 'Múltiplo de gramos'
+        },
+        {
+          'denominacion': 'Mililitros',
+          'abreviatura': 'ml',
+          'tipo_unidad': 2, // Volumen
+          'es_base': true,
+          'factor_base': 1.0,
+          'descripcion': 'Unidad básica de volumen'
+        },
+        {
+          'denominacion': 'Litros',
+          'abreviatura': 'l',
+          'tipo_unidad': 2, // Volumen
+          'es_base': false,
+          'factor_base': 1000.0,
+          'descripcion': 'Múltiplo de mililitros'
+        },
+        {
+          'denominacion': 'Unidades',
+          'abreviatura': 'u',
+          'tipo_unidad': 4, // Unidad
+          'es_base': true,
+          'factor_base': 1.0,
+          'descripcion': 'Unidad de conteo'
+        },
+      ];
+
+      for (final unit in basicUnits) {
+        await _supabase.from('app_nom_unidades_medida').insert(unit);
+        print('✅ Unidad creada: ${unit['denominacion']}');
+      }
+      
+      print('✅ Unidades básicas inicializadas correctamente');
+    } catch (e) {
+      print('❌ Error inicializando unidades básicas: $e');
+      throw Exception('Error al inicializar unidades básicas: $e');
     }
   }
 
@@ -43,38 +116,250 @@ class RestaurantService {
           ''')
           .order('id_unidad_origen');
 
-      return (response as List)
+      final conversiones = (response as List)
           .map((json) => ConversionUnidad.fromJson(json))
           .toList();
+          
+      print('🔍 DEBUG: Conversiones cargadas desde BD: ${conversiones.length}');
+      for (final conversion in conversiones) {
+        print('📋 DEBUG: ID=${conversion.id}, ${conversion.unidadOrigen?.denominacion ?? 'N/A'} → ${conversion.unidadDestino?.denominacion ?? 'N/A'}, factor=${conversion.factorConversion}');
+      }
+      
+      // Si no hay conversiones, inicializar conversiones básicas
+      if (conversiones.isEmpty) {
+        print('⚠️ No hay conversiones en BD, inicializando conversiones básicas...');
+        await _initializeBasicConversions();
+        // Volver a cargar después de inicializar
+        return await getConversiones();
+      }
+
+      return conversiones;
     } catch (e) {
       print('❌ Error obteniendo conversiones: $e');
       throw Exception('Error al obtener conversiones: $e');
     }
   }
 
-  /// Convierte cantidad entre unidades usando la función SQL
+  /// Inicializa conversiones básicas si la tabla está vacía
+  static Future<void> _initializeBasicConversions() async {
+    try {
+      // Primero verificar que existan las unidades básicas
+      final unidades = await getUnidadesMedida();
+      if (unidades.length < 5) {
+        print('⚠️ No hay suficientes unidades básicas, no se pueden crear conversiones');
+        return;
+      }
+      
+      // Buscar IDs de unidades básicas
+      final gramos = unidades.firstWhere((u) => u.abreviatura.toLowerCase() == 'g', orElse: () => throw Exception('Unidad gramos no encontrada'));
+      final kilogramos = unidades.firstWhere((u) => u.abreviatura.toLowerCase() == 'kg', orElse: () => throw Exception('Unidad kilogramos no encontrada'));
+      final mililitros = unidades.firstWhere((u) => u.abreviatura.toLowerCase() == 'ml', orElse: () => throw Exception('Unidad mililitros no encontrada'));
+      final litros = unidades.firstWhere((u) => u.abreviatura.toLowerCase() == 'l', orElse: () => throw Exception('Unidad litros no encontrada'));
+
+      final basicConversions = [
+        {
+          'id_unidad_origen': gramos.id,
+          'id_unidad_destino': kilogramos.id,
+          'factor_conversion': 0.001, // 1g = 0.001kg
+          'es_aproximada': false,
+          'observaciones': 'Conversión exacta gramos a kilogramos'
+        },
+        {
+          'id_unidad_origen': kilogramos.id,
+          'id_unidad_destino': gramos.id,
+          'factor_conversion': 1000.0, // 1kg = 1000g
+          'es_aproximada': false,
+          'observaciones': 'Conversión exacta kilogramos a gramos'
+        },
+        {
+          'id_unidad_origen': mililitros.id,
+          'id_unidad_destino': litros.id,
+          'factor_conversion': 0.001, // 1ml = 0.001L
+          'es_aproximada': false,
+          'observaciones': 'Conversión exacta mililitros a litros'
+        },
+        {
+          'id_unidad_origen': litros.id,
+          'id_unidad_destino': mililitros.id,
+          'factor_conversion': 1000.0, // 1L = 1000ml
+          'es_aproximada': false,
+          'observaciones': 'Conversión exacta litros a mililitros'
+        },
+      ];
+
+      for (final conversion in basicConversions) {
+        await _supabase.from('app_nom_conversiones_unidades').insert(conversion);
+        print('✅ Conversión creada: ${conversion['observaciones']}');
+      }
+      
+      print('✅ Conversiones básicas inicializadas correctamente');
+    } catch (e) {
+      print('❌ Error inicializando conversiones básicas: $e');
+      throw Exception('Error al inicializar conversiones básicas: $e');
+    }
+  }
+
+  /// Convierte cantidad entre unidades usando los datos de la base de datos
   static Future<double> convertirUnidades({
     required double cantidad,
     required int unidadOrigen,
     required int unidadDestino,
-    int? idProducto,
+    required int idProducto,
   }) async {
     try {
-      final response = await _supabase.rpc(
-        'fn_convertir_unidades',
-        params: {
-          'p_cantidad': cantidad,
-          'p_id_unidad_origen': unidadOrigen,
-          'p_id_unidad_destino': unidadDestino,
-          'p_id_producto': idProducto,
-        },
-      );
+      print('🔄 Convirtiendo unidades: $cantidad de $unidadOrigen a $unidadDestino para producto $idProducto');
 
-      return (response as num).toDouble();
+      // Si las unidades son iguales, no hay conversión
+      if (unidadOrigen == unidadDestino) {
+        print('✅ Unidades iguales, no se requiere conversión');
+        return cantidad;
+      }
+
+      // Intentar usar la función RPC primero
+      try {
+        final resultado = await _supabase.rpc(
+          'fn_convertir_unidades',
+          params: {
+            'p_cantidad': cantidad,
+            'p_id_unidad_origen': unidadOrigen,
+            'p_id_unidad_destino': unidadDestino,
+            'p_id_producto': idProducto,
+          },
+        );
+
+        if (resultado != null) {
+          final cantidadConvertida = (resultado as num).toDouble();
+          print('✅ Conversión RPC exitosa: $cantidad → $cantidadConvertida');
+          return cantidadConvertida;
+        }
+      } catch (rpcError) {
+        print('⚠️ Error en RPC fn_convertir_unidades: $rpcError');
+        print('🔄 Intentando conversión manual...');
+      }
+
+      // Fallback: buscar conversión directa en tabla
+      final conversion = await _supabase
+          .from('app_nom_conversiones_unidades')
+          .select('factor_conversion')
+          .eq('id_unidad_origen', unidadOrigen)
+          .eq('id_unidad_destino', unidadDestino)
+          .limit(1);
+
+      if (conversion.isNotEmpty) {
+        final factor = (conversion[0]['factor_conversion'] as num).toDouble();
+        final resultado = cantidad * factor;
+        print('✅ Conversión directa: $cantidad × $factor = $resultado');
+        return resultado;
+      }
+
+      // Fallback: conversión inversa
+      final invConversion = await _supabase
+          .from('app_nom_conversiones_unidades')
+          .select('factor_conversion')
+          .eq('id_unidad_origen', unidadDestino)
+          .eq('id_unidad_destino', unidadOrigen)
+          .limit(1);
+
+      if (invConversion.isNotEmpty) {
+        final factor = (invConversion[0]['factor_conversion'] as num).toDouble();
+        final resultado = cantidad / factor;
+        print('✅ Conversión inversa: $cantidad ÷ $factor = $resultado');
+        return resultado;
+      }
+
+      // Fallback: conversión vía unidad base
+      final resultado = await _convertirViaUnidadBase(cantidad, unidadOrigen, unidadDestino);
+      if (resultado != null) {
+        print('✅ Conversión vía unidad base: $resultado');
+        return resultado;
+      }
+
+      // Si no se encuentra conversión, usar fallback básico
+      print('⚠️ No se encontró conversión en BD, usando fallback básico');
+      return _convertirUnidadesBasico(cantidad, unidadOrigen, unidadDestino);
+
     } catch (e) {
-      print('❌ Error convirtiendo unidades: $e');
-      throw Exception('Error en conversión de unidades: $e');
+      print('❌ Error en conversión de unidades: $e');
+      print('🔄 Usando conversión básica como fallback');
+      return _convertirUnidadesBasico(cantidad, unidadOrigen, unidadDestino);
     }
+  }
+
+  /// Convierte unidades a través de la unidad base cuando no hay conversión directa
+  static Future<double?> _convertirViaUnidadBase(double cantidad, int unidadOrigen, int unidadDestino) async {
+    try {
+      // Obtener información de ambas unidades
+      final unidades = await _supabase
+          .from('app_nom_unidades_medida')
+          .select('id, denominacion, tipo_unidad, es_base, factor_base')
+          .inFilter('id', [unidadOrigen, unidadDestino]);
+
+      if (unidades.length != 2) {
+        print('⚠️ No se encontraron ambas unidades en la BD');
+        return null;
+      }
+
+      final unidadOrigenData = unidades.firstWhere((u) => u['id'] == unidadOrigen);
+      final unidadDestinoData = unidades.firstWhere((u) => u['id'] == unidadDestino);
+
+      // Verificar que sean del mismo tipo
+      if (unidadOrigenData['tipo_unidad'] != unidadDestinoData['tipo_unidad']) {
+        print('⚠️ Las unidades son de diferentes tipos, no se puede convertir');
+        return null;
+      }
+
+      // Convertir a unidad base y luego a unidad destino
+      double cantidadEnBase = cantidad;
+      
+      // Si la unidad origen no es base, convertir a base
+      if (unidadOrigenData['es_base'] != true && unidadOrigenData['factor_base'] != null) {
+        final factorBase = (unidadOrigenData['factor_base'] as num).toDouble();
+        cantidadEnBase = cantidad / factorBase;
+        print('🔄 Conversión a base: $cantidad ÷ $factorBase = $cantidadEnBase');
+      }
+
+      // Si la unidad destino no es base, convertir desde base
+      if (unidadDestinoData['es_base'] != true && unidadDestinoData['factor_base'] != null) {
+        final factorBase = (unidadDestinoData['factor_base'] as num).toDouble();
+        final resultado = cantidadEnBase * factorBase;
+        print('🔄 Conversión desde base: $cantidadEnBase × $factorBase = $resultado');
+        return resultado;
+      }
+
+      return cantidadEnBase;
+    } catch (e) {
+      print('❌ Error en conversión vía unidad base: $e');
+      return null;
+    }
+  }
+
+  /// Conversión básica como último recurso
+  static double _convertirUnidadesBasico(double cantidad, int unidadOrigen, int unidadDestino) {
+    print('🔄 Usando conversión básica hardcodeada');
+    
+    // Conversiones básicas comunes (basadas en IDs típicos)
+    // Gramos (1) a Kilogramos (2)
+    if (unidadOrigen == 1 && unidadDestino == 2) {
+      return cantidad / 1000; // 1000g = 1kg
+    }
+    
+    // Kilogramos (2) a Gramos (1)
+    if (unidadOrigen == 2 && unidadDestino == 1) {
+      return cantidad * 1000; // 1kg = 1000g
+    }
+    
+    // Mililitros (3) a Litros (4)
+    if (unidadOrigen == 3 && unidadDestino == 4) {
+      return cantidad / 1000; // 1000ml = 1L
+    }
+    
+    // Litros (4) a Mililitros (3)
+    if (unidadOrigen == 4 && unidadDestino == 3) {
+      return cantidad * 1000; // 1L = 1000ml
+    }
+    
+    print('⚠️ Conversión no disponible de unidad $unidadOrigen a $unidadDestino - retornando cantidad original');
+    return cantidad; // Sin conversión disponible
   }
 
   /// Configura unidades específicas para un producto
