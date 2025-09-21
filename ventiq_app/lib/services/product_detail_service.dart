@@ -363,4 +363,52 @@ class ProductDetailService {
       },
     );
   }
+
+  /// Obtener presentaciones de un producto específico
+  Future<List<ProductPresentation>> getProductPresentations(int productId) async {
+    try {
+      debugPrint('🔍 Obteniendo presentaciones para producto ID: $productId');
+
+      final response = await _supabase
+          .from('app_dat_producto_presentacion')
+          .select('''
+            id,
+            id_producto,
+            id_presentacion,
+            cantidad,
+            es_base,
+            presentacion:app_nom_presentacion!inner(
+              id,
+              denominacion,
+              descripcion,
+              sku_codigo
+            )
+          ''')
+          .eq('id_producto', productId)
+          .order('es_base', ascending: false); // Presentación base primero
+
+      debugPrint('📦 Respuesta presentaciones: $response');
+
+      if (response.isEmpty) {
+        debugPrint('⚠️ No se encontraron presentaciones para el producto $productId');
+        return [];
+      }
+
+      final presentations = response.map((item) {
+        debugPrint('🔄 Procesando presentación: $item');
+        return ProductPresentation.fromJson(item);
+      }).toList();
+
+      debugPrint('✅ Se cargaron ${presentations.length} presentaciones');
+      for (var presentation in presentations) {
+        debugPrint('📋 Presentación: ${presentation.presentacion.denominacion}, Cantidad: ${presentation.cantidad}, Es Base: ${presentation.esBase}');
+      }
+
+      return presentations;
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error obteniendo presentaciones: $e');
+      debugPrint('📍 Stack trace: $stackTrace');
+      return [];
+    }
+  }
 }

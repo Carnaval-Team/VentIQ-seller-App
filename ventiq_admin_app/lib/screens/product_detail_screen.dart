@@ -23,7 +23,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _isLoadingLocations = false;
   bool _isLoadingOperations = false;
   bool _isLoadingCharts = false;
-  
+
   List<Map<String, dynamic>> _stockLocations = [];
   List<Map<String, dynamic>> _receptionOperations = [];
   List<Map<String, dynamic>> _priceHistory = [];
@@ -37,7 +37,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _totalCount = 0;
   bool _hasNextPage = false;
   bool _hasPreviousPage = false;
-  final TextEditingController _operationFilterController = TextEditingController();
+  final TextEditingController _operationFilterController =
+      TextEditingController();
   String? _operationIdFilter;
 
   @override
@@ -53,7 +54,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     print('🔍 Producto nombre: ${_product.denominacion}');
     print('🔍 Es elaborado (desde modelo): ${_product.esElaborado}');
     print('🔍 Verificando si debe cargar ingredientes...');
-    
+
     await Future.wait([
       _loadStockLocations(),
       _loadReceptionOperations(),
@@ -62,31 +63,35 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       _loadStockHistory(),
       if (_product.esElaborado) _loadIngredients(),
     ]);
-    
+
     print('✅ Carga de datos adicionales completada');
     if (_product.esElaborado) {
-      print('📊 Producto elaborado - Ingredientes cargados: ${_ingredientes.length}');
+      print(
+        '📊 Producto elaborado - Ingredientes cargados: ${_ingredientes.length}',
+      );
     } else {
       print('📊 Producto NO elaborado - No se cargan ingredientes');
     }
   }
 
-Future<void> _loadIngredients() async {
-  setState(() => _isLoadingIngredients = true);
-  try {
-    _ingredientes = await ProductService.getProductIngredients(_product.id);
-  } catch (e) {
-    print('Error loading ingredients: $e');
-    _ingredientes = [];
-  } finally {
-    setState(() => _isLoadingIngredients = false);
+  Future<void> _loadIngredients() async {
+    setState(() => _isLoadingIngredients = true);
+    try {
+      _ingredientes = await ProductService.getProductIngredients(_product.id);
+    } catch (e) {
+      print('Error loading ingredients: $e');
+      _ingredientes = [];
+    } finally {
+      setState(() => _isLoadingIngredients = false);
+    }
   }
-}
 
   Future<void> _loadStockLocations() async {
     setState(() => _isLoadingLocations = true);
     try {
-      _stockLocations = await ProductService.getProductStockLocations(_product.id);
+      _stockLocations = await ProductService.getProductStockLocations(
+        _product.id,
+      );
     } catch (e) {
       print('Error loading stock locations: $e');
       _stockLocations = [];
@@ -130,7 +135,9 @@ Future<void> _loadIngredients() async {
 
   Future<void> _loadPromotionalPrices() async {
     try {
-      _promotionalPrices = await ProductService.getProductPromotionalPrices(_product.id);
+      _promotionalPrices = await ProductService.getProductPromotionalPrices(
+        _product.id,
+      );
     } catch (e) {
       print('Error loading promotional prices: $e');
       _promotionalPrices = [];
@@ -139,8 +146,11 @@ Future<void> _loadIngredients() async {
 
   Future<void> _loadStockHistory() async {
     try {
-      _stockHistory = await ProductService.getProductStockHistory(_product.id, _product.stockDisponible.toDouble());
-      
+      _stockHistory = await ProductService.getProductStockHistory(
+        _product.id,
+        _product.stockDisponible.toDouble(),
+      );
+
       // Debug: Comparar stock actual del producto vs stock final del gráfico
       if (_stockHistory.isNotEmpty) {
         final stockFinalGrafico = _stockHistory.last['cantidad'];
@@ -149,7 +159,7 @@ Future<void> _loadIngredients() async {
         print('📈 Stock final en gráfico: $stockFinalGrafico');
         print('📊 Diferencia: ${stockFinalGrafico - _product.stockDisponible}');
       }
-      
+
       setState(() {}); // Update UI after loading data
     } catch (e) {
       print('Error loading stock history: $e');
@@ -174,10 +184,7 @@ Future<void> _loadIngredients() async {
         elevation: 0,
         iconTheme: IconThemeData(color: Colors.grey[800]),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: _editProduct,
-          ),
+          IconButton(icon: const Icon(Icons.edit), onPressed: _editProduct),
           PopupMenuButton<String>(
             onSelected: (value) {
               switch (value) {
@@ -189,72 +196,77 @@ Future<void> _loadIngredients() async {
                   break;
               }
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'duplicate',
-                child: Row(
-                  children: [
-                    Icon(Icons.copy, size: 20),
-                    SizedBox(width: 8),
-                    Text('Duplicar producto'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'delete',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete, size: 20, color: Colors.red),
-                    SizedBox(width: 8),
-                    Text('Eliminar producto', style: TextStyle(color: Colors.red)),
-                  ],
-                ),
-              ),
-            ],
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'duplicate',
+                    child: Row(
+                      children: [
+                        Icon(Icons.copy, size: 20),
+                        SizedBox(width: 8),
+                        Text('Duplicar producto'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete, size: 20, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text(
+                          'Eliminar producto',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildProductHeader(),
-                  const SizedBox(height: 20),
-                  _buildBasicInfo(),
-                  const SizedBox(height: 20),
-                  _buildPricingInfo(),
-                  const SizedBox(height: 20),
-                  _buildInventoryInfo(),
-                  const SizedBox(height: 20),
-  _buildIngredientsSection(),
-                  const SizedBox(height: 20),
-                  _buildStockLocationsSection(),
-                  const SizedBox(height: 20),
-                  _buildReceptionOperationsSection(),
-                  const SizedBox(height: 20),
-                  _buildPriceHistoryChart(),
-                  const SizedBox(height: 20),
-                  _buildPromotionalPricesSection(),
-                  const SizedBox(height: 20),
-                  _buildStockHistorySection(),
-                  const SizedBox(height: 20),
-                  _buildCategoryInfo(),
-                  const SizedBox(height: 20),
-                  _buildVariantsSection(),
-                  const SizedBox(height: 20),
-                  _buildSubcategoriesSection(),
-                  const SizedBox(height: 20),
-                  _buildPresentationsSection(),
-                  const SizedBox(height: 20),
-                  _buildMultimediaSection(),
-                  const SizedBox(height: 20),
-                  _buildTagsSection(),
-                ],
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildProductHeader(),
+                    const SizedBox(height: 20),
+                    _buildBasicInfo(),
+                    const SizedBox(height: 20),
+                    _buildPricingInfo(),
+                    const SizedBox(height: 20),
+                    _buildInventoryInfo(),
+                    const SizedBox(height: 20),
+                    _buildIngredientsSection(),
+                    const SizedBox(height: 20),
+                    _buildStockLocationsSection(),
+                    const SizedBox(height: 20),
+                    _buildReceptionOperationsSection(),
+                    const SizedBox(height: 20),
+                    _buildPriceHistoryChart(),
+                    const SizedBox(height: 20),
+                    _buildPromotionalPricesSection(),
+                    const SizedBox(height: 20),
+                    _buildStockHistorySection(),
+                    const SizedBox(height: 20),
+                    _buildCategoryInfo(),
+                    const SizedBox(height: 20),
+                    _buildVariantsSection(),
+                    const SizedBox(height: 20),
+                    _buildSubcategoriesSection(),
+                    const SizedBox(height: 20),
+                    _buildPresentationsSection(),
+                    const SizedBox(height: 20),
+                    _buildMultimediaSection(),
+                    const SizedBox(height: 20),
+                    _buildTagsSection(),
+                  ],
+                ),
               ),
-            ),
     );
   }
 
@@ -268,216 +280,247 @@ Future<void> _loadIngredients() async {
         else if (_stockLocations.isEmpty)
           Text(
             'No hay ubicaciones registradas',
-            style: TextStyle(color: Colors.grey[600], fontStyle: FontStyle.italic),
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
           )
         else
           Column(
-            children: _stockLocations.map((location) => Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.warehouse, color: AppColors.primary, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          location['ubicacion'],
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+            children:
+                _stockLocations
+                    .map(
+                      (location) => Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[200]!),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Disponible: ${location['cantidad']} | Reservado: ${location['reservado']}',
-                          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.warehouse,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    location['ubicacion'],
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Disponible: ${location['cantidad']} | Reservado: ${location['reservado']}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${location['cantidad']}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.success,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${location['cantidad']}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.success,
                       ),
-                    ),
-                  ),
-                ],
-              ),
-            )).toList(),
+                    )
+                    .toList(),
           ),
       ],
     );
   }
 
-Widget _buildIngredientsSection() {
-  // Solo mostrar si el producto es elaborado
-  if (!(_product.esElaborado ?? false)) {
-    return const SizedBox.shrink();
-  }
-  
-  return _buildInfoCard(
-    title: 'Ingredientes${_ingredientes.isNotEmpty ? ' (${_ingredientes.length})' : ''}',
-    icon: Icons.restaurant_menu,
-    children: [
-      if (_isLoadingIngredients)
-        const Center(
-          child: Padding(
-            padding: EdgeInsets.all(20),
-            child: CircularProgressIndicator(),
-          ),
-        )
-      else if (_ingredientes.isEmpty)
-        Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Icon(
-                Icons.info_outline,
-                size: 48,
-                color: Colors.grey[400],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Este producto elaborado aún no tiene ingredientes registrados',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 16,
+  Widget _buildIngredientsSection() {
+    // Solo mostrar si el producto es elaborado
+    if (!(_product.esElaborado ?? false)) {
+      return const SizedBox.shrink();
+    }
+
+    return _buildInfoCard(
+      title:
+          'Ingredientes${_ingredientes.isNotEmpty ? ' (${_ingredientes.length})' : ''}',
+      icon: Icons.restaurant_menu,
+      children: [
+        if (_isLoadingIngredients)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: CircularProgressIndicator(),
+            ),
+          )
+        else if (_ingredientes.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Icon(Icons.info_outline, size: 48, color: Colors.grey[400]),
+                const SizedBox(height: 12),
+                Text(
+                  'Este producto elaborado aún no tiene ingredientes registrados',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 16),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Los ingredientes se pueden agregar durante la creación del producto',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey[500],
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-        )
-      else
-        ...[
-          // Lista de ingredientes
-          ..._ingredientes.map((ingredient) => Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[200]!),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  spreadRadius: 1,
-                  blurRadius: 3,
-                  offset: const Offset(0, 1),
+                const SizedBox(height: 8),
+                Text(
+                  'Los ingredientes se pueden agregar durante la creación del producto',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey[500], fontSize: 14),
                 ),
               ],
             ),
-            child: Row(
-              children: [
-                // Imagen del ingrediente
-                Container(
-                  width: 60,
-                  height: 60,
+          )
+        else ...[
+          // Lista de ingredientes
+          ..._ingredientes
+              .map(
+                (ingredient) => Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(10),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.grey[200]!),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        spreadRadius: 1,
+                        blurRadius: 3,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
-                  child: ingredient['producto_imagen'] != null && 
-                         ingredient['producto_imagen'].toString().isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.network(
-                            ingredient['producto_imagen'],
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                Icon(Icons.fastfood, color: Colors.grey[400], size: 30),
-                          ),
-                        )
-                      : Icon(Icons.fastfood, color: Colors.grey[400], size: 30),
-                ),
-                const SizedBox(width: 16),
-                
-                // Información del ingrediente
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        ingredient['producto_nombre'] ?? 'Ingrediente sin nombre',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
+                      // Imagen del ingrediente
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child:
+                            ingredient['producto_imagen'] != null &&
+                                    ingredient['producto_imagen']
+                                        .toString()
+                                        .isNotEmpty
+                                ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.network(
+                                    ingredient['producto_imagen'],
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stackTrace) => Icon(
+                                          Icons.fastfood,
+                                          color: Colors.grey[400],
+                                          size: 30,
+                                        ),
+                                  ),
+                                )
+                                : Icon(
+                                  Icons.fastfood,
+                                  color: Colors.grey[400],
+                                  size: 30,
+                                ),
+                      ),
+                      const SizedBox(width: 16),
+
+                      // Información del ingrediente
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              ingredient['producto_nombre'] ??
+                                  'Ingrediente sin nombre',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            if (ingredient['producto_sku'] != null &&
+                                ingredient['producto_sku']
+                                    .toString()
+                                    .isNotEmpty)
+                              Text(
+                                'SKU: ${ingredient['producto_sku']}',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 13,
+                                ),
+                              ),
+                            const SizedBox(height: 8),
+
+                            // Cantidad y unidad
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.blue[50],
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.blue[200]!),
+                              ),
+                              child: Text(
+                                '${ingredient['cantidad_necesaria']} ${ingredient['unidad_medida']}',
+                                style: TextStyle(
+                                  color: Colors.blue[700],
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      if (ingredient['producto_sku'] != null && 
-                          ingredient['producto_sku'].toString().isNotEmpty)
-                        Text(
-                          'SKU: ${ingredient['producto_sku']}',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 13,
-                          ),
-                        ),
-                      const SizedBox(height: 8),
-                      
-                      // Cantidad y unidad
+
+                      // Icono indicador
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.blue[50],
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.blue[200]!),
+                          color: Colors.green[50],
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(
-                          '${ingredient['cantidad_necesaria']} ${ingredient['unidad_medida']}',
-                          style: TextStyle(
-                            color: Colors.blue[700],
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
+                        child: Icon(
+                          Icons.check_circle_outline,
+                          color: Colors.green[600],
+                          size: 20,
                         ),
                       ),
                     ],
                   ),
                 ),
-                
-                // Icono indicador
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.green[50],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.check_circle_outline,
-                    color: Colors.green[600],
-                    size: 20,
-                  ),
-                ),
-              ],
-            ),
-          )).toList(),
-          
+              )
+              .toList(),
+
           // Resumen de ingredientes
           const SizedBox(height: 16),
           Container(
@@ -493,11 +536,7 @@ Widget _buildIngredientsSection() {
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.summarize,
-                  color: Colors.blue[700],
-                  size: 24,
-                ),
+                Icon(Icons.summarize, color: Colors.blue[700], size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -514,16 +553,16 @@ Widget _buildIngredientsSection() {
                       const SizedBox(height: 4),
                       Text(
                         'Total de componentes: ${_ingredientes.length}',
-                        style: TextStyle(
-                          color: Colors.blue[700],
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: Colors.blue[700], fontSize: 14),
                       ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.blue[600],
                     borderRadius: BorderRadius.circular(20),
@@ -541,9 +580,10 @@ Widget _buildIngredientsSection() {
             ),
           ),
         ],
-    ],
-  );
-}
+      ],
+    );
+  }
+
   Widget _buildReceptionOperationsSection() {
     return _buildInfoCard(
       title: 'Operaciones de Entrada',
@@ -554,7 +594,10 @@ Widget _buildIngredientsSection() {
         else if (_receptionOperations.isEmpty)
           Text(
             'No hay operaciones de entrada registradas',
-            style: TextStyle(color: Colors.grey[600], fontStyle: FontStyle.italic),
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
           )
         else
           Column(
@@ -596,89 +639,123 @@ Widget _buildIngredientsSection() {
               ),
               const SizedBox(height: 12),
               Column(
-                children: _receptionOperations.map((operation) => Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[200]!),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            operation['documento'],
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                children:
+                    _receptionOperations
+                        .map(
+                          (operation) => Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey[200]!),
                             ),
-                            child: Text(
-                              '+${operation['cantidad']}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.edit),
-                            onPressed: () {
-                              // Validate operation ID before opening dialog
-                              final operationId = operation['id_operacion'] ?? operation['id'] ?? operation['operacion_id'];
-                              if (operationId == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('No se puede editar: ID de operación no válido'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                                return;
-                              }
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      operation['documento'],
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withOpacity(
+                                          0.1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        '+${operation['cantidad']}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit),
+                                      onPressed: () {
+                                        // Validate operation ID before opening dialog
+                                        final operationId =
+                                            operation['id_operacion'] ??
+                                            operation['id'] ??
+                                            operation['operacion_id'];
+                                        if (operationId == null) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'No se puede editar: ID de operación no válido',
+                                              ),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                          return;
+                                        }
 
-                              showDialog(
-                                context: context,
-                                builder: (context) => ReceptionEditDialog(
-                                  operationId: operationId.toString(),
-                                  operationData: operation,
-                                  onUpdated: () {
-                                    _loadReceptionOperations();
-                                  },
+                                        showDialog(
+                                          context: context,
+                                          builder:
+                                              (context) => ReceptionEditDialog(
+                                                operationId:
+                                                    operationId.toString(),
+                                                operationData: operation,
+                                                onUpdated: () {
+                                                  _loadReceptionOperations();
+                                                },
+                                              ),
+                                        );
+                                      },
+                                    ),
+                                  ],
                                 ),
-                              );
-                            },
+                                const SizedBox(height: 8),
+                                _buildInfoRow(
+                                  'Fecha',
+                                  DateFormat(
+                                    'dd/MM/yyyy HH:mm',
+                                  ).format(operation['fecha']),
+                                ),
+                                _buildInfoRow(
+                                  'Proveedor',
+                                  operation['proveedor'],
+                                ),
+                                _buildInfoRow('Usuario', operation['usuario']),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      _buildInfoRow('Fecha', DateFormat('dd/MM/yyyy HH:mm').format(operation['fecha'])),
-                      _buildInfoRow('Proveedor', operation['proveedor']),
-                      _buildInfoRow('Usuario', operation['usuario']),
-                    ],
-                  ),
-                )).toList(),
+                        )
+                        .toList(),
               ),
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   ElevatedButton(
-                    onPressed: _hasPreviousPage
-                        ? () {
-                            setState(() => _currentPage--);
-                            _loadReceptionOperations();
-                          }
-                        : null,
+                    onPressed:
+                        _hasPreviousPage
+                            ? () {
+                              setState(() => _currentPage--);
+                              _loadReceptionOperations();
+                            }
+                            : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _hasPreviousPage ? AppColors.primary : AppColors.textLight,
+                      backgroundColor:
+                          _hasPreviousPage
+                              ? AppColors.primary
+                              : AppColors.textLight,
                       foregroundColor: Colors.white,
                     ),
                     child: const Text('Anterior'),
@@ -688,14 +765,18 @@ Widget _buildIngredientsSection() {
                     style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                   ElevatedButton(
-                    onPressed: _hasNextPage
-                        ? () {
-                            setState(() => _currentPage++);
-                            _loadReceptionOperations();
-                          }
-                        : null,
+                    onPressed:
+                        _hasNextPage
+                            ? () {
+                              setState(() => _currentPage++);
+                              _loadReceptionOperations();
+                            }
+                            : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _hasNextPage ? AppColors.primary : AppColors.textLight,
+                      backgroundColor:
+                          _hasNextPage
+                              ? AppColors.primary
+                              : AppColors.textLight,
                       foregroundColor: Colors.white,
                     ),
                     child: const Text('Siguiente'),
@@ -721,7 +802,10 @@ Widget _buildIngredientsSection() {
         else if (_priceHistory.isEmpty)
           Text(
             'No hay datos de precios disponibles',
-            style: TextStyle(color: Colors.grey[600], fontStyle: FontStyle.italic),
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
           )
         else
           SizedBox(
@@ -734,10 +818,14 @@ Widget _buildIngredientsSection() {
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 60,
-                      getTitlesWidget: (value, meta) => Text(
-                        '\$${value.toInt()}',
-                        style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-                      ),
+                      getTitlesWidget:
+                          (value, meta) => Text(
+                            '\$${value.toInt()}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
+                          ),
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -747,25 +835,37 @@ Widget _buildIngredientsSection() {
                       interval: 7,
                       getTitlesWidget: (value, meta) {
                         if (value.toInt() < _priceHistory.length) {
-                          final date = _priceHistory[value.toInt()]['fecha'] as DateTime;
+                          final date =
+                              _priceHistory[value.toInt()]['fecha'] as DateTime;
                           return Text(
                             DateFormat('dd/MM').format(date),
-                            style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
                           );
                         }
                         return const Text('');
                       },
                     ),
                   ),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                 ),
                 borderData: FlBorderData(show: false),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: _priceHistory.asMap().entries.map((entry) {
-                      return FlSpot(entry.key.toDouble(), entry.value['precio'].toDouble());
-                    }).toList(),
+                    spots:
+                        _priceHistory.asMap().entries.map((entry) {
+                          return FlSpot(
+                            entry.key.toDouble(),
+                            entry.value['precio'].toDouble(),
+                          );
+                        }).toList(),
                     isCurved: true,
                     color: AppColors.primary,
                     barWidth: 3,
@@ -791,77 +891,108 @@ Widget _buildIngredientsSection() {
         if (_promotionalPrices.isEmpty)
           Text(
             'No hay promociones activas para este producto',
-            style: TextStyle(color: Colors.grey[600], fontStyle: FontStyle.italic),
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
           )
         else
           Column(
-            children: _promotionalPrices.map((promo) => Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: promo['activa'] ? AppColors.success.withOpacity(0.05) : Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: promo['activa'] ? AppColors.success.withOpacity(0.3) : Colors.grey[200]!,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        promo['promocion'],
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            children:
+                _promotionalPrices
+                    .map(
+                      (promo) => Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: promo['activa'] ? AppColors.success.withOpacity(0.1) : AppColors.error.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          promo['activa'] ? 'Activa' : 'Inactiva',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: promo['activa'] ? AppColors.success : AppColors.error,
+                          color:
+                              promo['activa']
+                                  ? AppColors.success.withOpacity(0.05)
+                                  : Colors.grey[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color:
+                                promo['activa']
+                                    ? AppColors.success.withOpacity(0.3)
+                                    : Colors.grey[200]!,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        'Precio original: \$${NumberFormat('#,###.00').format(promo['precio_original'])}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          decoration: TextDecoration.lineThrough,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  promo['promocion'],
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        promo['activa']
+                                            ? AppColors.success.withOpacity(0.1)
+                                            : AppColors.error.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    promo['activa'] ? 'Activa' : 'Inactiva',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color:
+                                          promo['activa']
+                                              ? AppColors.success
+                                              : AppColors.error,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Text(
+                                  'Precio original: \$${NumberFormat('#,###.00').format(promo['precio_original'])}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[600],
+                                    decoration: TextDecoration.lineThrough,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Text(
+                                  'Precio promocional: \$${NumberFormat('#,###.00').format(promo['precio_promocional'])}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color:
+                                        promo['activa']
+                                            ? AppColors.success
+                                            : Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Vigencia: ${promo['vigencia']}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Text(
-                        'Precio promocional: \$${NumberFormat('#,###.00').format(promo['precio_promocional'])}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: promo['activa'] ? AppColors.success : Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Vigencia: ${promo['vigencia']}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            )).toList(),
+                    )
+                    .toList(),
           ),
       ],
     );
@@ -880,7 +1011,10 @@ Widget _buildIngredientsSection() {
         else if (_stockHistory.isEmpty)
           Text(
             'No hay datos de stock disponibles',
-            style: TextStyle(color: Colors.grey[600], fontStyle: FontStyle.italic),
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
           )
         else
           SizedBox(
@@ -893,38 +1027,58 @@ Widget _buildIngredientsSection() {
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 60,
-                      getTitlesWidget: (value, meta) => Text(
-                        value.toInt().toString(),
-                        style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-                      ),
+                      getTitlesWidget:
+                          (value, meta) => Text(
+                            value.toInt().toString(),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
+                          ),
                     ),
                   ),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 30,
-                      interval: _stockHistory.length > 7 ? (_stockHistory.length / 7).ceil().toDouble() : 1,
+                      interval:
+                          _stockHistory.length > 7
+                              ? (_stockHistory.length / 7).ceil().toDouble()
+                              : 1,
                       getTitlesWidget: (value, meta) {
-                        if (value.toInt() < _stockHistory.length && value.toInt() >= 0) {
-                          final date = _stockHistory[value.toInt()]['fecha'] as DateTime;
+                        if (value.toInt() < _stockHistory.length &&
+                            value.toInt() >= 0) {
+                          final date =
+                              _stockHistory[value.toInt()]['fecha'] as DateTime;
                           return Text(
                             DateFormat('dd/MM').format(date),
-                            style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
                           );
                         }
                         return const Text('');
                       },
                     ),
                   ),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                 ),
                 borderData: FlBorderData(show: false),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: _stockHistory.asMap().entries.map((entry) {
-                      return FlSpot(entry.key.toDouble(), entry.value['cantidad'].toDouble());
-                    }).toList(),
+                    spots:
+                        _stockHistory.asMap().entries.map((entry) {
+                          return FlSpot(
+                            entry.key.toDouble(),
+                            entry.value['cantidad'].toDouble(),
+                          );
+                        }).toList(),
                     isCurved: true,
                     color: AppColors.secondary,
                     barWidth: 3,
@@ -973,20 +1127,28 @@ Widget _buildIngredientsSection() {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.grey[300]!),
                 ),
-                child: _product.imageUrl.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          _product.imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              Icon(Icons.image_not_supported, color: Colors.grey[400]),
+                child:
+                    _product.imageUrl.isNotEmpty
+                        ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            _product.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder:
+                                (context, error, stackTrace) => Icon(
+                                  Icons.image_not_supported,
+                                  color: Colors.grey[400],
+                                ),
+                          ),
+                        )
+                        : Icon(
+                          Icons.inventory_2,
+                          color: Colors.grey[400],
+                          size: 40,
                         ),
-                      )
-                    : Icon(Icons.inventory_2, color: Colors.grey[400], size: 40),
               ),
               const SizedBox(width: 16),
-              
+
               // Product Info
               Expanded(
                 child: Column(
@@ -1014,9 +1176,15 @@ Widget _buildIngredientsSection() {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
-                            color: _product.isActive ? AppColors.success.withOpacity(0.1) : AppColors.error.withOpacity(0.1),
+                            color:
+                                _product.isActive
+                                    ? AppColors.success.withOpacity(0.1)
+                                    : AppColors.error.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -1024,15 +1192,24 @@ Widget _buildIngredientsSection() {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
-                              color: _product.isActive ? AppColors.success : AppColors.error,
+                              color:
+                                  _product.isActive
+                                      ? AppColors.success
+                                      : AppColors.error,
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
-                            color: _product.esVendible ? AppColors.primary.withOpacity(0.1) : AppColors.warning.withOpacity(0.1),
+                            color:
+                                _product.esVendible
+                                    ? AppColors.primary.withOpacity(0.1)
+                                    : AppColors.warning.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -1040,7 +1217,10 @@ Widget _buildIngredientsSection() {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
-                              color: _product.esVendible ? AppColors.primary : AppColors.warning,
+                              color:
+                                  _product.esVendible
+                                      ? AppColors.primary
+                                      : AppColors.warning,
                             ),
                           ),
                         ),
@@ -1051,7 +1231,7 @@ Widget _buildIngredientsSection() {
               ),
             ],
           ),
-          
+
           if (_product.description.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text(
@@ -1083,12 +1263,21 @@ Widget _buildIngredientsSection() {
       icon: Icons.info_outline,
       children: [
         _buildInfoRow('SKU', _product.sku),
-        _buildInfoRow('Código de Barras', _product.barcode.isEmpty ? 'No asignado' : _product.barcode),
+        _buildInfoRow(
+          'Código de Barras',
+          _product.barcode.isEmpty ? 'No asignado' : _product.barcode,
+        ),
         _buildInfoRow('Marca', _product.brand),
         if (_product.um?.isNotEmpty == true)
           _buildInfoRow('Unidad de Medida', _product.um!),
-        _buildInfoRow('Creado', DateFormat('dd/MM/yyyy HH:mm').format(_product.createdAt)),
-        _buildInfoRow('Actualizado', DateFormat('dd/MM/yyyy HH:mm').format(_product.updatedAt)),
+        _buildInfoRow(
+          'Creado',
+          DateFormat('dd/MM/yyyy HH:mm').format(_product.createdAt),
+        ),
+        _buildInfoRow(
+          'Actualizado',
+          DateFormat('dd/MM/yyyy HH:mm').format(_product.updatedAt),
+        ),
       ],
     );
   }
@@ -1098,7 +1287,10 @@ Widget _buildIngredientsSection() {
       title: 'Información de Precios',
       icon: Icons.attach_money,
       children: [
-        _buildInfoRow('Precio Base', '\$${NumberFormat('#,###.00').format(_product.basePrice)}'),
+        _buildInfoRow(
+          'Precio Base',
+          '\$${NumberFormat('#,###.00').format(_product.basePrice)}',
+        ),
         // TODO: Add more pricing information from variants
       ],
     );
@@ -1147,48 +1339,50 @@ Widget _buildIngredientsSection() {
 
   Widget _buildVariantsSection() {
     if (_product.variants.isEmpty) return const SizedBox.shrink();
-    
+
     return _buildInfoCard(
       title: 'Variantes (${_product.variants.length})',
       icon: Icons.tune,
       children: [
-        ..._product.variants.map((variant) => Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                variant.name,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              if (variant.description.isNotEmpty) ...[
+        ..._product.variants.map(
+          (variant) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  variant.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (variant.description.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    variant.description,
+                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 Text(
-                  variant.description,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  'Precio: \$${NumberFormat('#,###.00').format(variant.price)}',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
                 ),
               ],
-              const SizedBox(height: 4),
-              Text(
-                'Precio: \$${NumberFormat('#,###.00').format(variant.price)}',
-                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-              ),
-            ],
+            ),
           ),
-        )),
+        ),
       ],
     );
   }
 
   Widget _buildSubcategoriesSection() {
     if (_product.subcategorias.isEmpty) return const SizedBox.shrink();
-    
+
     return _buildInfoCard(
       title: 'Subcategorías (${_product.subcategorias.length})',
       icon: Icons.subdirectory_arrow_right,
@@ -1196,22 +1390,32 @@ Widget _buildIngredientsSection() {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _product.subcategorias.map((subcat) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-            ),
-            child: Text(
-              subcat['denominacion']?.toString() ?? 'Sin nombre',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.primary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          )).toList(),
+          children:
+              _product.subcategorias
+                  .map(
+                    (subcat) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.primary.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Text(
+                        subcat['denominacion']?.toString() ?? 'Sin nombre',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
         ),
       ],
     );
@@ -1219,55 +1423,63 @@ Widget _buildIngredientsSection() {
 
   Widget _buildPresentationsSection() {
     if (_product.presentaciones.isEmpty) return const SizedBox.shrink();
-    
+
     return _buildInfoCard(
       title: 'Presentaciones (${_product.presentaciones.length})',
       icon: Icons.view_module,
       children: [
-        ..._product.presentaciones.map((pres) => Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
+        ..._product.presentaciones.map(
+          (pres) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Text(
+              'Tipo: ' +
+                  pres['presentacion'] +
+                  ' Cantidad equivalente: ' +
+                  pres['cantidad'].toString() +
+                  'unds',
+              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+            ),
           ),
-          child: Text(
-            'Tipo: '+ pres['presentacion']+ ' Cantidad equivalente: '+  pres['cantidad'].toString() + 'unds',
-            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-          ),
-        )),
+        ),
       ],
     );
   }
 
   Widget _buildMultimediaSection() {
     if (_product.multimedias.isEmpty) return const SizedBox.shrink();
-    
+
     return _buildInfoCard(
       title: 'Multimedia (${_product.multimedias.length})',
       icon: Icons.perm_media,
       children: [
-        ..._product.multimedias.map((media) => Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
+        ..._product.multimedias.map(
+          (media) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Text(
+              media.toString(),
+              style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+            ),
           ),
-          child: Text(
-            media.toString(),
-            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-          ),
-        )),
+        ),
       ],
     );
   }
 
   Widget _buildTagsSection() {
     if (_product.etiquetas.isEmpty) return const SizedBox.shrink();
-    
+
     return _buildInfoCard(
       title: 'Etiquetas (${_product.etiquetas.length})',
       icon: Icons.label,
@@ -1275,22 +1487,32 @@ Widget _buildIngredientsSection() {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _product.etiquetas.map((tag) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.secondary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.secondary.withOpacity(0.3)),
-            ),
-            child: Text(
-              tag,
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.secondary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          )).toList(),
+          children:
+              _product.etiquetas
+                  .map(
+                    (tag) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.secondary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.secondary.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Text(
+                        tag,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.secondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
         ),
       ],
     );
@@ -1360,10 +1582,7 @@ Widget _buildIngredientsSection() {
           Expanded(
             child: Text(
               value,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[800],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[800]),
             ),
           ),
         ],
@@ -1375,19 +1594,20 @@ Widget _buildIngredientsSection() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AddProductScreen(
-          product: _product,
-          onProductSaved: () {
-            // Refresh the product data after editing
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Producto actualizado exitosamente'),
-                backgroundColor: AppColors.success,
-              ),
-            );
-          },
-        ),
+        builder:
+            (context) => AddProductScreen(
+              product: _product,
+              onProductSaved: () {
+                // Refresh the product data after editing
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Producto actualizado exitosamente'),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              },
+            ),
       ),
     );
   }
@@ -1395,9 +1615,9 @@ Widget _buildIngredientsSection() {
   Future<void> _duplicateProduct() async {
     try {
       setState(() => _isLoading = true);
-      
+
       final result = await ProductService.duplicateProduct(_product.id);
-      
+
       if (result != null && result['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1405,7 +1625,7 @@ Widget _buildIngredientsSection() {
             backgroundColor: AppColors.success,
           ),
         );
-        
+
         // Navigate back to products list
         Navigator.pop(context);
       } else {
@@ -1426,59 +1646,63 @@ Widget _buildIngredientsSection() {
   void _showDeleteConfirmation() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Producto'),
-        content: Text('¿Estás seguro de que deseas eliminar "${_product.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Eliminar Producto'),
+            content: Text(
+              '¿Estás seguro de que deseas eliminar "${_product.name}"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _deleteProduct();
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _deleteProduct();
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
   }
 
   Future<void> _deleteProduct() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar eliminación'),
-        content: Text(
-          '¿Estás seguro de que deseas eliminar el producto "${_product.name}"?\n\n'
-          'Esta acción no se puede deshacer.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Confirmar eliminación'),
+            content: Text(
+              '¿Estás seguro de que deseas eliminar el producto "${_product.name}"?\n\n'
+              'Esta acción no se puede deshacer.',
             ),
-            child: const Text('Eliminar'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
       try {
         setState(() => _isLoading = true);
-        
+
         final success = await ProductService.deleteProduct(_product.id);
-        
+
         if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -1486,7 +1710,7 @@ Widget _buildIngredientsSection() {
               backgroundColor: AppColors.success,
             ),
           );
-          
+
           // Navigate back to products list
           Navigator.pop(context);
         } else {

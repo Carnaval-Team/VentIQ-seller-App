@@ -43,6 +43,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
 
+  // Presentaciones data
+  List<ProductPresentation> _productPresentations = [];
+  ProductPresentation? _selectedPresentation;
+  bool _isLoadingPresentations = false;
+  Map<String, ProductPresentation?> _selectedPresentationsByProduct = {};
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +62,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     _loadProductDetails();
     _loadPromotionData();
     _loadUsdRate();
+    _loadProductPresentations();
   }
 
   /// Cargar detalles completos del producto desde Supabase
@@ -146,6 +153,51 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       setState(() {
         _usdRate = 420.0; // Default fallback rate
         _isLoadingUsdRate = false;
+      });
+    }
+  }
+
+  /// Cargar presentaciones del producto desde Supabase
+  Future<void> _loadProductPresentations() async {
+    setState(() {
+      _isLoadingPresentations = true;
+    });
+
+    try {
+      debugPrint('🔍 Cargando presentaciones para producto ID: ${widget.product.id}');
+      
+      final presentations = await _productDetailService.getProductPresentations(widget.product.id);
+      
+      setState(() {
+        _productPresentations = presentations;
+        _isLoadingPresentations = false;
+        
+        // Inicializar presentación seleccionada para este producto específico
+        final productKey = '${widget.product.id}';
+        
+        if (presentations.isNotEmpty) {
+          final basePresentations = presentations.where((p) => p.esBase).toList();
+          if (basePresentations.isNotEmpty) {
+            _selectedPresentation = basePresentations.first;
+            _selectedPresentationsByProduct[productKey] = basePresentations.first;
+            debugPrint('✅ Presentación base seleccionada: ${_selectedPresentation!.presentacion.denominacion}');
+          } else {
+            _selectedPresentation = presentations.first;
+            _selectedPresentationsByProduct[productKey] = presentations.first;
+            debugPrint('✅ Primera presentación seleccionada: ${_selectedPresentation!.presentacion.denominacion}');
+          }
+        } else {
+          debugPrint('⚠️ No hay presentaciones configuradas, usando presentación por defecto');
+          _selectedPresentation = null;
+          _selectedPresentationsByProduct[productKey] = null;
+        }
+      });
+    } catch (e) {
+      debugPrint('❌ Error cargando presentaciones: $e');
+      setState(() {
+        _productPresentations = [];
+        _selectedPresentation = null;
+        _isLoadingPresentations = false;
       });
     }
   }
@@ -992,7 +1044,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '\$${(finalPrice * quantity).toStringAsFixed(2)}',
+                  '\$${_calculateTotalPriceWithPresentation(finalPrice, quantity, currentProduct).toStringAsFixed(2)}',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -1063,6 +1115,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             ],
           ),
           const SizedBox(height: 12),
+          // Fila de presentación
+          _buildPresentationSelector(currentProduct),
+          const SizedBox(height: 8),
           // Fila inferior: Controles de cantidad
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1206,6 +1261,147 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         ],
       ),
     );
+  }
+
+  /// Construir selector de presentaciones para un producto
+  Widget _buildPresentationSelector(Product product) {
+    // Obtener la presentación seleccionada para este producto específico
+    final productKey = '${product.id}';
+    final selectedPresentationForProduct = _selectedPresentationsByProduct[productKey];
+    
+    // Si no hay presentaciones cargadas, mostrar presentación por defecto
+    if (_productPresentations.isEmpty) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Presentación:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[800],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!, width: 1),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.inventory_2,
+                  size: 16,
+                  color: Colors.grey[600],
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Unidad (1.0)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'Presentación:',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey[800],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[300]!, width: 1),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<ProductPresentation>(
+              value: selectedPresentationForProduct,
+              isDense: true,
+              items: _productPresentations.map((presentation) {
+                return DropdownMenuItem<ProductPresentation>(
+                  value: presentation,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (presentation.esBase) ...[
+                        Icon(
+                          Icons.star,
+                          size: 14,
+                          color: Colors.orange[600],
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        '${presentation.presentacion.denominacion} (${presentation.cantidad})',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: presentation.esBase ? FontWeight.w600 : FontWeight.w500,
+                          color: presentation.esBase ? Colors.orange[700] : Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (ProductPresentation? newPresentation) {
+                setState(() {
+                  _selectedPresentationsByProduct[productKey] = newPresentation;
+                  debugPrint('🔄 Presentación cambiada para producto ${product.id}: ${newPresentation?.presentacion.denominacion} (Factor: ${newPresentation?.cantidad})');
+                });
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Obtener el factor de conversión de la presentación seleccionada para un producto
+  double _getPresentationConversionFactor(Product product) {
+    final productKey = '${product.id}';
+    final selectedPresentation = _selectedPresentationsByProduct[productKey];
+    
+    if (selectedPresentation != null) {
+      debugPrint('📊 Factor de conversión para producto ${product.id}: ${selectedPresentation.cantidad} (${selectedPresentation.presentacion.denominacion})');
+      return selectedPresentation.cantidad;
+    }
+    
+    // Si no hay presentación seleccionada, usar presentación por defecto (1.0)
+    debugPrint('📊 Usando factor de conversión por defecto: 1.0 para producto ${product.id}');
+    return 1.0;
+  }
+
+  /// Calcular el precio total considerando la presentación seleccionada
+  double _calculateTotalPriceWithPresentation(double basePrice, int quantity, Product product) {
+    final conversionFactor = _getPresentationConversionFactor(product);
+    final unitPrice = basePrice * conversionFactor;
+    final totalPrice = unitPrice * quantity;
+    
+    debugPrint('💰 Cálculo precio para producto ${product.id}:');
+    debugPrint('   - Precio base: \$${basePrice.toStringAsFixed(2)}');
+    debugPrint('   - Factor conversión: ${conversionFactor}');
+    debugPrint('   - Precio unitario: \$${unitPrice.toStringAsFixed(2)}');
+    debugPrint('   - Cantidad: $quantity');
+    debugPrint('   - Precio total: \$${totalPrice.toStringAsFixed(2)}');
+    
+    return totalPrice;
   }
 
   // Método para obtener el total de items

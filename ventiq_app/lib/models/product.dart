@@ -88,3 +88,55 @@ class ProductVariant {
     );
   }
 }
+
+class Presentation {
+  final int id;
+  final String denominacion;
+  final String? descripcion;
+  final String skuCodigo;
+
+  Presentation({
+    required this.id,
+    required this.denominacion,
+    this.descripcion,
+    required this.skuCodigo,
+  });
+
+  factory Presentation.fromJson(Map<String, dynamic> json) {
+    return Presentation(
+      id: json['id'],
+      denominacion: json['denominacion'],
+      descripcion: json['descripcion'],
+      skuCodigo: json['sku_codigo'],
+    );
+  }
+}
+
+class ProductPresentation {
+  final int id;
+  final int idProducto;
+  final int idPresentacion;
+  final double cantidad;
+  final bool esBase;
+  final Presentation presentacion;
+
+  ProductPresentation({
+    required this.id,
+    required this.idProducto,
+    required this.idPresentacion,
+    required this.cantidad,
+    required this.esBase,
+    required this.presentacion,
+  });
+
+  factory ProductPresentation.fromJson(Map<String, dynamic> json) {
+    return ProductPresentation(
+      id: json['id'],
+      idProducto: json['id_producto'],
+      idPresentacion: json['id_presentacion'],
+      cantidad: (json['cantidad'] as num).toDouble(),
+      esBase: json['es_base'] ?? false,
+      presentacion: Presentation.fromJson(json['presentacion']),
+    );
+  }
+}
