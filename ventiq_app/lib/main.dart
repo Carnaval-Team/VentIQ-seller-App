@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/login_web_screen.dart';
 import 'screens/categories_screen.dart';
+import 'screens/categories_web_screen.dart';
 import 'screens/preorder_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/settings_screen.dart';
@@ -10,6 +12,7 @@ import 'screens/egreso_screen.dart';
 import 'screens/venta_total_screen.dart';
 import 'screens/cierre_screen.dart';
 import 'services/auth_service.dart';
+import 'utils/platform_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,8 +39,12 @@ class MyApp extends StatelessWidget {
       initialRoute: '/',
       routes: {
         '/': (context) => const SplashScreen(),
-        '/login': (context) => const LoginScreen(),
-        '/categories': (context) => const CategoriesScreen(),
+        '/login': (context) => const PlatformAwareLoginScreen(),
+        '/login-mobile': (context) => const LoginScreen(),
+        '/login-web': (context) => const LoginWebScreen(),
+        '/categories': (context) => const PlatformAwareCategoriesScreen(),
+        '/categories-mobile': (context) => const CategoriesScreen(),
+        '/categories-web': (context) => const CategoriesWebScreen(),
         '/preorder': (context) => const PreorderScreen(),
         '/orders': (context) => const OrdersScreen(),
         '/settings': (context) => const SettingsScreen(),
@@ -47,6 +54,36 @@ class MyApp extends StatelessWidget {
         '/cierre': (context) => const CierreScreen(),
       },
     );
+  }
+}
+
+/// Widget que detecta la plataforma y redirige al login apropiado
+class PlatformAwareLoginScreen extends StatelessWidget {
+  const PlatformAwareLoginScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Detectar si estamos en web y redirigir al login apropiado
+    if (PlatformUtils.isWeb) {
+      return const LoginWebScreen();
+    } else {
+      return const LoginScreen();
+    }
+  }
+}
+
+/// Widget que detecta la plataforma y redirige a las categorías apropiadas
+class PlatformAwareCategoriesScreen extends StatelessWidget {
+  const PlatformAwareCategoriesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Detectar si estamos en web y redirigir a las categorías apropiadas
+    if (PlatformUtils.isWeb) {
+      return const CategoriesWebScreen();
+    } else {
+      return const CategoriesScreen();
+    }
   }
 }
 
