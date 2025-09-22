@@ -820,12 +820,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       reservedSize: 60,
                       getTitlesWidget:
                           (value, meta) => Text(
-                            '\$${value.toInt()}',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey[600],
-                            ),
-                          ),
+                        '\$${value.toInt()}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[600],
+                        ),
+                      ),
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -1029,12 +1029,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       reservedSize: 60,
                       getTitlesWidget:
                           (value, meta) => Text(
-                            value.toInt().toString(),
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey[600],
-                            ),
-                          ),
+                        value.toInt().toString(),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[600],
+                        ),
+                      ),
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -1224,6 +1224,39 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             ),
                           ),
                         ),
+                        // Etiqueta "Elaborado" - Solo mostrar si el producto es elaborado
+                        if (_product.esElaborado == true) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.restaurant_menu,
+                                  size: 14,
+                                  color: Colors.orange[700],
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Elaborado',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.orange[700],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ],
@@ -1338,45 +1371,194 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _buildVariantsSection() {
-    if (_product.variants.isEmpty) return const SizedBox.shrink();
+    // Usar variantesDisponibles en lugar de variants
+    if (_product.variantesDisponibles.isEmpty) return const SizedBox.shrink();
 
     return _buildInfoCard(
-      title: 'Variantes (${_product.variants.length})',
+      title: 'Variantes (${_getVariantCount()})',
       icon: Icons.tune,
       children: [
-        ..._product.variants.map(
-          (variant) => Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey[200]!),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  variant.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                if (variant.description.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    variant.description,
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  'Precio: \$${NumberFormat('#,###.00').format(variant.price)}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                ),
-              ],
+        ..._buildVariantsList(),
+      ],
+    );
+  }
+
+  int _getVariantCount() {
+    int totalVariants = 0;
+    for (final varianteDisponible in _product.variantesDisponibles) {
+      if (varianteDisponible['variante'] != null) {
+        final variant = varianteDisponible['variante'];
+        if (variant['opciones'] != null && variant['opciones'] is List) {
+          totalVariants += (variant['opciones'] as List).length;
+        } else {
+          totalVariants += 1; // Single variant without options
+        }
+      }
+    }
+    return totalVariants;
+  }
+
+  List<Widget> _buildVariantsList() {
+    List<Widget> variantWidgets = [];
+    
+    for (final varianteDisponible in _product.variantesDisponibles) {
+      if (varianteDisponible['variante'] != null) {
+        final variant = varianteDisponible['variante'];
+        final atributo = variant['atributo'];
+        
+        if (variant['opciones'] != null && variant['opciones'] is List) {
+          final opciones = variant['opciones'] as List<dynamic>;
+          for (final opcion in opciones) {
+            variantWidgets.add(_buildVariantCard(
+              atributo: atributo,
+              opcion: opcion,
+              presentations: varianteDisponible['presentaciones'] ?? [],
+            ));
+          }
+        } else {
+          // Variante sin opciones específicas
+          variantWidgets.add(_buildVariantCard(
+            atributo: atributo,
+            opcion: null,
+            presentations: varianteDisponible['presentaciones'] ?? [],
+          ));
+        }
+      }
+    }
+    
+    if (variantWidgets.isEmpty) {
+      variantWidgets.add(
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Text(
+            'No hay variantes configuradas para este producto',
+            style: TextStyle(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+              fontStyle: FontStyle.italic,
             ),
           ),
         ),
-      ],
+      );
+    }
+    
+    return variantWidgets;
+  }
+
+  Widget _buildVariantCard({
+    required Map<String, dynamic> atributo,
+    required Map<String, dynamic>? opcion,
+    required List<dynamic> presentations,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Título de la variante
+          Row(
+            children: [
+              Icon(Icons.tune, color: AppColors.primary, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${atributo['denominacion'] ?? 'Atributo'}: ${opcion?['valor'] ?? 'Sin opciones'}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 8),
+          
+          // Información de la opción
+          if (opcion != null) ...[
+            if (opcion['sku_codigo'] != null && opcion['sku_codigo'].toString().isNotEmpty)
+              _buildInfoRow('SKU', opcion['sku_codigo'].toString()),
+            
+            if (opcion['codigo_barras'] != null && opcion['codigo_barras'].toString().isNotEmpty)
+              _buildInfoRow('Código de Barras', opcion['codigo_barras'].toString()),
+          ],
+          
+          // Información del atributo
+          if (atributo['descripcion'] != null && atributo['descripcion'].toString().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              atributo['descripcion'].toString(),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+          
+          // Presentaciones disponibles para esta variante
+          if (presentations.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.view_module, color: Colors.blue[700], size: 16),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Presentaciones disponibles:',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue[800],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ...presentations.map((presentation) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '• ${presentation['presentacion'] ?? presentation['denominacion'] ?? 'Presentación'} (${presentation['cantidad'] ?? 1} unidades)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue[700],
+                      ),
+                    ),
+                  )).toList(),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

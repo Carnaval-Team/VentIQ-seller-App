@@ -158,17 +158,19 @@ class InventoryService {
       print('🔍 Insertando extracción completa...');
       print('📦 Productos a extraer: ${productos.length}');
       print('idMotivoOperacion: $idMotivoOperacion');
-      
+
       // CORREGIDO: Los productos ya vienen procesados, no procesar de nuevo
       print('✅ Usando productos ya procesados (sin doble procesamiento)');
-      
+
       // LOG DETALLADO: Verificar estructura de productos
       print('🔍 ESTRUCTURA DE PRODUCTOS ENVIADOS:');
       for (int i = 0; i < productos.length; i++) {
         final producto = productos[i];
-        print('   Producto $i: id_producto=${producto['id_producto']}, cantidad=${producto['cantidad']}, id_presentacion=${producto['id_presentacion']}');
+        print(
+          '   Producto $i: id_producto=${producto['id_producto']}, cantidad=${producto['cantidad']}, id_presentacion=${producto['id_presentacion']}',
+        );
       }
-      
+
       final response = await _supabase.rpc(
         'fn_insertar_extraccion_completa',
         params: {
@@ -224,9 +226,10 @@ class InventoryService {
       final userUuid = await _prefsService.getUserId();
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda = idTiendaRaw is int
-          ? idTiendaRaw
-          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda =
+          idTiendaRaw is int
+              ? idTiendaRaw
+              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (userUuid == null || idTienda == null) {
         throw Exception('No se encontró información del usuario o tienda');
@@ -300,9 +303,10 @@ class InventoryService {
       // Get store ID from preferences
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda = idTiendaRaw is int
-          ? idTiendaRaw
-          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda =
+          idTiendaRaw is int
+              ? idTiendaRaw
+              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (idTienda == null) {
         throw Exception('No se encontró el ID de tienda en las preferencias');
@@ -422,9 +426,10 @@ class InventoryService {
       // Obtener ID de tienda desde usuario autenticado
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda = idTiendaRaw is int
-          ? idTiendaRaw
-          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda =
+          idTiendaRaw is int
+              ? idTiendaRaw
+              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (userUuid == null || idTienda == null) {
         throw Exception(
@@ -487,7 +492,9 @@ class InventoryService {
               )
               .toList();
 
-      final processedReceptionProducts = await processProductsForReception(receptionProducts);
+      final processedReceptionProducts = await processProductsForReception(
+        receptionProducts,
+      );
 
       final receptionResult = await insertInventoryReception(
         entregadoPor: autorizadoPor,
@@ -618,8 +625,7 @@ class InventoryService {
       print('📤 Contabilizando extracción...');
       final extractionComplete = await completeOperation(
         idOperacion: idExtraccion,
-        comentario:
-            'Confirmación de transferencia - Salida: $comentario',
+        comentario: 'Confirmación de transferencia - Salida: $comentario',
         uuid: uuid,
       );
 
@@ -633,8 +639,7 @@ class InventoryService {
       print('📥 Contabilizando recepción...');
       final receptionComplete = await completeOperation(
         idOperacion: idRecepcion,
-        comentario:
-            'Confirmación de transferencia - Entrada: $comentario',
+        comentario: 'Confirmación de transferencia - Entrada: $comentario',
         uuid: uuid,
       );
 
@@ -808,185 +813,221 @@ class InventoryService {
       throw Exception('Error al insertar recepción: $e');
     }
   }
- 
- 
- 
- /// Verifica el inventario de ingredientes en una zona específica
-static Future<Map<String, dynamic>> checkIngredientsInventoryInZone({
-  required List<Map<String, dynamic>> ingredients,
-  required String zoneId,
-}) async {
-  try {
-    print('🔍 Verificando inventario de ingredientes en zona $zoneId');
-    
-    List<Map<String, dynamic>> availableIngredients = [];
-    List<Map<String, dynamic>> unavailableIngredients = [];
-    
-    final storeId = await _getStoreId();
-    
-    for (final ingredient in ingredients) {
-      final productIdRaw = ingredient['id_producto'];
-      final productId = productIdRaw is int 
-          ? productIdRaw 
-          : int.tryParse(productIdRaw.toString()) ?? 0;
-      
-      if (productId == 0) {
-        print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
-        continue;
-      }
-      
-      final requiredQuantity = ingredient['cantidad'] as double;
-      
-      // Obtener inventario del producto en la zona específica
-      final response = await _supabase.rpc(
-        'fn_listar_inventario_productos_paged',
-        params: {
-          'p_id_tienda': storeId,
-          'p_id_ubicacion': int.tryParse(zoneId) ?? 1,
-          'p_id_producto': productId,
-          'p_pagina': 1,
-          'p_limite': 1,
-          'p_mostrar_sin_stock': false,
-          'p_es_inventariable': true,
-        },
-      );
-      
-      if (response != null && response.isNotEmpty) {
-        final inventoryData = response is List ? response[0] : response;
-        print('📦 Respuesta RPC para producto $productId: $response');
-        
-        final stockEnPresentacion = (inventoryData['stock_disponible'] as num?)?.toDouble() ?? 0.0;
-        final idPresentacion = inventoryData['id_presentacion'] as int?;
-        final presentacionNombre = inventoryData['presentacion_nombre'] ?? 'Sin presentación';
 
-        print('📦 Stock en presentación: $stockEnPresentacion $presentacionNombre (presentación ID: $idPresentacion)');
+  /// Verifica el inventario de ingredientes en una zona específica
+  static Future<Map<String, dynamic>> checkIngredientsInventoryInZone({
+    required List<Map<String, dynamic>> ingredients,
+    required String zoneId,
+  }) async {
+    try {
+      print('🔍 Verificando inventario de ingredientes en zona $zoneId');
 
-        // NUEVA LÓGICA: Mantener stock en unidades de presentación y convertir cantidad requerida a unidades de presentación
-        double availableStock = stockEnPresentacion;
-        double cantidadPorPresentacion = 1.0;
-        double cantidadRequeridaEnPresentacion = requiredQuantity;
+      List<Map<String, dynamic>> availableIngredients = [];
+      List<Map<String, dynamic>> unavailableIngredients = [];
 
-        // Obtener la cantidad por presentación y unidad de medida para hacer conversiones
-        if (idPresentacion != null && stockEnPresentacion > 0) {
-          try {
-            print('🔍 Obteniendo cantidad por presentación para producto $productId...');
-            
-            // Consultar la tabla app_dat_presentacion_unidad_medida
-            final presentacionUmResponse = await _supabase
-                .from('app_dat_presentacion_unidad_medida')
-                .select('cantidad_um, id_unidad_medida')
-                .eq('id_producto', productId)
-                .limit(1);
-            
-            if (presentacionUmResponse.isNotEmpty) {
-              cantidadPorPresentacion = (presentacionUmResponse.first['cantidad_um'] as num).toDouble();
-              final unidadProductoId = presentacionUmResponse.first['id_unidad_medida'] as int?;
-              
-              print('✅ Cantidad por presentación: $cantidadPorPresentacion');
-              print('✅ Unidad del producto ID: $unidadProductoId');
-              
-              // NUEVA LÓGICA: Convertir cantidad del ingrediente a unidad base del producto
-              double cantidadEnUnidadBase = requiredQuantity;
-              final unidadIngrediente = ingredient['unidad_medida'] as String? ?? '';
-              print('🔍 DEBUG CONVERSIÓN:');
-print('   - unidadIngrediente: "$unidadIngrediente"');
-print('   - unidadProductoId: $unidadProductoId');
-print('   - requiredQuantity: $requiredQuantity');
-print('   - ingredient keys: ${ingredient.keys.toList()}');
-              if (unidadIngrediente.isNotEmpty && unidadProductoId != null) {
-                final unidadIngredienteId = await _mapUnidadStringToId(unidadIngrediente);
-                
-                if (unidadIngredienteId != null && unidadIngredienteId != unidadProductoId) {
-                  print('🔄 Convirtiendo de unidad $unidadIngredienteId ($unidadIngrediente) a unidad $unidadProductoId...');
-                  
-                  try {
-                    cantidadEnUnidadBase = await RestaurantService.convertirUnidades(
-                      cantidad: requiredQuantity,
-                      unidadOrigen: unidadIngredienteId,
-                      unidadDestino: unidadProductoId,
-                      idProducto: productId,
+      final storeId = await _getStoreId();
+
+      for (final ingredient in ingredients) {
+        final productIdRaw = ingredient['id_producto'];
+        final productId =
+            productIdRaw is int
+                ? productIdRaw
+                : int.tryParse(productIdRaw.toString()) ?? 0;
+
+        if (productId == 0) {
+          print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
+          continue;
+        }
+
+        final requiredQuantity = ingredient['cantidad'] as double;
+
+        // Obtener inventario del producto en la zona específica
+        final response = await _supabase.rpc(
+          'fn_listar_inventario_productos_paged',
+          params: {
+            'p_id_tienda': storeId,
+            'p_id_ubicacion': int.tryParse(zoneId) ?? 1,
+            'p_id_producto': productId,
+            'p_pagina': 1,
+            'p_limite': 1,
+            'p_mostrar_sin_stock': false,
+            'p_es_inventariable': true,
+          },
+        );
+
+        if (response != null && response.isNotEmpty) {
+          final inventoryData = response is List ? response[0] : response;
+          print('📦 Respuesta RPC para producto $productId: $response');
+
+          final stockEnPresentacion =
+              (inventoryData['stock_disponible'] as num?)?.toDouble() ?? 0.0;
+          final idPresentacion = inventoryData['id_presentacion'] as int?;
+          final presentacionNombre =
+              inventoryData['presentacion_nombre'] ?? 'Sin presentación';
+
+          print(
+            '📦 Stock en presentación: $stockEnPresentacion $presentacionNombre (presentación ID: $idPresentacion)',
+          );
+
+          // NUEVA LÓGICA: Mantener stock en unidades de presentación y convertir cantidad requerida a unidades de presentación
+          double availableStock = stockEnPresentacion;
+          double cantidadPorPresentacion = 1.0;
+          double cantidadRequeridaEnPresentacion = requiredQuantity;
+
+          // Obtener la cantidad por presentación y unidad de medida para hacer conversiones
+          if (idPresentacion != null && stockEnPresentacion > 0) {
+            try {
+              print(
+                '🔍 Obteniendo cantidad por presentación para producto $productId...',
+              );
+
+              // Consultar la tabla app_dat_presentacion_unidad_medida
+              final presentacionUmResponse = await _supabase
+                  .from('app_dat_presentacion_unidad_medida')
+                  .select('cantidad_um, id_unidad_medida')
+                  .eq('id_producto', productId)
+                  .limit(1);
+
+              if (presentacionUmResponse.isNotEmpty) {
+                cantidadPorPresentacion =
+                    (presentacionUmResponse.first['cantidad_um'] as num)
+                        .toDouble();
+                final unidadProductoId =
+                    presentacionUmResponse.first['id_unidad_medida'] as int?;
+
+                print('✅ Cantidad por presentación: $cantidadPorPresentacion');
+                print('✅ Unidad del producto ID: $unidadProductoId');
+
+                // NUEVA LÓGICA: Convertir cantidad del ingrediente a unidad base del producto
+                double cantidadEnUnidadBase = requiredQuantity;
+                final unidadIngrediente =
+                    ingredient['unidad_medida'] as String? ?? '';
+                print('🔍 DEBUG CONVERSIÓN:');
+                print('   - unidadIngrediente: "$unidadIngrediente"');
+                print('   - unidadProductoId: $unidadProductoId');
+                print('   - requiredQuantity: $requiredQuantity'); 
+                print('   - ingredient keys: ${ingredient.keys.toList()}');
+                if (unidadIngrediente.isNotEmpty && unidadProductoId != null) {
+                  final unidadIngredienteId = await _mapUnidadStringToId(
+                    unidadIngrediente,
+                  );
+
+                  if (unidadIngredienteId != null &&
+                      unidadIngredienteId != unidadProductoId) {
+                    print(
+                      '🔄 Convirtiendo de unidad $unidadIngredienteId ($unidadIngrediente) a unidad $unidadProductoId...',
                     );
-                    print('✅ Conversión exitosa: $requiredQuantity $unidadIngrediente → $cantidadEnUnidadBase');
-                  } catch (e) {
-                    print('⚠️ Error en conversión: $e, usando cantidad original');
-                    cantidadEnUnidadBase = requiredQuantity;
+
+                    try {
+                      cantidadEnUnidadBase =
+                          await RestaurantService.convertirUnidades(
+                            cantidad: requiredQuantity,
+                            unidadOrigen: unidadIngredienteId,
+                            unidadDestino: unidadProductoId,
+                            idProducto: productId,
+                          );
+                      print(
+                        '✅ Conversión exitosa: $requiredQuantity $unidadIngrediente → $cantidadEnUnidadBase',
+                      );
+                    } catch (e) {
+                      print(
+                        '⚠️ Error en conversión: $e, usando cantidad original',
+                      );
+                      cantidadEnUnidadBase = requiredQuantity;
+                    }
+                  } else {
+                    print(
+                      '📝 Sin conversión necesaria: unidades iguales o no mapeables',
+                    );
                   }
-                } else {
-                  print('📝 Sin conversión necesaria: unidades iguales o no mapeables');
                 }
+
+                // Convertir cantidad en unidad base a unidades de presentación
+                cantidadRequeridaEnPresentacion =
+                    cantidadEnUnidadBase / cantidadPorPresentacion;
+
+                print('🔄 Conversión completa:');
+                print(
+                  '   1. Ingrediente: $requiredQuantity $unidadIngrediente',
+                );
+                print('   2. En unidad base: $cantidadEnUnidadBase');
+                print(
+                  '   3. En presentaciones: $cantidadEnUnidadBase ÷ $cantidadPorPresentacion = $cantidadRequeridaEnPresentacion',
+                );
+              } else {
+                print(
+                  '⚠️ No se encontró configuración de UM, usando cantidad por defecto: 1.0',
+                );
               }
-              
-              // Convertir cantidad en unidad base a unidades de presentación
-              cantidadRequeridaEnPresentacion = cantidadEnUnidadBase / cantidadPorPresentacion;
-              
-              print('🔄 Conversión completa:');
-              print('   1. Ingrediente: $requiredQuantity $unidadIngrediente');
-              print('   2. En unidad base: $cantidadEnUnidadBase');
-              print('   3. En presentaciones: $cantidadEnUnidadBase ÷ $cantidadPorPresentacion = $cantidadRequeridaEnPresentacion');
-              
-            } else {
-              print('⚠️ No se encontró configuración de UM, usando cantidad por defecto: 1.0');
+            } catch (e) {
+              print(
+                '⚠️ Error obteniendo cantidad por presentación: $e, usando 1.0',
+              );
             }
-          } catch (e) {
-            print('⚠️ Error obteniendo cantidad por presentación: $e, usando 1.0');
           }
-        }
 
-        print('📦 Stock disponible: $availableStock $presentacionNombre');
-        print('🔢 Cantidad por presentación: $cantidadPorPresentacion');
-        print('⚖️ Comparación: $availableStock $presentacionNombre >= $cantidadRequeridaEnPresentacion $presentacionNombre');
+          print('📦 Stock disponible: $availableStock $presentacionNombre');
+          print('🔢 Cantidad por presentación: $cantidadPorPresentacion');
+          print(
+            '⚖️ Comparación: $availableStock $presentacionNombre >= $cantidadRequeridaEnPresentacion $presentacionNombre',
+          );
 
-        final ingredientInfo = {
-          ...ingredient,
-          'stock_disponible': availableStock,
-          'unidad_presentacion': presentacionNombre,
-          'cantidad_necesaria_original': requiredQuantity,
-          'cantidad_necesaria_presentacion': cantidadRequeridaEnPresentacion,
-          'cantidad_por_presentacion': cantidadPorPresentacion,
-          'denominacion': inventoryData['denominacion'] ?? 'Producto $productId',
-          'sku': inventoryData['sku'] ?? '',
-          'id_presentacion': idPresentacion, // ✅ AGREGAR: id_presentacion del inventario
-          'id_variante': inventoryData['id_variante'], // Agregar id_variante
-          'id_opcion_variante': inventoryData['id_opcion_variante'], // Agregar id_opcion_variante
-        };
+          final ingredientInfo = {
+            ...ingredient,
+            'stock_disponible': availableStock,
+            'unidad_presentacion': presentacionNombre,
+            'cantidad_necesaria_original': requiredQuantity,
+            'cantidad_necesaria_presentacion': cantidadRequeridaEnPresentacion,
+            'cantidad_por_presentacion': cantidadPorPresentacion,
+            'denominacion':
+                inventoryData['denominacion'] ?? 'Producto $productId',
+            'sku': inventoryData['sku'] ?? '',
+            'id_presentacion':
+                idPresentacion, // ✅ AGREGAR: id_presentacion del inventario
+            'id_variante': inventoryData['id_variante'], // Agregar id_variante
+            'id_opcion_variante':
+                inventoryData['id_opcion_variante'], // Agregar id_opcion_variante
+          };
 
-        // Comparar en unidades de presentación
-        if (availableStock >= cantidadRequeridaEnPresentacion) {
-          availableIngredients.add(ingredientInfo);
-          print('✅ Producto $productId disponible: $availableStock >= $cantidadRequeridaEnPresentacion $presentacionNombre');
+          // Comparar en unidades de presentación
+          if (availableStock >= cantidadRequeridaEnPresentacion) {
+            availableIngredients.add(ingredientInfo);
+            print(
+              '✅ Producto $productId disponible: $availableStock >= $cantidadRequeridaEnPresentacion $presentacionNombre',
+            );
+          } else {
+            unavailableIngredients.add(ingredientInfo);
+            print(
+              '❌ Producto $productId insuficiente: $availableStock < $cantidadRequeridaEnPresentacion $presentacionNombre',
+            );
+          }
         } else {
-          unavailableIngredients.add(ingredientInfo);
-          print('❌ Producto $productId insuficiente: $availableStock < $cantidadRequeridaEnPresentacion $presentacionNombre');
+          unavailableIngredients.add({
+            ...ingredient,
+            'stock_disponible': 0.0,
+            'denominacion': 'Producto $productId',
+            'sku': '',
+          });
         }
-      } else {
-        unavailableIngredients.add({
-          ...ingredient,
-          'stock_disponible': 0.0,
-          'denominacion': 'Producto $productId',
-          'sku': '',
-        });
       }
-    }
-    
-    return {
-      'success': unavailableIngredients.isEmpty,
-      'available_ingredients': availableIngredients,
-      'unavailable_ingredients': unavailableIngredients,
-      'zone_id': zoneId,
-    };
-    
-  } catch (e) {
-    print('❌ Error verificando inventario: $e');
-    return {
-      'success': false,
-      'error': e.toString(),
-      'available_ingredients': <Map<String, dynamic>>[],
-      'unavailable_ingredients': <Map<String, dynamic>>[],
-      'zone_id': zoneId,
-    };
-  }
-}
 
+      return {
+        'success': unavailableIngredients.isEmpty,
+        'available_ingredients': availableIngredients,
+        'unavailable_ingredients': unavailableIngredients,
+        'zone_id': zoneId,
+      };
+    } catch (e) {
+      print('❌ Error verificando inventario: $e');
+      return {
+        'success': false,
+        'error': e.toString(),
+        'available_ingredients': <Map<String, dynamic>>[],
+        'unavailable_ingredients': <Map<String, dynamic>>[],
+        'zone_id': zoneId,
+      };
+    }
+  }
 
   /// Get product variants and presentations available in a specific location
   /// Returns detailed information about stock availability for each variant/presentation
@@ -1025,7 +1066,8 @@ print('   - ingredient keys: ${ingredient.keys.toList()}');
 
       final variants =
           data.map<Map<String, dynamic>>((item) {
-            final stockDisponible = (item['stock_disponible'] as num?)?.toDouble() ?? 0.0;
+            final stockDisponible =
+                (item['stock_disponible'] as num?)?.toDouble() ?? 0.0;
 
             // Debug logging for variant data analysis
             /* print('🔍 Processing item:');
@@ -1066,11 +1108,13 @@ print('   - ingredient keys: ${ingredient.keys.toList()}');
 
               // Stock disponible
               'stock_disponible': stockDisponible,
-              'stock_reservado': (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
+              'stock_reservado':
+                  (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
               'stock_actual': (item['stock_actual'] as num?)?.toDouble() ?? 0.0,
 
               // Información adicional
-              'precio_unitario': (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
+              'precio_unitario':
+                  (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
               'id_layout': idLayout,
 
               // Clave única para agrupación - Solo por presentación para transferencias
@@ -1175,12 +1219,15 @@ print('   - ingredient keys: ${ingredient.keys.toList()}');
                       : 'SIN_PRES',
 
               // Stock (puede ser 0)
-              'stock_disponible': (item['stock_disponible'] as num?)?.toDouble() ?? 0.0,
-              'stock_reservado': (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
+              'stock_disponible':
+                  (item['stock_disponible'] as num?)?.toDouble() ?? 0.0,
+              'stock_reservado':
+                  (item['stock_reservado'] as num?)?.toDouble() ?? 0.0,
               'stock_actual': (item['stock_actual'] as num?)?.toDouble() ?? 0.0,
 
               // Información adicional
-              'precio_unitario': (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
+              'precio_unitario':
+                  (item['precio_venta'] as num?)?.toDouble() ?? 0.0,
               'id_layout': idLayout,
 
               // Clave única
@@ -1205,250 +1252,324 @@ print('   - ingredient keys: ${ingredient.keys.toList()}');
 
   /// Procesa productos para recepción convirtiendo a presentación base
   static Future<List<Map<String, dynamic>>> processProductsForReception(
-    List<Map<String, dynamic>> productos
+    List<Map<String, dynamic>> productos,
   ) async {
     final processedProducts = <Map<String, dynamic>>[];
-    
+
     print('🔄 ===== PROCESANDO PRODUCTOS PARA RECEPCIÓN =====');
     print('🔄 Total productos a procesar: ${productos.length}');
-    
+
     for (final producto in productos) {
       try {
         final productIdRaw = producto['id_producto'];
-        final productId = productIdRaw is int 
-            ? productIdRaw 
-            : int.tryParse(productIdRaw.toString()) ?? 0;
-        
+        final productId =
+            productIdRaw is int
+                ? productIdRaw
+                : int.tryParse(productIdRaw.toString()) ?? 0;
+
         if (productId == 0) {
           print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
           continue;
         }
-        
+
         final presentacionId = producto['id_presentacion'] as int?;
         final cantidadOriginal = (producto['cantidad'] as num).toDouble();
-        
+
         print('🔄 Procesando producto ID: $productId');
         print('🔄 Presentación seleccionada: $presentacionId');
         print('🔄 Cantidad original: $cantidadOriginal');
-        
+
         if (presentacionId == null) {
-          print('⚠️ No hay presentación seleccionada, usando cantidad original');
+          print(
+            '⚠️ No hay presentación seleccionada, usando cantidad original',
+          );
           processedProducts.add(producto);
           continue;
         }
-        
+
         // Convertir a presentación base
         final cantidadEnBase = await ProductService.convertToBasePresentacion(
           productId: productId,
           fromPresentacionId: presentacionId,
           cantidad: cantidadOriginal,
         );
-        
+
         // Obtener presentación base
-        final basePresentation = await ProductService.getBasePresentacion(productId);
-        
+        final basePresentation = await ProductService.getBasePresentacion(
+          productId,
+        );
+
         if (basePresentation != null) {
           // Crear producto procesado con presentación base
           final processedProduct = Map<String, dynamic>.from(producto);
-          processedProduct['id_presentacion'] = basePresentation['id_presentacion'];
+          processedProduct['id_presentacion'] =
+              basePresentation['id_presentacion'];
           processedProduct['cantidad'] = cantidadEnBase;
           processedProduct['cantidad_original'] = cantidadOriginal;
           processedProduct['presentacion_original'] = presentacionId;
-          processedProduct['conversion_applied'] = cantidadEnBase != cantidadOriginal;
-          
+          processedProduct['conversion_applied'] =
+              cantidadEnBase != cantidadOriginal;
+
           processedProducts.add(processedProduct);
-          
+
           print('✅ Producto procesado:');
-          print('   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)');
-          print('   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})');
-          print('   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}');
+          print(
+            '   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)',
+          );
+          print(
+            '   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})',
+          );
+          print(
+            '   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}',
+          );
         } else {
           print('⚠️ No se pudo obtener presentación base, usando original');
           processedProducts.add(producto);
         }
-        
       } catch (e) {
         print('❌ Error procesando producto: $e');
         processedProducts.add(producto); // Agregar original en caso de error
       }
     }
-    
+
     print('✅ Procesamiento completado: ${processedProducts.length} productos');
     return processedProducts;
   }
 
   /// Procesa productos para extracción convirtiendo a presentación base
   static Future<List<Map<String, dynamic>>> processProductsForExtraction(
-    List<Map<String, dynamic>> productos
+    List<Map<String, dynamic>> productos,
   ) async {
     final processedProducts = <Map<String, dynamic>>[];
-    
+
     print('🔄 ===== PROCESANDO PRODUCTOS PARA EXTRACCIÓN =====');
     print('🔄 Total productos a procesar: ${productos.length}');
-    
+
     for (final producto in productos) {
       try {
         final productIdRaw = producto['id_producto'];
-        final productId = productIdRaw is int 
-            ? productIdRaw 
-            : int.tryParse(productIdRaw.toString()) ?? 0;
-        
+        final productId =
+            productIdRaw is int
+                ? productIdRaw
+                : int.tryParse(productIdRaw.toString()) ?? 0;
+
         if (productId == 0) {
           print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
           continue;
         }
-        
+
         final presentacionId = producto['id_presentacion'] as int?;
         final cantidadOriginal = (producto['cantidad'] as num).toDouble();
-        
+
         print('🔄 Procesando extracción producto ID: $productId');
         print('🔄 Presentación seleccionada: $presentacionId');
         print('🔄 Cantidad a extraer: $cantidadOriginal');
-        
+
         if (presentacionId == null) {
-          print('⚠️ No hay presentación seleccionada, usando cantidad original');
+          print(
+            '⚠️ No hay presentación seleccionada, usando cantidad original',
+          );
           processedProducts.add(producto);
           continue;
         }
-        
+
         // Convertir a presentación base
         final cantidadEnBase = await ProductService.convertToBasePresentacion(
           productId: productId,
           fromPresentacionId: presentacionId,
           cantidad: cantidadOriginal,
         );
-        
+
         // Obtener presentación base
-        final basePresentation = await ProductService.getBasePresentacion(productId);
-        
+        final basePresentation = await ProductService.getBasePresentacion(
+          productId,
+        );
+
         if (basePresentation != null) {
           // Crear producto procesado con presentación base
           final processedProduct = Map<String, dynamic>.from(producto);
-          processedProduct['id_presentacion'] = basePresentation['id_presentacion'];
+          processedProduct['id_presentacion'] =
+              basePresentation['id_presentacion'];
           processedProduct['cantidad'] = cantidadEnBase;
           processedProduct['cantidad_original'] = cantidadOriginal;
           processedProduct['presentacion_original'] = presentacionId;
-          processedProduct['conversion_applied'] = cantidadEnBase != cantidadOriginal;
-          
+          processedProduct['conversion_applied'] =
+              cantidadEnBase != cantidadOriginal;
+
           processedProducts.add(processedProduct);
-          
+
           print('✅ Extracción procesada:');
-          print('   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)');
-          print('   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})');
-          print('   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}');
+          print(
+            '   - Cantidad original: $cantidadOriginal (presentación: $presentacionId)',
+          );
+          print(
+            '   - Cantidad en base: $cantidadEnBase (presentación: ${basePresentation['id_presentacion']})',
+          );
+          print(
+            '   - Conversión aplicada: ${cantidadEnBase != cantidadOriginal}',
+          );
         } else {
           print('⚠️ No se pudo obtener presentación base, usando original');
           processedProducts.add(producto);
         }
-        
       } catch (e) {
         print('❌ Error procesando extracción: $e');
         processedProducts.add(producto); // Agregar original en caso de error
       }
     }
-    
-    print('✅ Procesamiento de extracción completado: ${processedProducts.length} productos');
+
+    print(
+      '✅ Procesamiento de extracción completado: ${processedProducts.length} productos',
+    );
     return processedProducts;
   }
 
   /// Descompone un producto elaborado recursivamente
   static Future<void> _decomposeRecursively(
-    int productId, 
-    double quantity, 
-    Map<int, Map<String, dynamic>> consolidatedIngredients
+    int productId,
+    double quantity,
+    Map<int, Map<String, dynamic>> consolidatedIngredients,
   ) async {
     print('🔄 Descomponiendo producto $productId con cantidad $quantity');
-    
-    final ingredients = await ProductService.getProductIngredients(productId.toString());
-    
+
+    final ingredients = await ProductService.getProductIngredients(
+      productId.toString(),
+    );
+
     if (ingredients.isEmpty) {
       print('⚠️ Producto $productId sin ingredientes - tratando como simple');
-      _addToConsolidatedWithUnit(consolidatedIngredients, productId, quantity, 'und', 'Producto $productId', '');
+      _addToConsolidatedWithUnit(
+        consolidatedIngredients,
+        productId,
+        quantity,
+        'und',
+        'Producto $productId',
+        '',
+      );
       return;
     }
-    
+
     for (final ingredient in ingredients) {
       final ingredientIdRaw = ingredient['producto_id'];
-      final ingredientId = ingredientIdRaw is int 
-          ? ingredientIdRaw 
-          : int.tryParse(ingredientIdRaw.toString()) ?? 0;
-      
+      final ingredientId =
+          ingredientIdRaw is int
+              ? ingredientIdRaw
+              : int.tryParse(ingredientIdRaw.toString()) ?? 0;
+
       if (ingredientId == 0) {
         print('⚠️ ID de ingrediente inválido: $ingredientIdRaw, saltando...');
         continue;
       }
-      
-      final cantidadNecesaria = (ingredient['cantidad_necesaria'] as num).toDouble();
-final unidadMedidaIngrediente = ingredient['unidad_medida'] as String? ?? 'und';
-final denominacionIngrediente = ingredient['producto_nombre'] ?? 'Producto $ingredientId';
-final skuIngrediente = ingredient['producto_sku'] ?? '';
+
+      final cantidadNecesaria =
+          (ingredient['cantidad_necesaria'] as num).toDouble();
+      final unidadMedidaIngrediente =
+          ingredient['unidad_medida'] as String? ?? 'und';
+      final denominacionIngrediente =
+          ingredient['producto_nombre'] ?? 'Producto $ingredientId';
+      final skuIngrediente = ingredient['producto_sku'] ?? '';
       final totalQuantityEnUnidadIngrediente = cantidadNecesaria * quantity;
-      
+
       print('🧪 Ingrediente ID: $ingredientId');
-      print('   - Cantidad necesaria: $cantidadNecesaria $unidadMedidaIngrediente');
-      print('   - Cantidad total requerida: $totalQuantityEnUnidadIngrediente $unidadMedidaIngrediente');
-      
+      print(
+        '   - Cantidad necesaria: $cantidadNecesaria $unidadMedidaIngrediente',
+      );
+      print(
+        '   - Cantidad total requerida: $totalQuantityEnUnidadIngrediente $unidadMedidaIngrediente',
+      );
+
       // Convertir la cantidad del ingrediente a su presentación base
       double cantidadEnPresentacionBase;
       try {
         // Obtener la presentación base del ingrediente
-        final basePresentation = await ProductService.getBasePresentacion(ingredientId);
-        
+        final basePresentation = await ProductService.getBasePresentacion(
+          ingredientId,
+        );
+
         if (basePresentation != null) {
           // Si el ingrediente tiene presentaciones configuradas, convertir
-          print('   - Presentación base encontrada: ${basePresentation['denominacion']}');
-          
+          print(
+            '   - Presentación base encontrada: ${basePresentation['denominacion']}',
+          );
+
           // TODO: Aquí necesitamos convertir de la unidad del ingrediente a la presentación base
           // Por ahora, usamos la cantidad directamente pero esto debe mejorarse
           cantidadEnPresentacionBase = totalQuantityEnUnidadIngrediente;
-          
-          print('   - Cantidad en presentación base: $cantidadEnPresentacionBase');
+
+          print(
+            '   - Cantidad en presentación base: $cantidadEnPresentacionBase',
+          );
         } else {
           // Si no tiene presentaciones configuradas, usar cantidad directa
           cantidadEnPresentacionBase = totalQuantityEnUnidadIngrediente;
-          print('   - Sin presentación base configurada, usando cantidad directa');
+          print(
+            '   - Sin presentación base configurada, usando cantidad directa',
+          );
         }
       } catch (e) {
-        print('⚠️ Error al obtener presentación base para ingrediente $ingredientId: $e');
+        print(
+          '⚠️ Error al obtener presentación base para ingrediente $ingredientId: $e',
+        );
         cantidadEnPresentacionBase = totalQuantityEnUnidadIngrediente;
       }
-      
+
       final isElaborated = await _isProductElaborated(ingredientId);
-      
+
       if (isElaborated) {
-        print('🔄 Ingrediente $ingredientId es elaborado, descomponiendo recursivamente...');
-        await _decomposeRecursively(ingredientId, cantidadEnPresentacionBase, consolidatedIngredients);
+        print(
+          '🔄 Ingrediente $ingredientId es elaborado, descomponiendo recursivamente...',
+        );
+        await _decomposeRecursively(
+          ingredientId,
+          cantidadEnPresentacionBase,
+          consolidatedIngredients,
+        );
       } else {
         print('✅ Ingrediente $ingredientId es simple, agregando directamente');
-        _addToConsolidatedWithUnit(consolidatedIngredients, ingredientId, cantidadEnPresentacionBase, unidadMedidaIngrediente, denominacionIngrediente, skuIngrediente);
+        _addToConsolidatedWithUnit(
+          consolidatedIngredients,
+          ingredientId,
+          cantidadEnPresentacionBase,
+          unidadMedidaIngrediente,
+          denominacionIngrediente,
+          skuIngrediente,
+        );
       }
     }
   }
 
   /// Consolida ingredientes (versión simple para compatibilidad)
-static void _addToConsolidated(Map<int, double> consolidatedIngredients, int productId, double quantity) {
-  if (consolidatedIngredients.containsKey(productId)) {
-    consolidatedIngredients[productId] = consolidatedIngredients[productId]! + quantity;
-  } else {
-    consolidatedIngredients[productId] = quantity;
+  static void _addToConsolidated(
+    Map<int, double> consolidatedIngredients,
+    int productId,
+    double quantity,
+  ) {
+    if (consolidatedIngredients.containsKey(productId)) {
+      consolidatedIngredients[productId] =
+          consolidatedIngredients[productId]! + quantity;
+    } else {
+      consolidatedIngredients[productId] = quantity;
+    }
+    print(
+      '📊 Consolidado: Producto $productId = ${consolidatedIngredients[productId]} unidades',
+    );
   }
-  print('📊 Consolidado: Producto $productId = ${consolidatedIngredients[productId]} unidades');
-}
 
   /// Verifica si un producto es elaborado consultando el campo es_elaborado
   static Future<bool> _isProductElaborated(int productId) async {
     try {
       print('🔍 Verificando si producto $productId es elaborado...');
-      
-      final response = await _supabase
-          .from('app_dat_producto')
-          .select('es_elaborado')
-          .eq('id', productId)
-          .single();
-      
+
+      final response =
+          await _supabase
+              .from('app_dat_producto')
+              .select('es_elaborado')
+              .eq('id', productId)
+              .single();
+
       final isElaborated = response['es_elaborado'] ?? false;
       print('📋 Producto $productId es elaborado: $isElaborated');
-      
+
       return isElaborated;
     } catch (e) {
       print('⚠️ Error verificando si producto $productId es elaborado: $e');
@@ -1460,73 +1581,88 @@ static void _addToConsolidated(Map<int, double> consolidatedIngredients, int pro
   /// Descompone productos elaborados en sus ingredientes base
   /// Retorna una lista de productos (ingredientes) con sus cantidades consolidadas
   static Future<List<Map<String, dynamic>>> decomposeElaboratedProducts(
-    List<Map<String, dynamic>> productos
+    List<Map<String, dynamic>> productos,
   ) async {
     print('🧪 Iniciando descomposición de productos elaborados...');
-    
+
     final Map<int, Map<String, dynamic>> consolidatedIngredients = {};
-    
+
     for (final producto in productos) {
       final productIdRaw = producto['id_producto'];
-      final productId = productIdRaw is int 
-          ? productIdRaw 
-          : int.tryParse(productIdRaw.toString()) ?? 0;
-      
+      final productId =
+          productIdRaw is int
+              ? productIdRaw
+              : int.tryParse(productIdRaw.toString()) ?? 0;
+
       if (productId == 0) {
         print('⚠️ ID de producto inválido: $productIdRaw, saltando...');
         continue;
       }
-      
+
       final cantidad = (producto['cantidad'] as num).toDouble();
-      
+
       print('📦 Procesando producto ID: $productId, cantidad: $cantidad');
-      
+
       // Verificar si el producto es elaborado
       final isElaborated = await _isProductElaborated(productId);
-      
+
       if (isElaborated) {
         print('🔄 Producto $productId es elaborado, descomponiendo...');
-        await _decomposeRecursively(productId, cantidad, consolidatedIngredients);
+        await _decomposeRecursively(
+          productId,
+          cantidad,
+          consolidatedIngredients,
+        );
       } else {
         print('✅ Producto $productId es simple, agregando directamente');
-        _addToConsolidatedWithUnit(consolidatedIngredients, productId, cantidad, 'und', 'Producto $productId', '');
+        _addToConsolidatedWithUnit(
+          consolidatedIngredients,
+          productId,
+          cantidad,
+          'und',
+          'Producto $productId',
+          '',
+        );
       }
     }
-    
+
     // Convertir el mapa consolidado a lista de productos
     final List<Map<String, dynamic>> productosFinales = [];
-    
+
     for (final entry in consolidatedIngredients.entries) {
-  final productId = entry.key;
-  final ingredientData = entry.value;
-      
+      final productId = entry.key;
+      final ingredientData = entry.value;
+
       // Obtener información del producto para mantener estructura consistente
-      final productInfo = await _supabase
-        .from('app_dat_producto')
-        .select('denominacion, sku')
-        .eq('id', productId)
-        .single();
-      
+      final productInfo =
+          await _supabase
+              .from('app_dat_producto')
+              .select('denominacion, sku')
+              .eq('id', productId)
+              .single();
+
       productosFinales.add({
-  'id_producto': productId,
-  'cantidad': ingredientData['cantidad'],
-  'unidad_medida': ingredientData['unidad_medida'], // ✅ PRESERVAR UNIDAD
-  'denominacion': ingredientData['denominacion'],
-  'sku': ingredientData['sku'],
-  'es_elaborado': false,
-  'id_variante': null,
-  'id_opcion_variante': null,
-  'id_presentacion': null,
-});
+        'id_producto': productId,
+        'cantidad': ingredientData['cantidad'],
+        'unidad_medida': ingredientData['unidad_medida'], // ✅ PRESERVAR UNIDAD
+        'denominacion': ingredientData['denominacion'],
+        'sku': ingredientData['sku'],
+        'es_elaborado': false,
+        'id_variante': null,
+        'id_opcion_variante': null,
+        'id_presentacion': null,
+      });
     }
-    
-    print('🎯 Descomposición completada: ${productosFinales.length} ingredientes únicos');
+
+    print(
+      '🎯 Descomposición completada: ${productosFinales.length} ingredientes únicos',
+    );
     for (final producto in productosFinales) {
       print(
         '   - ${producto['denominacion']}: ${producto['cantidad']} ${producto['unidad_medida']}', // ✅ AGREGAR UNIDAD
       );
     }
-    
+
     return productosFinales;
   }
 
@@ -1700,11 +1836,14 @@ static void _addToConsolidated(Map<int, double> consolidatedIngredients, int pro
       print('  - idTienda: $idTienda');
       print('  - fechaHasta: $fechaHasta');
 
-      final response = await _supabase.rpc('fn_listar_inventario_simple', params: {
-        'p_id_almacen': idAlmacen,
-        'p_id_tienda': idTienda,
-        'p_fecha_hasta': fechaHasta?.toIso8601String(),
-      });
+      final response = await _supabase.rpc(
+        'fn_listar_inventario_simple',
+        params: {
+          'p_id_almacen': idAlmacen,
+          'p_id_tienda': idTienda,
+          'p_fecha_hasta': fechaHasta?.toIso8601String(),
+        },
+      );
 
       print('📦 Response received: ${response?.length ?? 0} items');
 
@@ -1785,76 +1924,101 @@ static void _addToConsolidated(Map<int, double> consolidatedIngredients, int pro
     try {
       print('🔄 Iniciando procesamiento de productos elaborados...');
       print('📍 Zona de extracción: $idUbicacion');
-      
+
       // Paso 1: Descomponer productos elaborados en ingredientes
-      final productosDescompuestos = await InventoryService.decomposeElaboratedProducts(productos);
-      
+      final productosDescompuestos =
+          await InventoryService.decomposeElaboratedProducts(productos);
+
       print('📦 Productos originales: ${productos.length}');
       print('🧪 Ingredientes finales: ${productosDescompuestos.length}');
-      
+
       // Paso 2: Asociar ingredientes con la ubicación especificada
-      final productosConUbicacion = productosDescompuestos.map((producto) {
-        return {
-          ...producto,
-          'id_ubicacion': idUbicacion, // Asociar cada ingrediente con la zona
-        };
-      }).toList();
-      
+      final productosConUbicacion =
+          productosDescompuestos.map((producto) {
+            return {
+              ...producto,
+              'id_ubicacion':
+                  idUbicacion, // Asociar cada ingrediente con la zona
+            };
+          }).toList();
+
       // Paso 3: Aplicar conversiones de presentación a ingredientes finales
       final checkResult = await checkIngredientsInventoryInZone(
-  ingredients: productosDescompuestos,
-  zoneId: idUbicacion.toString(),
-);
+        ingredients: productosDescompuestos,
+        zoneId: idUbicacion.toString(),
+      );
 
-final availableIngredientsRaw = checkResult['available_ingredients'] as List;
-final availableIngredients = availableIngredientsRaw
-    .map((item) => Map<String, dynamic>.from(item as Map))
-    .toList();
+      final availableIngredientsRaw =
+          checkResult['available_ingredients'] as List;
+      final availableIngredients =
+          availableIngredientsRaw
+              .map((item) => Map<String, dynamic>.from(item as Map))
+              .toList();
 
-print('🔍 DEBUG: availableIngredients.length = ${availableIngredients.length}');
-print('🔍 DEBUG: checkResult success = ${checkResult['success']}');
+      print(
+        '🔍 DEBUG: availableIngredients.length = ${availableIngredients.length}',
+      );
+      print('🔍 DEBUG: checkResult success = ${checkResult['success']}');
 
-// Verificar ingredientes no disponibles
-final unavailableIngredientsRaw = checkResult['unavailable_ingredients'] as List? ?? [];
-print('🔍 DEBUG: unavailableIngredients.length = ${unavailableIngredientsRaw.length}');
+      // Verificar ingredientes no disponibles
+      final unavailableIngredientsRaw =
+          checkResult['unavailable_ingredients'] as List? ?? [];
+      print(
+        '🔍 DEBUG: unavailableIngredients.length = ${unavailableIngredientsRaw.length}',
+      );
 
-if (unavailableIngredientsRaw.isNotEmpty) {
-  print('⚠️ ADVERTENCIA: Hay ${unavailableIngredientsRaw.length} ingredientes no disponibles');
-  for (final unavailable in unavailableIngredientsRaw) {
-    final item = Map<String, dynamic>.from(unavailable as Map);
-    print('   - ${item['denominacion']}: requiere ${item['cantidad_necesaria_presentacion']} pero solo hay ${item['stock_disponible']}');
-  }
-}
+      if (unavailableIngredientsRaw.isNotEmpty) {
+        print(
+          '⚠️ ADVERTENCIA: Hay ${unavailableIngredientsRaw.length} ingredientes no disponibles',
+        );
+        for (final unavailable in unavailableIngredientsRaw) {
+          final item = Map<String, dynamic>.from(unavailable as Map);
+          print(
+            '   - ${item['denominacion']}: requiere ${item['cantidad_necesaria_presentacion']} pero solo hay ${item['stock_disponible']}',
+          );
+        }
+      }
 
-if (availableIngredients.isEmpty) {
-  throw Exception('No hay ingredientes disponibles para extraer');
-}
+      if (availableIngredients.isEmpty) {
+        throw Exception('No hay ingredientes disponibles para extraer');
+      }
 
       // Crear productos para extracción con formato correcto
-      final productosParaExtraccion = availableIngredients.map((ingredient) => {
-        'id_producto': ingredient['id_producto'],
-        'cantidad': (ingredient['cantidad_necesaria_presentacion'] as num).toDouble(),
-        'id_presentacion': ingredient['id_presentacion'],
-        'id_ubicacion': idUbicacion,
-        'id_variante': ingredient['id_variante'],
-        'id_opcion_variante': ingredient['id_opcion_variante'],
-        'precio_unitario': 0.0, // Precio por defecto para extracciones
-      }).toList();
+      final productosParaExtraccion =
+          availableIngredients
+              .map(
+                (ingredient) => {
+                  'id_producto': ingredient['id_producto'],
+                  'cantidad':
+                      (ingredient['cantidad_necesaria_presentacion'] as num)
+                          .toDouble(),
+                  'id_presentacion': ingredient['id_presentacion'],
+                  'id_ubicacion': idUbicacion,
+                  'id_variante': ingredient['id_variante'],
+                  'id_opcion_variante': ingredient['id_opcion_variante'],
+                  'precio_unitario':
+                      0.0, // Precio por defecto para extracciones
+                },
+              )
+              .toList();
 
-      print('🔍 DEBUG: productosParaExtraccion.length = ${productosParaExtraccion.length}');
+      print(
+        '🔍 DEBUG: productosParaExtraccion.length = ${productosParaExtraccion.length}',
+      );
       print('🔍 DEBUG: productosParaExtraccion = $productosParaExtraccion');
 
       // Paso 4: Obtener datos del usuario
       final userData = await _prefsService.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda = idTiendaRaw is int
-          ? idTiendaRaw
-          : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda =
+          idTiendaRaw is int
+              ? idTiendaRaw
+              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (idTienda == null) {
         throw Exception('No se encontró información de la tienda');
       }
-      
+
       // Paso 5: Ejecutar extracción completa
       final result = await insertCompleteExtraction(
         autorizadoPor: autorizadoPor,
@@ -1862,14 +2026,16 @@ if (availableIngredients.isEmpty) {
         idMotivoOperacion: idMotivoOperacion,
         idTienda: idTienda,
         observaciones: 'Extracción de productos elaborados: $observaciones',
-        productos: productosParaExtraccion, // ✅ CORREGIDO: usar productosParaExtraccion
+        productos:
+            productosParaExtraccion, // ✅ CORREGIDO: usar productosParaExtraccion
         uuid: uuid,
       );
 
       if (result['status'] == 'success') {
         return {
           'status': 'success',
-          'message': 'Extracción de productos elaborados completada exitosamente',
+          'message':
+              'Extracción de productos elaborados completada exitosamente',
           'id_operacion': result['id_operacion'],
           'productos_procesados': productos.length,
           'ingredientes_extraidos': productosDescompuestos.length,
@@ -1877,13 +2043,9 @@ if (availableIngredients.isEmpty) {
       } else {
         throw Exception(result['message'] ?? 'Error en la extracción');
       }
-      
     } catch (e) {
       print('❌ Error en processElaboratedProductsExtraction: $e');
-      return {
-        'status': 'error',
-        'message': 'Error al procesar extracción: $e',
-      };
+      return {'status': 'error', 'message': 'Error al procesar extracción: $e'};
     }
   }
 
@@ -1910,7 +2072,7 @@ if (availableIngredients.isEmpty) {
       print('   - p_id_operacion: $idOperacion');
       print('   - p_comentario: $comentario');
       print('   - p_uuid: $uuid');
-      
+
       final response = await _supabase.rpc(
         'fn_contabilizar_operacion',
         params: {
@@ -1932,12 +2094,12 @@ if (availableIngredients.isEmpty) {
       print('   - Error: $e');
       print('   - Tipo de error: ${e.runtimeType}');
       print('   - Stack trace: ${StackTrace.current}');
-      
+
       // Si es un error de PostgreSQL, mostrar más detalles
       if (e.toString().contains('PostgrestException')) {
         print('   - Es un error de PostgreSQL');
       }
-      
+
       return {
         'success': false,
         'message': 'Error completando operación: $e',
@@ -1948,24 +2110,26 @@ if (availableIngredients.isEmpty) {
   }
 
   /// Convierte cantidad de ingrediente a unidades de inventario
-static Future<double> _convertirCantidadAInventario({
-  required double cantidadNecesaria,
-  required int productId,
-  int? unidadIngrediente,
-  int? unidadInventario,
-}) async {
+  static Future<double> _convertirCantidadAInventario({
+    required double cantidadNecesaria,
+    required int productId,
+    int? unidadIngrediente,
+    int? unidadInventario,
+  }) async {
     try {
-      if (unidadIngrediente == null || unidadInventario == null || unidadIngrediente == unidadInventario) {
+      if (unidadIngrediente == null ||
+          unidadInventario == null ||
+          unidadIngrediente == unidadInventario) {
         return cantidadNecesaria;
       }
-      
+
       final cantidadConvertida = await RestaurantService.convertirUnidades(
         cantidad: cantidadNecesaria,
         unidadOrigen: unidadIngrediente,
         unidadDestino: unidadInventario,
         idProducto: productId,
       );
-      
+
       return cantidadConvertida;
     } catch (e) {
       print('❌ Error conversión: $e');
@@ -1977,48 +2141,55 @@ static Future<double> _convertirCantidadAInventario({
   static Future<int?> _mapUnidadStringToId(String unidadString) async {
     try {
       print('🔍 Buscando unidad: "$unidadString"');
-      
+
       // Normalizar el string (lowercase y trim)
       final unidadNormalizada = unidadString.toLowerCase().trim();
       print('🔍 Unidad normalizada: "$unidadNormalizada"');
-      
+
       // Obtener todas las unidades de medida de la base de datos
       final unidadesMedida = await RestaurantService.getUnidadesMedida();
       print('🔍 Total unidades en BD: ${unidadesMedida.length}');
-      
+
       // Mostrar todas las unidades disponibles para debugging
       for (final unidad in unidadesMedida) {
-        print('📋 Unidad BD: ID=${unidad.id}, denominacion="${unidad.denominacion}", abreviatura="${unidad.abreviatura}"');
+        print(
+          '📋 Unidad BD: ID=${unidad.id}, denominacion="${unidad.denominacion}", abreviatura="${unidad.abreviatura}"',
+        );
       }
-      
+
       // Buscar por denominación exacta
       for (final unidad in unidadesMedida) {
         if (unidad.denominacion.toLowerCase() == unidadNormalizada) {
-          print('✅ Unidad encontrada por denominación: "${unidad.denominacion}" → ID ${unidad.id}');
+          print(
+            '✅ Unidad encontrada por denominación: "${unidad.denominacion}" → ID ${unidad.id}',
+          );
           return unidad.id;
         }
       }
-      
+
       // Buscar por abreviatura exacta
       for (final unidad in unidadesMedida) {
         if (unidad.abreviatura.toLowerCase() == unidadNormalizada) {
-          print('✅ Unidad encontrada por abreviatura: "${unidad.abreviatura}" → ID ${unidad.id}');
+          print(
+            '✅ Unidad encontrada por abreviatura: "${unidad.abreviatura}" → ID ${unidad.id}',
+          );
           return unidad.id;
         }
       }
-      
+
       // Buscar por coincidencias parciales en denominación
       for (final unidad in unidadesMedida) {
         if (unidad.denominacion.toLowerCase().contains(unidadNormalizada) ||
             unidadNormalizada.contains(unidad.denominacion.toLowerCase())) {
-          print('✅ Unidad encontrada por coincidencia parcial: "${unidad.denominacion}" → ID ${unidad.id}');
+          print(
+            '✅ Unidad encontrada por coincidencia parcial: "${unidad.denominacion}" → ID ${unidad.id}',
+          );
           return unidad.id;
         }
       }
-      
+
       print('⚠️ Unidad no encontrada en BD: "$unidadString" - usando fallback');
       return _mapUnidadStringToIdFallback(unidadString);
-      
     } catch (e) {
       print('❌ Error buscando unidad en BD: $e - usando fallback');
       return _mapUnidadStringToIdFallback(unidadString);
@@ -2028,10 +2199,10 @@ static Future<double> _convertirCantidadAInventario({
   /// Mapeo básico como fallback si falla la consulta a la base de datos
   static int? _mapUnidadStringToIdFallback(String unidadString) {
     print('🔄 Usando mapeo fallback para: "$unidadString"');
-    
+
     // Normalizar el string (lowercase y trim)
     final unidadNormalizada = unidadString.toLowerCase().trim();
-    
+
     // Mapeo de strings comunes a IDs de unidades de medida (valores típicos)
     switch (unidadNormalizada) {
       case 'gramos':
@@ -2040,7 +2211,7 @@ static Future<double> _convertirCantidadAInventario({
       case 'gr':
         print('✅ Fallback: "$unidadString" → ID 1 (gramos)');
         return 2; // ID típico para gramos
-        
+
       case 'kilogramos':
       case 'kilogramo':
       case 'kg':
@@ -2048,20 +2219,20 @@ static Future<double> _convertirCantidadAInventario({
       case 'kilos':
         print('✅ Fallback: "$unidadString" → ID 2 (kilogramos)');
         return 1; // ID típico para kilogramos
-        
+
       case 'mililitros':
       case 'mililitro':
       case 'ml':
         print('✅ Fallback: "$unidadString" → ID 3 (mililitros)');
         return 3; // ID típico para mililitros
-        
+
       case 'litros':
       case 'litro':
       case 'l':
       case 'lt':
         print('✅ Fallback: "$unidadString" → ID 4 (litros)');
         return 4; // ID típico para litros
-        
+
       case 'unidades':
       case 'unidad':
       case 'u':
@@ -2072,33 +2243,35 @@ static Future<double> _convertirCantidadAInventario({
       case 'pza':
         print('✅ Fallback: "$unidadString" → ID 5 (unidades)');
         return 5; // ID típico para unidades
-        
+
       default:
-        print('⚠️ Unidad desconocida en fallback: "$unidadString" - retornando ID 5 (unidades por defecto)');
+        print(
+          '⚠️ Unidad desconocida en fallback: "$unidadString" - retornando ID 5 (unidades por defecto)',
+        );
         return 5; // Usar unidades como fallback por defecto
     }
   }
-/// Consolida ingredientes preservando información de unidad de medida
-static void _addToConsolidatedWithUnit(
-  Map<int, Map<String, dynamic>> consolidated, 
-  int productId, 
-  double quantity, 
-  String unit,
-  String denominacion,
-  String sku
-) {
-  if (consolidated.containsKey(productId)) {
-    // Sumar cantidad si ya existe
-    consolidated[productId]!['cantidad'] += quantity;
-  } else {
-    // Crear nuevo registro con toda la información
-    consolidated[productId] = {
-      'cantidad': quantity,
-      'unidad_medida': unit,
-      'denominacion': denominacion,
-      'sku': sku,
-    };
-  }
-}
 
+  /// Consolida ingredientes preservando información de unidad de medida
+  static void _addToConsolidatedWithUnit(
+    Map<int, Map<String, dynamic>> consolidated,
+    int productId,
+    double quantity,
+    String unit,
+    String denominacion,
+    String sku,
+  ) {
+    if (consolidated.containsKey(productId)) {
+      // Sumar cantidad si ya existe
+      consolidated[productId]!['cantidad'] += quantity;
+    } else {
+      // Crear nuevo registro con toda la información
+      consolidated[productId] = {
+        'cantidad': quantity,
+        'unidad_medida': unit,
+        'denominacion': denominacion,
+        'sku': sku,
+      };
+    }
+  }
 }
