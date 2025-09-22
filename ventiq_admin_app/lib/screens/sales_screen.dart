@@ -1419,37 +1419,51 @@ class _SalesScreenState extends State<SalesScreen>
                                 ),
                                 subtitle: Padding(
                                   padding: const EdgeInsets.only(top: 8),
-                                  child: Row(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Expanded(
-                                        child: Row(
-                                          children: [
-                                            Icon(Icons.attach_money, size: 16, color: AppColors.success),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              '\$${order.totalOperacion.toStringAsFixed(2)}',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 15,
-                                              ),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.attach_money, size: 16, color: AppColors.success),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 15,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 16),
+                                                Icon(Icons.shopping_bag, size: 16, color: AppColors.info),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '${order.cantidadItems} prod.',
+                                                  style: const TextStyle(fontSize: 14),
+                                                ),
+                                              ],
                                             ),
-                                            const SizedBox(width: 16),
-                                            Icon(Icons.shopping_bag, size: 16, color: AppColors.info),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              '${order.cantidadItems} prod.',
-                                              style: const TextStyle(fontSize: 14),
+                                          ),
+                                          Text(
+                                            _formatOrderDate(order.fechaOperacion),
+                                            style: TextStyle(
+                                              color: Colors.grey[600],
+                                              fontSize: 12,
                                             ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
-                                      Text(
-                                        _formatOrderDate(order.fechaOperacion),
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                          fontSize: 12,
+                                      // Medios de pago
+                                      if (order.detalles['pagos'] != null && (order.detalles['pagos'] as List).isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 4,
+                                          children: _buildPaymentMethodChips(order.detalles['pagos'] as List),
                                         ),
-                                      ),
+                                      ],
                                     ],
                                   ),
                                 ),
@@ -1511,6 +1525,12 @@ class _SalesScreenState extends State<SalesScreen>
                                                 (order.detalles['items'] as List).length,
                                                 (itemIndex) {
                                                   final item = order.detalles['items'][itemIndex];
+                                                  // Filtrar productos con precio_unitario = 0.0 o 0
+                                                  final precioUnitario = (item['precio_unitario'] ?? 0.0).toDouble();
+                                                  if (precioUnitario == 0.0) {
+                                                    return const SizedBox.shrink(); // No mostrar el producto
+                                                  }
+                                                  
                                                   return Container(
                                                     margin: const EdgeInsets.only(bottom: 6),
                                                     padding: const EdgeInsets.all(12),
@@ -1524,7 +1544,7 @@ class _SalesScreenState extends State<SalesScreen>
                                                         Expanded(
                                                           flex: 3,
                                                           child: Text(
-                                                            item['nombre'] ?? 'Producto',
+                                                            item['producto_nombre'] ?? item['nombre'] ?? 'Producto',
                                                             style: const TextStyle(
                                                               fontSize: 13,
                                                               fontWeight: FontWeight.w500,
@@ -1558,12 +1578,84 @@ class _SalesScreenState extends State<SalesScreen>
                                                     ),
                                                   );
                                                 },
-                                              ),
+                                              ).where((widget) => widget is! SizedBox).toList(),
                                           ],
                                         ),
                                       ),
                                     ],
                                   ),
+                                  
+                                  // Desglose de Pagos
+                                  if (order.detalles['pagos'] != null && (order.detalles['pagos'] as List).isNotEmpty) ...[
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(Icons.payment, size: 20, color: AppColors.primary),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              const Text(
+                                                'Desglose de Pagos:',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              ...List.generate(
+                                                (order.detalles['pagos'] as List).length,
+                                                (paymentIndex) {
+                                                  final payment = order.detalles['pagos'][paymentIndex];
+                                                  return Container(
+                                                    margin: const EdgeInsets.only(bottom: 6),
+                                                    padding: const EdgeInsets.all(12),
+                                                    decoration: BoxDecoration(
+                                                      color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false).withOpacity(0.1),
+                                                      borderRadius: BorderRadius.circular(8),
+                                                      border: Border.all(
+                                                        color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false).withOpacity(0.3),
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(
+                                                          _getPaymentIconByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false),
+                                                          size: 16,
+                                                          color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false),
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        Expanded(
+                                                          child: Text(
+                                                            payment['medio_pago'] ?? 'N/A',
+                                                            style: TextStyle(
+                                                              fontSize: 13,
+                                                              fontWeight: FontWeight.w500,
+                                                              color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          '\$${(payment['total'] ?? 0.0).toStringAsFixed(2)}',
+                                                          style: TextStyle(
+                                                            fontWeight: FontWeight.w600,
+                                                            fontSize: 13,
+                                                            color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                   
                                   // Observaciones
                                   if (order.observaciones != null && order.observaciones!.isNotEmpty) ...[
@@ -1647,6 +1739,136 @@ class _SalesScreenState extends State<SalesScreen>
 
   Map<String, DateTime> _getDateRange() {
     return {'start': _startDate, 'end': _endDate};
+  }
+
+  List<Widget> _buildPaymentMethodChips(List<dynamic> pagos) {
+    // Agrupar pagos por método de pago y tipo
+    Map<String, Map<String, dynamic>> paymentSummary = {};
+    for (var pago in pagos) {
+      String metodoPago = pago['medio_pago'] ?? 'N/A';
+      double monto = (pago['total'] ?? 0.0).toDouble();
+      bool esEfectivo = pago['es_efectivo'] ?? false;
+      bool esDigital = pago['es_digital'] ?? false;
+      
+      String key = '$metodoPago-$esEfectivo-$esDigital';
+      if (paymentSummary.containsKey(key)) {
+        paymentSummary[key]!['total'] += monto;
+      } else {
+        paymentSummary[key] = {
+          'medio_pago': metodoPago,
+          'total': monto,
+          'es_efectivo': esEfectivo,
+          'es_digital': esDigital,
+        };
+      }
+    }
+
+    return paymentSummary.values.map((payment) {
+      Color color = _getPaymentColorByType(payment['es_efectivo'], payment['es_digital']);
+      IconData icon = _getPaymentIconByType(payment['es_efectivo'], payment['es_digital']);
+      
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: color.withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 12,
+              color: color,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              payment['medio_pago'],
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  // Nuevos métodos basados en los campos es_efectivo y es_digital
+  Color _getPaymentColorByType(bool esEfectivo, bool esDigital) {
+    if (esEfectivo) {
+      return AppColors.success; // Verde para efectivo
+    } else if (esDigital) {
+      return Colors.teal; // Verde azulado para pagos digitales
+    } else {
+      return AppColors.info; // Azul para transferencias/otros
+    }
+  }
+
+  IconData _getPaymentIconByType(bool esEfectivo, bool esDigital) {
+    if (esEfectivo) {
+      return Icons.money; // Ícono de dinero en efectivo
+    } else if (esDigital) {
+      return Icons.smartphone; // Ícono de smartphone para pagos digitales
+    } else {
+      return Icons.account_balance; // Ícono de banco para transferencias
+    }
+  }
+
+  // Métodos legacy mantenidos por compatibilidad
+  Color _getPaymentMethodColor(String? metodoPago) {
+    switch (metodoPago?.toLowerCase()) {
+      case 'efectivo':
+        return AppColors.success;
+      case 'transferencia':
+      case 'transferencia bancaria':
+        return AppColors.info;
+      case 'tarjeta de crédito':
+      case 'tarjeta de credito':
+      case 'tarjeta credito':
+        return AppColors.warning;
+      case 'tarjeta de débito':
+      case 'tarjeta de debito':
+      case 'tarjeta debito':
+        return AppColors.primary;
+      case 'cheque':
+        return Colors.purple;
+      case 'digital':
+      case 'pago digital':
+        return Colors.teal;
+      default:
+        return AppColors.textSecondary;
+    }
+  }
+
+  IconData _getPaymentMethodIcon(String? metodoPago) {
+    switch (metodoPago?.toLowerCase()) {
+      case 'efectivo':
+        return Icons.money;
+      case 'transferencia':
+      case 'transferencia bancaria':
+        return Icons.account_balance;
+      case 'tarjeta de crédito':
+      case 'tarjeta de credito':
+      case 'tarjeta credito':
+        return Icons.credit_card;
+      case 'tarjeta de débito':
+      case 'tarjeta de debito':
+      case 'tarjeta debito':
+        return Icons.payment;
+      case 'cheque':
+        return Icons.receipt;
+      case 'digital':
+      case 'pago digital':
+        return Icons.smartphone;
+      default:
+        return Icons.payment;
+    }
   }
 
   void _onBottomNavTap(int index) {
