@@ -4,6 +4,7 @@ import 'models/product.dart';
 import 'screens/splash_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/store_registration_screen.dart';
 import 'screens/products_screen.dart';
 import 'screens/product_detail_screen.dart';
 import 'screens/add_product_screen.dart';
@@ -122,6 +123,7 @@ class MyApp extends StatelessWidget {
         '/segments': (context) => const SegmentsScreen(),
         '/loyalty': (context) => const LoyaltyScreen(),
         '/add-product': (context) => const AddProductScreen(),
+        '/store-registration': (context) => const StoreRegistrationScreen(),
       },
     );
   }

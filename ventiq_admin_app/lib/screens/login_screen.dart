@@ -296,6 +296,34 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 16),
+        
+        // Botón para registrar nueva tienda
+        Container(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pushNamed(context, '/store-registration');
+            },
+            icon: const Icon(Icons.store, size: 20),
+            label: const Text(
+              'Registrar Nueva Tienda',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary, width: 2),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
