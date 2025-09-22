@@ -164,30 +164,42 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     });
 
     try {
-      debugPrint('🔍 Cargando presentaciones para producto ID: ${widget.product.id}');
-      
-      final presentations = await _productDetailService.getProductPresentations(widget.product.id);
-      
+      debugPrint(
+        '🔍 Cargando presentaciones para producto ID: ${widget.product.id}',
+      );
+
+      final presentations = await _productDetailService.getProductPresentations(
+        widget.product.id,
+      );
+
       setState(() {
         _productPresentations = presentations;
         _isLoadingPresentations = false;
-        
+
         // Inicializar presentación seleccionada para este producto específico
         final productKey = '${widget.product.id}';
-        
+
         if (presentations.isNotEmpty) {
-          final basePresentations = presentations.where((p) => p.esBase).toList();
+          final basePresentations =
+              presentations.where((p) => p.esBase).toList();
           if (basePresentations.isNotEmpty) {
             _selectedPresentation = basePresentations.first;
-            _selectedPresentationsByProduct[productKey] = basePresentations.first;
-            debugPrint('✅ Presentación base seleccionada: ${_selectedPresentation!.presentacion.denominacion}');
+            _selectedPresentationsByProduct[productKey] =
+                basePresentations.first;
+            debugPrint(
+              '✅ Presentación base seleccionada: ${_selectedPresentation!.presentacion.denominacion}',
+            );
           } else {
             _selectedPresentation = presentations.first;
             _selectedPresentationsByProduct[productKey] = presentations.first;
-            debugPrint('✅ Primera presentación seleccionada: ${_selectedPresentation!.presentacion.denominacion}');
+            debugPrint(
+              '✅ Primera presentación seleccionada: ${_selectedPresentation!.presentacion.denominacion}',
+            );
           }
         } else {
-          debugPrint('⚠️ No hay presentaciones configuradas, usando presentación por defecto');
+          debugPrint(
+            '⚠️ No hay presentaciones configuradas, usando presentación por defecto',
+          );
           _selectedPresentation = null;
           _selectedPresentationsByProduct[productKey] = null;
         }
@@ -1267,8 +1279,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   Widget _buildPresentationSelector(Product product) {
     // Obtener la presentación seleccionada para este producto específico
     final productKey = '${product.id}';
-    final selectedPresentationForProduct = _selectedPresentationsByProduct[productKey];
-    
+    final selectedPresentationForProduct =
+        _selectedPresentationsByProduct[productKey];
+
     // Si no hay presentaciones cargadas, mostrar presentación por defecto
     if (_productPresentations.isEmpty) {
       return Row(
@@ -1292,11 +1305,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.inventory_2,
-                  size: 16,
-                  color: Colors.grey[600],
-                ),
+                Icon(Icons.inventory_2, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 6),
                 Text(
                   'Unidad (1.0)',
@@ -1334,36 +1343,45 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             child: DropdownButton<ProductPresentation>(
               value: selectedPresentationForProduct,
               isDense: true,
-              items: _productPresentations.map((presentation) {
-                return DropdownMenuItem<ProductPresentation>(
-                  value: presentation,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (presentation.esBase) ...[
-                        Icon(
-                          Icons.star,
-                          size: 14,
-                          color: Colors.orange[600],
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        '${presentation.presentacion.denominacion} (${presentation.cantidad})',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: presentation.esBase ? FontWeight.w600 : FontWeight.w500,
-                          color: presentation.esBase ? Colors.orange[700] : Colors.grey[700],
-                        ),
+              items:
+                  _productPresentations.map((presentation) {
+                    return DropdownMenuItem<ProductPresentation>(
+                      value: presentation,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (presentation.esBase) ...[
+                            Icon(
+                              Icons.star,
+                              size: 14,
+                              color: Colors.orange[600],
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Text(
+                            '${presentation.presentacion.denominacion} (${presentation.cantidad})',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight:
+                                  presentation.esBase
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                              color:
+                                  presentation.esBase
+                                      ? Colors.orange[700]
+                                      : Colors.grey[700],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                );
-              }).toList(),
+                    );
+                  }).toList(),
               onChanged: (ProductPresentation? newPresentation) {
                 setState(() {
                   _selectedPresentationsByProduct[productKey] = newPresentation;
-                  debugPrint('🔄 Presentación cambiada para producto ${product.id}: ${newPresentation?.presentacion.denominacion} (Factor: ${newPresentation?.cantidad})');
+                  debugPrint(
+                    '🔄 Presentación cambiada para producto ${product.id}: ${newPresentation?.presentacion.denominacion} (Factor: ${newPresentation?.cantidad})',
+                  );
                 });
               },
             ),
@@ -1377,30 +1395,38 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   double _getPresentationConversionFactor(Product product) {
     final productKey = '${product.id}';
     final selectedPresentation = _selectedPresentationsByProduct[productKey];
-    
+
     if (selectedPresentation != null) {
-      debugPrint('📊 Factor de conversión para producto ${product.id}: ${selectedPresentation.cantidad} (${selectedPresentation.presentacion.denominacion})');
+      debugPrint(
+        '📊 Factor de conversión para producto ${product.id}: ${selectedPresentation.cantidad} (${selectedPresentation.presentacion.denominacion})',
+      );
       return selectedPresentation.cantidad;
     }
-    
+
     // Si no hay presentación seleccionada, usar presentación por defecto (1.0)
-    debugPrint('📊 Usando factor de conversión por defecto: 1.0 para producto ${product.id}');
+    debugPrint(
+      '📊 Usando factor de conversión por defecto: 1.0 para producto ${product.id}',
+    );
     return 1.0;
   }
 
   /// Calcular el precio total considerando la presentación seleccionada
-  double _calculateTotalPriceWithPresentation(double basePrice, int quantity, Product product) {
+  double _calculateTotalPriceWithPresentation(
+    double basePrice,
+    int quantity,
+    Product product,
+  ) {
     final conversionFactor = _getPresentationConversionFactor(product);
     final unitPrice = basePrice * conversionFactor;
     final totalPrice = unitPrice * quantity;
-    
+
     debugPrint('💰 Cálculo precio para producto ${product.id}:');
     debugPrint('   - Precio base: \$${basePrice.toStringAsFixed(2)}');
     debugPrint('   - Factor conversión: ${conversionFactor}');
     debugPrint('   - Precio unitario: \$${unitPrice.toStringAsFixed(2)}');
     debugPrint('   - Cantidad: $quantity');
     debugPrint('   - Precio total: \$${totalPrice.toStringAsFixed(2)}');
-    
+
     return totalPrice;
   }
 
