@@ -649,7 +649,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     quantityText = 'Cantidad: ${cantidad.toInt()}';
   }
   
-  return '$quantityText | Precio: \$${precio.toStringAsFixed(2)}';
+  return '$quantityText | Precio: \$${precio.toStringAsFixed(3)}';
 }
 
   Widget _buildBottomSection() {
