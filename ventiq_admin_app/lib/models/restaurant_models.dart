@@ -268,17 +268,31 @@ class PlatoElaborado {
     }
 
     try {
+      // Handle precio_venta from historical prices or direct field
+      double precioVenta = 0.0;
+      if (json['precio_actual'] != null && (json['precio_actual'] as List).isNotEmpty) {
+        final precios = (json['precio_actual'] as List);
+        if (precios.isNotEmpty) {
+          precioVenta = parseDoubleSafely(precios.first['precio_venta_cup']) ?? 0.0;
+        }
+      }
+      if (precioVenta == 0.0) {
+        precioVenta = parseDoubleSafely(json['precio_venta_cup']) ?? 0.0;
+      }
+
       return PlatoElaborado(
         id: parseIntSafely(json['id']) ?? 0,
-        nombre: json['nombre']?.toString() ?? '',
+        nombre: json['denominacion']?.toString() ?? json['nombre']?.toString() ?? '',
         descripcion: json['descripcion']?.toString(),
         idCategoria: parseIntSafely(json['id_categoria']),
-        precioVenta: parseDoubleSafely(json['precio_venta']) ?? 0.0,
+        precioVenta: precioVenta,
         tiempoPreparacion: parseIntSafely(json['tiempo_preparacion']),
-        esActivo: json['es_activo'] as bool? ?? true,
+        esActivo: json['es_vendible'] as bool? ?? json['es_activo'] as bool? ?? true,
         imagen: json['imagen']?.toString(),
         instruccionesPreparacion: json['instrucciones_preparacion']?.toString(),
-        createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
+        createdAt: json['created_at'] != null 
+            ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
+            : DateTime.now(),
         categoria: json['categoria'] != null 
             ? CategoriaPlato.fromJson(json['categoria'] as Map<String, dynamic>)
             : null,

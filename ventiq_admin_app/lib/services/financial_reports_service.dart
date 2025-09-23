@@ -20,6 +20,10 @@ class FinancialReportsService {
     bool includeDetails = true,
   }) async {
     try {
+      print('⚠️ generateProfitabilityReport temporalmente deshabilitado - función RPC no existe');
+      return {'data': [], 'summary': {}};
+      
+      /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_profitability_report', params: {
         'store_id': storeId,
         'start_date': startDate,
@@ -30,6 +34,7 @@ class FinancialReportsService {
       });
 
       return response ?? _getMockProfitabilityReport(storeId, startDate, endDate);
+      */
     } catch (e) {
       print('Error generating profitability report: $e');
       return _getMockProfitabilityReport(storeId, startDate, endDate);
@@ -43,6 +48,10 @@ class FinancialReportsService {
     bool includeSubcategories = false,
   }) async {
     try {
+      print('⚠️ getCategoryProfitabilityAnalysis temporalmente deshabilitado - función RPC no existe');
+      return [];
+      
+      /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_category_profitability_analysis', params: {
         'store_id': storeId,
         'period': period,
@@ -50,6 +59,7 @@ class FinancialReportsService {
       });
 
       return List<Map<String, dynamic>>.from(response ?? _getMockCategoryAnalysis());
+      */
     } catch (e) {
       print('Error getting category profitability: $e');
       return _getMockCategoryAnalysis();
@@ -63,6 +73,10 @@ class FinancialReportsService {
     int limit = 50,
   }) async {
     try {
+      print('⚠️ getLowProfitabilityProducts temporalmente deshabilitado - función RPC no existe');
+      return [];
+      
+      /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_low_profitability_products', params: {
         'store_id': storeId,
         'margin_threshold': marginThreshold,
@@ -70,6 +84,7 @@ class FinancialReportsService {
       });
 
       return List<Map<String, dynamic>>.from(response ?? []);
+      */
     } catch (e) {
       print('Error getting low profitability products: $e');
       return [];
@@ -111,6 +126,10 @@ class FinancialReportsService {
 
   Future<List<Map<String, dynamic>>> _getHistoricalCashFlowData(int storeId, int monthsBack) async {
     try {
+      print('⚠️ _getHistoricalCashFlowData temporalmente deshabilitado - función RPC no existe');
+      return [];
+      
+      /* CÓDIGO ORIGINAL COMENTADO:
       final endDate = DateTime.now();
       final startDate = DateTime(endDate.year, endDate.month - monthsBack, 1);
 
@@ -121,6 +140,7 @@ class FinancialReportsService {
       });
 
       return List<Map<String, dynamic>>.from(response ?? []);
+      */
     } catch (e) {
       print('Error getting historical cash flow data: $e');
       return [];
@@ -227,6 +247,10 @@ class FinancialReportsService {
     String comparisonType = 'previous_period', // 'previous_period', 'same_period_last_year'
   }) async {
     try {
+      print('⚠️ generateHistoricalComparison temporalmente deshabilitado - función RPC no existe');
+      return {'data': [], 'summary': {}};
+      
+      /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_historical_comparison', params: {
         'store_id': storeId,
         'current_start': currentPeriodStart,
@@ -235,6 +259,7 @@ class FinancialReportsService {
       });
 
       return response ?? _getMockHistoricalComparison(storeId);
+      */
     } catch (e) {
       print('Error generating historical comparison: $e');
       return _getMockHistoricalComparison(storeId);
@@ -248,6 +273,10 @@ class FinancialReportsService {
     int monthsBack = 12,
   }) async {
     try {
+      print('⚠️ getTrendAnalysis temporalmente deshabilitado - función RPC no existe');
+      return {'data': [], 'summary': {}};
+      
+      /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_trend_analysis', params: {
         'store_id': storeId,
         'kpi': kpi,
@@ -255,6 +284,7 @@ class FinancialReportsService {
       });
 
       return response ?? _getMockTrendAnalysis(kpi);
+      */
     } catch (e) {
       print('Error getting trend analysis: $e');
       return _getMockTrendAnalysis(kpi);
@@ -291,19 +321,24 @@ class FinancialReportsService {
     required String period,
   }) async {
     try {
+      print('⚠️ getBudgetVarianceAnalysis temporalmente deshabilitado - función RPC no existe');
+      return {'data': [], 'summary': {}};
+      
+      /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase.rpc('fn_budget_variance_analysis', params: {
         'store_id': storeId,
         'period': period,
       });
 
       return response ?? _getMockBudgetVariance(storeId, period);
+      */
     } catch (e) {
       print('Error getting budget variance: $e');
       return _getMockBudgetVariance(storeId, period);
     }
   }
 
-  /// Sistema de aprobaciones de gastos excepcionales
+  /// Sistema de aprobaciones de gastos excepcionales (TEMPORALMENTE DESHABILITADO)
   Future<void> requestExpenseApproval({
     required int storeId,
     required double amount,
@@ -313,6 +348,10 @@ class FinancialReportsService {
     String? attachments,
   }) async {
     try {
+      print('⚠️ requestExpenseApproval temporalmente deshabilitado - tabla no existe');
+      return;
+      
+      /* CÓDIGO ORIGINAL COMENTADO:
       await _supabase.from('app_cont_aprobacion_gastos').insert({
         'id_tienda': storeId,
         'monto': amount,
@@ -322,19 +361,23 @@ class FinancialReportsService {
         'adjuntos': attachments,
         'estado': 'pendiente',
         'fecha_solicitud': DateTime.now().toIso8601String(),
-        'solicitado_por': await _getUserId(),
+        'solicitado_por': _supabase.auth.currentUser?.id,
       });
+      */
     } catch (e) {
       print('Error requesting expense approval: $e');
-      rethrow;
     }
   }
 
-  /// Obtiene gastos pendientes de aprobación
+  /// Obtiene gastos pendientes de aprobación (TEMPORALMENTE DESHABILITADO)
   Future<List<Map<String, dynamic>>> getPendingApprovals({
     required int storeId,
   }) async {
     try {
+      print('⚠️ getPendingApprovals temporalmente deshabilitado - tabla no existe');
+      return [];
+      
+      /* CÓDIGO ORIGINAL COMENTADO:
       final response = await _supabase
           .from('app_cont_aprobacion_gastos')
           .select('*')
@@ -342,7 +385,8 @@ class FinancialReportsService {
           .eq('estado', 'pendiente')
           .order('fecha_solicitud', ascending: false);
 
-      return List<Map<String, dynamic>>.from(response);
+      return List<Map<String, dynamic>>.from(response ?? []);
+      */
     } catch (e) {
       print('Error getting pending approvals: $e');
       return [];

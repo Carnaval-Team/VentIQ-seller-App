@@ -52,10 +52,16 @@ class _FinancialScreenState extends State<FinancialScreen> {
 
   Future<void> _loadPendingOperationsCount() async {
     try {
-      final count = await _financialService.getPendingOperationsCount();
+      // Usar el método optimizado con RPC (SIN auditoría)
+      final count =
+          await _financialService.getPendingOperationsCountOptimized();
       setState(() {
         _pendingOperationsCount = count;
       });
+
+      print(
+        '✅ Contador de operaciones pendientes cargado: $count (sin auditoría)',
+      );
     } catch (e) {
       print('❌ Error cargando operaciones pendientes: $e');
       setState(() {
@@ -66,7 +72,7 @@ class _FinancialScreenState extends State<FinancialScreen> {
 
   Future<void> _loadRecentActivities() async {
     try {
-      final activities = await _financialService.getRecentActivities();
+      final activities = await _financialService.getRecentActivities(limit: 5); // Cambiar a 5
       setState(() {
         _recentActivities = activities;
       });
@@ -91,28 +97,148 @@ class _FinancialScreenState extends State<FinancialScreen> {
           SizedBox(width: 8),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildWelcomeCard(),
-            const SizedBox(height: 24),
-            // Solo mostrar configuración si NO está configurado
-            if (!_isConfigured && !_isLoading) ...[
-              _buildConfigurationCard(),
-              const SizedBox(height: 24),
-            ],
-            _buildQuickStats(),
-            const SizedBox(height: 24),
-            _buildModuleGrid(),
-            const SizedBox(height: 24),
-            _buildRecentActivity(),
-            const SizedBox(height: 24),
-            _buildPendingOperationsCard(),
-          ],
-        ),
+      body:
+          _isLoading
+              ? _buildLoadingOverlay()
+              : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildWelcomeCard(),
+                    const SizedBox(height: 24),
+                    // Solo mostrar configuración si NO está configurado
+                    if (!_isConfigured && !_isLoading) ...[
+                      _buildConfigurationCard(),
+                      const SizedBox(height: 24),
+                    ],
+                    _buildQuickStats(),
+                    const SizedBox(height: 24),
+                    _buildModuleGrid(),
+                    const SizedBox(height: 24),
+                    _buildRecentActivity(),
+                  ],
+                ),
+              ),
+    );
+  }
+
+  Widget _buildLoadingOverlay() {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.white,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Logo o ícono principal
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              Icons.account_balance_wallet,
+              size: 64,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // Indicador de carga
+          SizedBox(
+            width: 60,
+            height: 60,
+            child: CircularProgressIndicator(
+              strokeWidth: 4,
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Texto principal
+          const Text(
+            'Cargando Módulo Financiero',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Texto secundario
+          Text(
+            'Verificando configuración y cargando datos...',
+            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 32),
+
+          // Indicadores de progreso
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              children: [
+                _buildLoadingStep(
+                  'Verificando configuración del sistema',
+                  _isConfigured || !_isLoading,
+                ),
+                const SizedBox(height: 12),
+                _buildLoadingStep(
+                  'Contando operaciones pendientes',
+                  _pendingOperationsCount >= 0,
+                ),
+                const SizedBox(height: 12),
+                _buildLoadingStep(
+                  'Cargando actividades recientes',
+                  _recentActivities.isNotEmpty || !_isLoading,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildLoadingStep(String text, bool completed) {
+    return Row(
+      children: [
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            color: completed ? Colors.green : Colors.grey[300],
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child:
+              completed
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.primary,
+                      ),
+                    ),
+                  ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 13,
+              color: completed ? Colors.green : Colors.grey[600],
+              fontWeight: completed ? FontWeight.w500 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -155,10 +281,7 @@ class _FinancialScreenState extends State<FinancialScreen> {
                       ),
                       Text(
                         'Control integral de finanzas, costos y rentabilidad',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey,
-                        ),
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -196,11 +319,7 @@ class _FinancialScreenState extends State<FinancialScreen> {
             children: [
               Row(
                 children: [
-                  Icon(
-                    Icons.check_circle,
-                    color: AppColors.success,
-                    size: 24,
-                  ),
+                  Icon(Icons.check_circle, color: AppColors.success, size: 24),
                   const SizedBox(width: 12),
                   const Text(
                     'Sistema Configurado',
@@ -215,16 +334,17 @@ class _FinancialScreenState extends State<FinancialScreen> {
               const SizedBox(height: 16),
               const Text(
                 'El sistema financiero está completamente configurado y listo para usar. Accede a la configuración detallada para gestionar categorías, centros de costo y márgenes comerciales.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey),
               ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () => Navigator.pushNamed(context, '/financial-configuration'),
+                  onPressed:
+                      () => Navigator.pushNamed(
+                        context,
+                        '/financial-configuration',
+                      ),
                   icon: const Icon(Icons.dashboard),
                   label: const Text('Ver Dashboard de Configuración'),
                   style: ElevatedButton.styleFrom(
@@ -248,45 +368,42 @@ class _FinancialScreenState extends State<FinancialScreen> {
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.settings,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
+                Icon(Icons.settings, color: AppColors.primary, size: 24),
                 const SizedBox(width: 12),
                 const Text(
                   'Configuración del Sistema',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             const Text(
               'Inicializa las configuraciones básicas del sistema financiero incluyendo categorías de gastos, tipos de costos, centros de costo y márgenes comerciales.',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey),
             ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: _isInitializing ? null : _initializeFinancialSystem,
-                icon: _isInitializing 
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(Icons.play_arrow),
-                label: Text(_isInitializing ? 'Configurando...' : 'Configurar Sistema Financiero'),
+                icon:
+                    _isInitializing
+                        ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                        : const Icon(Icons.play_arrow),
+                label: Text(
+                  _isInitializing
+                      ? 'Configurando...'
+                      : 'Configurar Sistema Financiero',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -302,11 +419,11 @@ class _FinancialScreenState extends State<FinancialScreen> {
 
   Future<void> _initializeFinancialSystem() async {
     setState(() => _isInitializing = true);
-    
+
     try {
       await _financialService.initializeFinancialSystem();
       await _checkConfigurationStatus(); // Recheck status after initialization
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -346,65 +463,62 @@ class _FinancialScreenState extends State<FinancialScreen> {
                 const SizedBox(width: 8),
                 const Text(
                   'Resumen Rápido',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             Row(
               children: [
-                // Contador de operaciones pendientes - destacado
+                // Operaciones pendientes - más compacto
                 Expanded(
-                  flex: 2,
                   child: Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _pendingOperationsCount > 0 
+                      color: _pendingOperationsCount > 0
                           ? Colors.orange.withOpacity(0.1)
                           : Colors.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _pendingOperationsCount > 0 
+                        color: _pendingOperationsCount > 0
                             ? Colors.orange
                             : Colors.green,
-                        width: 2,
+                        width: 1.5,
                       ),
                     ),
                     child: Column(
                       children: [
                         Icon(
-                          Icons.pending_actions,
-                          size: 32,
-                          color: _pendingOperationsCount > 0 
+                          _pendingOperationsCount > 0 
+                              ? Icons.pending_actions 
+                              : Icons.check_circle,
+                          size: 24,
+                          color: _pendingOperationsCount > 0
                               ? Colors.orange
                               : Colors.green,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Text(
                           '$_pendingOperationsCount',
                           style: TextStyle(
-                            fontSize: 24,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: _pendingOperationsCount > 0 
+                            color: _pendingOperationsCount > 0
                                 ? Colors.orange
                                 : Colors.green,
                           ),
                         ),
-                        const Text(
-                          'Operaciones\nPendientes',
-                          textAlign: TextAlign.center,
+                        Text(
+                          'Pendientes',
                           style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 11,
+                            color: Colors.grey[600],
                           ),
                         ),
                         if (_pendingOperationsCount > 0) ...[
-                          const SizedBox(height: 8),
-                          ElevatedButton(
-                            onPressed: () {
+                          const SizedBox(height: 6),
+                          GestureDetector(
+                            onTap: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -412,13 +526,20 @@ class _FinancialScreenState extends State<FinancialScreen> {
                                 ),
                               ).then((_) => _loadData());
                             },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            ),
-                            child: const Text(
-                              'Procesar',
-                              style: TextStyle(fontSize: 12, color: Colors.white),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.orange,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                'Procesar',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -430,27 +551,77 @@ class _FinancialScreenState extends State<FinancialScreen> {
                 // Actividades recientes
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.primary.withOpacity(0.3),
+                        width: 1.5,
+                      ),
                     ),
                     child: Column(
                       children: [
-                        Icon(Icons.history, color: AppColors.primary),
-                        const SizedBox(height: 8),
+                        Icon(Icons.history, color: AppColors.primary, size: 24),
+                        const SizedBox(height: 6),
                         Text(
                           '${_recentActivities.length}',
                           style: TextStyle(
-                            fontSize: 20,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: AppColors.primary,
                           ),
                         ),
-                        const Text(
-                          'Actividades\nRecientes',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12),
+                        Text(
+                          'Recientes',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Estado del sistema
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _isConfigured
+                          ? Colors.blue.withOpacity(0.1)
+                          : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _isConfigured
+                            ? Colors.blue.withOpacity(0.3)
+                            : Colors.grey.withOpacity(0.3),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          _isConfigured ? Icons.settings_suggest : Icons.settings,
+                          color: _isConfigured ? Colors.blue : Colors.grey,
+                          size: 24,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _isConfigured ? 'OK' : 'Config',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: _isConfigured ? Colors.blue : Colors.grey,
+                          ),
+                        ),
+                        Text(
+                          'Sistema',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
                         ),
                       ],
                     ),
@@ -481,8 +652,11 @@ class _FinancialScreenState extends State<FinancialScreen> {
           builder: (context, constraints) {
             // Responsive grid based on screen width
             int crossAxisCount = constraints.maxWidth > 600 ? 3 : 2;
-            double childAspectRatio = constraints.maxWidth > 600 ? 1.2 : 1.1;
-            
+            double childAspectRatio =
+                constraints.maxWidth > 600
+                    ? 1.2
+                    : 0.9; // Ajustado para más altura en móvil
+
             return GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -513,8 +687,8 @@ class _FinancialScreenState extends State<FinancialScreen> {
                   () => Navigator.pushNamed(context, '/financial-expenses'),
                 ),
                 _buildModuleCard(
-                  'Costos de Producción',
-                  'Análisis de costos\nde platos elaborados',
+                  'Costos',
+                  'Análisis de costos\nde producción', // Texto más corto
                   Icons.restaurant_menu,
                   Colors.purple,
                   () => Navigator.pushNamed(context, '/restaurant-costs'),
@@ -527,49 +701,59 @@ class _FinancialScreenState extends State<FinancialScreen> {
     );
   }
 
-  Widget _buildModuleCard(String title, String subtitle, IconData icon, Color color, VoidCallback onTap) {
+  Widget _buildModuleCard(
+    String title,
+    String subtitle,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
     return Card(
       elevation: 2,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(8), // Reducido padding para más espacio
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8), // Reducido padding del ícono
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  icon,
-                  size: 28,
-                  color: color,
+                child: Icon(icon, size: 24, color: color), // Ícono más pequeño
+              ),
+              const SizedBox(height: 6), // Espaciado reducido
+              Flexible(
+                // Agregado Flexible para evitar overflow
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13, // Fuente más pequeña
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+              const SizedBox(height: 2),
+              Flexible(
+                // Agregado Flexible para evitar overflow
+                child: Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey[600],
+                  ), // Fuente más pequeña
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -582,19 +766,71 @@ class _FinancialScreenState extends State<FinancialScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Actividad Reciente',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Actividad Reciente',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            if (_recentActivities.isNotEmpty)
+              TextButton(
+                onPressed:
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (context) => const FinancialActivityHistoryScreen(),
+                      ),
+                    ),
+                child: const Text('Ver todo'),
+              ),
+          ],
         ),
         const SizedBox(height: 16),
         Card(
-          child: Column(
-            children: _recentActivities.map((activity) => _buildActivityItem(activity)).toList(),
-          ),
+          child:
+              _recentActivities.isEmpty
+                  ? Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      children: [
+                        Icon(Icons.history, size: 48, color: Colors.grey[400]),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No hay actividades recientes',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Las actividades financieras aparecerán aquí',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[500],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  )
+                  : Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      children:
+                          _recentActivities
+                              .take(5) // Limitar a 5 actividades
+                              .map((activity) => _buildActivityItem(activity))
+                              .toList(),
+                    ),
+                  ),
         ),
       ],
     );
@@ -603,9 +839,10 @@ class _FinancialScreenState extends State<FinancialScreen> {
   Widget _buildActivityItem(Map<String, dynamic> activity) {
     final tipoActividad = activity['tipo_actividad'] as String? ?? 'unknown';
     final descripcion = activity['descripcion'] as String? ?? 'Sin descripción';
-    final fechaActividad = activity['fecha_actividad'] != null 
-        ? DateTime.tryParse(activity['fecha_actividad']) ?? DateTime.now()
-        : DateTime.now();
+    final fechaActividad =
+        activity['fecha_actividad'] != null
+            ? DateTime.tryParse(activity['fecha_actividad']) ?? DateTime.now()
+            : DateTime.now();
     final monto = activity['monto'];
 
     IconData icon;
@@ -633,13 +870,22 @@ class _FinancialScreenState extends State<FinancialScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withOpacity(
+          0.05,
+        ), // Reducido opacidad para mejor legibilidad
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withOpacity(0.2)),
       ),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 20),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(icon, color: color, size: 16),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -648,30 +894,34 @@ class _FinancialScreenState extends State<FinancialScreen> {
                 Text(
                   descripcion,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   _formatTimeAgo(fechaActividad),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
               ],
             ),
           ),
           if (monto != null)
-            Text(
-              '\$${monto}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: color,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '\$${monto}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
               ),
             ),
         ],
@@ -692,57 +942,5 @@ class _FinancialScreenState extends State<FinancialScreen> {
     } else {
       return '${difference.inSeconds} segundos';
     }
-  }
-
-  Widget _buildPendingOperationsCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.pending_actions,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  'Operaciones Pendientes',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Hay $_pendingOperationsCount operaciones pendientes de procesar.',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => Navigator.pushNamed(context, '/financial-pending-operations'),
-                icon: const Icon(Icons.arrow_forward),
-                label: const Text('Ver Operaciones Pendientes'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

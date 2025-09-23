@@ -7,8 +7,11 @@ import '../services/product_service.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/warehouse_service.dart';
+import '../services/currency_display_service.dart';
 import '../models/warehouse.dart';
 import '../widgets/conversion_info_widget.dart';
+import '../widgets/currency_converter_widget.dart';
+import '../widgets/currency_info_widget.dart';
 import '../utils/presentation_converter.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
@@ -31,7 +34,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   static String _lastEntregadoPor = '';
   static String _lastRecibidoPor = '';
   static String _lastObservaciones = '';
-
+  // ← NUEVAS VARIABLES PARA MONEDAS
+  String _selectedCurrency = 'USD'; // Moneda seleccionada para la factura
+  double? _currentExchangeRate; // Tasa de cambio actual
+  double? _totalAmountInCUP; // Monto total convertido a CUP
+  bool _showCurrencyConverter = false; // Mostrar/ocultar convertidor
   List<Product> _availableProducts = [];
   List<Product> _filteredProducts = [];
   List<Map<String, dynamic>> _selectedProducts = [];
@@ -51,10 +58,54 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     _loadProducts();
     _loadMotivoOptions();
     _loadWarehouses();
+    _loadExchangeRate();
     _searchController.addListener(_onSearchChanged);
-    
+    _montoTotalController.addListener(_updateTotalAmountInCUP);
+
     // Load persisted values from previous entries
     _loadPersistedValues();
+  }
+
+  // ← NUEVOS MÉTODOS PARA MONEDAS
+  Future<void> _loadExchangeRate() async {
+    if (_selectedCurrency == 'CUP') return;
+
+    try {
+      final rate = await CurrencyDisplayService.getExchangeRateForDisplay(
+        _selectedCurrency,
+        'CUP',
+      );
+      setState(() {
+        _currentExchangeRate = rate;
+        _updateTotalAmountInCUP();
+      });
+    } catch (e) {
+      print('Error loading exchange rate: $e');
+    }
+  }
+
+  void _updateTotalAmountInCUP() {
+    final totalAmount = double.tryParse(_montoTotalController.text);
+    if (totalAmount != null &&
+        _currentExchangeRate != null &&
+        _selectedCurrency != 'CUP') {
+      setState(() {
+        _totalAmountInCUP = totalAmount * _currentExchangeRate!;
+      });
+    } else {
+      setState(() {
+        _totalAmountInCUP = null;
+      });
+    }
+  }
+
+  void _onCurrencyChanged(String newCurrency) {
+    setState(() {
+      _selectedCurrency = newCurrency;
+      _currentExchangeRate = null;
+      _totalAmountInCUP = null;
+    });
+    _loadExchangeRate();
   }
 
   void _loadPersistedValues() {
@@ -294,7 +345,25 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         if (result['status'] == 'success') {
           // Save the values for future use before showing success message
           _savePersistedValues();
-          
+
+          // ← GUARDAR TASA HISTÓRICA CON VALIDACIÓN
+          if (_currentExchangeRate != null && result['id_operacion'] != null) {
+            try {
+              final success =
+                  await CurrencyDisplayService.saveHistoricalExchangeRate(
+                    result['id_operacion'],
+                    _currentExchangeRate!,
+                    _selectedCurrency,
+                    'CUP',
+                  );
+              if (!success) {
+                print('⚠️ Advertencia: No se pudo guardar la tasa histórica');
+              }
+            } catch (e) {
+              print('❌ Error guardando tasa histórica: $e');
+            }
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -442,6 +511,39 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               ),
               keyboardType: TextInputType.number,
             ),
+
+            // ← NUEVOS WIDGETS DE MONEDA
+            const SizedBox(height: 16),
+            CurrencyInfoWidget(
+              selectedCurrency: _selectedCurrency,
+              amount: double.tryParse(_montoTotalController.text),
+              onCurrencyChanged: _onCurrencyChanged,
+            ),
+
+            // Mostrar conversión si hay monto y tasa
+            if (_totalAmountInCUP != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.currency_exchange, color: Colors.green),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Total en CUP: \$${_totalAmountInCUP!.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green[700],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -537,7 +639,11 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                   final item = _getFilteredSelectedProducts()[index];
                   final originalIndex = _selectedProducts.indexOf(item);
                   return ListTile(
-                    title: Text(item['denominacion'] ?? item['nombre_producto'] ?? 'Producto sin nombre'),
+                    title: Text(
+                      item['denominacion'] ??
+                          item['nombre_producto'] ??
+                          'Producto sin nombre',
+                    ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -553,7 +659,12 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                           _buildQuantityDisplay(item),
                           style: TextStyle(fontWeight: FontWeight.w500),
                         ),
-                        if (item['precio_referencia'] != null && item['precio_referencia'] > 0)
+                        Text(
+                          _buildPriceDisplay(item),
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        if (item['precio_referencia'] != null &&
+                            item['precio_referencia'] > 0)
                           Text(
                             'Precio Ref: \$${item['precio_referencia']?.toStringAsFixed(2)}',
                             style: TextStyle(
@@ -561,7 +672,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                               color: Colors.grey[600],
                             ),
                           ),
-                        if ((item['descuento_porcentaje'] ?? 0) > 0 || (item['descuento_monto'] ?? 0) > 0)
+                        if ((item['descuento_porcentaje'] ?? 0) > 0 ||
+                            (item['descuento_monto'] ?? 0) > 0)
                           Text(
                             'Descuento: ${item['descuento_porcentaje'] ?? 0}% + \$${item['descuento_monto']?.toStringAsFixed(2) ?? '0.00'}',
                             style: TextStyle(
@@ -580,7 +692,10 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                         if (_buildVariantInfo(item).isNotEmpty)
                           Container(
                             margin: EdgeInsets.only(top: 4),
-                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.primary.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(4),
@@ -606,7 +721,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                   );
                 },
               ),
-              // NUEVO: Agregar widget de conversiones después de la lista de productos
+            // NUEVO: Agregar widget de conversiones después de la lista de productos
             ConversionInfoWidget(
               conversions: _selectedProducts,
               showDetails: true,
@@ -618,39 +733,62 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   }
 
   String _buildQuantityDisplay(Map<String, dynamic> item) {
-  final cantidad = item['cantidad'] as double;
-  final precio = item['precio_unitario'] as double? ?? 0.0;
-  
-  // Verificar si se aplicó conversión
-  final conversionApplied = item['conversion_applied'] == true;
-  final cantidadOriginal = item['cantidad_original'] as double?;
-  
-  String quantityText;
-  if (conversionApplied && cantidadOriginal != null) {
-    // Obtener nombres de presentaciones
-    final presentacionOriginal = item['presentacion_original_info'];
-    final presentacionFinal = item['presentation_info'];
-    
-    String presentacionOriginalText = 'unidades';
-    String presentacionFinalText = 'unidades base';
-    
-    if (presentacionOriginal != null && presentacionOriginal['denominacion'] != null) {
-      presentacionOriginalText = presentacionOriginal['denominacion'];
+    final cantidad = item['cantidad'] as double;
+    final precio = item['precio_unitario'] as double? ?? 0.0;
+
+    // Verificar si se aplicó conversión
+    final conversionApplied = item['conversion_applied'] == true;
+    final cantidadOriginal = item['cantidad_original'] as double?;
+
+    String quantityText;
+    if (conversionApplied && cantidadOriginal != null) {
+      // Obtener nombres de presentaciones
+      final presentacionOriginal = item['presentacion_original_info'];
+      final presentacionFinal = item['presentation_info'];
+
+      String presentacionOriginalText = 'unidades';
+      String presentacionFinalText = 'unidades base';
+
+      if (presentacionOriginal != null &&
+          presentacionOriginal['denominacion'] != null) {
+        presentacionOriginalText = presentacionOriginal['denominacion'];
+      }
+
+      if (presentacionFinal != null &&
+          presentacionFinal['denominacion'] != null) {
+        presentacionFinalText = presentacionFinal['denominacion'];
+      }
+
+      // Mostrar conversión con nombres de presentaciones
+      quantityText =
+          'Cantidad: ${cantidadOriginal.toInt()} $presentacionOriginalText → ${cantidad.toInt()} $presentacionFinalText';
+    } else {
+      // Mostrar cantidad normal
+      quantityText = 'Cantidad: ${cantidad.toInt()}';
     }
-    
-    if (presentacionFinal != null && presentacionFinal['denominacion'] != null) {
-      presentacionFinalText = presentacionFinal['denominacion'];
-    }
-    
-    // Mostrar conversión con nombres de presentaciones
-    quantityText = 'Cantidad: ${cantidadOriginal.toInt()} $presentacionOriginalText → ${cantidad.toInt()} $presentacionFinalText';
-  } else {
-    // Mostrar cantidad normal
-    quantityText = 'Cantidad: ${cantidad.toInt()}';
+
+    return quantityText;
   }
-  
-  return '$quantityText | Precio: \$${precio.toStringAsFixed(3)}';
-}
+
+  String _buildPriceDisplay(Map<String, dynamic> item) {
+    final precio = item['precio_unitario'] as double? ?? 0.0;
+    String precioText;
+    if (_selectedCurrency == 'CUP') {
+      precioText = 'Precio: ${precio.toStringAsFixed(3)} CUP';
+      if (_currentExchangeRate != null && _currentExchangeRate! > 0) {
+        final precioUSD = precio / _currentExchangeRate!;
+        precioText += ' (≈ ${precioUSD.toStringAsFixed(2)} USD)';
+      }
+    } else {
+      final currencySymbol = _getCurrencySymbol(_selectedCurrency);
+      precioText = 'Precio: $currencySymbol${precio.toStringAsFixed(2)} $_selectedCurrency';
+      if (_currentExchangeRate != null && _currentExchangeRate! > 0) {
+        final precioCUP = precio * _currentExchangeRate!;
+        precioText += ' (≈ ${precioCUP.toStringAsFixed(2)} CUP)';
+      }
+    }
+    return precioText;
+  }
 
   Widget _buildBottomSection() {
     return Container(
@@ -878,24 +1016,29 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     // Priority 1: Use stored variant_info and presentation_info (from dialog selection)
     if (item['variant_info'] != null) {
       final variantInfo = item['variant_info'];
-      final atributo = variantInfo['atributo']?['denominacion'] ?? variantInfo['atributo']?['label'] ?? '';
+      final atributo =
+          variantInfo['atributo']?['denominacion'] ??
+          variantInfo['atributo']?['label'] ??
+          '';
       final opcion = variantInfo['opcion']?['valor'] ?? '';
-      
+
       if (atributo.isNotEmpty && opcion.isNotEmpty) {
         variantParts.add('$atributo: $opcion');
       } else if (atributo.isNotEmpty) {
         variantParts.add(atributo);
       }
     }
-    
+
     if (item['presentation_info'] != null) {
       final presentationInfo = item['presentation_info'];
-      final denominacion = presentationInfo['denominacion'] ?? 
-                          presentationInfo['presentacion'] ?? 
-                          presentationInfo['nombre'] ?? 
-                          presentationInfo['tipo'] ?? '';
+      final denominacion =
+          presentationInfo['denominacion'] ??
+          presentationInfo['presentacion'] ??
+          presentationInfo['nombre'] ??
+          presentationInfo['tipo'] ??
+          '';
       final cantidad = presentationInfo['cantidad'] ?? 1;
-      
+
       if (denominacion.isNotEmpty) {
         variantParts.add('Presentación: $denominacion (${cantidad}x)');
       }
@@ -916,16 +1059,22 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             bool found = false;
             for (final varianteDisponible in product.variantesDisponibles) {
               if (varianteDisponible['variante'] != null &&
-                  varianteDisponible['variante']['id']?.toString() == item['id_variante']?.toString()) {
-                final atributo = varianteDisponible['variante']['atributo']?['denominacion'] ?? 
-                               varianteDisponible['variante']['atributo']?['label'] ?? '';
-                
+                  varianteDisponible['variante']['id']?.toString() ==
+                      item['id_variante']?.toString()) {
+                final atributo =
+                    varianteDisponible['variante']['atributo']?['denominacion'] ??
+                    varianteDisponible['variante']['atributo']?['label'] ??
+                    '';
+
                 // Check if there's a matching option
-                if (item['id_opcion_variante'] != null && 
+                if (item['id_opcion_variante'] != null &&
                     varianteDisponible['variante']['opciones'] != null) {
-                  final opciones = varianteDisponible['variante']['opciones'] as List<dynamic>;
+                  final opciones =
+                      varianteDisponible['variante']['opciones']
+                          as List<dynamic>;
                   for (final opcion in opciones) {
-                    if (opcion['id']?.toString() == item['id_opcion_variante']?.toString()) {
+                    if (opcion['id']?.toString() ==
+                        item['id_opcion_variante']?.toString()) {
                       final opcionValor = opcion['valor'] ?? '';
                       if (atributo.isNotEmpty && opcionValor.isNotEmpty) {
                         variantParts.add('$atributo: $opcionValor');
@@ -938,7 +1087,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                   variantParts.add(atributo);
                   found = true;
                 }
-                
+
                 if (found) break;
               }
             }
@@ -947,7 +1096,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             if (!found) {
               for (final inv in product.inventario) {
                 if (inv['variante'] != null &&
-                    inv['variante']['id']?.toString() == item['id_variante']?.toString()) {
+                    inv['variante']['id']?.toString() ==
+                        item['id_variante']?.toString()) {
                   final atributo = inv['variante']['atributo']?['label'] ?? '';
                   final opcion = inv['variante']['opcion']?['valor'] ?? '';
                   if (atributo.isNotEmpty && opcion.isNotEmpty) {
@@ -975,14 +1125,19 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             // Search in presentaciones first
             bool found = false;
             for (final presentation in product.presentaciones) {
-              if (presentation['id']?.toString() == item['id_presentacion']?.toString()) {
-                final denominacion = presentation['denominacion'] ?? 
-                                   presentation['presentacion'] ?? 
-                                   presentation['nombre'] ?? 
-                                   presentation['tipo'] ?? '';
+              if (presentation['id']?.toString() ==
+                  item['id_presentacion']?.toString()) {
+                final denominacion =
+                    presentation['denominacion'] ??
+                    presentation['presentacion'] ??
+                    presentation['nombre'] ??
+                    presentation['tipo'] ??
+                    '';
                 final cantidad = presentation['cantidad'] ?? 1;
                 if (denominacion.isNotEmpty) {
-                  variantParts.add('Presentación: $denominacion (${cantidad}x)');
+                  variantParts.add(
+                    'Presentación: $denominacion (${cantidad}x)',
+                  );
                 }
                 found = true;
                 break;
@@ -993,11 +1148,15 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             if (!found) {
               for (final inv in product.inventario) {
                 if (inv['presentacion'] != null &&
-                    inv['presentacion']['id']?.toString() == item['id_presentacion']?.toString()) {
-                  final denominacion = inv['presentacion']['denominacion'] ?? '';
+                    inv['presentacion']['id']?.toString() ==
+                        item['id_presentacion']?.toString()) {
+                  final denominacion =
+                      inv['presentacion']['denominacion'] ?? '';
                   final cantidad = inv['presentacion']['cantidad'] ?? 1;
                   if (denominacion.isNotEmpty) {
-                    variantParts.add('Presentación: $denominacion (${cantidad}x)');
+                    variantParts.add(
+                      'Presentación: $denominacion (${cantidad}x)',
+                    );
                   }
                   break;
                 }
@@ -1012,13 +1171,30 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
     return variantParts.join(' | ');
   }
+
+  /// Obtiene el símbolo de la moneda
+  String _getCurrencySymbol(String currencyCode) {
+    switch (currencyCode) {
+      case 'USD':
+        return '\$';
+      case 'EUR':
+        return '€';
+      case 'CUP':
+        return '\$';
+      default:
+        return '';
+    }
+  }
 }
 
 class _ProductQuantityDialog extends StatefulWidget {
   final Product product;
   final Function(Map<String, dynamic>) onProductAdded;
 
-  const _ProductQuantityDialog({required this.product, required this.onProductAdded});
+  const _ProductQuantityDialog({
+    required this.product,
+    required this.onProductAdded,
+  });
 
   @override
   State<_ProductQuantityDialog> createState() => _ProductQuantityDialogState();
@@ -1042,7 +1218,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     final variantMap = <String, Map<String, dynamic>>{};
     final presentationMap = <String, Map<String, dynamic>>{};
 
-    print('🔍 Inicializando variantes y presentaciones para producto: ${widget.product.id}');
+    print(
+      '🔍 Inicializando variantes y presentaciones para producto: ${widget.product.id}',
+    );
 
     // Process variants from variantesDisponibles
     if (widget.product.variantesDisponibles.isNotEmpty) {
@@ -1050,10 +1228,10 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
         // Process variant
         if (varianteDisponible['variante'] != null) {
           final variant = varianteDisponible['variante'];
-          
+
           if (variant['opciones'] != null && variant['opciones'] is List) {
             final opciones = variant['opciones'] as List<dynamic>;
-            
+
             for (final opcion in opciones) {
               final variantKey = '${variant['id']}_${opcion['id']}';
               if (!variantMap.containsKey(variantKey)) {
@@ -1079,8 +1257,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
 
         // Process presentations from variantesDisponibles
         if (varianteDisponible['presentaciones'] != null) {
-          final presentaciones = varianteDisponible['presentaciones'] as List<dynamic>;
-          
+          final presentaciones =
+              varianteDisponible['presentaciones'] as List<dynamic>;
+
           for (final presentation in presentaciones) {
             final presentationKey = presentation['id'].toString();
             if (!presentationMap.containsKey(presentationKey)) {
@@ -1095,7 +1274,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     for (int i = 0; i < widget.product.presentaciones.length; i++) {
       final presentation = widget.product.presentaciones[i];
       final presentationKey = presentation['id']?.toString() ?? i.toString();
-      
+
       if (!presentationMap.containsKey(presentationKey)) {
         presentationMap[presentationKey] = presentation;
       }
@@ -1107,28 +1286,29 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     // Set defaults
     _selectedVariant = null;
     _selectedPresentation = null;
-    
+
     // Auto-select base presentation if available
     if (_availablePresentations.isNotEmpty) {
-      final basePresentation = _availablePresentations.firstWhere(
-        (p) {
-          final name = _getPresentationName(p).toLowerCase();
-          return name.contains('base') || name.contains('unidad') || name.contains('individual');
-        },
-        orElse: () => _availablePresentations.first,
-      );
+      final basePresentation = _availablePresentations.firstWhere((p) {
+        final name = _getPresentationName(p).toLowerCase();
+        return name.contains('base') ||
+            name.contains('unidad') ||
+            name.contains('individual');
+      }, orElse: () => _availablePresentations.first);
       _selectedPresentation = basePresentation;
     }
 
-    print('✅ Inicialización completa: ${_availableVariants.length} variantes, ${_availablePresentations.length} presentaciones');
+    print(
+      '✅ Inicialización completa: ${_availableVariants.length} variantes, ${_availablePresentations.length} presentaciones',
+    );
   }
 
   String _getPresentationName(Map<String, dynamic> presentation) {
-    return presentation['denominacion'] ?? 
-           presentation['presentacion'] ?? 
-           presentation['nombre'] ?? 
-           presentation['tipo'] ?? 
-           'Sin nombre';
+    return presentation['denominacion'] ??
+        presentation['presentacion'] ??
+        presentation['nombre'] ??
+        presentation['tipo'] ??
+        'Sin nombre';
   }
 
   Map<String, dynamic>? _findMatchingInventoryItem() {
@@ -1140,9 +1320,11 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       // Check variant match
       if (_selectedVariant != null && inventoryItem['variante'] != null) {
         final itemVariant = inventoryItem['variante'];
-        
-        if (variantMatches && itemVariant['id'] == _selectedVariant!['id'] &&
-            itemVariant['opcion']?['id'] == _selectedVariant!['opcion']?['id']) {
+
+        if (variantMatches &&
+            itemVariant['id'] == _selectedVariant!['id'] &&
+            itemVariant['opcion']?['id'] ==
+                _selectedVariant!['opcion']?['id']) {
           variantMatches = true;
         } else {
           variantMatches = false;
@@ -1192,65 +1374,75 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   }
 
   void _submitForm() async {
-  if (_formKey.currentState!.validate()) {
-    final cantidad = double.tryParse(_quantityController.text) ?? 0;
-    final precioUnitario = double.tryParse(_precioUnitarioController.text) ?? 0;
-    final precioReferencia = double.tryParse(_precioReferenciaController.text) ?? 0;
-    final descuentoPorcentaje = double.tryParse(_descuentoPorcentajeController.text) ?? 0;
-    final descuentoMonto = double.tryParse(_descuentoMontoController.text) ?? 0;
-    final bonificacionCantidad = double.tryParse(_bonificacionCantidadController.text) ?? 0;
+    if (_formKey.currentState!.validate()) {
+      final cantidad = double.tryParse(_quantityController.text) ?? 0;
+      final precioUnitario =
+          double.tryParse(_precioUnitarioController.text) ?? 0;
+      final precioReferencia =
+          double.tryParse(_precioReferenciaController.text) ?? 0;
+      final descuentoPorcentaje =
+          double.tryParse(_descuentoPorcentajeController.text) ?? 0;
+      final descuentoMonto =
+          double.tryParse(_descuentoMontoController.text) ?? 0;
+      final bonificacionCantidad =
+          double.tryParse(_bonificacionCantidadController.text) ?? 0;
 
-    try {
-      print('🔍 DEBUG: Presentación seleccionada: $_selectedPresentation');
-      print('🔍 DEBUG: Variante seleccionada: $_selectedVariant');
-      print('🔍 DEBUG: Denominación presentación: ${_selectedPresentation?['denominacion']}');
-      print('🔍 DEBUG: Otros campos presentación: ${_selectedPresentation?.keys.toList()}');
-      
-      // Datos base del producto
-      final baseProductData = {
-        'id_producto': widget.product.id,
-        'precio_referencia': precioReferencia,
-        'descuento_porcentaje': descuentoPorcentaje,
-        'descuento_monto': descuentoMonto,
-        'bonificacion_cantidad': bonificacionCantidad,
-        'denominacion': widget.product.name,
-        'sku': widget.product.sku,
-      };
+      try {
+        print('🔍 DEBUG: Presentación seleccionada: $_selectedPresentation');
+        print('🔍 DEBUG: Variante seleccionada: $_selectedVariant');
+        print(
+          '🔍 DEBUG: Denominación presentación: ${_selectedPresentation?['denominacion']}',
+        );
+        print(
+          '🔍 DEBUG: Otros campos presentación: ${_selectedPresentation?.keys.toList()}',
+        );
 
-      // AGREGAR INFORMACIÓN DE VARIANTES
-      if (_selectedVariant != null) {
-        baseProductData['id_variante'] = _selectedVariant!['id'];
-        if (_selectedVariant!['opcion'] != null) {
-          baseProductData['id_opcion_variante'] = _selectedVariant!['opcion']['id'];
+        // Datos base del producto
+        final baseProductData = {
+          'id_producto': widget.product.id,
+          'precio_referencia': precioReferencia,
+          'descuento_porcentaje': descuentoPorcentaje,
+          'descuento_monto': descuentoMonto,
+          'bonificacion_cantidad': bonificacionCantidad,
+          'denominacion': widget.product.name,
+          'sku': widget.product.sku,
+        };
+
+        // AGREGAR INFORMACIÓN DE VARIANTES
+        if (_selectedVariant != null) {
+          baseProductData['id_variante'] = _selectedVariant!['id'];
+          if (_selectedVariant!['opcion'] != null) {
+            baseProductData['id_opcion_variante'] =
+                _selectedVariant!['opcion']['id'];
+          }
+          baseProductData['variant_info'] = _selectedVariant!;
         }
-        baseProductData['variant_info'] = _selectedVariant!;
+
+        // Procesar producto con conversión automática
+        final productData =
+            await PresentationConverter.processProductForReception(
+              productId: widget.product.id,
+              selectedPresentation: _selectedPresentation,
+              cantidad: cantidad,
+              precioUnitario: precioUnitario,
+              baseProductData: baseProductData,
+            );
+
+        print('🔍 DEBUG: Producto procesado: $productData');
+
+        widget.onProductAdded(productData);
+        Navigator.of(context).pop();
+      } catch (e) {
+        print('Error al agregar producto: $e');
       }
-
-      // Procesar producto con conversión automática
-      final productData = await PresentationConverter.processProductForReception(
-        productId: widget.product.id,
-        selectedPresentation: _selectedPresentation,
-        cantidad: cantidad,
-        precioUnitario: precioUnitario,
-        baseProductData: baseProductData,
-      );
-
-      print('🔍 DEBUG: Producto procesado: $productData');
-
-      widget.onProductAdded(productData);
-      Navigator.of(context).pop();
-    } catch (e) {
-      print('Error al agregar producto: $e');
     }
   }
-}
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         width: MediaQuery.of(context).size.width * 0.9,
         height: MediaQuery.of(context).size.height * 0.8,
@@ -1277,7 +1469,11 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                       color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(Icons.add_shopping_cart, color: AppColors.primary, size: 24),
+                    child: Icon(
+                      Icons.add_shopping_cart,
+                      color: AppColors.primary,
+                      size: 24,
+                    ),
                   ),
                   SizedBox(width: 12),
                   Expanded(
@@ -1309,7 +1505,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                 ],
               ),
             ),
-            
+
             // Content
             Expanded(
               child: Form(
@@ -1328,7 +1524,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                           decoration: BoxDecoration(
                             color: AppColors.surface.withOpacity(0.3),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.border.withOpacity(0.3)),
+                            border: Border.all(
+                              color: AppColors.border.withOpacity(0.3),
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -1380,9 +1578,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                           ),
                         ),
                       ),
-                      
+
                       SizedBox(height: 24),
-                      
+
                       // Datos de Entrada Section
                       _buildSection(
                         title: 'Datos de Entrada',
@@ -1397,33 +1595,51 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                 decoration: InputDecoration(
                                   labelText: 'Presentación',
                                   border: OutlineInputBorder(
-                                    borderSide: BorderSide(color: AppColors.border),
+                                    borderSide: BorderSide(
+                                      color: AppColors.border,
+                                    ),
                                   ),
                                   enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: AppColors.border),
+                                    borderSide: BorderSide(
+                                      color: AppColors.border,
+                                    ),
                                   ),
                                   focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                    borderSide: BorderSide(
+                                      color: AppColors.primary,
+                                      width: 2,
+                                    ),
                                   ),
                                   isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                 ),
                                 isExpanded: true,
                                 items: [
                                   DropdownMenuItem<Map<String, dynamic>>(
                                     value: null,
                                     child: Text(
-                                      'Sin presentación específica', 
-                                      style: TextStyle(color: AppColors.textSecondary),
+                                      'Sin presentación específica',
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                      ),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  ..._availablePresentations.map((presentation) {
-                                    return DropdownMenuItem<Map<String, dynamic>>(
+                                  ..._availablePresentations.map((
+                                    presentation,
+                                  ) {
+                                    return DropdownMenuItem<
+                                      Map<String, dynamic>
+                                    >(
                                       value: presentation,
                                       child: Text(
                                         _getPresentationName(presentation),
-                                        style: TextStyle(color: AppColors.textPrimary),
+                                        style: TextStyle(
+                                          color: AppColors.textPrimary,
+                                        ),
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     );
@@ -1437,7 +1653,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                               ),
                               SizedBox(height: 16),
                             ],
-                            
+
                             // Variant Selection
                             if (_availableVariants.isNotEmpty) ...[
                               DropdownButtonFormField<Map<String, dynamic>>(
@@ -1445,35 +1661,55 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                 decoration: InputDecoration(
                                   labelText: 'Variante',
                                   border: OutlineInputBorder(
-                                    borderSide: BorderSide(color: AppColors.border),
+                                    borderSide: BorderSide(
+                                      color: AppColors.border,
+                                    ),
                                   ),
                                   enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: AppColors.border),
+                                    borderSide: BorderSide(
+                                      color: AppColors.border,
+                                    ),
                                   ),
                                   focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                    borderSide: BorderSide(
+                                      color: AppColors.primary,
+                                      width: 2,
+                                    ),
                                   ),
                                   isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                 ),
                                 isExpanded: true,
                                 items: [
                                   DropdownMenuItem<Map<String, dynamic>>(
                                     value: null,
                                     child: Text(
-                                      'Sin variante', 
-                                      style: TextStyle(color: AppColors.textSecondary),
+                                      'Sin variante',
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                      ),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                   ..._availableVariants.map((variant) {
-                                    final atributo = variant['atributo']?['denominacion'] ?? variant['atributo']?['label'] ?? '';
-                                    final opcion = variant['opcion']?['valor'] ?? '';
-                                    return DropdownMenuItem<Map<String, dynamic>>(
+                                    final atributo =
+                                        variant['atributo']?['denominacion'] ??
+                                        variant['atributo']?['label'] ??
+                                        '';
+                                    final opcion =
+                                        variant['opcion']?['valor'] ?? '';
+                                    return DropdownMenuItem<
+                                      Map<String, dynamic>
+                                    >(
                                       value: variant,
                                       child: Text(
-                                        '$atributo - $opcion', 
-                                        style: TextStyle(color: AppColors.textPrimary),
+                                        '$atributo - $opcion',
+                                        style: TextStyle(
+                                          color: AppColors.textPrimary,
+                                        ),
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     );
@@ -1487,54 +1723,81 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                               ),
                               SizedBox(height: 16),
                             ],
-                            
+
                             // Quantity
                             TextFormField(
                               controller: _quantityController,
                               decoration: InputDecoration(
                                 labelText: 'Cantidad',
                                 border: OutlineInputBorder(
-                                  borderSide: BorderSide(color: AppColors.border),
+                                  borderSide: BorderSide(
+                                    color: AppColors.border,
+                                  ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(color: AppColors.border),
+                                  borderSide: BorderSide(
+                                    color: AppColors.border,
+                                  ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primary,
+                                    width: 2,
+                                  ),
                                 ),
-                                prefixIcon: Icon(Icons.inventory, color: AppColors.primary),
+                                prefixIcon: Icon(
+                                  Icons.inventory,
+                                  color: AppColors.primary,
+                                ),
                               ),
-                              keyboardType: TextInputType.numberWithOptions(decimal: true),
+                              keyboardType: TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
                                   return 'La cantidad es obligatoria';
                                 }
-                                if (double.tryParse(value) == null || double.parse(value) <= 0) {
+                                if (double.tryParse(value) == null ||
+                                    double.parse(value) <= 0) {
                                   return 'Ingrese una cantidad válida';
                                 }
                                 return null;
                               },
                             ),
                             SizedBox(height: 16),
-                            
+
                             // Purchase Price
                             TextFormField(
                               controller: _precioUnitarioController,
                               decoration: InputDecoration(
-                                labelText: 'Precio de Compra (por presentación seleccionada)',
-                                hintText: 'Se convertirá automáticamente a precio base',
+                                labelText:
+                                    'Precio de Compra (por presentación seleccionada)',
+                                hintText:
+                                    'Se convertirá automáticamente a precio base',
                                 border: OutlineInputBorder(
-                                  borderSide: BorderSide(color: AppColors.border),
+                                  borderSide: BorderSide(
+                                    color: AppColors.border,
+                                  ),
                                 ),
                                 enabledBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(color: AppColors.border),
+                                  borderSide: BorderSide(
+                                    color: AppColors.border,
+                                  ),
                                 ),
                                 focusedBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                  borderSide: BorderSide(
+                                    color: AppColors.primary,
+                                    width: 2,
+                                  ),
                                 ),
-                                prefixIcon: Icon(Icons.attach_money, color: AppColors.primary),
+                                prefixIcon: Icon(
+                                  Icons.attach_money,
+                                  color: AppColors.primary,
+                                ),
                               ),
-                              keyboardType: TextInputType.numberWithOptions(decimal: true),
+                              keyboardType: TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
                                   return 'El precio de compra es obligatorio';
@@ -1542,9 +1805,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                 return null;
                               },
                             ),
-                            
+
                             SizedBox(height: 24),
-                            
+
                             // Advanced Reception Data Subsection
                             ExpansionTile(
                               title: Text(
@@ -1570,43 +1833,70 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                 TextFormField(
                                   controller: _precioReferenciaController,
                                   decoration: InputDecoration(
-                                    labelText: 'Precio de Referencia (Opcional)',
+                                    labelText:
+                                        'Precio de Referencia (Opcional)',
                                     prefixText: '\$ ',
                                     border: OutlineInputBorder(
-                                      borderSide: BorderSide(color: AppColors.border),
+                                      borderSide: BorderSide(
+                                        color: AppColors.border,
+                                      ),
                                     ),
                                     enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: AppColors.border),
+                                      borderSide: BorderSide(
+                                        color: AppColors.border,
+                                      ),
                                     ),
                                     focusedBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: AppColors.primary, width: 2),
+                                      borderSide: BorderSide(
+                                        color: AppColors.primary,
+                                        width: 2,
+                                      ),
                                     ),
-                                    prefixIcon: Icon(Icons.price_check, color: AppColors.textSecondary),
+                                    prefixIcon: Icon(
+                                      Icons.price_check,
+                                      color: AppColors.textSecondary,
+                                    ),
                                   ),
-                                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType: TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
                                 ),
                                 SizedBox(height: 16),
-                                
+
                                 // Discounts Row
                                 Row(
                                   children: [
                                     Expanded(
                                       child: TextFormField(
-                                        controller: _descuentoPorcentajeController,
+                                        controller:
+                                            _descuentoPorcentajeController,
                                         decoration: InputDecoration(
                                           labelText: 'Descuento %',
                                           border: OutlineInputBorder(
-                                            borderSide: BorderSide(color: AppColors.warning),
+                                            borderSide: BorderSide(
+                                              color: AppColors.warning,
+                                            ),
                                           ),
                                           enabledBorder: OutlineInputBorder(
-                                            borderSide: BorderSide(color: AppColors.warning),
+                                            borderSide: BorderSide(
+                                              color: AppColors.warning,
+                                            ),
                                           ),
                                           focusedBorder: OutlineInputBorder(
-                                            borderSide: BorderSide(color: AppColors.warning, width: 2),
+                                            borderSide: BorderSide(
+                                              color: AppColors.warning,
+                                              width: 2,
+                                            ),
                                           ),
-                                          prefixIcon: Icon(Icons.percent, color: AppColors.warning),
+                                          prefixIcon: Icon(
+                                            Icons.percent,
+                                            color: AppColors.warning,
+                                          ),
                                         ),
-                                        keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                        keyboardType:
+                                            TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
                                       ),
                                     ),
                                     SizedBox(width: 12),
@@ -1617,40 +1907,65 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                           labelText: 'Descuento \$',
                                           prefixText: '\$ ',
                                           border: OutlineInputBorder(
-                                            borderSide: BorderSide(color: AppColors.warning),
+                                            borderSide: BorderSide(
+                                              color: AppColors.warning,
+                                            ),
                                           ),
                                           enabledBorder: OutlineInputBorder(
-                                            borderSide: BorderSide(color: AppColors.warning),
+                                            borderSide: BorderSide(
+                                              color: AppColors.warning,
+                                            ),
                                           ),
                                           focusedBorder: OutlineInputBorder(
-                                            borderSide: BorderSide(color: AppColors.warning, width: 2),
+                                            borderSide: BorderSide(
+                                              color: AppColors.warning,
+                                              width: 2,
+                                            ),
                                           ),
-                                          prefixIcon: Icon(Icons.money_off, color: AppColors.warning),
+                                          prefixIcon: Icon(
+                                            Icons.money_off,
+                                            color: AppColors.warning,
+                                          ),
                                         ),
-                                        keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                        keyboardType:
+                                            TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
                                       ),
                                     ),
                                   ],
                                 ),
                                 SizedBox(height: 16),
-                                
+
                                 // Bonification
                                 TextFormField(
                                   controller: _bonificacionCantidadController,
                                   decoration: InputDecoration(
                                     labelText: 'Bonificación (Cantidad Extra)',
                                     border: OutlineInputBorder(
-                                      borderSide: BorderSide(color: AppColors.success),
+                                      borderSide: BorderSide(
+                                        color: AppColors.success,
+                                      ),
                                     ),
                                     enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: AppColors.success),
+                                      borderSide: BorderSide(
+                                        color: AppColors.success,
+                                      ),
                                     ),
                                     focusedBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(color: AppColors.success, width: 2),
+                                      borderSide: BorderSide(
+                                        color: AppColors.success,
+                                        width: 2,
+                                      ),
                                     ),
-                                    prefixIcon: Icon(Icons.add_circle_outline, color: AppColors.success),
+                                    prefixIcon: Icon(
+                                      Icons.add_circle_outline,
+                                      color: AppColors.success,
+                                    ),
                                   ),
-                                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType: TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
                                 ),
                               ],
                             ),
@@ -1662,7 +1977,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                 ),
               ),
             ),
-            
+
             // Actions
             Container(
               padding: EdgeInsets.all(24),
@@ -1679,7 +1994,10 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                     onPressed: () => Navigator.of(context).pop(),
                     child: Text(
                       'Cancelar',
-                      style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ),
                   SizedBox(width: 16),
@@ -1688,14 +2006,20 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
                     child: Text(
                       'Agregar',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
@@ -1720,48 +2044,49 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: AppColors.border.withOpacity(0.3)),
       ),
-      child: isCollapsible
-          ? ExpansionTile(
-            leading: Icon(icon, color: AppColors.primary),
-            title: Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primary,
-              ),
-            ),
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: child,
-              ),
-            ],
-          )
-          : Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+      child:
+          isCollapsible
+              ? ExpansionTile(
+                leading: Icon(icon, color: AppColors.primary),
+                title: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: child,
+                  ),
+                ],
+              )
+              : Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(icon, color: AppColors.primary),
-                    SizedBox(width: 8),
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
+                    Row(
+                      children: [
+                        Icon(icon, color: AppColors.primary),
+                        SizedBox(width: 8),
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
                     ),
+                    SizedBox(height: 16),
+                    child,
                   ],
                 ),
-                SizedBox(height: 16),
-                child,
-              ],
-            ),
-          ),
+              ),
     );
   }
 }
