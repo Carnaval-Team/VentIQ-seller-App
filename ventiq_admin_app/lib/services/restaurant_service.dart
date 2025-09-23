@@ -3,6 +3,8 @@ import 'dart:convert';
 import '../models/restaurant_models.dart';
 import 'user_preferences_service.dart';
 import 'store_selector_service.dart';
+import 'inventory_service.dart';
+import 'product_service.dart';
 
 /// Servicio para gestión completa del módulo de restaurante
 /// Incluye: unidades de medida, disponibilidad, costos y descuentos automáticos
@@ -396,75 +398,122 @@ class RestaurantService {
   // GESTIÓN DE PLATOS ELABORADOS
   // ============================================================================
 
-  /// Obtiene platos elaborados con sus recetas
-  static Future<List<PlatoElaborado>> getPlatosElaborados({
+  /// Obtiene productos elaborados (productos con es_elaborado = true)
+  static Future<List<Map<String, dynamic>>> getPlatosElaborados({
     int? idCategoria,
     bool soloActivos = true,
   }) async {
     try {
+      print('🔄 RestaurantService: Obteniendo productos elaborados...');
       final userPrefs = UserPreferencesService();
       final idTienda = await userPrefs.getIdTienda();
+      print('🏪 ID Tienda obtenida: $idTienda');
+
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda válido');
+      }
 
       var query = _supabase
-          .from('app_rest_platos_elaborados')
+          .from('app_dat_producto')
           .select('''
             *,
-            categoria:app_rest_categorias_platos(nombre, descripcion),
-            recetas:app_rest_recetas(
-              *,
-              producto:app_dat_producto(denominacion, sku, um)
-            )
-          ''');
+            precio_actual:app_dat_precio_venta(
+              precio_venta_cup,
+              fecha_desde,
+              fecha_hasta
+            ),
+            cantidad_ingredientes:app_dat_producto_ingredientes!app_dat_producto_ingredientes_id_producto_elaborado_fkey(count)
+          ''')
+          .eq('es_elaborado', true)
+          .eq('id_tienda', idTienda) // Agregar filtro de tienda
+          .lte('app_dat_precio_venta.fecha_desde', DateTime.now().toIso8601String().split('T')[0]);
 
       if (soloActivos) {
-        query = query.eq('es_activo', true);
+        query = query.eq('es_vendible', true);
+        print('🔍 Filtro aplicado: solo productos vendibles');
       }
 
       if (idCategoria != null) {
         query = query.eq('id_categoria', idCategoria);
+        print('🔍 Filtro aplicado: categoría ID $idCategoria');
       }
 
-      final response = await query.order('nombre');
+      print('📡 Ejecutando consulta a la base de datos...');
+      print('🔍 Consulta: SELECT * FROM app_dat_producto WHERE es_elaborado = true AND id_tienda = $idTienda');
+      if (soloActivos) {
+        print('🔍 + AND es_vendible = true');
+      }
+      if (idCategoria != null) {
+        print('🔍 + AND id_categoria = $idCategoria');
+      }
+      final response = await query.order('denominacion');
+      print('✅ Respuesta recibida: ${(response as List).length} registros');
 
-      return (response as List)
-          .map((json) => PlatoElaborado.fromJson(json))
-          .toList();
+      if ((response as List).isEmpty) {
+        print('⚠️ No se encontraron productos elaborados en la base de datos');
+        print('💡 Verifica que existan productos con es_elaborado = true');
+      } else {
+        print('📋 Primeros productos elaborados encontrados:');
+        for (int i = 0; i < ((response as List).length > 2 ? 2 : (response as List).length); i++) {
+          final producto = response[i];
+          print('  - ${producto['denominacion']} (ID: ${producto['id']}, SKU: ${producto['sku']})');
+          print('    precio_venta_cup directo: ${producto['precio_venta_cup']}');
+          print('    precio_actual (histórico): ${producto['precio_actual']}');
+          
+          // Obtener precio del histórico si existe
+          double precioCalculado = 0.0;
+          if (producto['precio_actual'] != null && (producto['precio_actual'] as List).isNotEmpty) {
+            final precios = (producto['precio_actual'] as List);
+            if (precios.isNotEmpty) {
+              precioCalculado = _parseDoubleSafely(precios.first['precio_venta_cup']) ?? 0.0;
+            }
+          }
+          if (precioCalculado == 0.0) {
+            precioCalculado = _parseDoubleSafely(producto['precio_venta_cup']) ?? 0.0;
+          }
+          
+          print('    precio calculado: $precioCalculado');
+          
+          // Obtener cantidad de ingredientes del conteo
+          int cantidadIngredientes = 0;
+          if (producto['cantidad_ingredientes'] != null && (producto['cantidad_ingredientes'] as List).isNotEmpty) {
+            cantidadIngredientes = (producto['cantidad_ingredientes'] as List).first['count'] ?? 0;
+          }
+          
+          print('    ingredientes: $cantidadIngredientes');
+          print('    Es vendible: ${producto['es_vendible']}');
+        }
+      }
+
+      return response as List<Map<String, dynamic>>;
     } catch (e) {
-      print('❌ Error obteniendo platos elaborados: $e');
-      throw Exception('Error al obtener platos elaborados: $e');
+      print('❌ Error obteniendo productos elaborados: $e');
+      throw Exception('Error al obtener productos elaborados: $e');
     }
   }
 
-  /// Verifica disponibilidad de un plato usando la función SQL
+  /// Verifica disponibilidad de un plato usando la función SQL (TEMPORALMENTE DESHABILITADO)
   static Future<DisponibilidadPlato> verificarDisponibilidadPlato({
     required int idPlato,
     int cantidad = 1,
   }) async {
     try {
-      final userPrefs = UserPreferencesService();
-      final idTienda = await userPrefs.getIdTienda();
-
-      if (idTienda == null) {
-        throw Exception('No se encontró ID de tienda');
-      }
-
-      final response = await _supabase.rpc(
-        'fn_verificar_disponibilidad_plato',
-        params: {
-          'p_id_plato': idPlato,
-          'p_id_tienda': idTienda,
-          'p_cantidad': cantidad,
-        },
+      print('⚠️ verificarDisponibilidadPlato temporalmente deshabilitado - tablas eliminadas');
+      // TODO: Implementar verificación basada en productos elaborados
+      return DisponibilidadPlato(
+        disponible: true,
+        ingredientesFaltantes: [],
+        costoTotal: 0.0,
+        cantidadSolicitada: cantidad,
+        error: null,
       );
-
-      return DisponibilidadPlato.fromJson(response as Map<String, dynamic>);
     } catch (e) {
       print('❌ Error verificando disponibilidad: $e');
       throw Exception('Error al verificar disponibilidad: $e');
     }
   }
 
-  /// Actualiza disponibilidad manual de un plato
+  /// Actualiza disponibilidad manual de un plato (TEMPORALMENTE DESHABILITADO)
   static Future<void> actualizarDisponibilidadPlato({
     required int idPlato,
     required bool disponible,
@@ -472,24 +521,9 @@ class RestaurantService {
     int stockDisponible = 0,
   }) async {
     try {
-      final userPrefs = UserPreferencesService();
-      final idTienda = await userPrefs.getIdTienda();
-      final userId = _supabase.auth.currentUser?.id;
-
-      if (idTienda == null || userId == null) {
-        throw Exception('Faltan datos de tienda o usuario');
-      }
-
-      await _supabase.from('app_rest_disponibilidad_platos').upsert({
-        'id_plato': idPlato,
-        'id_tienda': idTienda,
-        'fecha_revision': DateTime.now().toIso8601String().split('T')[0],
-        'stock_disponible': stockDisponible,
-        'ingredientes_suficientes': disponible,
-        'motivo_no_disponible': motivo,
-        'revisado_por': userId,
-        'proxima_revision': DateTime.now().add(Duration(hours: 2)).toIso8601String(),
-      });
+      print('⚠️ actualizarDisponibilidadPlato temporalmente deshabilitado - tablas eliminadas');
+      // TODO: Implementar actualización basada en productos elaborados
+      return;
     } catch (e) {
       print('❌ Error actualizando disponibilidad: $e');
       throw Exception('Error al actualizar disponibilidad: $e');
@@ -508,7 +542,16 @@ class RestaurantService {
           .from('app_rest_recetas')
           .select('''
             *,
-            producto:app_dat_producto(denominacion, sku)
+            producto:app_dat_producto(
+              id,
+              denominacion,
+              sku,
+              um
+            ),
+            unidad:app_nom_unidades_medida(
+              denominacion,
+              abreviatura
+            )
           ''')
           .eq('id_plato', idPlato);
 
@@ -517,8 +560,8 @@ class RestaurantService {
       // Calcular costo de cada ingrediente
       for (final receta in recetas) {
         final idProducto = receta['id_producto_inventario'];
-        final cantidadRequerida = (receta['cantidad_requerida'] as num).toDouble();
-
+        final cantidad = receta['cantidad'] as double? ?? 0.0;
+        
         // Obtener precio más reciente del producto
         final precioResponse = await _supabase
             .from('app_dat_recepcion_productos')
@@ -527,11 +570,12 @@ class RestaurantService {
             .order('created_at', ascending: false)
             .limit(1);
 
-        if (precioResponse.isNotEmpty) {
-          final precio = (precioResponse[0]['costo_real'] ?? 
-                         precioResponse[0]['precio_unitario'] ?? 0) as num;
-          costoIngredientes += cantidadRequerida * precio.toDouble();
-        }
+        final precioUnitario = precioResponse.isNotEmpty 
+            ? (precioResponse.first['costo_real'] ?? 
+               precioResponse.first['precio_unitario'] ?? 0) as num
+            : 0;
+
+        costoIngredientes += cantidad * precioUnitario.toDouble();
       }
 
       return CostoProduccion(
@@ -548,45 +592,39 @@ class RestaurantService {
     }
   }
 
-  /// Guarda costo de producción calculado
+  /// Guarda costo de producción calculado (TEMPORALMENTE DESHABILITADO)
   static Future<void> guardarCostoProduccion(CostoProduccion costo) async {
     try {
-      final userId = _supabase.auth.currentUser?.id;
-      if (userId == null) {
-        throw Exception('Usuario no autenticado');
-      }
-
-      await _supabase.from('app_rest_costos_produccion').insert({
-        'id_plato': costo.idPlato,
-        'fecha_calculo': costo.fechaCalculo.toIso8601String().split('T')[0],
-        'costo_ingredientes': costo.costoIngredientes,
-        'costo_mano_obra': costo.costoManoObra,
-        'costo_indirecto': costo.costoIndirecto,
-        'margen_deseado': costo.margenDeseado,
-        'calculado_por': userId,
-        'observaciones': costo.observaciones,
-      });
+      print('⚠️ guardarCostoProduccion temporalmente deshabilitado - tablas eliminadas');
+      // TODO: Implementar guardado basado en productos elaborados
+      return;
     } catch (e) {
       print('❌ Error guardando costo de producción: $e');
       throw Exception('Error al guardar costo de producción: $e');
     }
   }
 
-  /// Obtiene historial de costos de un plato
-  static Future<List<CostoProduccion>> getCostosProduccion(int idPlato) async {
+  /// Obtiene historial de costos de un producto elaborado (temporalmente deshabilitado)
+  static Future<List<CostoProduccion>> getCostosProduccion(int idProducto) async {
     try {
-      final response = await _supabase
-          .from('app_rest_costos_produccion')
-          .select('*')
-          .eq('id_plato', idPlato)
-          .order('fecha_calculo', ascending: false);
-
-      return (response as List)
-          .map((json) => CostoProduccion.fromJson(json))
-          .toList();
+      // TODO: Implementar cálculo de costos basado en ingredientes del producto
+      print('⚠️ getCostosProduccion temporalmente deshabilitado - usando sistema de productos');
+      return [];
     } catch (e) {
       print('❌ Error obteniendo costos de producción: $e');
-      throw Exception('Error al obtener costos de producción: $e');
+      return [];
+    }
+  }
+
+  /// Obtiene costos detallados de producción por ingrediente de un plato (TEMPORALMENTE DESHABILITADO)
+  static Future<List<Map<String, dynamic>>> getCostosProduccionByPlato(int idPlato) async {
+    try {
+      print('⚠️ getCostosProduccionByPlato temporalmente deshabilitado - tablas eliminadas');
+      // TODO: Implementar obtención basada en ingredientes del producto
+      return [];
+    } catch (e) {
+      print('❌ Error obteniendo costos detallados por plato: $e');
+      throw Exception('Error al obtener costos detallados por plato: $e');
     }
   }
 
@@ -846,6 +884,193 @@ class RestaurantService {
     } catch (e) {
       print('❌ Error generando reporte de eficiencia: $e');
       throw Exception('Error al generar reporte de eficiencia: $e');
+    }
+  }
+
+  /// Obtiene ingredientes detallados de un producto elaborado usando InventoryService
+  static Future<List<Map<String, dynamic>>> getIngredientesProductoElaborado(int idProducto) async {
+    try {
+      print('🔄 Obteniendo ingredientes del producto elaborado ID: $idProducto usando InventoryService');
+      
+      // Usar el método existente de InventoryService para descomponer el producto
+      final productosParaDescomponer = [{
+        'id_producto': idProducto,
+        'cantidad': 1.0, // Usamos 1 unidad para obtener la receta base
+      }];
+      
+      final ingredientesDescompuestos = await InventoryService.decomposeElaboratedProducts(productosParaDescomponer);
+      
+      print('✅ Ingredientes descompuestos: ${ingredientesDescompuestos.length}');
+
+      // Procesar cada ingrediente para obtener información de costos y conversiones
+      List<Map<String, dynamic>> ingredientesDetallados = [];
+      
+      for (final ingrediente in ingredientesDescompuestos) {
+        final idProductoIngrediente = ingrediente['id_producto'];
+        final cantidadRequerida = (ingrediente['cantidad'] as num?)?.toDouble() ?? 0.0;
+        final unidadMedida = ingrediente['unidad_medida'] ?? 'und';
+        final denominacion = ingrediente['denominacion'] ?? 'Sin nombre';
+        final sku = ingrediente['sku'] ?? 'Sin SKU';
+
+        // Obtener costo unitario promedio basado en recepciones
+        final costoUnitarioPromedio = await _getCostoUnitarioPromedio(idProductoIngrediente);
+
+        // NUEVA LÓGICA: Obtener información de conversión como InventoryService
+        double cantidadEnUnidadBase = cantidadRequerida;
+        double cantidadEnPresentaciones = cantidadRequerida;
+        String unidadProducto = unidadMedida;
+        double cantidadPorPresentacion = 1.0;
+        
+        try {
+          // Obtener información de presentación y unidad del producto
+          final presentacionUmResponse = await _supabase
+              .from('app_dat_presentacion_unidad_medida')
+              .select('cantidad_um, id_unidad_medida, app_nom_unidades_medida!inner(denominacion, abreviatura)')
+              .eq('id_producto', idProductoIngrediente)
+              .limit(1);
+
+          if (presentacionUmResponse.isNotEmpty) {
+            cantidadPorPresentacion = (presentacionUmResponse.first['cantidad_um'] as num).toDouble();
+            final unidadProductoId = presentacionUmResponse.first['id_unidad_medida'] as int?;
+            final unidadProductoInfo = presentacionUmResponse.first['app_nom_unidades_medida'];
+            
+            if (unidadProductoInfo != null) {
+              unidadProducto = unidadProductoInfo['denominacion'] ?? unidadProductoInfo['abreviatura'] ?? unidadMedida;
+            }
+
+            print('🔍 Procesando ingrediente: $denominacion');
+            print('   - Cantidad requerida: $cantidadRequerida $unidadMedida');
+            print('   - Unidad del producto: $unidadProducto (ID: $unidadProductoId)');
+            print('   - Cantidad por presentación: $cantidadPorPresentacion');
+
+            // Convertir unidades si son diferentes
+            if (unidadMedida.isNotEmpty && unidadProductoId != null) {
+              final unidadIngredienteId = await _mapUnidadStringToId(unidadMedida);
+              
+              if (unidadIngredienteId != null && unidadIngredienteId != unidadProductoId) {
+                print('🔄 Convirtiendo de $unidadMedida (ID: $unidadIngredienteId) a $unidadProducto (ID: $unidadProductoId)');
+                
+                try {
+                  cantidadEnUnidadBase = await convertirUnidades(
+                    cantidad: cantidadRequerida,
+                    unidadOrigen: unidadIngredienteId,
+                    unidadDestino: unidadProductoId,
+                    idProducto: idProductoIngrediente,
+                  );
+                  print('✅ Conversión exitosa: $cantidadRequerida $unidadMedida → $cantidadEnUnidadBase $unidadProducto');
+                } catch (e) {
+                  print('⚠️ Error en conversión: $e, usando cantidad original');
+                  cantidadEnUnidadBase = cantidadRequerida;
+                }
+              }
+            }
+
+            // Convertir a presentaciones
+            cantidadEnPresentaciones = cantidadEnUnidadBase / cantidadPorPresentacion;
+            print('📦 Cantidad en presentaciones: $cantidadEnUnidadBase ÷ $cantidadPorPresentacion = $cantidadEnPresentaciones');
+          }
+        } catch (e) {
+          print('⚠️ Error obteniendo información de presentación para $denominacion: $e');
+        }
+
+        // Calcular costo total del ingrediente CORREGIDO
+        // costoUnitarioPromedio es el costo de la presentación completa
+        // Necesitamos calcular el costo por unidad base y luego el costo del ingrediente
+        final costoPorUnidadBase = cantidadPorPresentacion > 0 ? costoUnitarioPromedio / cantidadPorPresentacion : costoUnitarioPromedio;
+        final costoTotal = cantidadEnUnidadBase * costoPorUnidadBase;
+        
+        print('💰 Cálculo de costos para $denominacion:');
+        print('   - Costo presentación completa: ${costoUnitarioPromedio.toStringAsFixed(4)}');
+        print('   - Cantidad por presentación: $cantidadPorPresentacion $unidadProducto');
+        print('   - Costo por unidad base: ${costoPorUnidadBase.toStringAsFixed(4)} / $unidadProducto');
+        print('   - Cantidad requerida en unidad base: $cantidadEnUnidadBase $unidadProducto');
+        print('   - Costo total ingrediente: ${costoTotal.toStringAsFixed(4)}');
+        
+        ingredientesDetallados.add({
+          'id_producto': idProductoIngrediente,
+          'denominacion': denominacion,
+          'sku': sku,
+          'cantidad_requerida': cantidadRequerida,
+          'unidad_receta': unidadMedida,
+          'abreviatura_receta': unidadMedida,
+          'cantidad_en_unidad_base': cantidadEnUnidadBase,
+          'unidad_producto': unidadProducto,
+          'cantidad_por_presentacion': cantidadPorPresentacion,
+          'cantidad_en_presentaciones': cantidadEnPresentaciones,
+          'costo_unitario_promedio': costoUnitarioPromedio,
+          'costo_total': costoTotal,
+          // Información adicional para análisis
+          'conversion_aplicada': cantidadEnUnidadBase != cantidadRequerida,
+          'factor_conversion': cantidadRequerida > 0 ? cantidadEnUnidadBase / cantidadRequerida : 1.0,
+        });
+      }
+
+      print('✅ Ingredientes procesados con conversiones: ${ingredientesDetallados.length}');
+      return ingredientesDetallados;
+      
+    } catch (e) {
+      print('❌ Error obteniendo ingredientes del producto elaborado: $e');
+      return [];
+    }
+  }
+
+  static Future<double> _getCostoUnitarioPromedio(int idProducto) async {
+    try {
+      final precioResponse = await _supabase
+          .from('app_dat_recepcion_productos')
+          .select('precio_unitario, costo_real')
+          .eq('id_producto', idProducto)
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      final precioUnitario = precioResponse.isNotEmpty 
+          ? (precioResponse.first['costo_real'] ?? 
+             precioResponse.first['precio_unitario'] ?? 0) as num
+          : 0;
+
+      return precioUnitario.toDouble();
+    } catch (e) {
+      print('❌ Error obteniendo costo unitario promedio: $e');
+      return 0.0;
+    }
+  }
+
+  static double _parseDoubleSafely(dynamic value) {
+    if (value is double) {
+      return value;
+    } else if (value is int) {
+      return value.toDouble();
+    } else if (value is String) {
+      return double.parse(value);
+    } else {
+      return 0.0;
+    }
+  }
+
+  /// Mapea nombres de unidades en string a sus IDs correspondientes
+  static Future<int?> _mapUnidadStringToId(String unidadString) async {
+    try {
+      final unidadNormalizada = unidadString.toLowerCase().trim();
+      final unidadesMedida = await getUnidadesMedida();
+      
+      // Buscar por denominación exacta
+      for (final unidad in unidadesMedida) {
+        if (unidad.denominacion.toLowerCase() == unidadNormalizada) {
+          return unidad.id;
+        }
+      }
+      
+      // Buscar por abreviatura exacta
+      for (final unidad in unidadesMedida) {
+        if (unidad.abreviatura.toLowerCase() == unidadNormalizada) {
+          return unidad.id;
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      print('❌ Error mapeando unidad: $e');
+      return null;
     }
   }
 }

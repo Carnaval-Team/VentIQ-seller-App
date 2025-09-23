@@ -22,15 +22,18 @@ class FinancialService {
       final standardCategories = [
         {
           'denominacion': 'Compra de Mercancía',
-          'descripcion': 'Gastos relacionados con la adquisición de productos para la venta',
+          'descripcion':
+              'Gastos relacionados con la adquisición de productos para la venta',
         },
         {
           'denominacion': 'Gastos Operativos',
-          'descripcion': 'Gastos necesarios para la operación diaria del negocio',
+          'descripcion':
+              'Gastos necesarios para la operación diaria del negocio',
         },
         {
           'denominacion': 'Gastos Administrativos',
-          'descripcion': 'Gastos relacionados con la administración y gestión del negocio',
+          'descripcion':
+              'Gastos relacionados con la administración y gestión del negocio',
         },
         {
           'denominacion': 'Servicios Públicos',
@@ -38,7 +41,8 @@ class FinancialService {
         },
         {
           'denominacion': 'Mantenimiento',
-          'descripcion': 'Reparaciones y mantenimiento de equipos e instalaciones',
+          'descripcion':
+              'Reparaciones y mantenimiento de equipos e instalaciones',
         },
         {
           'denominacion': 'Transporte y Logística',
@@ -51,7 +55,8 @@ class FinancialService {
           await _supabase.from('app_nom_categoria_gasto').insert(category);
         } catch (e) {
           // Ignorar errores de duplicados
-          if (!e.toString().contains('duplicate') && !e.toString().contains('unique')) {
+          if (!e.toString().contains('duplicate') &&
+              !e.toString().contains('unique')) {
             rethrow;
           }
         }
@@ -69,7 +74,9 @@ class FinancialService {
     try {
       // Obtener categorías existentes
       final categories = await getExpenseCategories();
-      final categoryMap = {for (var cat in categories) cat['denominacion']: cat['id']};
+      final categoryMap = {
+        for (var cat in categories) cat['denominacion']: cat['id'],
+      };
 
       final standardSubcategories = [
         {
@@ -117,10 +124,13 @@ class FinancialService {
       for (final subcategory in standardSubcategories) {
         if (subcategory['id_categoria_gasto'] != null) {
           try {
-            await _supabase.from('app_nom_subcategoria_gasto').insert(subcategory);
+            await _supabase
+                .from('app_nom_subcategoria_gasto')
+                .insert(subcategory);
           } catch (e) {
             // Ignorar errores de duplicados
-            if (!e.toString().contains('duplicate') && !e.toString().contains('unique')) {
+            if (!e.toString().contains('duplicate') &&
+                !e.toString().contains('unique')) {
               rethrow;
             }
           }
@@ -150,11 +160,11 @@ class FinancialService {
   }
 
   /// Obtener subcategorías de gastos por categoría
-  Future<List<Map<String, dynamic>>> getExpenseSubcategories({int? categoryId}) async {
+  Future<List<Map<String, dynamic>>> getExpenseSubcategories({
+    int? categoryId,
+  }) async {
     try {
-      var query = _supabase
-          .from('app_nom_subcategoria_gasto')
-          .select('''
+      var query = _supabase.from('app_nom_subcategoria_gasto').select('''
             id, 
             id_categoria_gasto, 
             denominacion, 
@@ -180,38 +190,44 @@ class FinancialService {
     try {
       // Obtener todas las categorías
       final categories = await getExpenseCategories();
-      
+
       // Obtener todas las subcategorías con información de categoría
       final subcategories = await getExpenseSubcategories();
-      
+
       // Crear estructura jerárquica
       final hierarchy = <Map<String, dynamic>>[];
-      
+
       for (final category in categories) {
         final categoryId = category['id'];
-        
+
         // Filtrar subcategorías que pertenecen a esta categoría
-        final categorySubcategories = subcategories
-            .where((sub) => sub['id_categoria_gasto'] == categoryId)
-            .toList();
-        
+        final categorySubcategories =
+            subcategories
+                .where((sub) => sub['id_categoria_gasto'] == categoryId)
+                .toList();
+
         hierarchy.add({
           'id': 'cat_$categoryId',
           'type': 'category',
           'category_id': categoryId,
           'name': category['denominacion'],
           'description': category['descripcion'],
-          'children': categorySubcategories.map((sub) => {
-            'id': 'sub_${sub['id']}',
-            'type': 'subcategory',
-            'subcategory_id': sub['id'],
-            'category_id': categoryId,
-            'name': sub['denominacion'],
-            'description': sub['descripcion'],
-          }).toList(),
+          'children':
+              categorySubcategories
+                  .map(
+                    (sub) => {
+                      'id': 'sub_${sub['id']}',
+                      'type': 'subcategory',
+                      'subcategory_id': sub['id'],
+                      'category_id': categoryId,
+                      'name': sub['denominacion'],
+                      'description': sub['descripcion'],
+                    },
+                  )
+                  .toList(),
         });
       }
-      
+
       return hierarchy;
     } catch (e) {
       print('❌ Error obteniendo jerarquía de categorías: $e');
@@ -229,55 +245,79 @@ class FinancialService {
       print('🚀 Iniciando búsqueda de operaciones pendientes...');
       print('📅 Rango de fechas: $startDate a $endDate');
       print('🏷️ Categorías filtro: $categoryIds');
-      
+
       final storeId = await _getStoreId();
       print('🏪 ID de tienda obtenido: $storeId');
-      
+
       final pendingOperations = <Map<String, dynamic>>[];
 
       // 1. Obtener recepciones de inventario pendientes
       print('📦 Buscando recepciones pendientes...');
-      final receptions = await _getPendingReceptions(storeId, startDate, endDate);
+      final receptions = await _getPendingReceptions(
+        storeId,
+        startDate,
+        endDate,
+      );
       print('📦 Recepciones encontradas: ${receptions.length}');
       pendingOperations.addAll(receptions);
 
       // 2. Obtener entregas parciales de caja pendientes
       print('💰 Buscando entregas de efectivo pendientes...');
-      final cashWithdrawals = await _getPendingCashWithdrawals(storeId, startDate, endDate);
+      final cashWithdrawals = await _getPendingCashWithdrawals(
+        storeId,
+        startDate,
+        endDate,
+      );
       print('💰 Entregas de efectivo encontradas: ${cashWithdrawals.length}');
       pendingOperations.addAll(cashWithdrawals);
 
-      print('📊 Total operaciones antes de filtros: ${pendingOperations.length}');
+      print(
+        '📊 Total operaciones antes de filtros: ${pendingOperations.length}',
+      );
 
       // Filtrar por categorías si se especifican
       if (categoryIds != null && categoryIds.isNotEmpty) {
-        final filteredOps = pendingOperations.where((op) => 
-          categoryIds.contains(op['id_subcategoria_gasto']?.toString())
-        ).toList();
-        print('🔍 Operaciones después de filtro por categoría: ${filteredOps.length}');
-        
-        // Ordenar por fecha descendente
-        filteredOps.sort((a, b) => 
-          (b['fecha_operacion'] ?? '').compareTo(a['fecha_operacion'] ?? '')
+        final filteredOps =
+            pendingOperations
+                .where(
+                  (op) => categoryIds.contains(
+                    op['id_subcategoria_gasto']?.toString(),
+                  ),
+                )
+                .toList();
+        print(
+          '🔍 Operaciones después de filtro por categoría: ${filteredOps.length}',
         );
-        
+
+        // Ordenar por fecha descendente
+        filteredOps.sort(
+          (a, b) => (b['fecha_operacion'] ?? '').compareTo(
+            a['fecha_operacion'] ?? '',
+          ),
+        );
+
         print('✅ Retornando ${filteredOps.length} operaciones filtradas');
         return filteredOps;
       }
 
       // Ordenar por fecha descendente
-      pendingOperations.sort((a, b) => 
-        (b['fecha_operacion'] ?? '').compareTo(a['fecha_operacion'] ?? '')
+      pendingOperations.sort(
+        (a, b) =>
+            (b['fecha_operacion'] ?? '').compareTo(a['fecha_operacion'] ?? ''),
       );
 
-      print('✅ Retornando ${pendingOperations.length} operaciones pendientes totales');
-      
+      print(
+        '✅ Retornando ${pendingOperations.length} operaciones pendientes totales',
+      );
+
       // Mostrar muestra de las operaciones encontradas
       if (pendingOperations.isNotEmpty) {
         print('🔍 Muestra de operaciones pendientes:');
         for (int i = 0; i < pendingOperations.length && i < 3; i++) {
           final op = pendingOperations[i];
-          print('  - ${op['tipo_operacion']}: \$${op['monto']} - ${op['descripcion']}');
+          print(
+            '  - ${op['tipo_operacion']}: \$${op['monto']} - ${op['descripcion']}',
+          );
         }
       }
 
@@ -309,9 +349,9 @@ class FinancialService {
 
   /// Obtener recepciones de inventario pendientes de registrar como gastos
   Future<List<Map<String, dynamic>>> _getPendingReceptions(
-    int storeId, 
-    String? startDate, 
-    String? endDate
+    int storeId,
+    String? startDate,
+    String? endDate,
   ) async {
     try {
       // Obtener recepciones que no han sido registradas como gastos
@@ -346,7 +386,10 @@ class FinancialService {
           ''')
           .eq('id_tienda', storeId)
           .eq('id_tipo_operacion', 1) // Tipo operación recepción
-          .eq('app_dat_operacion_recepcion.motivo', 1); // Solo recepciones por compra
+          .eq(
+            'app_dat_operacion_recepcion.motivo',
+            1,
+          ); // Solo recepciones por compra
 
       // Apply date filters if provided
       if (startDate != null) {
@@ -358,28 +401,39 @@ class FinancialService {
 
       // Execute the query
       final response = await query.order('created_at', ascending: false);
-      
+
       // Filtrar recepciones que ya no tienen gastos registrados
       final pendingReceptions = <Map<String, dynamic>>[];
-      
+
       for (final reception in response) {
         // Verificar si ya existe un gasto registrado para esta recepción
-        final existingExpense = await _supabase
-            .from('app_cont_gastos')
-            .select('id')
-            .eq('tipo_origen', 'operacion_recepcion')
-            .eq('id_referencia_origen', reception['id'])
-            .maybeSingle();
-            
+        final existingExpense =
+            await _supabase
+                .from('app_cont_gastos')
+                .select('id')
+                .eq('tipo_origen', 'operacion_recepcion')
+                .eq('id_referencia_origen', reception['id'])
+                .maybeSingle();
+
         if (existingExpense == null) {
           // Esta recepción no tiene gasto registrado, agregarla a pendientes
-          final products = reception['app_dat_recepcion_productos'] as List<dynamic>? ?? [];
+          final products =
+              reception['app_dat_recepcion_productos'] as List<dynamic>? ?? [];
           final productNames = products
-              .map((p) => (p as Map<String, dynamic>?)?['app_dat_producto']?['denominacion'] ?? 'Producto')
+              .map(
+                (p) =>
+                    (p
+                        as Map<
+                          String,
+                          dynamic
+                        >?)?['app_dat_producto']?['denominacion'] ??
+                    'Producto',
+              )
               .take(3)
               .join(', ');
-          
-          final receptionData = reception['app_dat_operacion_recepcion'] as Map<String, dynamic>?;
+
+          final receptionData =
+              reception['app_dat_operacion_recepcion'] as Map<String, dynamic>?;
           double computedTotal = 0.0;
           for (final pRaw in products) {
             final p = (pRaw as Map<String, dynamic>?) ?? const {};
@@ -387,15 +441,20 @@ class FinancialService {
             final costoReal = (p['costo_real'] as num?)?.toDouble() ?? 0.0;
             computedTotal += costoReal * cantidad;
           }
-          final totalAmount = (receptionData?['monto_total'] as num?)?.toDouble() ?? computedTotal;
-          final entregadoPor = receptionData?['entregado_por'] ?? 'Sin proveedor';
-          
+          final totalAmount =
+              (receptionData?['monto_total'] as num?)?.toDouble() ??
+              computedTotal;
+          final entregadoPor =
+              receptionData?['entregado_por'] ?? 'Sin proveedor';
+
           pendingReceptions.add({
             'id': reception['id'],
             'tipo_operacion': 'recepcion',
-            'descripcion': 'Recepción por Compra: $productNames${products.length > 3 ? '...' : ''}',
+            'descripcion':
+                'Recepción por Compra: $productNames${products.length > 3 ? '...' : ''}',
             'monto': totalAmount.toDouble(),
-            'fecha_operacion': reception['created_at']?.toString().split('T')[0] ?? '',
+            'fecha_operacion':
+                reception['created_at']?.toString().split('T')[0] ?? '',
             'proveedor': entregadoPor,
             'motivo': 'Compra',
             'observaciones': receptionData?['observaciones'] ?? '',
@@ -405,7 +464,7 @@ class FinancialService {
           });
         }
       }
-      
+
       return pendingReceptions;
     } catch (e) {
       print('❌ Error obteniendo recepciones pendientes: $e');
@@ -415,14 +474,14 @@ class FinancialService {
 
   /// Obtener entregas parciales de caja pendientes de registrar como gastos
   Future<List<Map<String, dynamic>>> _getPendingCashWithdrawals(
-    int storeId, 
-    String? startDate, 
-    String? endDate
+    int storeId,
+    String? startDate,
+    String? endDate,
   ) async {
     try {
       print('🔍 Buscando entregas parciales de caja para tienda: $storeId');
       print('📅 Rango de fechas: $startDate a $endDate');
-      
+
       // Obtener entregas de efectivo que no han sido registradas como gastos
       // Filtrar por tienda usando la relación: caja_turno -> tpv -> tienda
       var query = _supabase
@@ -464,74 +523,86 @@ class FinancialService {
       }
 
       var response = await query.order('fecha_entrega', ascending: false);
-      print('📋 Encontradas ${response.length} entregas parciales para tienda $storeId');
-      
+      print(
+        '📋 Encontradas ${response.length} entregas parciales para tienda $storeId',
+      );
+
       if (response.isNotEmpty) {
         print('🔍 Muestra de datos recibidos:');
         for (int i = 0; i < response.length && i < 3; i++) {
           final item = response[i];
-          print('  - Entrega ${item['id']}: \$${item['monto_entrega']} - ${item['motivo_entrega']}');
-          print('    Turno: ${item['id_turno']}, Fecha: ${item['fecha_entrega']}');
+          print(
+            '  - Entrega ${item['id']}: \$${item['monto_entrega']} - ${item['motivo_entrega']}',
+          );
+          print(
+            '    Turno: ${item['id_turno']}, Fecha: ${item['fecha_entrega']}',
+          );
         }
       }
-      
+
       // Filtrar entregas que ya no tienen gastos registrados
       final pendingWithdrawals = <Map<String, dynamic>>[];
       int processedCount = 0;
       int skippedExisting = 0;
       int skippedRejected = 0;
-      
+
       for (final withdrawal in response) {
         processedCount++;
-        
+
         // Verificar si ya existe un gasto registrado para esta entrega
-        final existingExpense = await _supabase
-            .from('app_cont_gastos')
-            .select('id')
-            .eq('tipo_origen', 'egreso_efectivo')
-            .eq('id_referencia_origen', withdrawal['id'])
-            .maybeSingle();
-            
+        final existingExpense =
+            await _supabase
+                .from('app_cont_gastos')
+                .select('id')
+                .eq('tipo_origen', 'egreso_efectivo')
+                .eq('id_referencia_origen', withdrawal['id'])
+                .maybeSingle();
+
         if (existingExpense != null) {
           skippedExisting++;
           print('⏭️ Entrega ${withdrawal['id']} ya tiene gasto registrado');
           continue;
         }
-            
+
         // También verificar si el egreso fue rechazado
         Map<String, dynamic>? rejectedWithdrawal;
         try {
-          rejectedWithdrawal = await _supabase
-              .from('app_cont_egresos_procesados')
-              .select('id')
-              .eq('id_egreso', withdrawal['id'])
-              .eq('estado', 'rechazado')
-              .maybeSingle();
+          rejectedWithdrawal =
+              await _supabase
+                  .from('app_cont_egresos_procesados')
+                  .select('id')
+                  .eq('id_egreso', withdrawal['id'])
+                  .eq('estado', 'rechazado')
+                  .maybeSingle();
         } catch (e) {
           print('⚠️ Tabla app_cont_egresos_procesados no existe o error: $e');
           rejectedWithdrawal = null;
         }
-        
+
         if (rejectedWithdrawal != null) {
           skippedRejected++;
           print('⏭️ Entrega ${withdrawal['id']} fue rechazada previamente');
           continue;
         }
-            
+
         // Esta entrega no tiene gasto registrado, agregarla a pendientes
         final amount = withdrawal['monto_entrega'] as num? ?? 0.0;
         final motivo = withdrawal['motivo_entrega'] ?? 'Entrega de efectivo';
         final nombreRecibe = withdrawal['nombre_recibe'] ?? 'Sin especificar';
-        final nombreAutoriza = withdrawal['nombre_autoriza'] ?? 'Sin especificar';
-        
+        final nombreAutoriza =
+            withdrawal['nombre_autoriza'] ?? 'Sin especificar';
+
         // Obtener información del trabajador desde la relación vendedor -> trabajador
         String vendedorName = 'Vendedor desconocido';
         try {
-          final turnoData = withdrawal['app_dat_caja_turno'] as Map<String, dynamic>?;
+          final turnoData =
+              withdrawal['app_dat_caja_turno'] as Map<String, dynamic>?;
           if (turnoData != null) {
-            final vendedorData = turnoData['app_dat_vendedor'] as Map<String, dynamic>?;
+            final vendedorData =
+                turnoData['app_dat_vendedor'] as Map<String, dynamic>?;
             if (vendedorData != null) {
-              final trabajadorData = vendedorData['app_dat_trabajadores'] as Map<String, dynamic>?;
+              final trabajadorData =
+                  vendedorData['app_dat_trabajadores'] as Map<String, dynamic>?;
               if (trabajadorData != null) {
                 final nombres = trabajadorData['nombres'] ?? '';
                 final apellidos = trabajadorData['apellidos'] ?? '';
@@ -545,13 +616,14 @@ class FinancialService {
         } catch (e) {
           print('⚠️ Error obteniendo información del trabajador: $e');
         }
-        
+
         final pendingOperation = {
           'id': withdrawal['id'],
           'tipo_operacion': 'entrega_efectivo',
           'descripcion': 'Entrega de efectivo: $motivo',
           'monto': amount.toDouble(),
-          'fecha_operacion': withdrawal['fecha_entrega']?.toString().split('T')[0] ?? '',
+          'fecha_operacion':
+              withdrawal['fecha_entrega']?.toString().split('T')[0] ?? '',
           'usuario': vendedorName,
           'motivo': motivo,
           'nombre_recibe': nombreRecibe,
@@ -561,18 +633,20 @@ class FinancialService {
           'id_centro_costo': 1, // Centro de costo por defecto
           'original_data': withdrawal,
         };
-        
+
         pendingWithdrawals.add(pendingOperation);
-        print('✅ Agregada entrega pendiente ${withdrawal['id']}: \$${amount} - $vendedorName');
+        print(
+          '✅ Agregada entrega pendiente ${withdrawal['id']}: \$${amount} - $vendedorName',
+        );
       }
-      
+
       print('📊 Resumen de procesamiento:');
       print('  - Total entregas encontradas: ${response.length}');
       print('  - Procesadas: $processedCount');
       print('  - Omitidas (ya tienen gasto): $skippedExisting');
       print('  - Omitidas (rechazadas): $skippedRejected');
       print('  - Pendientes finales: ${pendingWithdrawals.length}');
-      
+
       return pendingWithdrawals;
     } catch (e) {
       print('❌ Error obteniendo entregas de efectivo pendientes: $e');
@@ -586,7 +660,10 @@ class FinancialService {
       // Crear registro en tabla de control de operaciones procesadas
       await _supabase.from('app_cont_operacion_gasto').insert({
         'id_operacion': operation['id'],
-        'tipo_operacion': _truncateString(operation['tipo_operacion'] ?? '', 20), // Truncar para evitar violación
+        'tipo_operacion': _truncateString(
+          operation['tipo_operacion'] ?? '',
+          20,
+        ), // Truncar para evitar violación
         'fecha_procesado': DateTime.now().toIso8601String(),
         'procesado': true,
       });
@@ -597,7 +674,10 @@ class FinancialService {
   }
 
   /// Omitir registro de gasto para una operación
-  Future<bool> skipExpenseFromOperation(Map<String, dynamic> operation, String reason) async {
+  Future<bool> skipExpenseFromOperation(
+    Map<String, dynamic> operation,
+    String reason,
+  ) async {
     try {
       await _supabase.from('app_cont_operacion_gasto').insert({
         'id_operacion': operation['id'],
@@ -618,11 +698,8 @@ class FinancialService {
   /// Eliminar gasto
   Future<bool> deleteExpense(int expenseId) async {
     try {
-      await _supabase
-          .from('app_cont_gastos')
-          .delete()
-          .eq('id', expenseId);
-      
+      await _supabase.from('app_cont_gastos').delete().eq('id', expenseId);
+
       print('✅ Gasto eliminado exitosamente');
       return true;
     } catch (e) {
@@ -632,13 +709,16 @@ class FinancialService {
   }
 
   /// Actualizar gasto
-  Future<bool> updateExpense(int expenseId, Map<String, dynamic> updates) async {
+  Future<bool> updateExpense(
+    int expenseId,
+    Map<String, dynamic> updates,
+  ) async {
     try {
       await _supabase
           .from('app_cont_gastos')
           .update(updates)
           .eq('id', expenseId);
-      
+
       print('✅ Gasto actualizado exitosamente');
       return true;
     } catch (e) {
@@ -655,7 +735,8 @@ class FinancialService {
       final standardCostTypes = [
         {
           'denominacion': 'Costo Directo',
-          'descripcion': 'Costos directamente relacionados con la producción o venta',
+          'descripcion':
+              'Costos directamente relacionados con la producción o venta',
           'naturaleza': 1, // Gasto
           'afecta_margen': true,
         },
@@ -684,7 +765,8 @@ class FinancialService {
           await _supabase.from('app_cont_tipo_costo').insert(costType);
         } catch (e) {
           // Ignorar errores de duplicados
-          if (!e.toString().contains('duplicate') && !e.toString().contains('unique')) {
+          if (!e.toString().contains('duplicate') &&
+              !e.toString().contains('unique')) {
             rethrow;
           }
         }
@@ -721,7 +803,12 @@ class FinancialService {
   }
 
   /// Crear nuevo tipo de costo
-  Future<void> createCostType(String name, String description, {int naturaleza = 1, bool afectaMargen = true}) async {
+  Future<void> createCostType(
+    String name,
+    String description, {
+    int naturaleza = 1,
+    bool afectaMargen = true,
+  }) async {
     try {
       await _supabase.from('app_cont_tipo_costo').insert({
         'denominacion': name,
@@ -736,16 +823,22 @@ class FinancialService {
   }
 
   /// Actualizar tipo de costo
-  Future<void> updateCostType(int id, String name, String description, {int? naturaleza, bool? afectaMargen}) async {
+  Future<void> updateCostType(
+    int id,
+    String name,
+    String description, {
+    int? naturaleza,
+    bool? afectaMargen,
+  }) async {
     try {
       final updateData = <String, dynamic>{
         'denominacion': name,
         'descripcion': description,
       };
-      
+
       if (naturaleza != null) updateData['naturaleza'] = naturaleza;
       if (afectaMargen != null) updateData['afecta_margen'] = afectaMargen;
-      
+
       await _supabase
           .from('app_cont_tipo_costo')
           .update(updateData)
@@ -775,27 +868,28 @@ class FinancialService {
   Future<void> createCostCentersFromStores() async {
     try {
       print('🏪 Creando centros de costo desde tiendas...');
-      
+
       final storeId = await _getStoreId();
-      
+
       // Verificar si ya existen centros de costo para esta tienda
       final existingCenters = await _supabase
           .from('app_cont_centro_costo')
           .select('id')
           .eq('id_tienda', storeId)
           .count(CountOption.exact);
-      
+
       if ((existingCenters.count ?? 0) > 0) {
         print('✅ Centros de costo ya existen para la tienda $storeId');
         return;
       }
 
       // Obtener información de la tienda del usuario
-      final storeResponse = await _supabase
-          .from('app_dat_tienda')
-          .select('id, denominacion, direccion')
-          .filter('id', 'eq', storeId)
-          .single();
+      final storeResponse =
+          await _supabase
+              .from('app_dat_tienda')
+              .select('id, denominacion, direccion')
+              .filter('id', 'eq', storeId)
+              .single();
 
       final storeName = storeResponse['denominacion'] ?? 'Tienda $storeId';
       final storeDescription = storeResponse['direccion'] ?? 'Tienda principal';
@@ -850,7 +944,8 @@ class FinancialService {
           print('✅ Centro de costo creado: ${costCenter['denominacion']}');
         } catch (e) {
           // Ignorar errores de duplicados
-          if (!e.toString().contains('duplicate') && !e.toString().contains('unique')) {
+          if (!e.toString().contains('duplicate') &&
+              !e.toString().contains('unique')) {
             rethrow;
           }
         }
@@ -867,7 +962,7 @@ class FinancialService {
   Future<List<Map<String, dynamic>>> getCostCenters({int? storeId}) async {
     try {
       storeId ??= await _getStoreId();
-      
+
       var query = _supabase
           .from('app_cont_centro_costo')
           .select('''
@@ -908,21 +1003,24 @@ class FinancialService {
         // Obtener precios activos para este producto
         final precios = await _supabase
             .from('app_dat_precio_venta')
-            .select('id, precio_venta_cup, id_variante, fecha_desde, fecha_hasta')
+            .select(
+              'id, precio_venta_cup, id_variante, fecha_desde, fecha_hasta',
+            )
             .eq('id_producto', product['id'])
             .eq('fecha_hasta', fecha_hasta)
             .lte('fecha_desde', DateTime.now().toIso8601String().split('T')[0]);
-        
+
         for (final precio in precios) {
           // Verificar si ya existe un margen definido para esta variante
-          final existingMargin = await _supabase
-              .from('app_cont_margen_comercial')
-              .select('id')
-              .eq('id_producto', product['id'])
-              .eq('id_tienda', storeId)
-              .eq('id_variante', precio['id_variante'] ?? 0)
-              .maybeSingle();
-            
+          final existingMargin =
+              await _supabase
+                  .from('app_cont_margen_comercial')
+                  .select('id')
+                  .eq('id_producto', product['id'])
+                  .eq('id_tienda', storeId)
+                  .eq('id_variante', precio['id_variante'] ?? 0)
+                  .maybeSingle();
+
           if (existingMargin == null) {
             final precioVenta = precio['precio_venta_cup'] ?? 0.0;
             final margin = {
@@ -938,7 +1036,8 @@ class FinancialService {
               await _supabase.from('app_cont_margen_comercial').insert(margin);
             } catch (e) {
               // Ignorar errores de duplicados
-              if (!e.toString().contains('duplicate') && !e.toString().contains('unique')) {
+              if (!e.toString().contains('duplicate') &&
+                  !e.toString().contains('unique')) {
                 rethrow;
               }
             }
@@ -954,10 +1053,13 @@ class FinancialService {
   }
 
   /// Obtener márgenes comerciales
-  Future<List<Map<String, dynamic>>> getProfitMargins({int? productId, int? storeId}) async {
+  Future<List<Map<String, dynamic>>> getProfitMargins({
+    int? productId,
+    int? storeId,
+  }) async {
     try {
       storeId ??= await _getStoreId();
-      
+
       var query = _supabase
           .from('app_cont_margen_comercial')
           .select('''
@@ -978,41 +1080,45 @@ class FinancialService {
       }
 
       final response = await query.order('fecha_desde', ascending: false);
-      
+
       // Enriquecer con datos de productos manualmente
       final enrichedResponse = <Map<String, dynamic>>[];
       for (final margin in response) {
         final enrichedMargin = Map<String, dynamic>.from(margin);
-        
+
         // Obtener nombre del producto
         try {
-          final product = await _supabase
-              .from('app_dat_producto')
-              .select('denominacion')
-              .eq('id', margin['id_producto'])
-              .single();
+          final product =
+              await _supabase
+                  .from('app_dat_producto')
+                  .select('denominacion')
+                  .eq('id', margin['id_producto'])
+                  .single();
           enrichedMargin['producto_nombre'] = product['denominacion'];
         } catch (e) {
-          enrichedMargin['producto_nombre'] = 'Producto ${margin['id_producto']}';
+          enrichedMargin['producto_nombre'] =
+              'Producto ${margin['id_producto']}';
         }
-        
+
         // Obtener nombre de variante si existe
         if (margin['id_variante'] != null) {
           try {
-            final variant = await _supabase
-                .from('app_dat_variantes')
-                .select('denominacion')
-                .eq('id', margin['id_variante'])
-                .single();
+            final variant =
+                await _supabase
+                    .from('app_dat_variantes')
+                    .select('denominacion')
+                    .eq('id', margin['id_variante'])
+                    .single();
             enrichedMargin['variante_nombre'] = variant['denominacion'];
           } catch (e) {
-            enrichedMargin['variante_nombre'] = 'Variante ${margin['id_variante']}';
+            enrichedMargin['variante_nombre'] =
+                'Variante ${margin['id_variante']}';
           }
         }
 
         enrichedResponse.add(enrichedMargin);
       }
-      
+
       return enrichedResponse;
     } catch (e) {
       print('❌ Error obteniendo márgenes comerciales: $e');
@@ -1034,7 +1140,9 @@ class FinancialService {
       // Cerrar margen actual si existe
       await _supabase
           .from('app_cont_margen_comercial')
-          .update({'fecha_hasta': DateTime.now().toIso8601String().split('T')[0]})
+          .update({
+            'fecha_hasta': DateTime.now().toIso8601String().split('T')[0],
+          })
           .eq('id_producto', productId)
           .eq('id_tienda', storeId);
 
@@ -1061,10 +1169,7 @@ class FinancialService {
   /// Eliminar margen comercial
   Future<void> deleteProfitMargin(int id) async {
     try {
-      await _supabase
-          .from('app_cont_margen_comercial')
-          .delete()
-          .eq('id', id);
+      await _supabase.from('app_cont_margen_comercial').delete().eq('id', id);
     } catch (e) {
       print('❌ Error eliminando margen comercial: $e');
       rethrow;
@@ -1094,7 +1199,8 @@ class FinancialService {
           await _supabase.from('app_nom_naturaleza_costo').insert(nature);
         } catch (e) {
           // Ignorar errores de duplicados
-          if (!e.toString().contains('duplicate') && !e.toString().contains('unique')) {
+          if (!e.toString().contains('duplicate') &&
+              !e.toString().contains('unique')) {
             rethrow;
           }
         }
@@ -1128,7 +1234,7 @@ class FinancialService {
   Future<void> initializeFinancialSystem() async {
     try {
       print('🚀 Iniciando configuración del sistema financiero...');
-      
+
       await createStandardCostNatures();
       // Omitir categorías y subcategorías ya que existen datos
       // await createStandardExpenseCategories();
@@ -1138,7 +1244,7 @@ class FinancialService {
       // Crear centros de costo para la tienda del usuario autenticado
       await createCostCentersFromStores();
       await createDefaultProfitMargins();
-      
+
       print('✅ Sistema financiero inicializado correctamente');
     } catch (e) {
       print('❌ Error inicializando sistema financiero: $e');
@@ -1219,14 +1325,15 @@ class FinancialService {
   }
 
   /// Actualizar categoría de gastos
-  Future<void> updateExpenseCategory(int id, String name, String description) async {
+  Future<void> updateExpenseCategory(
+    int id,
+    String name,
+    String description,
+  ) async {
     try {
       await _supabase
           .from('app_nom_categoria_gasto')
-          .update({
-            'denominacion': name,
-            'descripcion': description,
-          })
+          .update({'denominacion': name, 'descripcion': description})
           .eq('id', id);
     } catch (e) {
       print('❌ Error actualizando categoría: $e');
@@ -1237,10 +1344,7 @@ class FinancialService {
   /// Eliminar categoría de gastos
   Future<void> deleteExpenseCategory(int id) async {
     try {
-      await _supabase
-          .from('app_nom_categoria_gasto')
-          .delete()
-          .eq('id', id);
+      await _supabase.from('app_nom_categoria_gasto').delete().eq('id', id);
     } catch (e) {
       print('❌ Error eliminando categoría: $e');
       rethrow;
@@ -1248,7 +1352,11 @@ class FinancialService {
   }
 
   /// Crear nueva subcategoría de gastos
-  Future<void> createExpenseSubcategory(String name, String description, int categoryId) async {
+  Future<void> createExpenseSubcategory(
+    String name,
+    String description,
+    int categoryId,
+  ) async {
     try {
       await _supabase.from('app_nom_subcategoria_gasto').insert({
         'denominacion': name,
@@ -1262,7 +1370,12 @@ class FinancialService {
   }
 
   /// Actualizar subcategoría de gastos
-  Future<void> updateExpenseSubcategory(int id, String name, String description, int categoryId) async {
+  Future<void> updateExpenseSubcategory(
+    int id,
+    String name,
+    String description,
+    int categoryId,
+  ) async {
     try {
       await _supabase
           .from('app_nom_subcategoria_gasto')
@@ -1281,10 +1394,7 @@ class FinancialService {
   /// Eliminar subcategoría de gastos
   Future<void> deleteExpenseSubcategory(int id) async {
     try {
-      await _supabase
-          .from('app_nom_subcategoria_gasto')
-          .delete()
-          .eq('id', id);
+      await _supabase.from('app_nom_subcategoria_gasto').delete().eq('id', id);
     } catch (e) {
       print('❌ Error eliminando subcategoría: $e');
       rethrow;
@@ -1294,7 +1404,13 @@ class FinancialService {
   // ==================== CRUD CENTROS DE COSTO ====================
 
   /// Crear nuevo centro de costo
-  Future<void> createCostCenter(String name, String? description, String? code, String? skuCode, int? parentId) async {
+  Future<void> createCostCenter(
+    String name,
+    String? description,
+    String? code,
+    String? skuCode,
+    int? parentId,
+  ) async {
     try {
       final storeId = await _getStoreId();
       await _supabase.from('app_cont_centro_costo').insert({
@@ -1312,7 +1428,14 @@ class FinancialService {
   }
 
   /// Actualizar centro de costo
-  Future<void> updateCostCenter(int id, String name, String? description, String? code, String? skuCode, int? parentId) async {
+  Future<void> updateCostCenter(
+    int id,
+    String name,
+    String? description,
+    String? code,
+    String? skuCode,
+    int? parentId,
+  ) async {
     try {
       await _supabase
           .from('app_cont_centro_costo')
@@ -1333,10 +1456,7 @@ class FinancialService {
   /// Eliminar centro de costo
   Future<void> deleteCostCenter(int id) async {
     try {
-      await _supabase
-          .from('app_cont_centro_costo')
-          .delete()
-          .eq('id', id);
+      await _supabase.from('app_cont_centro_costo').delete().eq('id', id);
     } catch (e) {
       print('❌ Error eliminando centro de costo: $e');
       rethrow;
@@ -1372,13 +1492,12 @@ class FinancialService {
   Future<void> deactivateProfitMargin(int id) async {
     try {
       final now = DateTime.now();
-      final dateString = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-      
+      final dateString =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
       await _supabase
           .from('app_cont_margen_comercial')
-          .update({
-            'fecha_hasta': dateString,
-          })
+          .update({'fecha_hasta': dateString})
           .eq('id', id);
     } catch (e) {
       print('❌ Error desactivando margen comercial: $e');
@@ -1393,43 +1512,46 @@ class FinancialService {
     try {
       final storeId = await _getStoreId();
       print('🔍 Verificando configuración para tienda ID: $storeId');
-      
+
       // Verificar si existen configuraciones básicas para la tienda
       final categoriesResponse = await _supabase
           .from('app_nom_categoria_gasto')
           .select('*')
           .count(CountOption.exact);
-      
+
       final costTypesResponse = await _supabase
           .from('app_cont_tipo_costo')
           .select('*')
           .count(CountOption.exact);
-      
+
       final costCentersResponse = await _supabase
           .from('app_cont_centro_costo')
           .select('*')
           .eq('id_tienda', storeId)
           .count(CountOption.exact);
-      
+
       final categoriesCount = categoriesResponse.count ?? 0;
       final costTypesCount = costTypesResponse.count ?? 0;
       final costCentersCount = costCentersResponse.count ?? 0;
-      
+
       print('🔍 Verificación de configuración:');
       print('  - Categorías: $categoriesCount');
       print('  - Tipos de costo: $costTypesCount');
       print('  - Centros de costo (tienda $storeId): $costCentersCount');
-      
+
       // Verificar qué tiendas tienen centros de costo
       final costCentersWithStores = await _supabase
           .from('app_cont_centro_costo')
           .select('id_tienda')
           .limit(10);
-      print('  - Tiendas con centros de costo: ${costCentersWithStores.map((c) => c['id_tienda']).toSet()}');
-      
-      final isConfigured = categoriesCount > 0 && costTypesCount > 0 && costCentersCount > 0;
+      print(
+        '  - Tiendas con centros de costo: ${costCentersWithStores.map((c) => c['id_tienda']).toSet()}',
+      );
+
+      final isConfigured =
+          categoriesCount > 0 && costTypesCount > 0 && costCentersCount > 0;
       print('📊 Sistema configurado: $isConfigured');
-      
+
       return isConfigured;
     } catch (e) {
       print('❌ Error verificando configuración: $e');
@@ -1442,16 +1564,16 @@ class FinancialService {
     try {
       final storeId = await _getStoreId();
       print('📊 Obteniendo estadísticas para tienda: $storeId');
-      
+
       // Contar categorías de gastos
       final categoriesResponse = await _supabase
           .from('app_nom_categoria_gasto')
           .select('*')
           .count(CountOption.exact);
-      
+
       final categoriesCount = categoriesResponse.count ?? 0;
       print('  - Categorías: $categoriesCount');
-      
+
       // Contar tipos de costos
       final costTypesResponse = await _supabase
           .from('app_cont_tipo_costo')
@@ -1459,7 +1581,7 @@ class FinancialService {
           .count(CountOption.exact);
       final costTypesCount = costTypesResponse.count ?? 0;
       print('  - Tipos de costo: $costTypesCount');
-      
+
       // Contar centros de costo para esta tienda
       final costCentersResponse = await _supabase
           .from('app_cont_centro_costo')
@@ -1468,7 +1590,7 @@ class FinancialService {
           .count(CountOption.exact);
       final costCentersCount = costCentersResponse.count ?? 0;
       print('  - Centros de costo: $costCentersCount');
-      
+
       // Contar márgenes comerciales para esta tienda
       final marginsResponse = await _supabase
           .from('app_cont_margen_comercial')
@@ -1477,12 +1599,12 @@ class FinancialService {
           .count(CountOption.exact);
       final marginsCount = marginsResponse.count ?? 0;
       print('  - Márgenes comerciales: $marginsCount');
-      
+
       // Obtener estadísticas de márgenes (sin usar columnas problemáticas)
       double avgMargin = 0.0;
       double minMargin = 0.0;
       double maxMargin = 0.0;
-      
+
       if (marginsCount > 0) {
         try {
           final marginsData = await _supabase
@@ -1490,9 +1612,12 @@ class FinancialService {
               .select('margen_deseado')
               .eq('id_tienda', storeId)
               .not('margen_deseado', 'eq', null);
-          
+
           if (marginsData.isNotEmpty) {
-            final margins = marginsData.map((m) => (m['margen_deseado'] as num).toDouble()).toList();
+            final margins =
+                marginsData
+                    .map((m) => (m['margen_deseado'] as num).toDouble())
+                    .toList();
             avgMargin = margins.reduce((a, b) => a + b) / margins.length;
             minMargin = margins.reduce((a, b) => a < b ? a : b);
             maxMargin = margins.reduce((a, b) => a > b ? a : b);
@@ -1501,7 +1626,7 @@ class FinancialService {
           print('⚠️ Error calculando estadísticas de márgenes: $e');
         }
       }
-      
+
       // Contar asignaciones de costos para esta tienda
       final assignmentsResponse = await _supabase
           .from('app_cont_asignacion_costos')
@@ -1510,7 +1635,7 @@ class FinancialService {
           .count(CountOption.exact);
       final assignmentsCount = assignmentsResponse.count ?? 0;
       print('  - Asignaciones: $assignmentsCount');
-      
+
       final stats = {
         'categories_count': categoriesCount,
         'cost_types_count': costTypesCount,
@@ -1521,7 +1646,7 @@ class FinancialService {
         'max_margin': maxMargin,
         'assignments_count': assignmentsCount,
       };
-      
+
       print('📈 Estadísticas obtenidas: $stats');
       return stats;
     } catch (e) {
@@ -1545,7 +1670,7 @@ class FinancialService {
   Future<List<Map<String, dynamic>>> getCostAssignments() async {
     try {
       final storeId = await _getStoreId();
-      
+
       final response = await _supabase
           .from('app_cont_asignacion_costos')
           .select('''
@@ -1565,56 +1690,64 @@ class FinancialService {
       final enrichedResponse = <Map<String, dynamic>>[];
       for (final assignment in response) {
         final enrichedAssignment = Map<String, dynamic>.from(assignment);
-        
+
         // Obtener nombre del tipo de costo
         try {
-          final costType = await _supabase
-              .from('app_cont_tipo_costo')
-              .select('denominacion')
-              .eq('id', assignment['id_tipo_costo'])
-              .single();
+          final costType =
+              await _supabase
+                  .from('app_cont_tipo_costo')
+                  .select('denominacion')
+                  .eq('id', assignment['id_tipo_costo'])
+                  .single();
           enrichedAssignment['tipo_costo_nombre'] = costType['denominacion'];
         } catch (e) {
-          enrichedAssignment['tipo_costo_nombre'] = 'Tipo ${assignment['id_tipo_costo']}';
+          enrichedAssignment['tipo_costo_nombre'] =
+              'Tipo ${assignment['id_tipo_costo']}';
         }
-        
+
         // Obtener nombre del centro de costo
         if (assignment['id_centro_costo'] != null) {
           try {
-            final costCenter = await _supabase
-                .from('app_cont_centro_costo')
-                .select('denominacion')
-                .eq('id', assignment['id_centro_costo'])
-                .single();
-            enrichedAssignment['centro_costo_nombre'] = costCenter['denominacion'];
+            final costCenter =
+                await _supabase
+                    .from('app_cont_centro_costo')
+                    .select('denominacion')
+                    .eq('id', assignment['id_centro_costo'])
+                    .single();
+            enrichedAssignment['centro_costo_nombre'] =
+                costCenter['denominacion'];
           } catch (e) {
-            enrichedAssignment['centro_costo_nombre'] = 'Centro ${assignment['id_centro_costo']}';
+            enrichedAssignment['centro_costo_nombre'] =
+                'Centro ${assignment['id_centro_costo']}';
           }
         } else {
           enrichedAssignment['centro_costo_nombre'] = 'Sin centro de costo';
         }
-        
+
         // Obtener nombre del producto si existe
         if (assignment['id_producto'] != null) {
           try {
-            final product = await _supabase
-                .from('app_dat_producto')
-                .select('denominacion')
-                .eq('id', assignment['id_producto'])
-                .single();
+            final product =
+                await _supabase
+                    .from('app_dat_producto')
+                    .select('denominacion')
+                    .eq('id', assignment['id_producto'])
+                    .single();
             enrichedAssignment['producto_nombre'] = product['denominacion'];
           } catch (e) {
-            enrichedAssignment['producto_nombre'] = 'Producto ${assignment['id_producto']}';
+            enrichedAssignment['producto_nombre'] =
+                'Producto ${assignment['id_producto']}';
           }
         } else {
           enrichedAssignment['producto_nombre'] = 'Todos los productos';
         }
-        
-        enrichedAssignment['metodo_asignacion_nombre'] = _getAssignmentMethodName(assignment['metodo_asignacion']);
-        
+
+        enrichedAssignment['metodo_asignacion_nombre'] =
+            _getAssignmentMethodName(assignment['metodo_asignacion']);
+
         enrichedResponse.add(enrichedAssignment);
       }
-      
+
       return enrichedResponse;
     } catch (e) {
       print('Error obteniendo asignaciones de costos: $e');
@@ -1627,9 +1760,9 @@ class FinancialService {
     try {
       // Validar datos
       _validateCostAssignment(assignment);
-      
+
       final storeId = await _getStoreId();
-      
+
       final newAssignment = {
         'id_tipo_costo': assignment['id_tipo_costo'],
         'id_producto': assignment['id_producto'],
@@ -1638,7 +1771,7 @@ class FinancialService {
         'porcentaje_asignacion': assignment['porcentaje_asignacion'],
         'metodo_asignacion': assignment['metodo_asignacion'], // smallint
       };
-      
+
       await _supabase.from('app_cont_asignacion_costos').insert(newAssignment);
       print('✅ Asignación de costo creada exitosamente');
       return true;
@@ -1649,11 +1782,14 @@ class FinancialService {
   }
 
   /// Actualizar asignación de costo
-  Future<bool> updateCostAssignment(int id, Map<String, dynamic> assignment) async {
+  Future<bool> updateCostAssignment(
+    int id,
+    Map<String, dynamic> assignment,
+  ) async {
     try {
       // Validar datos
       _validateCostAssignment(assignment);
-      
+
       final updateData = {
         'id_tipo_costo': assignment['id_tipo_costo'],
         'id_producto': assignment['id_producto'],
@@ -1661,12 +1797,12 @@ class FinancialService {
         'porcentaje_asignacion': assignment['porcentaje_asignacion'],
         'metodo_asignacion': assignment['metodo_asignacion'], // smallint
       };
-      
+
       await _supabase
           .from('app_cont_asignacion_costos')
           .update(updateData)
           .eq('id', id);
-      
+
       print('✅ Asignación de costo actualizada exitosamente');
       return true;
     } catch (e) {
@@ -1678,10 +1814,7 @@ class FinancialService {
   /// Eliminar asignación de costo
   Future<bool> deleteCostAssignment(int id) async {
     try {
-      await _supabase
-          .from('app_cont_asignacion_costos')
-          .delete()
-          .eq('id', id);
+      await _supabase.from('app_cont_asignacion_costos').delete().eq('id', id);
       print('✅ Asignación de costo eliminada exitosamente');
       return true;
     } catch (e) {
@@ -1691,10 +1824,12 @@ class FinancialService {
   }
 
   /// Obtener asignaciones de costo por producto
-  Future<List<Map<String, dynamic>>> getCostAssignmentsByProduct(int productId) async {
+  Future<List<Map<String, dynamic>>> getCostAssignmentsByProduct(
+    int productId,
+  ) async {
     try {
       final storeId = await _getStoreId();
-      
+
       final response = await _supabase
           .from('app_cont_asignacion_costos')
           .select('''
@@ -1721,10 +1856,12 @@ class FinancialService {
   }
 
   /// Obtener asignaciones de costo por centro de costo
-  Future<List<Map<String, dynamic>>> getCostAssignmentsByCostCenter(int costCenterId) async {
+  Future<List<Map<String, dynamic>>> getCostAssignmentsByCostCenter(
+    int costCenterId,
+  ) async {
     try {
       final storeId = await _getStoreId();
-      
+
       final response = await _supabase
           .from('app_cont_asignacion_costos')
           .select('''
@@ -1775,6 +1912,7 @@ class FinancialService {
       }
 
       final response = await query.order('fecha', ascending: false);
+
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('❌ Error obteniendo gastos: $e');
@@ -1813,10 +1951,12 @@ class FinancialService {
   }
 
   /// Obtener actividades recientes
-  Future<List<Map<String, dynamic>>> getRecentActivities({int limit = 10}) async {
+  Future<List<Map<String, dynamic>>> getRecentActivities({
+    int limit = 10,
+  }) async {
     try {
       final storeId = await _getStoreId();
-      
+
       final response = await _supabase
           .from('app_cont_historial_actividades')
           .select('*')
@@ -1840,17 +1980,17 @@ class FinancialService {
     try {
       final storeId = await _getStoreId();
       final offset = (page - 1) * limit;
-      
+
       var query = _supabase
           .from('app_cont_historial_actividades')
           .select('*')
           .eq('id_tienda', storeId);
-      
+
       // Aplicar filtro por tipo de actividad si se especifica
       if (tipoActividad != null && tipoActividad != 'all') {
         query = query.eq('tipo_actividad', tipoActividad);
       }
-      
+
       // Obtener actividades con paginación
       final response = await _supabase
           .from('app_cont_historial_actividades')
@@ -1858,18 +1998,18 @@ class FinancialService {
           .eq('id_tienda', storeId)
           .order('fecha_actividad', ascending: false)
           .range(offset, offset + limit - 1);
-      
+
       final activities = List<Map<String, dynamic>>.from(response);
-      
+
       // Verificar si hay más actividades
       final nextPageResponse = await _supabase
           .from('app_cont_historial_actividades')
           .select('id')
           .eq('id_tienda', storeId)
           .range(offset + limit, offset + limit);
-      
+
       final hasMore = nextPageResponse.isNotEmpty;
-      
+
       return {
         'data': activities,
         'hasMore': hasMore,
@@ -1897,10 +2037,12 @@ class FinancialService {
   // ==================== ASIGNACIONES DE GASTOS ====================
 
   /// Obtener asignaciones de gastos específicos
-  Future<List<Map<String, dynamic>>> getExpenseAssignments({int? expenseId}) async {
+  Future<List<Map<String, dynamic>>> getExpenseAssignments({
+    int? expenseId,
+  }) async {
     try {
       final storeId = await _getStoreId();
-      
+
       var query = _supabase
           .from('app_cont_gasto_asignacion')
           .select('''
@@ -1924,6 +2066,8 @@ class FinancialService {
       }
 
       final response = await query.order('created_at', ascending: false);
+
+      print('✅ Asignaciones de gastos cargadas: ${response.length}');
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('❌ Error obteniendo asignaciones de gastos: $e');
@@ -1951,83 +2095,101 @@ class FinancialService {
       return false;
     }
   }
-/// Registrar gasto desde operación pendiente
-Future<bool> registerExpenseFromOperation(Map<String, dynamic> operation, {
-  int? subcategoryId,
-  int? costCenterId,
-  int? costTypeId,
-  String? customDescription,
-}) async {
-  try {
-    final storeId = await _getStoreId();
-    final userId = await _getUserId();
 
-    final expenseData = {
-      'monto': operation['monto'],
-      'fecha': operation['fecha_operacion'] ?? DateTime.now().toIso8601String().split('T')[0],
-      'id_subcategoria_gasto': subcategoryId ?? operation['id_subcategoria_gasto'] ?? 1,
-      'id_centro_costo': costCenterId ?? operation['id_centro_costo'] ?? 1,
-      'id_tipo_costo': costTypeId ?? operation['id_tipo_costo'] ?? 1,
-      'id_tienda': storeId,
-      'uuid': userId,
-      'tipo_origen': _truncateString(operation['tipo_operacion'] ?? 'recepcion', 20),
-      'id_referencia_origen': operation['id_referencia'] ?? operation['id'],
-    };
-
-    // SOLUCIÓN AL PROBLEMA DE AUDITORÍA: Obtener ID de asignación antes de insertar
-    final assignmentId = await _ensureCostAssignmentExists(
-      expenseData['id_tipo_costo'], 
-      expenseData['id_centro_costo'], 
-      storeId
-    );
-
-    if (assignmentId == null) {
-      throw Exception('No se pudo crear o encontrar asignación de costos para el trigger de auditoría');
-    }
-
-    print('✅ ID de asignación obtenido para auditoría: $assignmentId');
-
-    // Insertar gasto - el trigger ahora debería encontrar la asignación correcta
-    final insertResult = await _supabase.from('app_cont_gastos').insert(expenseData).select('id').single();
-    final expenseId = insertResult['id'] as int;
-    print('✅ Gasto insertado exitosamente con ID: $expenseId');
-
-    // CREAR RELACIÓN EXPLÍCITA GASTO-ASIGNACIÓN
+  /// Registrar gasto desde operación pendiente
+  Future<bool> registerExpenseFromOperation(
+    Map<String, dynamic> operation, {
+    int? subcategoryId,
+    int? costCenterId,
+    int? costTypeId,
+    String? customDescription,
+  }) async {
     try {
-      await _supabase.from('app_cont_gasto_asignacion').insert({
-        'id_gasto': expenseId,
-        'id_asignacion': assignmentId,
-        'monto_asignado': double.tryParse(operation['monto'].toString()) ?? 0.0,
-      });
-      print('✅ Relación gasto-asignación creada: gasto=$expenseId, asignación=$assignmentId');
+      final storeId = await _getStoreId();
+      final userId = await _getUserId();
+
+      final expenseData = {
+        'monto': operation['monto'],
+        'fecha':
+            operation['fecha_operacion'] ??
+            DateTime.now().toIso8601String().split('T')[0],
+        'id_subcategoria_gasto':
+            subcategoryId ?? operation['id_subcategoria_gasto'] ?? 1,
+        'id_centro_costo': costCenterId ?? operation['id_centro_costo'] ?? 1,
+        'id_tipo_costo': costTypeId ?? operation['id_tipo_costo'] ?? 1,
+        'id_tienda': storeId,
+        'uuid': userId,
+        'tipo_origen': _truncateString(
+          operation['tipo_operacion'] ?? 'recepcion',
+          20,
+        ),
+        'id_referencia_origen': operation['id_referencia'] ?? operation['id'],
+      };
+
+      // SOLUCIÓN AL PROBLEMA DE AUDITORÍA: Obtener ID de asignación antes de insertar
+      final assignmentId = await _ensureCostAssignmentExists(
+        expenseData['id_tipo_costo'],
+        expenseData['id_centro_costo'],
+        storeId,
+      );
+
+      if (assignmentId == null) {
+        throw Exception(
+          'No se pudo crear o encontrar asignación de costos para el trigger de auditoría',
+        );
+      }
+
+      print('✅ ID de asignación obtenido para auditoría: $assignmentId');
+
+      // Insertar gasto - el trigger ahora debería encontrar la asignación correcta
+      final insertResult =
+          await _supabase
+              .from('app_cont_gastos')
+              .insert(expenseData)
+              .select('id')
+              .single();
+      final expenseId = insertResult['id'] as int;
+      print('✅ Gasto insertado exitosamente con ID: $expenseId');
+
+      // CREAR RELACIÓN EXPLÍCITA GASTO-ASIGNACIÓN
+      try {
+        await _supabase.from('app_cont_gasto_asignacion').insert({
+          'id_gasto': expenseId,
+          'id_asignacion': assignmentId,
+          'monto_asignado':
+              double.tryParse(operation['monto'].toString()) ?? 0.0,
+        });
+        print(
+          '✅ Relación gasto-asignación creada: gasto=$expenseId, asignación=$assignmentId',
+        );
+      } catch (e) {
+        print('⚠️ Error creando relación gasto-asignación: $e');
+        // No es crítico, continuar
+      }
+
+      // Registrar actividad en el historial
+      await _logActivity(
+        tipoActividad: 'gasto_registrado',
+        descripcion:
+            'Gasto registrado desde operación: \$${operation['monto']}',
+        entidadTipo: 'gasto',
+        monto: double.tryParse(operation['monto'].toString()),
+        metadata: {
+          'origen_operacion': operation['id'],
+          'tipo_operacion': operation['tipo_operacion'],
+          'assignment_id': assignmentId,
+        },
+      );
+
+      // Marcar operación como procesada
+      await _markOperationAsProcessed(operation);
+
+      return true;
     } catch (e) {
-      print('⚠️ Error creando relación gasto-asignación: $e');
-      // No es crítico, continuar
+      print('❌ Error registrando gasto desde operación: $e');
+      return false;
     }
-
-    // Registrar actividad en el historial
-    await _logActivity(
-      tipoActividad: 'gasto_registrado',
-      descripcion: 'Gasto registrado desde operación: \$${operation['monto']}',
-      entidadTipo: 'gasto',
-      monto: double.tryParse(operation['monto'].toString()),
-      metadata: {
-        'origen_operacion': operation['id'],
-        'tipo_operacion': operation['tipo_operacion'],
-        'assignment_id': assignmentId,
-      },
-    );
-
-    // Marcar operación como procesada
-    await _markOperationAsProcessed(operation);
-
-    return true;
-  } catch (e) {
-    print('❌ Error registrando gasto desde operación: $e');
-    return false;
   }
-}
-
 
   /// Obtener logs de auditoría de costos
   Future<List<Map<String, dynamic>>> getCostAuditLogs({
@@ -2037,7 +2199,7 @@ Future<bool> registerExpenseFromOperation(Map<String, dynamic> operation, {
   }) async {
     try {
       final storeId = await _getStoreId();
-      
+
       var query = _supabase
           .from('app_cont_log_costos')
           .select('''
@@ -2071,7 +2233,7 @@ Future<bool> registerExpenseFromOperation(Map<String, dynamic> operation, {
       }
 
       final response = await query.order('fecha_operacion', ascending: false);
-      
+
       print('✅ Logs de auditoría cargados: ${response.length}');
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
@@ -2081,141 +2243,165 @@ Future<bool> registerExpenseFromOperation(Map<String, dynamic> operation, {
   }
 
   /// Asegurar que existe una asignación de costos y retornar su ID
-Future<int?> _ensureCostAssignmentExists(int costTypeId, int costCenterId, int storeId, {bool forceCreate = false}) async {
-  try {
-    // Buscar asignaciones existentes
-    final existingAssignments = await _supabase
-        .from('app_cont_asignacion_costos')
-        .select('id, id_producto, porcentaje_asignacion, metodo_asignacion')
-        .eq('id_tipo_costo', costTypeId)
-        .eq('id_centro_costo', costCenterId)
-        .eq('id_tienda', storeId);
+  Future<int?> _ensureCostAssignmentExists(
+    int costTypeId,
+    int costCenterId,
+    int storeId, {
+    bool forceCreate = false,
+  }) async {
+    try {
+      // Buscar asignaciones existentes
+      final existingAssignments = await _supabase
+          .from('app_cont_asignacion_costos')
+          .select('id, id_producto, porcentaje_asignacion, metodo_asignacion')
+          .eq('id_tipo_costo', costTypeId)
+          .eq('id_centro_costo', costCenterId)
+          .eq('id_tienda', storeId);
 
-    if (existingAssignments.isNotEmpty && !forceCreate) {
-      // Buscar asignación general (id_producto = null)
-      final generalAssignment = existingAssignments.firstWhere(
-        (assignment) => assignment['id_producto'] == null,
-        orElse: () => existingAssignments.first, // Usar la primera si no hay general
-      );
-      
-      print('✅ Asignación existente encontrada: ID ${generalAssignment['id']}');
-      return generalAssignment['id'] as int;
+      if (existingAssignments.isNotEmpty && !forceCreate) {
+        // Buscar asignación general (id_producto = null)
+        final generalAssignment = existingAssignments.firstWhere(
+          (assignment) => assignment['id_producto'] == null,
+          orElse:
+              () =>
+                  existingAssignments
+                      .first, // Usar la primera si no hay general
+        );
+
+        print(
+          '✅ Asignación existente encontrada: ID ${generalAssignment['id']}',
+        );
+        return generalAssignment['id'] as int;
+      }
+
+      // Crear asignación automática si no existe
+      final newAssignment = {
+        'id_tipo_costo': costTypeId,
+        'id_centro_costo': costCenterId,
+        'id_tienda': storeId,
+        'id_producto': null,
+        'porcentaje_asignacion': 100.0,
+        'metodo_asignacion': METODO_AUTOMATICO,
+      };
+
+      final result =
+          await _supabase
+              .from('app_cont_asignacion_costos')
+              .insert(newAssignment)
+              .select('id')
+              .single();
+
+      final assignmentId = result['id'] as int;
+      print('✅ Asignación creada automáticamente: ID $assignmentId');
+      return assignmentId;
+    } catch (e) {
+      print('❌ Error asegurando asignación de costos: $e');
+      return null;
     }
-
-    // Crear asignación automática si no existe
-    final newAssignment = {
-      'id_tipo_costo': costTypeId,
-      'id_centro_costo': costCenterId,
-      'id_tienda': storeId,
-      'id_producto': null,
-      'porcentaje_asignacion': 100.0,
-      'metodo_asignacion': METODO_AUTOMATICO,
-    };
-
-    final result = await _supabase
-        .from('app_cont_asignacion_costos')
-        .insert(newAssignment)
-        .select('id')
-        .single();
-
-    final assignmentId = result['id'] as int;
-    print('✅ Asignación creada automáticamente: ID $assignmentId');
-    return assignmentId;
-  } catch (e) {
-    print('❌ Error asegurando asignación de costos: $e');
-    return null;
   }
-}
 
-/// Calcular asignaciones de costos para un gasto
-Future<List<Map<String, dynamic>>> calculateCostAssignments({
-  required double expenseAmount,
-  required int costTypeId,
-  required int costCenterId,
-  int? productId,
-}) async {
-  try {
-    print('🔍 DEBUGGING: calculateCostAssignments called with costTypeId=$costTypeId, costCenterId=$costCenterId');
-    final storeId = await _getStoreId();
-    
-    // Obtener asignaciones existentes para este tipo de costo y centro
-    final assignments = await _supabase
-        .from('app_cont_asignacion_costos')
-        .select('''
+  /// Calcular asignaciones de costos para un gasto
+  Future<List<Map<String, dynamic>>> calculateCostAssignments({
+    required double expenseAmount,
+    required int costTypeId,
+    required int costCenterId,
+    int? productId,
+  }) async {
+    try {
+      print(
+        '🔍 DEBUGGING: calculateCostAssignments called with costTypeId=$costTypeId, costCenterId=$costCenterId',
+      );
+      final storeId = await _getStoreId();
+
+      // Obtener asignaciones existentes para este tipo de costo y centro
+      final assignments = await _supabase
+          .from('app_cont_asignacion_costos')
+          .select('''
           id, porcentaje_asignacion, metodo_asignacion,
           id_tipo_costo, id_centro_costo, id_producto, id_tienda
         ''')
-        .eq('id_tipo_costo', costTypeId)
-        .eq('id_centro_costo', costCenterId)
-        .eq('id_tienda', storeId);
+          .eq('id_tipo_costo', costTypeId)
+          .eq('id_centro_costo', costCenterId)
+          .eq('id_tienda', storeId);
 
-    if (assignments.isEmpty) {
-      print('⚠️ No se encontraron asignaciones, creando una automáticamente...');
-      
-      try {
-        // Crear asignación automática
-        final newAssignment = {
-          'id_tipo_costo': costTypeId,
-          'id_centro_costo': costCenterId,
-          'id_tienda': storeId,
-          'id_producto': null, // Asignación general para todos los productos
-          'porcentaje_asignacion': 100.0,
-          'metodo_asignacion': METODO_AUTOMATICO,
-        };
+      if (assignments.isEmpty) {
+        print(
+          '⚠️ No se encontraron asignaciones, creando una automáticamente...',
+        );
 
-        final response = await _supabase
-            .from('app_cont_asignacion_costos')
-            .insert(newAssignment)
-            .select('id, porcentaje_asignacion, metodo_asignacion')
-            .single();
+        try {
+          // Crear asignación automática
+          final newAssignment = {
+            'id_tipo_costo': costTypeId,
+            'id_centro_costo': costCenterId,
+            'id_tienda': storeId,
+            'id_producto': null, // Asignación general para todos los productos
+            'porcentaje_asignacion': 100.0,
+            'metodo_asignacion': METODO_AUTOMATICO,
+          };
 
-        print('✅ Asignación automática creada con ID: ${response['id']}');
+          final response =
+              await _supabase
+                  .from('app_cont_asignacion_costos')
+                  .insert(newAssignment)
+                  .select('id, porcentaje_asignacion, metodo_asignacion')
+                  .single();
 
-        // Retornar la nueva asignación
-        return [{
-          'id': response['id'],
-          'id_asignacion': response['id'],
-          'porcentaje_asignacion': 100.0,
-          'monto_asignado': expenseAmount,
-          'metodo_asignacion': METODO_AUTOMATICO,
-          'created_automatically': true,
-        }];
-      } catch (e) {
-        print('❌ Error creando asignación automática: $e');
-        // En caso de error, retornar sin id_asignacion (fallback)
-        return [{
-          'id_asignacion': null,
-          'porcentaje_asignacion': 100.0,
-          'monto_asignado': expenseAmount,
-          'metodo_asignacion': METODO_AUTOMATICO,
-          'created_automatically': true,
-          'error': 'No se pudo crear asignación automática',
-        }];
+          print('✅ Asignación automática creada con ID: ${response['id']}');
+
+          // Retornar la nueva asignación
+          return [
+            {
+              'id': response['id'],
+              'id_asignacion': response['id'],
+              'porcentaje_asignacion': 100.0,
+              'monto_asignado': expenseAmount,
+              'metodo_asignacion': METODO_AUTOMATICO,
+              'created_automatically': true,
+            },
+          ];
+        } catch (e) {
+          print('❌ Error creando asignación automática: $e');
+          // En caso de error, retornar sin id_asignacion (fallback)
+          return [
+            {
+              'id_asignacion': null,
+              'porcentaje_asignacion': 100.0,
+              'monto_asignado': expenseAmount,
+              'metodo_asignacion': METODO_AUTOMATICO,
+              'created_automatically': true,
+              'error': 'No se pudo crear asignación automática',
+            },
+          ];
+        }
       }
-    }
 
-    // Calcular montos asignados para asignaciones existentes
-    return assignments.map((assignment) {
-      final percentage = (assignment['porcentaje_asignacion'] as num).toDouble();
-      return {
-        ...assignment,
-        'id_asignacion': assignment['id'],
-        'monto_asignado': expenseAmount * (percentage / 100),
-      };
-    }).toList();
-  } catch (e) {
-    print('❌ Error calculando asignaciones: $e');
-    return [];
+      // Calcular montos asignados para asignaciones existentes
+      return assignments.map((assignment) {
+        final percentage =
+            (assignment['porcentaje_asignacion'] as num).toDouble();
+        return {
+          ...assignment,
+          'id_asignacion': assignment['id'],
+          'monto_asignado': expenseAmount * (percentage / 100),
+        };
+      }).toList();
+    } catch (e) {
+      print('❌ Error calculando asignaciones: $e');
+      return [];
+    }
   }
-}
+
   /// Validar datos de asignación de costo
   bool _validateCostAssignment(Map<String, dynamic> assignment) {
     // Verificar que al menos uno de los campos requeridos esté presente
     final hasProduct = assignment['id_producto'] != null;
     final hasCostCenter = assignment['id_centro_costo'] != null;
-    
+
     if (!hasProduct && !hasCostCenter) {
-      throw Exception('Debe especificar al menos un producto o centro de costo');
+      throw Exception(
+        'Debe especificar al menos un producto o centro de costo',
+      );
     }
 
     // Verificar campos obligatorios
@@ -2223,14 +2409,20 @@ Future<List<Map<String, dynamic>>> calculateCostAssignments({
       throw Exception('El tipo de costo es obligatorio');
     }
 
-    if (assignment['porcentaje_asignacion'] == null || 
-        assignment['porcentaje_asignacion'] <= 0 || 
+    if (assignment['porcentaje_asignacion'] == null ||
+        assignment['porcentaje_asignacion'] <= 0 ||
         assignment['porcentaje_asignacion'] > 100) {
-      throw Exception('El porcentaje de asignación debe estar entre 0.01 y 100');
+      throw Exception(
+        'El porcentaje de asignación debe estar entre 0.01 y 100',
+      );
     }
 
     if (assignment['metodo_asignacion'] == null ||
-        ![METODO_AUTOMATICO, METODO_MANUAL, METODO_PROPORCIONAL].contains(assignment['metodo_asignacion'])) {
+        ![
+          METODO_AUTOMATICO,
+          METODO_MANUAL,
+          METODO_PROPORCIONAL,
+        ].contains(assignment['metodo_asignacion'])) {
       throw Exception('Método de asignación inválido');
     }
 
@@ -2250,68 +2442,234 @@ Future<List<Map<String, dynamic>>> calculateCostAssignments({
         return 'Desconocido';
     }
   }
-/// Preview de asignaciones de costos antes de registrar un gasto
-Future<Map<String, dynamic>> previewExpenseAssignments(
-  Map<String, dynamic> operation, {
-  int? subcategoryId,
-  int? costCenterId,
-  int? costTypeId,
+
+  /// Obtener el conteo optimizado de operaciones pendientes usando RPC
+Future<int> getPendingOperationsCountOptimized({
+  String? startDate,
+  String? endDate,
 }) async {
   try {
-    final expenseAmount = double.tryParse(operation['monto'].toString()) ?? 0.0;
-    final finalCostTypeId = costTypeId ?? operation['id_tipo_costo'] ?? 1;
-    final finalCostCenterId = costCenterId ?? operation['id_centro_costo'] ?? 1;
+    print('🔢 Obteniendo conteo de operaciones pendientes con RPC...');
 
-    print('🔍 Previewing expense assignments for amount: $expenseAmount');
-    print('   - Cost Type ID: $finalCostTypeId');
-    print('   - Cost Center ID: $finalCostCenterId');
+    final storeId = await _getStoreId();
+    final userId = _supabase.auth.currentUser?.id;
 
-    // Calcular asignaciones usando el método existente
-    final assignments = await calculateCostAssignments(
-      expenseAmount: expenseAmount,
-      costTypeId: finalCostTypeId,
-      costCenterId: finalCostCenterId,
+    print('📊 Parámetros RPC:');
+    print('   - ID Tienda: $storeId');
+    print('   - Usuario UUID: $userId');
+    print('   - Fecha inicio: $startDate');
+    print('   - Fecha fin: $endDate');
+
+    // PRIORIDAD 1: Llamar función RPC optimizada
+    final response = await _supabase.rpc(
+      'fn_count_pending_operations_optimized',
+      params: {
+        'p_id_tienda': storeId,
+        'p_fecha_inicio': startDate,
+        'p_fecha_fin': endDate,
+        'p_user_uuid': userId,
+      },
     );
 
-    // Calcular totales
-    double totalAssigned = 0.0;
-    int automaticAssignments = 0;
-    
-    for (final assignment in assignments) {
-      totalAssigned += (assignment['monto_asignado'] as num).toDouble();
-      if (assignment['created_automatically'] == true) {
-        automaticAssignments++;
+    print('📥 Respuesta RPC recibida: $response');
+
+    // Validar respuesta de RPC
+    if (response != null) {
+      final result = response as Map<String, dynamic>;
+      
+      print('🔍 Analizando resultado RPC:');
+      print('   - Success: ${result['success']}');
+      print('   - Error: ${result['error']}');
+      print('   - Error Detail: ${result['error_detail']}');
+      print('   - Debug Info: ${result['debug_info']}');
+
+      if (result['success'] == true) {
+        final totalCount = result['total_count'] as int? ?? 0;
+        final recepcionesCount = result['recepciones_count'] as int? ?? 0;
+        final entregasCount = result['entregas_count'] as int? ?? 0;
+
+        print('✅ RPC exitosa - Total: $totalCount (Recepciones: $recepcionesCount, Entregas: $entregasCount)');
+        return totalCount;
+      } else {
+        final errorMsg = result['error'] ?? 'Error desconocido';
+        final errorDetail = result['error_detail'] ?? '';
+        final debugInfo = result['debug_info'] ?? '';
+        
+        print('⚠️ RPC falló:');
+        print('   - Error: $errorMsg');
+        print('   - Detalle: $errorDetail');
+        print('   - Debug: $debugInfo');
+        print('   - SQL State: ${result['error_code']}');
       }
+    } else {
+      print('⚠️ RPC retornó null - posible error de conexión o permisos');
     }
 
-    final isFullyAssigned = (totalAssigned - expenseAmount).abs() < 0.01; // Tolerancia de 1 centavo
-
-    return {
-      'assignments': assignments,
-      'summary': {
-        'total_expense': expenseAmount,
-        'total_assigned': totalAssigned,
-        'is_fully_assigned': isFullyAssigned,
-        'assignment_count': assignments.length,
-        'automatic_assignments': automaticAssignments,
-        'coverage_percentage': expenseAmount > 0 ? (totalAssigned / expenseAmount * 100) : 0.0,
-      },
-    };
-  } catch (e) {
-    print('❌ Error en preview de asignaciones: $e');
-    return {
-      'assignments': [],
-      'summary': {
-        'total_expense': 0.0,
-        'total_assigned': 0.0,
-        'is_fully_assigned': false,
-        'assignment_count': 0,
-        'automatic_assignments': 0,
-        'coverage_percentage': 0.0,
-        'error': e.toString(),
-      },
-    };
+  } catch (e, stackTrace) {
+    print('❌ Error en RPC: $e');
+    print('📍 Stack trace: $stackTrace');
+    
+    // Verificar si es un error específico de Supabase
+    if (e.toString().contains('PostgrestException')) {
+      print('🔍 Error de PostgreSQL detectado');
+    } else if (e.toString().contains('SocketException')) {
+      print('🔍 Error de conexión de red detectado');
+    } else if (e.toString().contains('TimeoutException')) {
+      print('🔍 Error de timeout detectado');
+    }
   }
+
+  // PRIORIDAD 2: Fallback simple si RPC falla
+  print('🔄 Usando fallback simplificado...');
+  return await _getSimplePendingCount();
 }
-  /// Crear asignación de costo
+
+  /// Fallback simplificado para conteo de operaciones pendientes
+  Future<int> _getSimplePendingCount() async {
+    try {
+      final storeId = await _getStoreId();
+
+      // Conteo simple: solo recepciones sin gastos registrados
+      final pendingReceptions = await _supabase
+          .from('app_dat_operacion_recepcion')
+          .select(
+            'id_operacion, app_dat_operaciones!inner(id, id_tienda, id_tipo_operacion)',
+          )
+          .eq('app_dat_operaciones.id_tienda', storeId)
+          .eq('app_dat_operaciones.id_tipo_operacion', 1);
+
+      // Obtener gastos ya registrados
+      final existingExpenses = await _supabase
+          .from('app_cont_gastos')
+          .select('id_referencia_origen')
+          .inFilter('tipo_origen', ['recepcion', 'operacion_recepcion'])
+          .not('id_referencia_origen', 'is', null);
+
+      final existingIds =
+          existingExpenses.map((e) => e['id_referencia_origen']).toSet();
+
+      // Filtrar recepciones pendientes
+      final pendingCount =
+          pendingReceptions
+              .where((r) => !existingIds.contains(r['id_operacion']))
+              .length;
+
+      print('✅ Fallback completado: $pendingCount operaciones pendientes');
+      return pendingCount;
+    } catch (e) {
+      print('❌ Error en fallback: $e');
+      print('✅ Contador de operaciones pendientes cargado: 0 (sin auditoría)');
+      return 0;
+    }
+  }
+
+  /// Obtener detalles del conteo de operaciones pendientes (para debugging)
+  Future<Map<String, dynamic>> getPendingOperationsCountDetails({
+    String? startDate,
+    String? endDate,
+  }) async {
+    try {
+      final storeId = await _getStoreId();
+      final userId = _supabase.auth.currentUser?.id;
+
+      final response = await _supabase.rpc(
+        'fn_count_pending_operations_optimized',
+        params: {
+          'p_id_tienda': storeId,
+          'p_fecha_inicio': startDate,
+          'p_fecha_fin': endDate,
+          'p_user_uuid': userId,
+        },
+      );
+
+      if (response == null || response['success'] != true) {
+        return {
+          'success': false,
+          'error': response?['error'] ?? 'Error desconocido',
+          'total_count': 0,
+          'recepciones_count': 0,
+          'entregas_count': 0,
+        };
+      }
+
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      return {
+        'success': false,
+        'error': e.toString(),
+        'total_count': 0,
+        'recepciones_count': 0,
+        'entregas_count': 0,
+      };
+    }
+  }
+
+  /// Preview de asignaciones de costos antes de registrar un gasto
+  Future<Map<String, dynamic>> previewExpenseAssignments(
+    Map<String, dynamic> operation, {
+    int? subcategoryId,
+    int? costCenterId,
+    int? costTypeId,
+  }) async {
+    try {
+      final expenseAmount =
+          double.tryParse(operation['monto'].toString()) ?? 0.0;
+      final finalCostTypeId = costTypeId ?? operation['id_tipo_costo'] ?? 1;
+      final finalCostCenterId =
+          costCenterId ?? operation['id_centro_costo'] ?? 1;
+
+      print('🔍 Previewing expense assignments for amount: $expenseAmount');
+      print('   - Cost Type ID: $finalCostTypeId');
+      print('   - Cost Center ID: $finalCostCenterId');
+
+      // Calcular asignaciones usando el método existente
+      final assignments = await calculateCostAssignments(
+        expenseAmount: expenseAmount,
+        costTypeId: finalCostTypeId,
+        costCenterId: finalCostCenterId,
+      );
+
+      // Calcular totales
+      double totalAssigned = 0.0;
+      int automaticAssignments = 0;
+
+      for (final assignment in assignments) {
+        totalAssigned += (assignment['monto_asignado'] as num).toDouble();
+        if (assignment['created_automatically'] == true) {
+          automaticAssignments++;
+        }
+      }
+
+      final isFullyAssigned =
+          (totalAssigned - expenseAmount).abs() <
+          0.01; // Tolerancia de 1 centavo
+
+      return {
+        'assignments': assignments,
+        'summary': {
+          'total_expense': expenseAmount,
+          'total_assigned': totalAssigned,
+          'is_fully_assigned': isFullyAssigned,
+          'assignment_count': assignments.length,
+          'automatic_assignments': automaticAssignments,
+          'coverage_percentage':
+              expenseAmount > 0 ? (totalAssigned / expenseAmount * 100) : 0.0,
+        },
+      };
+    } catch (e) {
+      print('❌ Error en preview de asignaciones: $e');
+      return {
+        'assignments': [],
+        'summary': {
+          'total_expense': 0.0,
+          'total_assigned': 0.0,
+          'is_fully_assigned': false,
+          'assignment_count': 0,
+          'automatic_assignments': 0,
+          'coverage_percentage': 0.0,
+          'error': e.toString(),
+        },
+      };
+    }
+  }
 }

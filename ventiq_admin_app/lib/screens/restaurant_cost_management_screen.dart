@@ -42,7 +42,10 @@ class _RestaurantCostManagementScreenState extends State<RestaurantCostManagemen
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final platos = await RestaurantService.getPlatosElaborados();
+      final platosData = await RestaurantService.getPlatosElaborados();
+      
+      // Convert raw maps to PlatoElaborado objects
+      final platos = platosData.map((data) => PlatoElaborado.fromJson(data)).toList();
       
       setState(() {
         _platos = platos;
