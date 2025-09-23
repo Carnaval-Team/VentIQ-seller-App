@@ -8,6 +8,7 @@ class ProductSelectorWidget extends StatefulWidget {
   final String searchHint;
   final ProductSearchType searchType;
   final bool requireInventory;
+  final int? locationId;
   
   const ProductSelectorWidget({
     Key? key,
@@ -15,6 +16,7 @@ class ProductSelectorWidget extends StatefulWidget {
     this.searchHint = 'Buscar productos...',
     this.searchType = ProductSearchType.all,
     this.requireInventory = false,
+    this.locationId,
   }) : super(key: key);
 
   @override
@@ -50,6 +52,7 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
     final result = await ProductSearchService.searchProducts(
       searchType: widget.searchType,
       requireInventory: widget.requireInventory,
+      locationId: widget.locationId,
     );
     setState(() {
       _searchResult = result;
@@ -64,6 +67,7 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
       searchType: widget.searchType,
       page: 1, // Siempre empezar desde la página 1 en nueva búsqueda
       requireInventory: widget.requireInventory,
+      locationId: widget.locationId,
     );
     setState(() {
       _searchResult = result;
@@ -217,6 +221,7 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
         searchType: widget.searchType,
         page: _searchResult.currentPage + 1,
         requireInventory: widget.requireInventory,
+        locationId: widget.locationId,
       );
       
       setState(() {

@@ -2,11 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/warehouse.dart';
-import '../models/product.dart';
 import '../services/warehouse_service.dart';
-import '../services/product_service.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
+import '../widgets/product_selector_widget.dart';
+import '../services/product_search_service.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   const InventoryTransferScreen({super.key});
@@ -20,28 +20,22 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   final _formKey = GlobalKey<FormState>();
   final _autorizadoPorController = TextEditingController();
   final _observacionesController = TextEditingController();
-  final _searchController = TextEditingController();
 
   // Static variables to persist field values across screen instances
   static String _lastAutorizadoPor = '';
   static String _lastObservaciones = '';
 
-  List<Product> _availableProducts = [];
-  List<Product> _filteredProducts = [];
   List<Map<String, dynamic>> _selectedProducts = [];
   List<Warehouse> _warehouses = [];
   WarehouseZone? _selectedSourceLocation;
   WarehouseZone? _selectedDestinationLocation;
   bool _isLoading = false;
-  bool _isLoadingProducts = true;
   bool _isLoadingWarehouses = true;
-  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _loadWarehouses();
-    _searchController.addListener(_onSearchChanged);
 
     // Load persisted values from previous entries
     _loadPersistedValues();
@@ -61,34 +55,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   void dispose() {
     _autorizadoPorController.dispose();
     _observacionesController.dispose();
-    _searchController.dispose();
     super.dispose();
-  }
-
-  void _onSearchChanged() {
-    setState(() {
-      _searchQuery = _searchController.text;
-      _filterProducts();
-    });
-  }
-
-  void _filterProducts() {
-    if (_searchQuery.isEmpty) {
-      _filteredProducts = List.from(_availableProducts);
-    } else {
-      _filteredProducts =
-          _availableProducts.where((product) {
-            return product.name.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                ) ||
-                product.sku.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                ) ||
-                product.brand.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                );
-          }).toList();
-    }
   }
 
   Future<void> _loadWarehouses() async {
@@ -111,97 +78,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
   }
 
-  Future<void> _loadProducts() async {
-    try {
-      setState(() => _isLoadingProducts = true);
-
-      // If source location is selected, filter products by that location
-      if (_selectedSourceLocation != null) {
-        final sourceLayoutId = _getZoneIdFromLocation(_selectedSourceLocation!);
-        final sourceWarehouseId = _getWarehouseIdFromLocation(
-          _selectedSourceLocation!,
-        );
-
-        print('🔍 Cargando productos filtrados por ubicación origen...');
-        print('📍 Layout ID: $sourceLayoutId');
-        print('🏭 Warehouse ID: $sourceWarehouseId');
-
-        // Use InventoryService to get products filtered by location
-        final inventoryResponse = await InventoryService.getInventoryProducts(
-          idAlmacen: sourceWarehouseId,
-          idUbicacion: sourceLayoutId,
-          mostrarSinStock: false, // Only show products with stock
-        );
-
-        // Convert InventoryProduct to Product for UI compatibility
-        final products =
-            inventoryResponse.products
-                .map((inventoryProduct) {
-                  return Product(
-                    id: inventoryProduct.id.toString(),
-                    name: inventoryProduct.nombreProducto,
-                    denominacion: inventoryProduct.nombreProducto,
-                    description: inventoryProduct.subcategoria,
-                    categoryId: inventoryProduct.idCategoria.toString(),
-                    categoryName: inventoryProduct.categoria,
-                    brand: '', // No disponible en InventoryProduct
-                    sku: inventoryProduct.skuProducto,
-                    barcode: '', // No disponible en InventoryProduct
-                    basePrice: inventoryProduct.precioVenta ?? 0.0,
-                    imageUrl:
-                        'https://picsum.photos/200/200?random=${inventoryProduct.id}',
-                    isActive: inventoryProduct.esVendible,
-                    createdAt: inventoryProduct.fechaUltimaActualizacion,
-                    updatedAt: inventoryProduct.fechaUltimaActualizacion,
-                    variants: [], // No disponible en InventoryProduct
-                    nombreComercial: inventoryProduct.nombreProducto,
-                    um: '', // No disponible en InventoryProduct
-                    esRefrigerado: false, // No disponible en InventoryProduct
-                    esFragil: false, // No disponible en InventoryProduct
-                    esPeligroso: false, // No disponible en InventoryProduct
-                    esVendible: inventoryProduct.esVendible,
-                    stockDisponible: inventoryProduct.cantidadFinal.toInt(),
-                    tieneStock: inventoryProduct.cantidadFinal > 0,
-                    subcategorias: [], // No disponible en InventoryProduct
-                    presentaciones: [], // No disponible en InventoryProduct
-                    multimedias: [], // No disponible en InventoryProduct
-                    etiquetas: [], // No disponible en InventoryProduct
-                    inventario: [], // No disponible en InventoryProduct
-                  );
-                })
-                .where((product) => product.stockDisponible > 0)
-                .toList(); // Solo productos con stock
-
-        setState(() {
-          _availableProducts = products;
-          _filteredProducts = products;
-          _isLoadingProducts = false;
-        });
-
-        print('✅ Productos cargados: ${products.length} con stock disponible');
-      } else {
-        // No source location selected, load all products
-        final products = await ProductService.getProductsByTienda();
-        setState(() {
-          _availableProducts = products;
-          _filteredProducts = products;
-          _isLoadingProducts = false;
-        });
-
-        print('✅ Productos generales cargados: ${products.length}');
-      }
-    } catch (e) {
-      setState(() => _isLoadingProducts = false);
-      print('❌ Error al cargar productos: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar productos: $e')),
-        );
-      }
-    }
-  }
-
-  void _addProductToTransfer(Product product) {
+  void _addProductToTransfer(Map<String, dynamic> product) {
     showDialog(
       context: context,
       builder:
@@ -213,9 +90,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               print('   - id_producto: ${productData['id_producto']}');
               print('   - nombre_producto: ${productData['nombre_producto']}');
               print('   - id_presentacion: ${productData['id_presentacion']}');
-              print('   - presentacion_nombre: ${productData['presentacion_nombre']}');
-              print('   - Tipo de id_presentacion: ${productData['id_presentacion'].runtimeType}');
-              
+              print(
+                '   - presentacion_nombre: ${productData['presentacion_nombre']}',
+              );
+              print(
+                '   - Tipo de id_presentacion: ${productData['id_presentacion'].runtimeType}',
+              );
+
               setState(() {
                 _selectedProducts.add(productData);
               });
@@ -269,10 +150,14 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     try {
       print('🚀 === INICIO TRANSFERENCIA ===');
-      print('📍 Origen: ${_selectedSourceLocation!.name} (ID: ${_getZoneIdFromLocation(_selectedSourceLocation!)})');
-      print('📍 Destino: ${_selectedDestinationLocation!.name} (ID: ${_getZoneIdFromLocation(_selectedDestinationLocation!)})');
+      print(
+        '📍 Origen: ${_selectedSourceLocation!.name} (ID: ${_getZoneIdFromLocation(_selectedSourceLocation!)})',
+      );
+      print(
+        '📍 Destino: ${_selectedDestinationLocation!.name} (ID: ${_getZoneIdFromLocation(_selectedDestinationLocation!)})',
+      );
       print('📦 Productos: ${_selectedProducts.length}');
-      
+
       final userPrefs = UserPreferencesService();
       final idTienda = await userPrefs.getIdTienda();
       final userUuid = await userPrefs.getUserId();
@@ -326,7 +211,9 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       print('📤 Productos preparados para envío:');
       for (int i = 0; i < productosParaEnviar.length; i++) {
         print('   [$i] ${productosParaEnviar[i]}');
-        print('   [$i] DEBUG id_presentacion: ${productosParaEnviar[i]['id_presentacion']} (${productosParaEnviar[i]['id_presentacion'].runtimeType})');
+        print(
+          '   [$i] DEBUG id_presentacion: ${productosParaEnviar[i]['id_presentacion']} (${productosParaEnviar[i]['id_presentacion'].runtimeType})',
+        );
       }
 
       // Extract warehouse IDs from location IDs
@@ -370,13 +257,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       print('   - Message: ${result['message']}');
       print('   - ID Extracción: ${result['id_extraccion']}');
       print('   - ID Recepción: ${result['id_recepcion']}');
-      
+
       if (result['extraction_completion'] != null) {
         print('📤 Completado extracción:');
         print('   - Status: ${result['extraction_completion']['status']}');
         print('   - Message: ${result['extraction_completion']['message']}');
       }
-      
+
       if (result['reception_completion'] != null) {
         print('📥 Completado recepción:');
         print('   - Status: ${result['reception_completion']['status']}');
@@ -707,48 +594,18 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _searchController,
-              decoration: const InputDecoration(
-                labelText: 'Buscar productos',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
             SizedBox(
-              height: 300,
-              child:
-                  _isLoadingProducts
-                      ? const Center(child: CircularProgressIndicator())
-                      : ListView.builder(
-                        itemCount: _filteredProducts.length,
-                        itemBuilder: (context, index) {
-                          final product = _filteredProducts[index];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: AppColors.primary.withOpacity(
-                                0.1,
-                              ),
-                              child: Icon(
-                                Icons.inventory_2,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                            title: Text(product.name),
-                            subtitle: Text(
-                              'SKU: ${product.sku} | Marca: ${product.brand}',
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(
-                                Icons.add_circle,
-                                color: AppColors.primary,
-                              ),
-                              onPressed: () => _addProductToTransfer(product),
-                            ),
-                          );
-                        },
-                      ),
+              height: 400, // Altura fija necesaria para que funcione
+              child: ProductSelectorWidget(
+                searchType: ProductSearchType.withStock,
+                requireInventory: true,
+                locationId:
+                    _selectedSourceLocation != null
+                        ? _getZoneIdFromLocation(_selectedSourceLocation!)
+                        : null,
+                searchHint: 'Buscar productos para transferir...',
+                onProductSelected: _addProductToTransfer,
+              ),
             ),
           ],
         ),
@@ -909,7 +766,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
                           setState(() {
                             if (isSource) {
                               _selectedSourceLocation = zone;
-                              _loadProducts();
                             } else {
                               _selectedDestinationLocation = zone;
                             }
@@ -968,7 +824,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
 // Product Quantity Dialog - Enhanced with location-specific variants
 class _ProductQuantityDialog extends StatefulWidget {
-  final Product product;
+  final Map<String, dynamic> product;
   final Function(Map<String, dynamic>) onAdd;
   final int? sourceLayoutId; // ID de la ubicación origen para filtrar variantes
 
@@ -1009,7 +865,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     try {
       print('🔍 Cargando variantes específicas de la ubicación...');
       final variants = await InventoryService.getProductVariantsInLocation(
-        idProducto: int.parse(widget.product.id),
+        idProducto: int.parse(widget.product['id'].toString()),
         idLayout: widget.sourceLayoutId!,
       );
 
@@ -1025,11 +881,14 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       }
 
       // Si no hay variantes con stock, buscar presentaciones configuradas en la zona
-      print('⚠️ No se encontraron variantes con stock, buscando presentaciones en la zona...');
-      final presentations = await InventoryService.getProductPresentationsInZone(
-        idProducto: int.parse(widget.product.id),
-        idLayout: widget.sourceLayoutId!,
+      print(
+        '⚠️ No se encontraron variantes con stock, buscando presentaciones en la zona...',
       );
+      final presentations =
+          await InventoryService.getProductPresentationsInZone(
+            idProducto: int.parse(widget.product['id'].toString()),
+            idLayout: widget.sourceLayoutId!,
+          );
 
       if (presentations.isNotEmpty) {
         setState(() {
@@ -1040,7 +899,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
         });
         print('✅ Cargadas ${presentations.length} presentaciones de la zona');
       } else {
-        print('⚠️ No se encontraron presentaciones configuradas, usando fallback genérico');
+        print(
+          '⚠️ No se encontraron presentaciones configuradas, usando fallback genérico',
+        );
         _initializeFallbackVariants();
       }
     } catch (e) {
@@ -1054,20 +915,26 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     setState(() {
       _availableVariants = [
         {
-          'id_producto': int.parse(widget.product.id),
-          'nombre_producto': widget.product.name,
-          'sku_producto': widget.product.sku,
+          'id_producto': int.parse(widget.product['id'].toString()),
+          'nombre_producto':
+              widget.product['denominacion'] ??
+              widget.product['nombre_producto'] ??
+              'Sin nombre',
+          'sku_producto': widget.product['sku'] ?? '',
           'id_variante': null,
           'variante_nombre': 'Sin variante',
           'id_opcion_variante': null,
           'opcion_variante_nombre': 'Única',
-          'id_presentacion': 1, // Use default presentation ID (1 = unidad) instead of null
+          'id_presentacion':
+              1, // Use default presentation ID (1 = unidad) instead of null
           'presentacion_nombre': 'Unidad',
           'presentacion_codigo': 'UN',
-          'stock_disponible': widget.product.stockDisponible.toDouble(),
+          'stock_disponible':
+              (widget.product['stock_disponible'] ?? 0).toDouble(),
           'stock_reservado': 0.0,
-          'stock_actual': widget.product.stockDisponible.toDouble(),
-          'precio_unitario': widget.product.basePrice,
+          'stock_actual': (widget.product['stock_disponible'] ?? 0).toDouble(),
+          'precio_unitario':
+              (widget.product['precio_unitario'] ?? 0).toDouble(),
           'variant_key': 'null_null_1',
         },
       ];
@@ -1096,28 +963,33 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
 
     if (variant['variante_nombre'] != null &&
         variant['variante_nombre'] != 'Sin variante') {
-      parts.add(variant['variante_nombre']);
+      parts.add(variant['variante_nombre'].toString());
     }
 
     if (variant['opcion_variante_nombre'] != null &&
         variant['opcion_variante_nombre'] != 'Única') {
-      parts.add(variant['opcion_variante_nombre']);
+      parts.add(variant['opcion_variante_nombre'].toString());
     }
 
     if (variant['presentacion_nombre'] != null) {
-      parts.add(variant['presentacion_nombre']);
+      parts.add(variant['presentacion_nombre'].toString());
     }
 
     final displayName = parts.isEmpty ? 'Estándar' : parts.join(' - ');
-    final stock = variant['stock_disponible'].toInt();
+    final stock = (variant['stock_disponible'] ?? 0).toInt();
 
     return '$displayName (Stock: $stock)';
   }
 
   @override
   Widget build(BuildContext context) {
+    final productName = widget.product['denominacion']?.toString() ??
+                       widget.product['name']?.toString() ??
+                       widget.product['nombre_producto']?.toString() ??
+                       'Producto';
+    
     return AlertDialog(
-      title: Text('Agregar ${widget.product.name}'),
+      title: Text('Agregar $productName'),
       content: SingleChildScrollView(
         child: Form(
           key: _formKey,
@@ -1141,12 +1013,15 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.product.name,
+                            widget.product['denominacion']?.toString() ??
+                            widget.product['name']?.toString() ??
+                            widget.product['nombre_producto']?.toString() ??
+                            'Sin nombre',
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                          if (widget.product.sku.isNotEmpty)
+                          if ((widget.product['sku']?.toString() ?? '').isNotEmpty)
                             Text(
-                              'SKU: ${widget.product.sku}',
+                              'SKU: ${widget.product['sku']}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey[600],
@@ -1164,35 +1039,33 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
               if (_isLoadingVariants)
                 const CircularProgressIndicator()
               else if (_availableVariants.isNotEmpty) ...[
-                Expanded(
-                  child: DropdownButtonFormField<Map<String, dynamic>>(
-                    value: _selectedVariant,
-                    decoration: const InputDecoration(
-                      labelText: 'Variante / Presentación',
-                      border: OutlineInputBorder(),
-                      helperText:
-                          'Seleccione la variante específica a transferir',
-                    ),
-                    items:
-                        _availableVariants.map((variant) {
-                          return DropdownMenuItem(
-                            value: variant,
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: Text(
-                                _buildVariantDisplayName(variant),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                    onChanged: _onVariantChanged,
-                    validator:
-                        (value) =>
-                            value == null ? 'Seleccione una variante' : null,
+                DropdownButtonFormField<Map<String, dynamic>>(
+                  value: _selectedVariant,
+                  decoration: const InputDecoration(
+                    labelText: 'Variante / Presentación',
+                    border: OutlineInputBorder(),
+                    helperText:
+                        'Seleccione la variante específica a transferir',
                   ),
+                  items:
+                      _availableVariants.map((variant) {
+                        return DropdownMenuItem(
+                          value: variant,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Text(
+                              _buildVariantDisplayName(variant),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                  onChanged: _onVariantChanged,
+                  validator:
+                      (value) =>
+                          value == null ? 'Seleccione una variante' : null,
                 ),
                 const SizedBox(height: 16),
               ],
@@ -1309,16 +1182,26 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                             _selectedVariant!['stock_disponible'],
                         'variant_key': _selectedVariant!['variant_key'],
                       };
-                      
+
                       // Debug logging for presentation ID tracking
                       print('🔍 DEBUG: ProductData creado en diálogo:');
                       print('   - id_producto: ${productData['id_producto']}');
-                      print('   - nombre_producto: ${productData['nombre_producto']}');
-                      print('   - id_presentacion: ${productData['id_presentacion']}');
-                      print('   - presentacion_nombre: ${productData['presentacion_nombre']}');
-                      print('   - _selectedVariant id_presentacion: ${_selectedVariant!['id_presentacion']}');
-                      print('   - Tipo de id_presentacion: ${productData['id_presentacion'].runtimeType}');
-                      
+                      print(
+                        '   - nombre_producto: ${productData['nombre_producto']}',
+                      );
+                      print(
+                        '   - id_presentacion: ${productData['id_presentacion']}',
+                      );
+                      print(
+                        '   - presentacion_nombre: ${productData['presentacion_nombre']}',
+                      );
+                      print(
+                        '   - _selectedVariant id_presentacion: ${_selectedVariant!['id_presentacion']}',
+                      );
+                      print(
+                        '   - Tipo de id_presentacion: ${productData['id_presentacion'].runtimeType}',
+                      );
+
                       widget.onAdd(productData);
                     }
                   },
