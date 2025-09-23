@@ -56,79 +56,167 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Registrar Nueva Tienda'),
+        title: const Text(
+          'Registrar Nueva Tienda',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
+        centerTitle: true,
       ),
       body: Column(
         children: [
-          // Progress indicator
-          _buildProgressIndicator(),
-          
-          // Content
-          Expanded(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
+          // Header con gradiente
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.primary,
+                  AppColors.primary.withOpacity(0.8),
+                ],
+              ),
+            ),
+            child: Column(
               children: [
-                _buildUserRegistrationStep(),
-                _buildStoreInfoStep(),
-                _buildOptionalDataStep(),
-                _buildConfirmationStep(),
+                // Progress indicator mejorado
+                _buildModernProgressIndicator(),
+                const SizedBox(height: 16),
               ],
             ),
           ),
           
-          // Navigation buttons
-          _buildNavigationButtons(),
+          // Content con mejor diseño
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(maxWidth: 600), // Limitar ancho en pantallas grandes
+              child: PageView(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildUserRegistrationStep(),
+                  _buildStoreInfoStep(),
+                  _buildOptionalDataStep(),
+                  _buildConfirmationStep(),
+                ],
+              ),
+            ),
+          ),
+          
+          // Navigation buttons mejorados
+          _buildModernNavigationButtons(),
         ],
       ),
     );
   }
 
-  Widget _buildProgressIndicator() {
+  Widget _buildModernProgressIndicator() {
+    final steps = [
+      {'title': 'Usuario', 'icon': Icons.person},
+      {'title': 'Tienda', 'icon': Icons.store},
+      {'title': 'Configuración', 'icon': Icons.settings},
+      {'title': 'Confirmación', 'icon': Icons.check_circle},
+    ];
+
     return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.white,
-      child: Row(
-        children: List.generate(4, (index) {
-          final isActive = index <= _currentStep;
-          final isCompleted = index < _currentStep;
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      child: Column(
+        children: [
+          // Título del paso actual
+          // Text(
+          //   'Paso ${_currentStep + 1} de ${steps.length}',
+          //   style: const TextStyle(
+          //     color: Colors.white70,
+          //     fontSize: 14,
+          //     fontWeight: FontWeight.w500,
+          //   ),
+          // ),
+          // const SizedBox(height: 8),
+          // Text(
+          //   steps[_currentStep]['title'] as String,
+          //   style: const TextStyle(
+          //     color: Colors.white,
+          //     fontSize: 20,
+          //     fontWeight: FontWeight.bold,
+          //   ),
+          // ),
+          // const SizedBox(height: 20),
           
-          return Expanded(
-            child: Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: isCompleted 
-                        ? Colors.green 
-                        : isActive 
-                            ? AppColors.primary 
-                            : Colors.grey[300],
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    isCompleted ? Icons.check : Icons.circle,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                ),
-                if (index < 3)
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: index < _currentStep 
-                          ? AppColors.primary 
-                          : Colors.grey[300],
+          // Indicador de progreso centrado
+          Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(steps.length, (index) {
+                  final isActive = index <= _currentStep;
+                  final isCompleted = index < _currentStep;
+                  final isCurrent = index == _currentStep;
+                  
+                  return Expanded(
+                    child: Row(
+                      children: [
+                        // Círculo del paso
+                        Container(
+                          width: isCurrent ? 48 : 40,
+                          height: isCurrent ? 48 : 40,
+                          decoration: BoxDecoration(
+                            color: isCompleted 
+                                ? Colors.green 
+                                : isActive 
+                                    ? Colors.white 
+                                    : Colors.white.withOpacity(0.3),
+                            shape: BoxShape.circle,
+                            border: isCurrent ? Border.all(
+                              color: Colors.white,
+                              width: 3,
+                            ) : null,
+                            boxShadow: isCurrent ? [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ] : null,
+                          ),
+                          child: Icon(
+                            isCompleted 
+                                ? Icons.check 
+                                : steps[index]['icon'] as IconData,
+                            color: isCompleted 
+                                ? Colors.white 
+                                : isActive 
+                                    ? AppColors.primary 
+                                    : Colors.white.withOpacity(0.6),
+                            size: isCurrent ? 24 : 20,
+                          ),
+                        ),
+                        
+                        // Línea conectora
+                        if (index < steps.length - 1)
+                          Expanded(
+                            child: Container(
+                              height: 3,
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: index < _currentStep 
+                                    ? Colors.green 
+                                    : Colors.white.withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-              ],
+                  );
+                }),
+              ),
             ),
-          );
-        }),
+          ),
+        ],
       ),
     );
   }
@@ -136,25 +224,60 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   Widget _buildUserRegistrationStep() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      child: Form(
-        key: _userFormKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Paso 1: Registro de Usuario',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Crea la cuenta del administrador de la tienda',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 32),
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 500),
+          child: Form(
+            key: _userFormKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header del paso
+                Center(
+                  child: Column(
+                    children: [
+                      // Container(
+                      //   width: 80,
+                      //   height: 80,
+                      //   decoration: BoxDecoration(
+                      //     gradient: AppColors.primaryGradient,
+                      //     borderRadius: BorderRadius.circular(20),
+                      //     boxShadow: [
+                      //       BoxShadow(
+                      //         color: AppColors.primary.withOpacity(0.3),
+                      //         blurRadius: 15,
+                      //         offset: const Offset(0, 5),
+                      //       ),
+                      //     ],
+                      //   ),
+                      //   // child: const Icon(
+                      //   //   Icons.person_add,
+                      //   //   size: 40,
+                      //   //   color: Colors.white,
+                      //   // ),
+                      // ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Registro de Usuario',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Crea la cuenta del administrador de la tienda',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 16,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 40),
             
             TextFormField(
               controller: _fullNameController,
@@ -223,7 +346,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 return null;
               },
             ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -232,25 +357,60 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   Widget _buildStoreInfoStep() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      child: Form(
-        key: _storeFormKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Paso 2: Información de la Tienda',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Configura los datos básicos de tu tienda',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 32),
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 500),
+          child: Form(
+            key: _storeFormKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header del paso
+                Center(
+                  child: Column(
+                    children: [
+                      // Container(
+                      //   width: 80,
+                      //   height: 80,
+                      //   decoration: BoxDecoration(
+                      //     gradient: AppColors.primaryGradient,
+                      //     borderRadius: BorderRadius.circular(20),
+                      //     boxShadow: [
+                      //       BoxShadow(
+                      //         color: AppColors.primary.withOpacity(0.3),
+                      //         blurRadius: 15,
+                      //         offset: const Offset(0, 5),
+                      //       ),
+                      //     ],
+                      //   ),
+                      //   child: const Icon(
+                      //     Icons.store,
+                      //     size: 40,
+                      //     color: Colors.white,
+                      //   ),
+                      // ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Información de la Tienda',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Configura los datos básicos de tu tienda',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 16,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 40),
             
             TextFormField(
               controller: _storeNameController,
@@ -295,7 +455,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 return null;
               },
             ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -304,27 +466,62 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   Widget _buildOptionalDataStep() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Paso 3: Configuración Inicial (Obligatorio)',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Configura al menos un TPV, almacén y miembro del personal',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 32),
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header del paso
+              Center(
+                child: Column(
+                  children: [
+                    // Container(
+                    //   width: 80,
+                    //   height: 80,
+                    //   decoration: BoxDecoration(
+                    //     gradient: AppColors.primaryGradient,
+                    //     borderRadius: BorderRadius.circular(20),
+                    //     boxShadow: [
+                    //       BoxShadow(
+                    //         color: AppColors.primary.withOpacity(0.3),
+                    //         blurRadius: 15,
+                    //         offset: const Offset(0, 5),
+                    //       ),
+                    //     ],
+                    //   ),
+                    //   child: const Icon(
+                    //     Icons.settings,
+                    //     size: 40,
+                    //     color: Colors.white,
+                    //   ),
+                    // ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Configuración Adicional',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Configura TPVs, almacenes y personal (opcional)',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 16,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 40),
           
           // TPVs Section
           _buildSectionCard(
-            title: 'TPVs (Puntos de Venta)',
+            title: 'TPVs',
             icon: Icons.point_of_sale,
             count: _tpvData.length,
             items: _tpvData,
@@ -359,7 +556,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
             onDelete: (index) => _deletePersonal(index),
             required: true,
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -411,14 +610,19 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                     ),
                   ),
                 const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Agregar'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                Container(
+                  width: 40,
+                  height: 40,
+                  child: ElevatedButton(
+                    onPressed: onAdd,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: const CircleBorder(),
+                      padding: EdgeInsets.zero,
+                      elevation: 2,
+                    ),
+                    child: const Icon(Icons.add, size: 20),
                   ),
                 ),
               ],
@@ -435,8 +639,8 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   border: Border.all(color: Colors.grey.withOpacity(0.3)),
                 ),
                 child: Text(
-                  'No hay ${title.toLowerCase()} configurados${required ? ' (mínimo 1 requerido)' : ''}',
-                  textAlign: TextAlign.center,
+                  'No hay ${title.toLowerCase()} configurados',
+                  textAlign: TextAlign.start,
                   style: const TextStyle(
                     color: Colors.grey,
                     fontStyle: FontStyle.italic,
@@ -533,23 +737,58 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   Widget _buildConfirmationStep() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Paso 4: Confirmación',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Revisa la información antes de crear la tienda',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 32),
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header del paso
+              Center(
+                child: Column(
+                  children: [
+                    // Container(
+                    //   width: 80,
+                    //   height: 80,
+                    //   decoration: BoxDecoration(
+                    //     gradient: AppColors.primaryGradient,
+                    //     borderRadius: BorderRadius.circular(20),
+                    //     boxShadow: [
+                    //       BoxShadow(
+                    //         color: AppColors.primary.withOpacity(0.3),
+                    //         blurRadius: 15,
+                    //         offset: const Offset(0, 5),
+                    //       ),
+                    //     ],
+                    //   ),
+                    //   child: const Icon(
+                    //     Icons.check_circle,
+                    //     size: 40,
+                    //     color: Colors.white,
+                    //   ),
+                    // ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Confirmación',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Revisa la información antes de crear la tienda',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 16,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 40),
           
           Card(
             child: Padding(
@@ -668,48 +907,113 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 ),
               ),
             ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildNavigationButtons() {
+  Widget _buildModernNavigationButtons() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
           ),
         ],
       ),
-      child: Row(
-        children: [
-          if (_currentStep > 0)
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _isLoading ? null : _previousStep,
-                child: const Text('Anterior'),
-              ),
-            ),
-          if (_currentStep > 0) const SizedBox(width: 16),
-          
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _nextStep,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: Text(
-                _currentStep == 3 ? 'Crear Tienda' : 'Siguiente',
-              ),
+      child: SafeArea(
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Row(
+              children: [
+                // Botón Anterior
+                if (_currentStep > 0)
+                  Expanded(
+                    child: Container(
+                      height: 56,
+                      child: OutlinedButton.icon(
+                        onPressed: _isLoading ? null : _previousStep,
+                        icon: const Icon(Icons.arrow_back, size: 20),
+                        label: const Text(
+                          'Anterior',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: BorderSide(color: AppColors.primary, width: 2),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                
+                if (_currentStep > 0) const SizedBox(width: 16),
+                
+                // Botón Siguiente/Crear
+                Expanded(
+                  flex: _currentStep == 0 ? 1 : 1,
+                  child: Container(
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _nextStep,
+                      icon: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              _currentStep == 3 
+                                  ? Icons.check_circle 
+                                  : Icons.arrow_forward,
+                              size: 20,
+                            ),
+                      label: Text(
+                        _isLoading 
+                            ? 'Procesando...'
+                            : _currentStep == 3 
+                                ? 'Crear Tienda' 
+                                : 'Siguiente',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 2,
+                        shadowColor: AppColors.primary.withOpacity(0.3),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

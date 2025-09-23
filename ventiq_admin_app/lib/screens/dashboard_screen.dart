@@ -41,8 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _loadStoreInfo();
-    _loadDashboardData();
-    _loadUsdRate();
+    _loadDashboardData(); // Ya incluye _loadUsdRate() después de actualizar las tasas
   }
 
   Future<void> _loadStoreInfo() async {

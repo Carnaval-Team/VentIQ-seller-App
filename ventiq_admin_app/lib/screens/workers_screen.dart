@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
-import '../models/worker.dart';
-import '../services/mock_data_service.dart';
+import '../models/worker_models.dart';
+import '../services/worker_service.dart';
+import '../services/store_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class WorkersScreen extends StatefulWidget {
   const WorkersScreen({super.key});
@@ -17,16 +19,30 @@ class _WorkersScreenState extends State<WorkersScreen>
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  List<Worker> _workers = [];
-  bool _isLoading = true;
+  
+  // Datos de trabajadores
+  List<WorkerData> _workers = [];
+  List<WorkerRole> _roles = [];
+  List<TPVData> _tpvs = [];
+  List<AlmacenData> _almacenes = [];
+  WorkerStatistics? _statistics;
+  
+  // Estados de carga
+  bool _isLoadingWorkers = true;
+  bool _isLoadingRoles = true;
+  
+  // Filtros
   String _selectedRole = 'Todos';
-  String _selectedStatus = 'Todos';
+  
+  // Datos de la tienda y usuario
+  int? _storeId;
+  String? _userUuid;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _loadWorkersData();
+    _tabController = TabController(length: 2, vsync: this); // Solo Personal y Roles
+    _initializeData();
   }
 
   @override
@@ -36,15 +52,86 @@ class _WorkersScreenState extends State<WorkersScreen>
     super.dispose();
   }
 
-  void _loadWorkersData() {
-    setState(() => _isLoading = true);
-
-    Future.delayed(const Duration(milliseconds: 800), () {
+  Future<void> _initializeData() async {
+    try {
+      // Obtener datos de la tienda y usuario
+      final storeData = await StoreService.getWorkerRequiredData();
+      if (storeData == null) {
+        _showErrorDialog('No se pudieron obtener los datos de la tienda. Por favor, inicia sesión nuevamente.');
+        return;
+      }
+      
       setState(() {
-        _workers = MockDataService.getMockWorkers();
-        _isLoading = false;
+        _storeId = storeData['storeId'];
+        _userUuid = storeData['userUuid'];
       });
-    });
+      
+      // Cargar datos iniciales
+      await Future.wait([
+        _loadWorkersData(),
+        _loadRolesData(),
+        _loadAuxiliaryData(),
+      ]);
+    } catch (e) {
+      print('❌ Error inicializando datos: $e');
+      _showErrorDialog('Error al cargar los datos: $e');
+    }
+  }
+  
+  Future<void> _loadWorkersData() async {
+    if (_storeId == null || _userUuid == null) return;
+    
+    setState(() => _isLoadingWorkers = true);
+    
+    try {
+      final workers = await WorkerService.getWorkersByStore(_storeId!, _userUuid!);
+      final statistics = await WorkerService.getWorkerStatistics(_storeId!);
+      
+      setState(() {
+        _workers = workers;
+        _statistics = statistics;
+        _isLoadingWorkers = false;
+      });
+    } catch (e) {
+      print('❌ Error cargando trabajadores: $e');
+      setState(() => _isLoadingWorkers = false);
+      _showErrorDialog('Error al cargar trabajadores: $e');
+    }
+  }
+  
+  Future<void> _loadRolesData() async {
+    if (_storeId == null) return;
+    
+    setState(() => _isLoadingRoles = true);
+    
+    try {
+      final roles = await WorkerService.getRolesByStore(_storeId!);
+      
+      setState(() {
+        _roles = roles;
+        _isLoadingRoles = false;
+      });
+    } catch (e) {
+      print('❌ Error cargando roles: $e');
+      setState(() => _isLoadingRoles = false);
+      _showErrorDialog('Error al cargar roles: $e');
+    }
+  }
+  
+  Future<void> _loadAuxiliaryData() async {
+    if (_storeId == null) return;
+    
+    try {
+      final tpvs = await WorkerService.getTPVsByStore(_storeId!);
+      final almacenes = await WorkerService.getAlmacenesByStore(_storeId!);
+      
+      setState(() {
+        _tpvs = tpvs;
+        _almacenes = almacenes;
+      });
+    } catch (e) {
+      print('❌ Error cargando datos auxiliares: $e');
+    }
   }
 
   @override
@@ -72,7 +159,7 @@ class _WorkersScreenState extends State<WorkersScreen>
           ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _loadWorkersData,
+            onPressed: () => _initializeData(),
             tooltip: 'Actualizar',
           ),
           Builder(
@@ -95,21 +182,16 @@ class _WorkersScreenState extends State<WorkersScreen>
               text: 'Roles',
               icon: Icon(Icons.admin_panel_settings, size: 18),
             ),
-            Tab(text: 'Permisos', icon: Icon(Icons.security, size: 18)),
           ],
         ),
       ),
-      body:
-          _isLoading
-              ? _buildLoadingState()
-              : TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildWorkersTab(),
-                  _buildRolesTab(),
-                  _buildPermissionsTab(),
-                ],
-              ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildWorkersTab(),
+          _buildRolesTab(),
+        ],
+      ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 3,
@@ -118,58 +200,49 @@ class _WorkersScreenState extends State<WorkersScreen>
     );
   }
 
-  Widget _buildLoadingState() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: AppColors.primary),
-          SizedBox(height: 16),
-          Text(
-            'Cargando personal...',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildWorkersTab() {
-    final filteredWorkers =
-        _workers.where((worker) {
-          final matchesSearch =
-              _searchQuery.isEmpty ||
-              worker.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-              worker.email.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-              worker.position.toLowerCase().contains(
-                _searchQuery.toLowerCase(),
-              );
+    if (_isLoadingWorkers) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: AppColors.primary),
+            SizedBox(height: 16),
+            Text(
+              'Cargando trabajadores...',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      );
+    }
 
-          final matchesRole =
-              _selectedRole == 'Todos' || worker.role == _selectedRole;
-          final matchesStatus =
-              _selectedStatus == 'Todos' ||
-              (_selectedStatus == 'Activo' && worker.isActive) ||
-              (_selectedStatus == 'Inactivo' && !worker.isActive);
+    final filteredWorkers = _workers.where((worker) {
+      final matchesSearch = _searchQuery.isEmpty ||
+          worker.nombreCompleto.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          worker.rolNombre.toLowerCase().contains(_searchQuery.toLowerCase());
 
-          return matchesSearch && matchesRole && matchesStatus;
-        }).toList();
+      final matchesRole = _selectedRole == 'Todos' || worker.tipoRol == _selectedRole;
+
+      return matchesSearch && matchesRole;
+    }).toList();
 
     return Column(
       children: [
         _buildSearchAndFilters(),
+        if (_statistics != null) _buildStatisticsCard(),
         Expanded(
-          child:
-              filteredWorkers.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filteredWorkers.length,
-                    itemBuilder: (context, index) {
-                      final worker = filteredWorkers[index];
-                      return _buildWorkerCard(worker);
-                    },
-                  ),
+          child: filteredWorkers.isEmpty
+              ? _buildEmptyState()
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: filteredWorkers.length,
+                  itemBuilder: (context, index) {
+                    final worker = filteredWorkers[index];
+                    return _buildWorkerCard(worker);
+                  },
+                ),
         ),
       ],
     );
@@ -187,18 +260,17 @@ class _WorkersScreenState extends State<WorkersScreen>
           TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Buscar por nombre, email o posición...',
+              hintText: 'Buscar por nombre o rol...',
               prefixIcon: const Icon(Icons.search, color: AppColors.primary),
-              suffixIcon:
-                  _searchQuery.isNotEmpty
-                      ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      )
-                      : null,
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                    )
+                  : null,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: AppColors.border),
@@ -211,55 +283,26 @@ class _WorkersScreenState extends State<WorkersScreen>
             onChanged: (value) => setState(() => _searchQuery = value),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _selectedRole,
-                  decoration: InputDecoration(
-                    labelText: 'Rol',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  items:
-                      ['Todos', 'admin', 'manager', 'seller', 'warehouse'].map((
-                        role,
-                      ) {
-                        return DropdownMenuItem(value: role, child: Text(role));
-                      }).toList(),
-                  onChanged: (value) => setState(() => _selectedRole = value!),
-                ),
+          DropdownButtonFormField<String>(
+            value: _selectedRole,
+            decoration: InputDecoration(
+              labelText: 'Filtrar por rol',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _selectedStatus,
-                  decoration: InputDecoration(
-                    labelText: 'Estado',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  items:
-                      ['Todos', 'Activo', 'Inactivo'].map((status) {
-                        return DropdownMenuItem(
-                          value: status,
-                          child: Text(status),
-                        );
-                      }).toList(),
-                  onChanged:
-                      (value) => setState(() => _selectedStatus = value!),
-                ),
-              ),
-            ],
+            ),
+            items: ['Todos', 'gerente', 'supervisor', 'vendedor', 'almacenero']
+                .map((role) {
+              return DropdownMenuItem(value: role, child: Text(_getRoleDisplayName(role)));
+            }).toList(),
+            onChanged: (value) => setState(() => _selectedRole = value!),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildWorkerCard(Worker worker) {
+  Widget _buildWorkerCard(WorkerData worker) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -273,11 +316,11 @@ class _WorkersScreenState extends State<WorkersScreen>
             children: [
               CircleAvatar(
                 radius: 25,
-                backgroundColor: _getRoleColor(worker.role).withOpacity(0.1),
+                backgroundColor: _getRoleColor(worker.tipoRol).withOpacity(0.1),
                 child: Text(
-                  worker.name.substring(0, 1).toUpperCase(),
+                  worker.nombres.substring(0, 1).toUpperCase(),
                   style: TextStyle(
-                    color: _getRoleColor(worker.role),
+                    color: _getRoleColor(worker.tipoRol),
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
                   ),
@@ -289,7 +332,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      worker.name,
+                      worker.nombreCompleto,
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 16,
@@ -297,26 +340,41 @@ class _WorkersScreenState extends State<WorkersScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      worker.position,
+                      worker.rolNombre,
                       style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 14,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(Icons.business, size: 14, color: Colors.grey[600]),
-                        const SizedBox(width: 4),
-                        Text(
-                          worker.department,
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 14,
+                    if (worker.tipoRol == 'vendedor' && worker.tpvDenominacion != null)
+                      Row(
+                        children: [
+                          Icon(Icons.point_of_sale, size: 14, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            'TPV: ${worker.tpvDenominacion}',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    if (worker.tipoRol == 'almacenero' && worker.almacenDenominacion != null)
+                      Row(
+                        children: [
+                          Icon(Icons.warehouse, size: 14, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Almacén: ${worker.almacenDenominacion}',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -329,39 +387,35 @@ class _WorkersScreenState extends State<WorkersScreen>
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: _getRoleColor(worker.role).withOpacity(0.1),
+                      color: _getRoleColor(worker.tipoRol).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      worker.role,
+                      _getRoleDisplayName(worker.tipoRol),
                       style: TextStyle(
-                        color: _getRoleColor(worker.role),
+                        color: _getRoleColor(worker.tipoRol),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color:
-                          worker.isActive
-                              ? Colors.green.withOpacity(0.1)
-                              : Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      worker.isActive ? 'Activo' : 'Inactivo',
-                      style: TextStyle(
-                        color: worker.isActive ? Colors.green : Colors.red,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit, size: 18),
+                        onPressed: () => _showEditWorkerDialog(worker),
+                        tooltip: 'Editar',
+                        color: AppColors.primary,
                       ),
-                    ),
+                      IconButton(
+                        icon: const Icon(Icons.delete, size: 18),
+                        onPressed: () => _showDeleteWorkerDialog(worker),
+                        tooltip: 'Eliminar',
+                        color: Colors.red,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -395,20 +449,156 @@ class _WorkersScreenState extends State<WorkersScreen>
 
   Color _getRoleColor(String role) {
     switch (role) {
-      case 'admin':
+      case 'gerente':
         return Colors.purple;
-      case 'manager':
+      case 'supervisor':
         return Colors.orange;
-      case 'seller':
+      case 'vendedor':
         return AppColors.primary;
-      case 'warehouse':
+      case 'almacenero':
         return Colors.green;
       default:
         return Colors.grey;
     }
   }
+  
+  String _getRoleDisplayName(String role) {
+    switch (role) {
+      case 'gerente':
+        return 'Gerente';
+      case 'supervisor':
+        return 'Supervisor';
+      case 'vendedor':
+        return 'Vendedor';
+      case 'almacenero':
+        return 'Almacenero';
+      case 'Todos':
+        return 'Todos';
+      default:
+        return role;
+    }
+  }
 
-  void _showWorkerDetails(Worker worker) {
+  // Método para mostrar estadísticas
+  Widget _buildStatisticsCard() {
+    if (_statistics == null) return const SizedBox.shrink();
+    
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Estadísticas del Personal',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  'Total',
+                  _statistics!.totalTrabajadores.toString(),
+                  Icons.people,
+                  AppColors.primary,
+                ),
+              ),
+              Expanded(
+                child: _buildStatItem(
+                  'Gerentes',
+                  _statistics!.totalGerentes.toString(),
+                  Icons.admin_panel_settings,
+                  Colors.purple,
+                ),
+              ),
+              Expanded(
+                child: _buildStatItem(
+                  'Vended.',
+                  _statistics!.totalVendedores.toString(),
+                  Icons.point_of_sale,
+                  AppColors.primary,
+                ),
+              ),
+              Expanded(
+                child: _buildStatItem(
+                  'Almacen.',
+                  _statistics!.totalAlmaceneros.toString(),
+                  Icons.warehouse,
+                  Colors.green,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildStatItem(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Método para mostrar diálogo de error
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showWorkerDetails(WorkerData worker) {
     showDialog(
       context: context,
       builder:
@@ -427,12 +617,12 @@ class _WorkersScreenState extends State<WorkersScreen>
                       CircleAvatar(
                         radius: 30,
                         backgroundColor: _getRoleColor(
-                          worker.role,
+                          worker.tipoRol,
                         ).withOpacity(0.1),
                         child: Text(
-                          worker.name.substring(0, 1).toUpperCase(),
+                          worker.nombres.substring(0, 1).toUpperCase(),
                           style: TextStyle(
-                            color: _getRoleColor(worker.role),
+                            color: _getRoleColor(worker.tipoRol),
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
                           ),
@@ -444,25 +634,26 @@ class _WorkersScreenState extends State<WorkersScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              worker.name,
+                              worker.nombreCompleto,
                               style: const TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             Text(
-                              worker.position,
+                              worker.rolNombre,
                               style: const TextStyle(
                                 color: AppColors.textSecondary,
                               ),
                             ),
-                            Text(
-                              worker.email,
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
+                            if (worker.usuarioUuid != null)
+                              Text(
+                                'ID: ${worker.usuarioUuid!.substring(0, 8)}...',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -473,51 +664,82 @@ class _WorkersScreenState extends State<WorkersScreen>
                     children: [
                       Expanded(
                         child: _buildInfoCard(
-                          'Salario',
-                          '\$${worker.salary.toStringAsFixed(0)}',
-                          Icons.attach_money,
-                          Colors.green,
+                          'Rol',
+                          _getRoleDisplayName(worker.tipoRol),
+                          Icons.admin_panel_settings,
+                          _getRoleColor(worker.tipoRol),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: _buildInfoCard(
-                          'Departamento',
-                          worker.department,
-                          Icons.business,
+                          'Fecha Creación',
+                          '${worker.fechaCreacion.day}/${worker.fechaCreacion.month}/${worker.fechaCreacion.year}',
+                          Icons.calendar_today,
                           AppColors.primary,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildInfoCard(
-                          'Rol',
-                          worker.role,
-                          Icons.admin_panel_settings,
-                          _getRoleColor(worker.role),
+                  if (worker.tipoRol == 'vendedor' && worker.tpvDenominacion != null)
+                    Column(
+                      children: [
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildInfoCard(
+                                'TPV Asignado',
+                                worker.tpvDenominacion!,
+                                Icons.point_of_sale,
+                                AppColors.primary,
+                              ),
+                            ),
+                            if (worker.numeroConfirmacion != null)
+                              const SizedBox(width: 12),
+                            if (worker.numeroConfirmacion != null)
+                              Expanded(
+                                child: _buildInfoCard(
+                                  'N° Confirmación',
+                                  worker.numeroConfirmacion!,
+                                  Icons.confirmation_number,
+                                  Colors.orange,
+                                ),
+                              ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildInfoCard(
-                          'Estado',
-                          worker.isActive ? 'Activo' : 'Inactivo',
-                          Icons.circle,
-                          worker.isActive ? Colors.green : Colors.red,
+                      ],
+                    ),
+                  if (worker.tipoRol == 'almacenero' && worker.almacenDenominacion != null)
+                    Column(
+                      children: [
+                        const SizedBox(height: 12),
+                        _buildInfoCard(
+                          'Almacén Asignado',
+                          worker.almacenDenominacion!,
+                          Icons.warehouse,
+                          Colors.green,
                         ),
-                      ),
-                    ],
-                  ),
+                        if (worker.almacenDireccion != null)
+                          const SizedBox(height: 8),
+                        if (worker.almacenDireccion != null)
+                          _buildInfoCard(
+                            'Dirección',
+                            worker.almacenDireccion!,
+                            Icons.location_on,
+                            Colors.grey,
+                          ),
+                      ],
+                    ),
                   const SizedBox(height: 24),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       ElevatedButton.icon(
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _showEditWorkerDialog(worker);
+                        },
                         icon: const Icon(Icons.edit),
                         label: const Text('Editar'),
                         style: ElevatedButton.styleFrom(
@@ -571,208 +793,324 @@ class _WorkersScreenState extends State<WorkersScreen>
     );
   }
 
+  // Diálogo para agregar trabajador
   void _showAddWorkerDialog() {
-    final nameController = TextEditingController();
+    final nombresController = TextEditingController();
+    final apellidosController = TextEditingController();
     final emailController = TextEditingController();
-    final phoneController = TextEditingController();
-    final positionController = TextEditingController();
-    String selectedRole = 'seller';
-    String selectedDepartment = 'Ventas';
+    final passwordController = TextEditingController();
+    final numeroConfirmacionController = TextEditingController();
+    String selectedRole = 'vendedor';
+    int? selectedTPV;
+    int? selectedAlmacen;
+    bool _obscurePassword = true;
 
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Agregar Trabajador'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre completo',
-                      prefixIcon: Icon(Icons.person),
-                    ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Agregar Trabajador'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nombresController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombres',
+                    prefixIcon: Icon(Icons.person),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: emailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email),
-                    ),
-                    keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: apellidosController,
+                  decoration: const InputDecoration(
+                    labelText: 'Apellidos',
+                    prefixIcon: Icon(Icons.person_outline),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: phoneController,
-                    decoration: const InputDecoration(
-                      labelText: 'Teléfono',
-                      prefixIcon: Icon(Icons.phone),
-                    ),
-                    keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.email),
+                    hintText: 'usuario@ejemplo.com',
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: positionController,
-                    decoration: const InputDecoration(
-                      labelText: 'Posición',
-                      prefixIcon: Icon(Icons.work),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  if (nameController.text.isNotEmpty &&
-                      emailController.text.isNotEmpty) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Trabajador agregado exitosamente'),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passwordController,
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
+                    labelText: 'Contraseña',
+                    prefixIcon: const Icon(Icons.lock),
+                    hintText: 'Mínimo 6 caracteres',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword ? Icons.visibility : Icons.visibility_off,
                       ),
-                    );
-                  }
-                },
-                child: const Text('Agregar'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  Widget _buildRolesTab() {
-    final roles = [
-      {
-        'name': 'Administrador',
-        'role': 'admin',
-        'count': '1',
-        'color': Colors.purple,
-      },
-      {
-        'name': 'Gerente',
-        'role': 'manager',
-        'count': '2',
-        'color': Colors.orange,
-      },
-      {
-        'name': 'Vendedor',
-        'role': 'seller',
-        'count': '2',
-        'color': AppColors.primary,
-      },
-      {
-        'name': 'Almacén',
-        'role': 'warehouse',
-        'count': '0',
-        'color': Colors.green,
-      },
-    ];
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Gestión de Roles',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 16),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.2,
-            ),
-            itemCount: roles.length,
-            itemBuilder: (context, index) {
-              final role = roles[index];
-              return _buildRoleCard(role);
-            },
-          ),
-          const SizedBox(height: 24),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Jerarquía de Roles',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      onPressed: () {
+                        setDialogState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  _buildHierarchyItem(
-                    'Administrador',
-                    'Acceso completo al sistema',
-                    Icons.admin_panel_settings,
-                    Colors.purple,
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: selectedRole,
+                  decoration: const InputDecoration(
+                    labelText: 'Rol',
+                    prefixIcon: Icon(Icons.work),
                   ),
-                  _buildHierarchyItem(
-                    'Gerente',
-                    'Gestión de departamento y reportes',
-                    Icons.supervisor_account,
-                    Colors.orange,
-                  ),
-                  _buildHierarchyItem(
-                    'Vendedor',
-                    'Ventas y atención al cliente',
-                    Icons.person,
-                    AppColors.primary,
-                  ),
-                  _buildHierarchyItem(
-                    'Almacén',
-                    'Gestión de inventario y stock',
-                    Icons.inventory,
-                    Colors.green,
-                  ),
-                ],
-              ),
+                  items: ['gerente', 'supervisor', 'vendedor', 'almacenero']
+                      .map((role) => DropdownMenuItem(
+                            value: role,
+                            child: Text(_getRoleDisplayName(role)),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedRole = value!;
+                      selectedTPV = null;
+                      selectedAlmacen = null;
+                    });
+                  },
+                ),
+                if (selectedRole == 'vendedor') ...
+                  [
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      value: selectedTPV,
+                      decoration: const InputDecoration(
+                        labelText: 'TPV Asignado',
+                        prefixIcon: Icon(Icons.point_of_sale),
+                      ),
+                      items: _tpvs
+                          .map((tpv) => DropdownMenuItem(
+                                value: tpv.id,
+                                child: Text(tpv.denominacion),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        setDialogState(() => selectedTPV = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: numeroConfirmacionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Número de Confirmación (Opcional)',
+                        prefixIcon: Icon(Icons.confirmation_number),
+                      ),
+                    ),
+                  ],
+                if (selectedRole == 'almacenero') ...
+                  [
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      value: selectedAlmacen,
+                      decoration: const InputDecoration(
+                        labelText: 'Almacén Asignado',
+                        prefixIcon: Icon(Icons.warehouse),
+                      ),
+                      items: _almacenes
+                          .map((almacen) => DropdownMenuItem(
+                                value: almacen.id,
+                                child: Text(almacen.denominacion),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        setDialogState(() => selectedAlmacen = value);
+                      },
+                    ),
+                  ],
+              ],
             ),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => _createWorkerWithRegistration(
+                nombres: nombresController.text,
+                apellidos: apellidosController.text,
+                email: emailController.text,
+                password: passwordController.text,
+                tipoRol: selectedRole,
+                tpvId: selectedTPV,
+                almacenId: selectedAlmacen,
+                numeroConfirmacion: numeroConfirmacionController.text.isEmpty
+                    ? null
+                    : numeroConfirmacionController.text,
+              ),
+              child: const Text('Agregar'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildRoleCard(Map<String, dynamic> role) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+  Widget _buildRolesTab() {
+    if (_isLoadingRoles) {
+      return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: AppColors.primary),
+            SizedBox(height: 16),
+            Text(
+              'Cargando roles...',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Roles de la Tienda',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: _showAddRoleDialog,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Nuevo Rol'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _roles.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.admin_panel_settings_outlined,
+                          size: 64, color: AppColors.textSecondary),
+                      SizedBox(height: 16),
+                      Text(
+                        'No hay roles configurados',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w500),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Agrega roles para organizar tu personal',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _roles.length,
+                  itemBuilder: (context, index) {
+                    final role = _roles[index];
+                    return _buildRoleCard(role);
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRoleCard(WorkerRole role) {
+    // Contar trabajadores con este rol
+    final workerCount = _workers.where((w) => w.rolId == role.id).length;
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
           children: [
             Container(
               width: 50,
               height: 50,
               decoration: BoxDecoration(
-                color: role['color'].withOpacity(0.1),
+                color: AppColors.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(25),
               ),
-              child: Icon(Icons.people, color: role['color'], size: 30),
+              child: const Icon(Icons.admin_panel_settings, 
+                  color: AppColors.primary, size: 24),
             ),
-            const SizedBox(height: 12),
-            Text(
-              role['name'],
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            Text(
-              '${role['count']} usuarios',
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    role.denominacion,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                  if (role.descripcion != null)
+                    Text(
+                      role.descripcion!,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$workerCount trabajador${workerCount != 1 ? 'es' : ''}',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 18),
+                  onPressed: () => _showEditRoleDialog(role),
+                  tooltip: 'Editar',
+                  color: AppColors.primary,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, size: 18),
+                  onPressed: workerCount > 0 
+                      ? null 
+                      : () => _showDeleteRoleDialog(role),
+                  tooltip: workerCount > 0 
+                      ? 'No se puede eliminar (tiene trabajadores asignados)'
+                      : 'Eliminar',
+                  color: workerCount > 0 ? Colors.grey : Colors.red,
+                ),
+              ],
             ),
           ],
         ),
@@ -780,139 +1118,352 @@ class _WorkersScreenState extends State<WorkersScreen>
     );
   }
 
-  Widget _buildHierarchyItem(
-    String title,
-    String description,
-    IconData icon,
-    Color color,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+  // Método para crear trabajador con registro de usuario
+  Future<void> _createWorkerWithRegistration({
+    required String nombres,
+    required String apellidos,
+    required String email,
+    required String password,
+    required String tipoRol,
+    int? tpvId,
+    int? almacenId,
+    String? numeroConfirmacion,
+  }) async {
+    // Validaciones
+    if (nombres.isEmpty || apellidos.isEmpty || email.isEmpty || password.isEmpty) {
+      _showErrorDialog('Por favor, completa todos los campos requeridos');
+      return;
+    }
+
+    if (!email.contains('@')) {
+      _showErrorDialog('Por favor, ingresa un email válido');
+      return;
+    }
+
+    if (password.length < 6) {
+      _showErrorDialog('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+
+    if (_storeId == null) {
+      _showErrorDialog('Error: No se pudo obtener el ID de la tienda');
+      return;
+    }
+
+    Navigator.pop(context); // Cerrar diálogo
+
+    // Mostrar loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Registrando usuario y creando trabajador...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      // Paso 1: Registrar usuario en Supabase Auth
+      print('🔐 Registrando usuario en Supabase Auth...');
+      final supabase = Supabase.instance.client;
+      final authResponse = await supabase.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'nombres': nombres,
+          'apellidos': apellidos,
+          'full_name': '$nombres $apellidos',
+        },
+      );
+
+      if (authResponse.user == null) {
+        throw Exception('Error al registrar usuario en Supabase Auth');
+      }
+
+      final userUuid = authResponse.user!.id;
+      print('✅ Usuario registrado con UUID: $userUuid');
+
+      // Paso 2: Crear trabajador con el UUID obtenido
+      print('👤 Creando trabajador...');
+      final success = await WorkerService.createWorker(
+        storeId: _storeId!,
+        nombres: nombres,
+        apellidos: apellidos,
+        tipoRol: tipoRol,
+        usuarioUuid: userUuid,
+        tpvId: tpvId,
+        almacenId: almacenId,
+        numeroConfirmacion: numeroConfirmacion,
+      );
+
+      Navigator.pop(context); // Cerrar loading
+
+      if (success) {
+        // Mostrar diálogo de confirmación
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 28),
+                const SizedBox(width: 12),
+                const Text('Trabajador Creado'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                ),
-                Text(
-                  description,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPermissionsTab() {
-    final permissions = [
-      {
-        'module': 'Productos',
-        'permissions': ['Crear', 'Leer', 'Editar', 'Eliminar'],
-        'icon': Icons.inventory_2,
-      },
-      {
-        'module': 'Inventario',
-        'permissions': ['Leer', 'Editar', 'Movimientos'],
-        'icon': Icons.warehouse,
-      },
-      {
-        'module': 'Ventas',
-        'permissions': ['Crear', 'Leer', 'Procesar'],
-        'icon': Icons.point_of_sale,
-      },
-      {
-        'module': 'Finanzas',
-        'permissions': ['Leer', 'Reportes'],
-        'icon': Icons.account_balance,
-      },
-      {
-        'module': 'Clientes',
-        'permissions': ['Crear', 'Leer', 'Editar'],
-        'icon': Icons.people,
-      },
-      {
-        'module': 'Personal',
-        'permissions': ['Leer', 'Gestionar'],
-        'icon': Icons.badge,
-      },
-    ];
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Sistema de Permisos',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 16),
-          ...permissions
-              .map((module) => _buildPermissionModule(module))
-              .toList(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPermissionModule(Map<String, dynamic> module) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(module['icon'], color: AppColors.primary),
-                const SizedBox(width: 12),
-                Text(
-                  module['module'],
-                  style: const TextStyle(
+                  '✅ El trabajador ha sido creado exitosamente.',
+                  style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children:
-                  (module['permissions'] as List<String>).map((permission) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Importante:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
+                        ],
                       ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        permission,
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                      const SizedBox(height: 8),
+                      Text(
+                        'El trabajador debe confirmar su correo electrónico antes de poder acceder al sistema.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blue.shade700,
                         ),
                       ),
-                    );
-                  }).toList(),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Datos de acceso:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Email: $email',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontFamily: 'monospace',
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      Text(
+                        'Contraseña: [Configurada por el administrador]',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+        );
+        
+        await _loadWorkersData(); // Recargar datos
+      }
+    } catch (e) {
+      Navigator.pop(context); // Cerrar loading
+      print('❌ Error en registro completo: $e');
+      
+      String errorMessage = 'Error al crear usuario y trabajador: $e';
+      if (e.toString().contains('User already registered')) {
+        errorMessage = 'Ya existe un usuario con este email. Usa otro email.';
+      } else if (e.toString().contains('Invalid email')) {
+        errorMessage = 'Email inválido. Verifica el formato.';
+      } else if (e.toString().contains('Password should be at least 6 characters')) {
+        errorMessage = 'La contraseña debe tener al menos 6 caracteres.';
+      }
+      
+      _showErrorDialog(errorMessage);
+    }
+  }
+
+  // Métodos para editar trabajador
+  void _showEditWorkerDialog(WorkerData worker) {
+    final nombresController = TextEditingController(text: worker.nombres);
+    final apellidosController = TextEditingController(text: worker.apellidos);
+    final uuidController = TextEditingController(text: worker.usuarioUuid ?? '');
+    final numeroConfirmacionController = TextEditingController(
+        text: worker.numeroConfirmacion ?? '');
+    String selectedRole = worker.tipoRol;
+    int? selectedTPV = worker.tpvId;
+    int? selectedAlmacen = worker.almacenId;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Editar: ${worker.nombreCompleto}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nombresController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombres',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: apellidosController,
+                  decoration: const InputDecoration(
+                    labelText: 'Apellidos',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: uuidController,
+                  decoration: const InputDecoration(
+                    labelText: 'UUID del Usuario',
+                    prefixIcon: Icon(Icons.fingerprint),
+                    hintText: 'UUID de Supabase Auth',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: selectedRole,
+                  decoration: const InputDecoration(
+                    labelText: 'Rol',
+                    prefixIcon: Icon(Icons.work),
+                  ),
+                  items: ['gerente', 'supervisor', 'vendedor', 'almacenero']
+                      .map((role) => DropdownMenuItem(
+                            value: role,
+                            child: Text(_getRoleDisplayName(role)),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedRole = value!;
+                      if (selectedRole != 'vendedor') selectedTPV = null;
+                      if (selectedRole != 'almacenero') selectedAlmacen = null;
+                    });
+                  },
+                ),
+                if (selectedRole == 'vendedor') ...
+                  [
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      value: selectedTPV,
+                      decoration: const InputDecoration(
+                        labelText: 'TPV Asignado',
+                        prefixIcon: Icon(Icons.point_of_sale),
+                      ),
+                      items: _tpvs
+                          .map((tpv) => DropdownMenuItem(
+                                value: tpv.id,
+                                child: Text(tpv.denominacion),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        setDialogState(() => selectedTPV = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: numeroConfirmacionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Número de Confirmación (Opcional)',
+                        prefixIcon: Icon(Icons.confirmation_number),
+                      ),
+                    ),
+                  ],
+                if (selectedRole == 'almacenero') ...
+                  [
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      value: selectedAlmacen,
+                      decoration: const InputDecoration(
+                        labelText: 'Almacén Asignado',
+                        prefixIcon: Icon(Icons.warehouse),
+                      ),
+                      items: _almacenes
+                          .map((almacen) => DropdownMenuItem(
+                                value: almacen.id,
+                                child: Text(almacen.denominacion),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        setDialogState(() => selectedAlmacen = value);
+                      },
+                    ),
+                  ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => _editWorker(
+                worker: worker,
+                nombres: nombresController.text,
+                apellidos: apellidosController.text,
+                uuid: uuidController.text.isEmpty ? null : uuidController.text,
+                tipoRol: selectedRole,
+                tpvId: selectedTPV,
+                almacenId: selectedAlmacen,
+                numeroConfirmacion: numeroConfirmacionController.text.isEmpty
+                    ? null
+                    : numeroConfirmacionController.text,
+              ),
+              child: const Text('Guardar'),
             ),
           ],
         ),
@@ -920,6 +1471,323 @@ class _WorkersScreenState extends State<WorkersScreen>
     );
   }
 
+  Future<void> _editWorker({
+    required WorkerData worker,
+    required String nombres,
+    required String apellidos,
+    String? uuid,
+    required String tipoRol,
+    int? tpvId,
+    int? almacenId,
+    String? numeroConfirmacion,
+  }) async {
+    if (nombres.isEmpty || apellidos.isEmpty) {
+      _showErrorDialog('Por favor, completa todos los campos requeridos');
+      return;
+    }
+
+    if (_storeId == null) {
+      _showErrorDialog('Error: No se pudo obtener el ID de la tienda');
+      return;
+    }
+
+    Navigator.pop(context); // Cerrar diálogo
+
+    try {
+      final success = await WorkerService.editWorker(
+        workerId: worker.trabajadorId,
+        storeId: _storeId!,
+        nombres: nombres,
+        apellidos: apellidos,
+        tipoRol: tipoRol,
+        usuarioUuid: uuid,
+        tpvId: tpvId,
+        almacenId: almacenId,
+        numeroConfirmacion: numeroConfirmacion,
+      );
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Trabajador actualizado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadWorkersData(); // Recargar datos
+      }
+    } catch (e) {
+      _showErrorDialog('Error al actualizar trabajador: $e');
+    }
+  }
+
+  // Método para eliminar trabajador
+  void _showDeleteWorkerDialog(WorkerData worker) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Trabajador'),
+        content: Text(
+          '¿Estás seguro de que deseas eliminar a ${worker.nombreCompleto}?\n\nEsta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => _deleteWorker(worker),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteWorker(WorkerData worker) async {
+    if (_storeId == null) {
+      _showErrorDialog('Error: No se pudo obtener el ID de la tienda');
+      return;
+    }
+
+    Navigator.pop(context); // Cerrar diálogo
+
+    try {
+      final success = await WorkerService.deleteWorker(
+        worker.trabajadorId,
+        _storeId!,
+      );
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Trabajador eliminado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadWorkersData(); // Recargar datos
+      }
+    } catch (e) {
+      _showErrorDialog('Error al eliminar trabajador: $e');
+    }
+  }
+
+  // Métodos para gestión de roles
+  void _showAddRoleDialog() {
+    final denominacionController = TextEditingController();
+    final descripcionController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Agregar Rol'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: denominacionController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del Rol',
+                prefixIcon: Icon(Icons.admin_panel_settings),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descripcionController,
+              decoration: const InputDecoration(
+                labelText: 'Descripción (Opcional)',
+                prefixIcon: Icon(Icons.description),
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => _createRole(
+              denominacion: denominacionController.text,
+              descripcion: descripcionController.text.isEmpty
+                  ? null
+                  : descripcionController.text,
+            ),
+            child: const Text('Crear'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createRole({
+    required String denominacion,
+    String? descripcion,
+  }) async {
+    if (denominacion.isEmpty) {
+      _showErrorDialog('Por favor, ingresa el nombre del rol');
+      return;
+    }
+
+    if (_storeId == null) {
+      _showErrorDialog('Error: No se pudo obtener el ID de la tienda');
+      return;
+    }
+
+    Navigator.pop(context); // Cerrar diálogo
+
+    try {
+      final success = await WorkerService.createRole(
+        storeId: _storeId!,
+        denominacion: denominacion,
+        descripcion: descripcion,
+      );
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Rol creado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadRolesData(); // Recargar datos
+      }
+    } catch (e) {
+      _showErrorDialog('Error al crear rol: $e');
+    }
+  }
+
+  void _showEditRoleDialog(WorkerRole role) {
+    final denominacionController = TextEditingController(text: role.denominacion);
+    final descripcionController = TextEditingController(text: role.descripcion ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Editar: ${role.denominacion}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: denominacionController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del Rol',
+                prefixIcon: Icon(Icons.admin_panel_settings),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descripcionController,
+              decoration: const InputDecoration(
+                labelText: 'Descripción (Opcional)',
+                prefixIcon: Icon(Icons.description),
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => _editRole(
+              role: role,
+              denominacion: denominacionController.text,
+              descripcion: descripcionController.text.isEmpty
+                  ? null
+                  : descripcionController.text,
+            ),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editRole({
+    required WorkerRole role,
+    required String denominacion,
+    String? descripcion,
+  }) async {
+    if (denominacion.isEmpty) {
+      _showErrorDialog('Por favor, ingresa el nombre del rol');
+      return;
+    }
+
+    Navigator.pop(context); // Cerrar diálogo
+
+    try {
+      final success = await WorkerService.editRole(
+        roleId: role.id,
+        denominacion: denominacion,
+        descripcion: descripcion,
+      );
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Rol actualizado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadRolesData(); // Recargar datos
+      }
+    } catch (e) {
+      _showErrorDialog('Error al actualizar rol: $e');
+    }
+  }
+
+  void _showDeleteRoleDialog(WorkerRole role) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Rol'),
+        content: Text(
+          '¿Estás seguro de que deseas eliminar el rol "${role.denominacion}"?\n\nEsta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => _deleteRole(role),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteRole(WorkerRole role) async {
+    Navigator.pop(context); // Cerrar diálogo
+
+    try {
+      final success = await WorkerService.deleteRole(role.id);
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Rol eliminado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadRolesData(); // Recargar datos
+      }
+    } catch (e) {
+      _showErrorDialog('Error al eliminar rol: $e');
+    }
+  }
+
+  // Navegación del bottom navigation
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Dashboard
