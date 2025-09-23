@@ -7,6 +7,8 @@ import '../services/financial_service.dart';
 import '../models/restaurant_models.dart';
 import '../widgets/store_selector_widget.dart';
 import '../widgets/financial_menu_widget.dart';
+import '../services/currency_display_service.dart';
+import '../widgets/currency_converter_widget.dart';
 
 class ProductionCostsScreen extends StatefulWidget {
   const ProductionCostsScreen({super.key});
@@ -24,7 +26,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
   bool _isLoading = true;
   String _filtroTexto = '';
   bool _showingTestData = false; // Nueva variable para indicar datos de prueba
-
+  // ← NUEVAS VARIABLES PARA MONEDAS
+  String _selectedCurrency = 'CUP';
+  bool _showCurrencyConverter = false;
   // Datos para análisis
   List<Map<String, dynamic>> _productos = [];
   List<CostoProduccion> _costosHistorial = [];
@@ -33,9 +37,16 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
   List<Map<String, dynamic>> _productosProblematicos = [];
 
   // Formatters
-  final NumberFormat _currencyFormatter = NumberFormat.currency(locale: 'es_CU', symbol: '\$');
+  final NumberFormat _currencyFormatter = NumberFormat.currency(
+    locale: 'es_CU',
+    symbol: '\$',
+  );
   final NumberFormat _percentFormatter = NumberFormat.percentPattern('es_CU');
-  final NumberFormat _highPrecisionCurrencyFormatter = NumberFormat.currency(locale: 'es_CU', symbol: '\$', decimalDigits: 4);
+  final NumberFormat _highPrecisionCurrencyFormatter = NumberFormat.currency(
+    locale: 'es_CU',
+    symbol: '\$',
+    decimalDigits: 4,
+  );
 
   @override
   void initState() {
@@ -70,7 +81,7 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
       print('🔄 Iniciando carga de productos elaborados...');
       final productos = await RestaurantService.getPlatosElaborados();
       print('✅ Productos elaborados cargados: ${productos.length}');
-      
+
       if (productos.isEmpty) {
         print('⚠️ No se encontraron productos elaborados en la base de datos');
         print('💡 Verifica que existan productos con es_elaborado = true');
@@ -78,28 +89,40 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
         _createTestData();
       } else {
         print('📋 Primeros productos elaborados encontrados:');
-        for (int i = 0; i < (productos.length > 3 ? 3 : productos.length); i++) {
+        for (
+          int i = 0;
+          i < (productos.length > 3 ? 3 : productos.length);
+          i++
+        ) {
           final producto = productos[i];
-          
+
           // Obtener precio del histórico o directo
           double precioCalculado = 0.0;
-          if (producto['precio_actual'] != null && (producto['precio_actual'] as List).isNotEmpty) {
+          if (producto['precio_actual'] != null &&
+              (producto['precio_actual'] as List).isNotEmpty) {
             final precios = (producto['precio_actual'] as List);
             if (precios.isNotEmpty) {
-              precioCalculado = (precios.first['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
+              precioCalculado =
+                  (precios.first['precio_venta_cup'] as num?)?.toDouble() ??
+                  0.0;
             }
           }
           if (precioCalculado == 0.0) {
-            precioCalculado = (producto['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
+            precioCalculado =
+                (producto['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
           }
-          
+
           // Obtener cantidad de ingredientes del conteo
           int cantidadIngredientes = 0;
-          if (producto['cantidad_ingredientes'] != null && (producto['cantidad_ingredientes'] as List).isNotEmpty) {
-            cantidadIngredientes = (producto['cantidad_ingredientes'] as List).first['count'] ?? 0;
+          if (producto['cantidad_ingredientes'] != null &&
+              (producto['cantidad_ingredientes'] as List).isNotEmpty) {
+            cantidadIngredientes =
+                (producto['cantidad_ingredientes'] as List).first['count'] ?? 0;
           }
-          
-          print('  - ${producto['denominacion']} (ID: ${producto['id']}, Precio: \$${precioCalculado}, Ingredientes: $cantidadIngredientes)');
+
+          print(
+            '  - ${producto['denominacion']} (ID: ${producto['id']}, Precio: \$${precioCalculado}, Ingredientes: $cantidadIngredientes)',
+          );
         }
         setState(() {
           _productos = productos;
@@ -112,7 +135,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
       _createTestData();
       // Mostrar error al usuario
       if (mounted) {
-        _showErrorSnackBar('Error cargando productos elaborados: $e. Mostrando datos de prueba.');
+        _showErrorSnackBar(
+          'Error cargando productos elaborados: $e. Mostrando datos de prueba.',
+        );
       }
     }
   }
@@ -127,7 +152,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
 
       for (final producto in _productos) {
         try {
-          final costos = await RestaurantService.getCostosProduccion(producto['id']);
+          final costos = await RestaurantService.getCostosProduccion(
+            producto['id'],
+          );
           if (costos.isNotEmpty) {
             final ultimoCosto = costos.first;
             totalCostoIngredientes += ultimoCosto.costoIngredientes;
@@ -137,7 +164,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
             productosConCosto++;
           }
         } catch (e) {
-          print('⚠️ Error cargando costos para producto ${producto['nombre']}: $e');
+          print(
+            '⚠️ Error cargando costos para producto ${producto['nombre']}: $e',
+          );
           // Continuar con el siguiente producto
         }
       }
@@ -160,7 +189,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
           'margen_bruto_total': margenBrutoTotal,
           'porcentaje_margen': porcentajeMargen,
           'costo_promedio_ingredientes':
-              productosConCosto > 0 ? totalCostoIngredientes / productosConCosto : 0,
+              productosConCosto > 0
+                  ? totalCostoIngredientes / productosConCosto
+                  : 0,
         };
       });
     } catch (e) {
@@ -175,7 +206,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
 
       for (final producto in _productos) {
         try {
-          final costos = await RestaurantService.getCostosProduccion(producto['id']);
+          final costos = await RestaurantService.getCostosProduccion(
+            producto['id'],
+          );
           if (costos.isNotEmpty) {
             final ultimoCosto = costos.first;
             final costoTotal =
@@ -184,7 +217,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                 (ultimoCosto.costoIndirecto ?? 0);
             final margen = producto['precio_venta'] - costoTotal;
             final porcentajeMargen =
-                producto['precio_venta'] > 0 ? (margen / producto['precio_venta']) as double : 0.0;
+                producto['precio_venta'] > 0
+                    ? (margen / producto['precio_venta']) as double
+                    : 0.0;
 
             final productoAnalisis = {
               'producto': producto,
@@ -230,18 +265,22 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
   /// Método auxiliar para cargar costos de manera eficiente
   Future<Map<int, CostoProduccion>> _loadAllCostos() async {
     final costosMap = <int, CostoProduccion>{};
-    
+
     for (final producto in _productos) {
       try {
-        final costos = await RestaurantService.getCostosProduccion(producto['id']);
+        final costos = await RestaurantService.getCostosProduccion(
+          producto['id'],
+        );
         if (costos.isNotEmpty) {
           costosMap[producto['id']] = costos.first;
         }
       } catch (e) {
-        print('⚠️ Error cargando costos para producto ${producto['nombre']}: $e');
+        print(
+          '⚠️ Error cargando costos para producto ${producto['nombre']}: $e',
+        );
       }
     }
-    
+
     return costosMap;
   }
 
@@ -252,10 +291,20 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
         title: const Text('Costos de Producción'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        actions: const [
-          AppBarStoreSelectorWidget(),
-          FinancialMenuWidget(),
-          SizedBox(width: 8),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _showCurrencyConverter
+                  ? Icons.visibility_off
+                  : Icons.currency_exchange,
+            ),
+            onPressed: () {
+              setState(() {
+                _showCurrencyConverter = !_showCurrencyConverter;
+              });
+            },
+            tooltip: 'Convertidor de Monedas',
+          ),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -269,9 +318,36 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [_buildResumenTab(), _buildProductoTab(), _buildAnalisisTab()],
+      body: Column(
+        children: [
+          // Convertidor de monedas (mostrar/ocultar)
+          if (_showCurrencyConverter) ...[
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: CurrencyConverterWidget(
+                initialFromCurrency: 'USD',
+                initialToCurrency: 'CUP',
+                onConversionChanged: (amount, fromCurrency, toCurrency) {
+                  // Callback opcional para manejar cambios
+                  print('Conversión: $amount $fromCurrency → $toCurrency');
+                },
+              ),
+            ),
+            const Divider(),
+          ],
+
+          // Tabs existentes
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildResumenTab(),
+                _buildProductoTab(),
+                _buildAnalisisTab(),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -492,9 +568,10 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
 
     final productosFiltrados =
         _productos.where((producto) {
-          final nombre = producto['denominacion']?.toString() ?? 
-                        producto['nombre']?.toString() ?? 
-                        '';
+          final nombre =
+              producto['denominacion']?.toString() ??
+              producto['nombre']?.toString() ??
+              '';
           return _filtroTexto.isEmpty ||
               nombre.toLowerCase().contains(_filtroTexto.toLowerCase());
         }).toList();
@@ -547,13 +624,15 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
 
   Widget _buildProductoCard(Map<String, dynamic> producto) {
     // Safe extraction of product name
-    final nombre = producto['denominacion']?.toString() ?? 
-                   producto['nombre']?.toString() ?? 
-                   'Sin nombre';
-    
+    final nombre =
+        producto['denominacion']?.toString() ??
+        producto['nombre']?.toString() ??
+        'Sin nombre';
+
     // Safe extraction of price
     double precio = 0.0;
-    if (producto['precio_actual'] != null && (producto['precio_actual'] as List).isNotEmpty) {
+    if (producto['precio_actual'] != null &&
+        (producto['precio_actual'] as List).isNotEmpty) {
       final precios = (producto['precio_actual'] as List);
       if (precios.isNotEmpty) {
         precio = (precios.first['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
@@ -562,7 +641,7 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
     if (precio == 0.0) {
       precio = (producto['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
     }
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -591,6 +670,31 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                 fontWeight: FontWeight.w500,
               ),
             ),
+
+            // ← AGREGAR CONVERSIÓN DE MONEDA
+            if (_selectedCurrency != 'CUP') ...[
+              FutureBuilder<double>(
+                future: CurrencyDisplayService.convertAmountForDisplay(
+                  precio,
+                  'CUP',
+                  _selectedCurrency,
+                ),
+                builder: (context, snapshot) {
+                  if (snapshot.hasData) {
+                    return Text(
+                      'Precio en $_selectedCurrency: ${CurrencyDisplayService.formatAmountForDisplay(snapshot.data!, _selectedCurrency)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.blue[600],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            ],
+
             if (producto['categoria'] != null)
               Text(
                 'Categoría: ${producto['categoria']['nombre'] ?? producto['categoria']['denominacion'] ?? 'Sin categoría'}',
@@ -634,23 +738,27 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Cargando ingredientes...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 16),
+                  Text('Cargando ingredientes...'),
+                ],
+              ),
+            ),
       );
 
       // Solo cargar ingredientes - es lo más importante y lento
       List<Map<String, dynamic>> ingredientesDetallados = [];
       try {
         print('📋 Cargando ingredientes del producto ${producto['id']}...');
-        ingredientesDetallados = await RestaurantService.getIngredientesProductoElaborado(producto['id']);
+        ingredientesDetallados =
+            await RestaurantService.getIngredientesProductoElaborado(
+              producto['id'],
+            );
         print('✅ Ingredientes cargados: ${ingredientesDetallados.length}');
       } catch (e) {
         print('⚠️ Error cargando ingredientes: $e');
@@ -661,32 +769,42 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
 
       // Calcular métricas básicas
       double precioVenta = 0.0;
-      
+
       // Usar la misma lógica que RestaurantService.getPlatosElaborados()
-      if (producto['precio_actual'] != null && (producto['precio_actual'] as List).isNotEmpty) {
+      if (producto['precio_actual'] != null &&
+          (producto['precio_actual'] as List).isNotEmpty) {
         final precios = (producto['precio_actual'] as List);
         if (precios.isNotEmpty) {
-          precioVenta = _parseDoubleSafely(precios.first['precio_venta_cup']) ?? 0.0;
+          precioVenta =
+              _parseDoubleSafely(precios.first['precio_venta_cup']) ?? 0.0;
         }
       }
       if (precioVenta == 0.0) {
         precioVenta = _parseDoubleSafely(producto['precio_venta_cup']) ?? 0.0;
       }
-      
-      print('💰 Precio calculado para ${producto['denominacion']}: $precioVenta');
+
+      print(
+        '💰 Precio calculado para ${producto['denominacion']}: $precioVenta',
+      );
       print('📋 precio_actual: ${producto['precio_actual']}');
       print('📋 precio_venta_cup: ${producto['precio_venta_cup']}');
-      
-      final costoIngredientes = ingredientesDetallados.fold<double>(0.0, (sum, ing) => sum + (ing['costo_total'] ?? 0.0));
+
+      final costoIngredientes = ingredientesDetallados.fold<double>(
+        0.0,
+        (sum, ing) => sum + (ing['costo_total'] ?? 0.0),
+      );
       final margenReal = precioVenta - costoIngredientes;
-      final porcentajeMargenReal = precioVenta > 0 ? (margenReal / precioVenta) : 0.0;
+      final porcentajeMargenReal =
+          precioVenta > 0 ? (margenReal / precioVenta) : 0.0;
 
       // Mostrar resultados
       showDialog(
         context: context,
         builder:
             (context) => AlertDialog(
-              title: Text('Detalles del Producto - ${producto['denominacion']}'),
+              title: Text(
+                'Detalles del Producto - ${producto['denominacion']}',
+              ),
               content: SizedBox(
                 width: double.maxFinite,
                 child: SingleChildScrollView(
@@ -695,18 +813,28 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Información básica del producto
-                      _buildInfoSection('Información General', Icons.info_outline, [
-                        _buildInfoRow('ID del producto', '${producto['id']}'),
-                        _buildInfoRow('SKU', '${producto['sku'] ?? 'N/A'}'),
-                        _buildInfoRow('Ingredientes', '${ingredientesDetallados.length}'),
-                        if (producto['tiempo_preparacion'] != null)
+                      _buildInfoSection(
+                        'Información General',
+                        Icons.info_outline,
+                        [
+                          _buildInfoRow('ID del producto', '${producto['id']}'),
+                          _buildInfoRow('SKU', '${producto['sku'] ?? 'N/A'}'),
                           _buildInfoRow(
-                            'Tiempo preparación',
-                            '${producto['tiempo_preparacion']} min',
+                            'Ingredientes',
+                            '${ingredientesDetallados.length}',
                           ),
-                        if (producto['descripcion'] != null)
-                          _buildInfoRow('Descripción', producto['descripcion']),
-                      ]),
+                          if (producto['tiempo_preparacion'] != null)
+                            _buildInfoRow(
+                              'Tiempo preparación',
+                              '${producto['tiempo_preparacion']} min',
+                            ),
+                          if (producto['descripcion'] != null)
+                            _buildInfoRow(
+                              'Descripción',
+                              producto['descripcion'],
+                            ),
+                        ],
+                      ),
 
                       const SizedBox(height: 16),
 
@@ -720,7 +848,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                           decoration: BoxDecoration(
                             color: Colors.orange.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                            border: Border.all(
+                              color: Colors.orange.withOpacity(0.3),
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -747,13 +877,16 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                         ),
                         _buildInfoRow(
                           'Costo ingredientes',
-                          _highPrecisionCurrencyFormatter.format(costoIngredientes),
+                          _highPrecisionCurrencyFormatter.format(
+                            costoIngredientes,
+                          ),
                           valueColor: Colors.blue,
                         ),
                         _buildInfoRow(
                           'Margen bruto',
                           _currencyFormatter.format(margenReal),
-                          valueColor: margenReal >= 0 ? Colors.green : Colors.red,
+                          valueColor:
+                              margenReal >= 0 ? Colors.green : Colors.red,
                         ),
                         _buildInfoRow(
                           'Margen %',
@@ -786,7 +919,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                               onPressed: () => _verHistorialCostos(producto),
                               icon: const Icon(Icons.history, size: 18),
                               label: const Text('Historial'),
-                              style: OutlinedButton.styleFrom(foregroundColor: Colors.blue),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue,
+                              ),
                             ),
                           ),
                         ],
@@ -803,15 +938,14 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
               ],
             ),
       );
-      
+
       print('✅ Diálogo de detalles mostrado exitosamente');
-      
     } catch (e) {
       // Cerrar diálogo de carga si está abierto
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
-      
+
       print('❌ Error en _verDetallesProducto: $e');
       _showErrorSnackBar('Error al cargar detalles del producto: $e');
     }
@@ -900,28 +1034,35 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
               const SizedBox(width: 8),
               Text(
                 'Ingredientes Detallados (${ingredientes.length})',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 8),
-        
+
         // Lista de ingredientes
         ...ingredientes.map((ingrediente) {
           final costoTotal = ingrediente['costo_total'] ?? 0.0;
           final cantidadRequerida = ingrediente['cantidad_requerida'] ?? 0.0;
           final costoUnitario = ingrediente['costo_unitario_promedio'] ?? 0.0;
           final unidadReceta = ingrediente['unidad_receta'] ?? '';
-          
+
           // Información de conversiones
-          final cantidadEnUnidadBase = ingrediente['cantidad_en_unidad_base'] ?? cantidadRequerida;
+          final cantidadEnUnidadBase =
+              ingrediente['cantidad_en_unidad_base'] ?? cantidadRequerida;
           final unidadProducto = ingrediente['unidad_producto'] ?? unidadReceta;
-          final cantidadPorPresentacion = ingrediente['cantidad_por_presentacion'] ?? 1.0;
-          final cantidadEnPresentaciones = ingrediente['cantidad_en_presentaciones'] ?? cantidadRequerida;
-          final conversionAplicada = ingrediente['conversion_aplicada'] ?? false;
+          final cantidadPorPresentacion =
+              ingrediente['cantidad_por_presentacion'] ?? 1.0;
+          final cantidadEnPresentaciones =
+              ingrediente['cantidad_en_presentaciones'] ?? cantidadRequerida;
+          final conversionAplicada =
+              ingrediente['conversion_aplicada'] ?? false;
           final factorConversion = ingrediente['factor_conversion'] ?? 1.0;
-          
+
           return Card(
             margin: const EdgeInsets.only(bottom: 8),
             child: Padding(
@@ -935,19 +1076,29 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                       Expanded(
                         child: Text(
                           '${ingrediente['denominacion'] ?? ingrediente['sku'] ?? 'Ingrediente'}',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       if (conversionAplicada)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.orange.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             'CONVERTIDO',
-                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.orange[700]),
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange[700],
+                            ),
                           ),
                         ),
                     ],
@@ -957,7 +1108,7 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 8),
-                  
+
                   // Información de cantidades y conversiones
                   Container(
                     padding: const EdgeInsets.all(8),
@@ -973,23 +1124,52 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                             Icon(Icons.scale, size: 16, color: Colors.blue),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text('Cantidad en receta:', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                              child: Text(
+                                'Cantidad en receta:',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
                             ),
-                            Text('$cantidadRequerida $unidadReceta', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text(
+                              '$cantidadRequerida $unidadReceta',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
-                        
+
                         // Conversión de unidades (si aplica)
                         if (conversionAplicada) ...[
                           const SizedBox(height: 4),
                           Row(
                             children: [
-                              Icon(Icons.transform, size: 16, color: Colors.orange),
+                              Icon(
+                                Icons.transform,
+                                size: 16,
+                                color: Colors.orange,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Text('Cantidad en unidad base:', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                                child: Text(
+                                  'Cantidad en unidad base:',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
                               ),
-                              Text('$cantidadEnUnidadBase $unidadProducto', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange[700])),
+                              Text(
+                                '$cantidadEnUnidadBase $unidadProducto',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange[700],
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 2),
@@ -997,23 +1177,52 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                             children: [
                               const SizedBox(width: 24),
                               Expanded(
-                                child: Text('Factor de conversión:', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+                                child: Text(
+                                  'Factor de conversión:',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
                               ),
-                              Text('×${factorConversion.toStringAsFixed(3)}', style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+                              Text(
+                                '×${factorConversion.toStringAsFixed(3)}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
                             ],
                           ),
                         ],
-                        
+
                         // Cantidad en presentaciones
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            Icon(Icons.inventory_2, size: 16, color: Colors.green),
+                            Icon(
+                              Icons.inventory_2,
+                              size: 16,
+                              color: Colors.green,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text('Cantidad en presentaciones:', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                              child: Text(
+                                'Cantidad en presentaciones:',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
                             ),
-                            Text('${cantidadEnPresentaciones.toStringAsFixed(3)} pres.', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green[700])),
+                            Text(
+                              '${cantidadEnPresentaciones.toStringAsFixed(3)} pres.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[700],
+                              ),
+                            ),
                           ],
                         ),
                         if (cantidadPorPresentacion != 1.0) ...[
@@ -1022,18 +1231,30 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                             children: [
                               const SizedBox(width: 24),
                               Expanded(
-                                child: Text('Unidades por presentación:', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+                                child: Text(
+                                  'Unidades por presentación:',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
                               ),
-                              Text('$cantidadPorPresentacion $unidadProducto', style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+                              Text(
+                                '$cantidadPorPresentacion $unidadProducto',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
                             ],
                           ),
                         ],
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(height: 8),
-                  
+
                   // Información de costos
                   Row(
                     children: [
@@ -1041,8 +1262,23 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Costo por ${unidadProducto}:', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                            Text(_highPrecisionCurrencyFormatter.format(ingrediente['costo_por_unidad_base'] ?? costoUnitario), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text(
+                              'Costo por ${unidadProducto}:',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            Text(
+                              _highPrecisionCurrencyFormatter.format(
+                                ingrediente['costo_por_unidad_base'] ??
+                                    costoUnitario,
+                              ),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -1050,8 +1286,24 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Costo presentación:', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                            Text(_highPrecisionCurrencyFormatter.format(ingrediente['costo_presentacion_completa'] ?? costoUnitario), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[700])),
+                            Text(
+                              'Costo presentación:',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            Text(
+                              _highPrecisionCurrencyFormatter.format(
+                                ingrediente['costo_presentacion_completa'] ??
+                                    costoUnitario,
+                              ),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[700],
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -1059,26 +1311,53 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Costo total:', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                            Text(_highPrecisionCurrencyFormatter.format(costoTotal), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green)),
+                            Text(
+                              'Costo total:',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            Text(
+                              _highPrecisionCurrencyFormatter.format(
+                                costoTotal,
+                              ),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 4),
-                  
+
                   // Participación en el costo total
                   Row(
                     children: [
                       Icon(Icons.pie_chart, size: 16, color: Colors.purple),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text('Participación en receta:', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                        child: Text(
+                          'Participación en receta:',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                        ),
                       ),
-                      Text('${(costoTotal / ingredientes.fold<double>(0.0, (sum, ing) => sum + (ing['costo_total'] ?? 0.0)) * 100).toStringAsFixed(1)}%', 
-                           style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.purple)),
+                      Text(
+                        '${(costoTotal / ingredientes.fold<double>(0.0, (sum, ing) => sum + (ing['costo_total'] ?? 0.0)) * 100).toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -1218,7 +1497,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
   void _calcularCostoProducto(Map<String, dynamic> producto) async {
     try {
       // Obtener costos directos del RestaurantService
-      final costosDirectos = await RestaurantService.getCostosProduccionByPlato(producto['id']);
+      final costosDirectos = await RestaurantService.getCostosProduccionByPlato(
+        producto['id'],
+      );
 
       // Obtener asignaciones de costos del FinancialService
       final asignacionesCostos = await _financialService
@@ -1239,11 +1520,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
       // Por ahora usaremos un estimado basado en el porcentaje de asignación
       for (var asignacion in asignacionesCostos) {
         final porcentaje =
-            (asignacion['porcentaje_asignacion'] ?? 0.0)
-                as double;
+            (asignacion['porcentaje_asignacion'] ?? 0.0) as double;
         // Estimamos un costo indirecto basado en el costo directo y el porcentaje
-        final costoAsignado =
-            costoDirectoTotal * (porcentaje / 100);
+        final costoAsignado = costoDirectoTotal * (porcentaje / 100);
         costoIndirectoTotal += costoAsignado;
       }
 
@@ -1294,7 +1573,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                                 ),
                               ),
                               Text(
-                                _highPrecisionCurrencyFormatter.format(costo['costo_total']),
+                                _highPrecisionCurrencyFormatter.format(
+                                  costo['costo_total'],
+                                ),
                               ),
                             ],
                           ),
@@ -1310,7 +1591,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                             Text(
-                              _highPrecisionCurrencyFormatter.format(costoDirectoTotal),
+                              _highPrecisionCurrencyFormatter.format(
+                                costoDirectoTotal,
+                              ),
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
@@ -1359,7 +1642,11 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                                     '$tipoCosto (${porcentaje.toStringAsFixed(1)}%)',
                                   ),
                                 ),
-                                Text(_highPrecisionCurrencyFormatter.format(costoAsignado)),
+                                Text(
+                                  _highPrecisionCurrencyFormatter.format(
+                                    costoAsignado,
+                                  ),
+                                ),
                               ],
                             ),
                           );
@@ -1376,7 +1663,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                               Text(
-                                _highPrecisionCurrencyFormatter.format(costoIndirectoTotal),
+                                _highPrecisionCurrencyFormatter.format(
+                                  costoIndirectoTotal,
+                                ),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -1435,7 +1724,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
                             ),
                           ),
                           Text(
-                            _highPrecisionCurrencyFormatter.format(precioSugerido),
+                            _highPrecisionCurrencyFormatter.format(
+                              precioSugerido,
+                            ),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.green,
@@ -1594,7 +1885,9 @@ class _ProductionCostsScreenState extends State<ProductionCostsScreen>
       _productos = testProductos;
       _showingTestData = true;
     });
-    print('✅ Datos de prueba creados: ${testProductos.length} productos elaborados');
+    print(
+      '✅ Datos de prueba creados: ${testProductos.length} productos elaborados',
+    );
   }
 
   double? _parseDoubleSafely(dynamic value) {
