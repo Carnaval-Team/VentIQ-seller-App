@@ -12,6 +12,8 @@ import '../models/warehouse.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/currency_converter_widget.dart';
 import '../widgets/currency_info_widget.dart';
+import '../widgets/product_selector_widget.dart';
+import '../services/product_search_service.dart';
 import '../utils/presentation_converter.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
@@ -39,8 +41,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   double? _currentExchangeRate; // Tasa de cambio actual
   double? _totalAmountInCUP; // Monto total convertido a CUP
   bool _showCurrencyConverter = false; // Mostrar/ocultar convertidor
-  List<Product> _availableProducts = [];
-  List<Product> _filteredProducts = [];
   List<Map<String, dynamic>> _selectedProducts = [];
   List<Map<String, dynamic>> _motivoOptions = [];
   Map<String, dynamic>? _selectedMotivo;
@@ -55,7 +55,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProducts();
     _loadMotivoOptions();
     _loadWarehouses();
     _loadExchangeRate();
@@ -133,28 +132,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   void _onSearchChanged() {
     setState(() {
       _searchQuery = _searchController.text;
-      _filterProducts();
     });
-  }
-
-  void _filterProducts() {
-    // Apply search filter to available products (no location filtering here)
-    if (_searchQuery.isEmpty) {
-      _filteredProducts = List.from(_availableProducts);
-    } else {
-      _filteredProducts =
-          _availableProducts.where((product) {
-            return product.name.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                ) ||
-                product.sku.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                ) ||
-                product.brand.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                );
-          }).toList();
-    }
   }
 
   Future<void> _loadMotivoOptions() async {
@@ -214,25 +192,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al cargar almacenes: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadProducts() async {
-    try {
-      setState(() => _isLoadingProducts = true);
-      final products = await ProductService.getProductsByTienda();
-      setState(() {
-        _availableProducts = products;
-        _filteredProducts = products;
-        _isLoadingProducts = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingProducts = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar productos: $e')),
         );
       }
     }
@@ -562,48 +521,55 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _searchController,
-              decoration: const InputDecoration(
-                labelText: 'Buscar productos',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
             SizedBox(
               height: 300,
-              child:
-                  _isLoadingProducts
-                      ? const Center(child: CircularProgressIndicator())
-                      : ListView.builder(
-                        itemCount: _filteredProducts.length,
-                        itemBuilder: (context, index) {
-                          final product = _filteredProducts[index];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: AppColors.primary.withOpacity(
-                                0.1,
-                              ),
-                              child: Icon(
-                                Icons.inventory_2,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                            title: Text(product.name),
-                            subtitle: Text(
-                              'SKU: ${product.sku} | Marca: ${product.brand}',
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(
-                                Icons.add_circle,
-                                color: AppColors.primary,
-                              ),
-                              onPressed: () => _addProductToReception(product),
-                            ),
-                          );
-                        },
-                      ),
+              child: ProductSelectorWidget(
+                searchType: ProductSearchType.all,
+                requireInventory: false, // ✅ Permite productos sin inventario
+                searchHint: 'Buscar productos para recibir...',
+                onProductSelected: (productData) {
+                  // Convertir Map a Product para mantener compatibilidad
+                  final product = Product(
+                    id: productData['id']?.toString() ?? '',
+                    name:
+                        productData['denominacion'] ??
+                        productData['nombre_producto'] ??
+                        'Sin nombre',
+                    denominacion:
+                        productData['denominacion'] ??
+                        productData['nombre_producto'] ??
+                        'Sin nombre',
+                    description: productData['descripcion'] ?? '',
+                    categoryId: productData['id_categoria']?.toString() ?? '',
+                    categoryName: productData['categoria_nombre'] ?? '',
+                    brand: '', // No disponible en nueva estructura
+                    sku: productData['sku'] ?? '',
+                    barcode: productData['codigo_barras'] ?? '',
+                    basePrice:
+                        (productData['precio_venta_cup'] as num?)?.toDouble() ??
+                        0.0,
+                    imageUrl: '', // No disponible en nueva estructura
+                    createdAt: DateTime.now(), // Valor por defecto
+                    updatedAt: DateTime.now(), // Valor por defecto
+                    // Campos específicos de la nueva estructura
+                    um: productData['um'],
+                    precioVenta:
+                        (productData['precio_venta_cup'] as num?)?.toDouble() ??
+                        0.0,
+                    esVendible: productData['es_vendible'] ?? true,
+                    esElaborado: productData['es_elaborado'] ?? false,
+                    presentaciones:
+                        (productData['presentaciones'] as List?)
+                            ?.cast<Map<String, dynamic>>() ??
+                        [],
+                    variantesDisponibles:
+                        (productData['variantes_disponibles'] as List?)
+                            ?.cast<Map<String, dynamic>>() ??
+                        [],
+                  );
+                  _addProductToReception(product);
+                },
+              ),
             ),
           ],
         ),
@@ -634,9 +600,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: _getFilteredSelectedProducts().length,
+                itemCount: _selectedProducts.length,
                 itemBuilder: (context, index) {
-                  final item = _getFilteredSelectedProducts()[index];
+                  final item = _selectedProducts[index];
                   final originalIndex = _selectedProducts.indexOf(item);
                   return ListTile(
                     title: Text(
@@ -781,7 +747,8 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       }
     } else {
       final currencySymbol = _getCurrencySymbol(_selectedCurrency);
-      precioText = 'Precio: $currencySymbol${precio.toStringAsFixed(2)} $_selectedCurrency';
+      precioText =
+          'Precio: $currencySymbol${precio.toStringAsFixed(2)} $_selectedCurrency';
       if (_currentExchangeRate != null && _currentExchangeRate! > 0) {
         final precioCUP = precio * _currentExchangeRate!;
         precioText += ' (≈ ${precioCUP.toStringAsFixed(2)} CUP)';
@@ -1004,12 +971,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     return warehouse.name;
   }
 
-  List<Map<String, dynamic>> _getFilteredSelectedProducts() {
-    // Always show all selected products - don't filter by location here
-    // The location filtering will be applied when sending to backend
-    return _selectedProducts;
-  }
-
   String _buildVariantInfo(Map<String, dynamic> item) {
     List<String> variantParts = [];
 
@@ -1048,124 +1009,12 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     if (variantParts.isEmpty) {
       // Add variant information if available
       if (item['id_variante'] != null) {
-        final productId = item['id_producto']?.toString();
-        if (productId != null) {
-          try {
-            final product = _availableProducts.firstWhere(
-              (p) => p.id == productId,
-            );
-
-            // Search in variantesDisponibles first
-            bool found = false;
-            for (final varianteDisponible in product.variantesDisponibles) {
-              if (varianteDisponible['variante'] != null &&
-                  varianteDisponible['variante']['id']?.toString() ==
-                      item['id_variante']?.toString()) {
-                final atributo =
-                    varianteDisponible['variante']['atributo']?['denominacion'] ??
-                    varianteDisponible['variante']['atributo']?['label'] ??
-                    '';
-
-                // Check if there's a matching option
-                if (item['id_opcion_variante'] != null &&
-                    varianteDisponible['variante']['opciones'] != null) {
-                  final opciones =
-                      varianteDisponible['variante']['opciones']
-                          as List<dynamic>;
-                  for (final opcion in opciones) {
-                    if (opcion['id']?.toString() ==
-                        item['id_opcion_variante']?.toString()) {
-                      final opcionValor = opcion['valor'] ?? '';
-                      if (atributo.isNotEmpty && opcionValor.isNotEmpty) {
-                        variantParts.add('$atributo: $opcionValor');
-                      }
-                      found = true;
-                      break;
-                    }
-                  }
-                } else if (atributo.isNotEmpty) {
-                  variantParts.add(atributo);
-                  found = true;
-                }
-
-                if (found) break;
-              }
-            }
-
-            // Fallback to inventario if not found in variantesDisponibles
-            if (!found) {
-              for (final inv in product.inventario) {
-                if (inv['variante'] != null &&
-                    inv['variante']['id']?.toString() ==
-                        item['id_variante']?.toString()) {
-                  final atributo = inv['variante']['atributo']?['label'] ?? '';
-                  final opcion = inv['variante']['opcion']?['valor'] ?? '';
-                  if (atributo.isNotEmpty && opcion.isNotEmpty) {
-                    variantParts.add('$atributo: $opcion');
-                  }
-                  break;
-                }
-              }
-            }
-          } catch (e) {
-            print('Error finding product for variant info: $e');
-          }
-        }
-      }
-
-      // Add presentation information if available
-      if (item['id_presentacion'] != null) {
-        final productId = item['id_producto']?.toString();
-        if (productId != null) {
-          try {
-            final product = _availableProducts.firstWhere(
-              (p) => p.id == productId,
-            );
-
-            // Search in presentaciones first
-            bool found = false;
-            for (final presentation in product.presentaciones) {
-              if (presentation['id']?.toString() ==
-                  item['id_presentacion']?.toString()) {
-                final denominacion =
-                    presentation['denominacion'] ??
-                    presentation['presentacion'] ??
-                    presentation['nombre'] ??
-                    presentation['tipo'] ??
-                    '';
-                final cantidad = presentation['cantidad'] ?? 1;
-                if (denominacion.isNotEmpty) {
-                  variantParts.add(
-                    'Presentación: $denominacion (${cantidad}x)',
-                  );
-                }
-                found = true;
-                break;
-              }
-            }
-
-            // Fallback to inventario if not found in presentaciones
-            if (!found) {
-              for (final inv in product.inventario) {
-                if (inv['presentacion'] != null &&
-                    inv['presentacion']['id']?.toString() ==
-                        item['id_presentacion']?.toString()) {
-                  final denominacion =
-                      inv['presentacion']['denominacion'] ?? '';
-                  final cantidad = inv['presentacion']['cantidad'] ?? 1;
-                  if (denominacion.isNotEmpty) {
-                    variantParts.add(
-                      'Presentación: $denominacion (${cantidad}x)',
-                    );
-                  }
-                  break;
-                }
-              }
-            }
-          } catch (e) {
-            print('Error finding product for presentation info: $e');
-          }
-        }
+        // Since we no longer have _availableProducts loaded, we'll skip this fallback
+        // The variant info should come from the ProductSelectorWidget data
+        // If needed, we can make an individual product query here
+        print(
+          '⚠️ Variant info fallback skipped - data should come from ProductSelectorWidget',
+        );
       }
     }
 
