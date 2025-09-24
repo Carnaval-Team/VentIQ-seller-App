@@ -436,6 +436,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final estadoNombre = operation['estado_nombre'] ?? 'Sin estado';
     final observaciones = operation['observaciones'] ?? '';
 
+    // Debug: Log the exact status we're getting from the database
+    print('📋 Operation Card - ID: ${operation['id']}, Estado: "$estadoNombre"');
+
     // Determine operation type icon and color
     IconData operationIcon;
     Color operationColor;
@@ -576,19 +579,77 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   }
 
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pendiente':
-        return Colors.orange;
-      case 'completado':
-      case 'aprobado':
-        return Colors.green;
-      case 'cancelado':
-      case 'rechazado':
-        return Colors.red;
-      default:
-        return Colors.grey;
+    final statusLower = status.toLowerCase().trim();
+    
+    // Debug: Print the status to see what we're getting
+    print('🎨 Getting color for status: "$status" (normalized: "$statusLower")');
+    
+    // Pendiente/En proceso - Amber (más vibrante que orange)
+    if (statusLower.contains('pendiente') || 
+        statusLower.contains('pending') || 
+        statusLower.contains('en proceso') || 
+        statusLower.contains('proceso') ||
+        statusLower.contains('esperando') ||
+        statusLower.contains('waiting')) {
+      print('   → Amber (Pendiente)');
+      return Colors.amber[700] ?? Colors.amber;
     }
-  }
+    
+    // Completado/Aprobado - Green más vibrante
+    if (statusLower.contains('completada') || 
+        statusLower.contains('completed') || 
+        statusLower.contains('aprobado') || 
+        statusLower.contains('approved') ||
+        statusLower.contains('finalizado') ||
+        statusLower.contains('terminado') ||
+        statusLower.contains('exitoso')) {
+      print('   → Green (Completado)');
+      return Colors.green[600] ?? Colors.green;
+    }
+    
+    // Cancelado/Rechazado - Red más vibrante
+    if (statusLower.contains('cancelada') || 
+        statusLower.contains('cancelled') || 
+        statusLower.contains('canceled') ||
+        statusLower.contains('rechazado') || 
+        statusLower.contains('rejected') ||
+        statusLower.contains('anulado') ||
+        statusLower.contains('eliminado')) {
+      print('   → Red (Cancelado)');
+      return Colors.red[600] ?? Colors.red;
+    }
+    
+    // En revisión/Verificación - Blue más vibrante
+    if (statusLower.contains('revision') || 
+        statusLower.contains('verificacion') || 
+        statusLower.contains('verificación') ||
+        statusLower.contains('review') ||
+        statusLower.contains('checking')) {
+      print('   → Blue (En revisión)');
+      return Colors.blue[600] ?? Colors.blue;
+    }
+    
+    // Error/Fallido - Deep Orange más vibrante
+    if (statusLower.contains('error') || 
+        statusLower.contains('fallida') || 
+        statusLower.contains('failed') ||
+        statusLower.contains('fallo')) {
+      print('   → Deep Orange (Error)');
+      return Colors.deepOrange[600] ?? Colors.deepOrange;
+    }
+    
+    // Iniciado/Activo - Teal
+    if (statusLower.contains('iniciada') || 
+        statusLower.contains('activo') || 
+        statusLower.contains('active') ||
+        statusLower.contains('started')) {
+      print('   → Teal (Activo)');
+      return Colors.teal[600] ?? Colors.teal;
+    }
+    
+    // Default - Grey más oscuro para mejor contraste
+    print('   → Grey (Default) - Status not recognized');
+    return Colors.blueGrey[600] ?? Colors.blueGrey;  }
 
   Widget _buildPagination() {
     if (_totalCount <= _itemsPerPage) return const SizedBox.shrink();
@@ -756,6 +817,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                             if (_shouldShowCompleteButton(operation)) ...[
                               const SizedBox(height: 24),
                               _buildCompleteButton(operation),
+                            ],
+
+                            // Show cancel button for pending operations
+                            if (_shouldShowCancelButton(operation)) ...[
+                              const SizedBox(height: 12),
+                              _buildCancelButton(operation),
                             ],
                           ],
                         ),
@@ -1151,6 +1218,28 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return (isReception || isExtraction) && isPending;
   }
 
+  bool _shouldShowCancelButton(Map<String, dynamic> operation) {
+    // Show cancel button only for pending operations
+    String estado = operation['estado_nombre']?.toString().toLowerCase() ?? '';
+
+    // Debug logging
+    print('🔍 Checking cancel button for operation:');
+    print('   - ID: ${operation['id']}');
+    print('   - Estado: "$estado"');
+
+    // Check for different variations of pending status
+    bool isPending =
+        estado.contains('pendiente') ||
+        estado.contains('pending') ||
+        estado.contains('en proceso') ||
+        estado.contains('proceso');
+
+    print('   - Is pending: $isPending');
+    print('   - Should show cancel button: $isPending');
+
+    return isPending;
+  }
+
   Widget _buildCompleteButton(Map<String, dynamic> operation) {
     return Container(
       width: double.infinity,
@@ -1161,6 +1250,22 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.green,
           foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCancelButton(Map<String, dynamic> operation) {
+    return Container(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () => _showCancelOperationDialog(operation),
+        icon: const Icon(Icons.cancel_outlined),
+        label: const Text('Cancelar Operación'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.red,
+          side: const BorderSide(color: Colors.red),
           padding: const EdgeInsets.symmetric(vertical: 12),
         ),
       ),
@@ -1279,6 +1384,148 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           SnackBar(
             content: Text(
               result['message'] ?? 'Error al completar la operación',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog if still open
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _showCancelOperationDialog(Map<String, dynamic> operation) {
+    final commentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.cancel_outlined, color: Colors.red, size: 24),
+                const SizedBox(width: 8),
+                const Text('Cancelar Operación'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '¿Está seguro de cancelar la operación #${operation['id']}?',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Esta acción no se puede deshacer.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.red,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: commentController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo de cancelación',
+                    hintText: 'Ingrese el motivo por el cual cancela la operación',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('No, mantener'),
+              ),
+              ElevatedButton(
+                onPressed:
+                    () => _cancelOperation(operation, commentController.text),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Sí, cancelar'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Future<void> _cancelOperation(
+    Map<String, dynamic> operation,
+    String comment,
+  ) async {
+    try {
+      Navigator.pop(context); // Close dialog
+
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => const AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 16),
+                  Text('Cancelando operación...'),
+                ],
+              ),
+            ),
+      );
+
+      // Get user UUID from preferences
+      final userUuid = await UserPreferencesService().getUserId();
+      if (userUuid == null) {
+        throw Exception('No se pudo obtener el UUID del usuario');
+      }
+
+      // Call the cancellation function
+      final operationId = operation['id'];
+      if (operationId == null) {
+        throw Exception('ID de operación no válido');
+      }
+
+      final result = await InventoryService.cancelOperation(
+        idOperacion:
+            operationId is int
+                ? operationId
+                : int.parse(operationId.toString()),
+        comentario:
+            comment.isEmpty ? 'Operación cancelada desde la app' : comment,
+        uuid: userUuid,
+      );
+
+      Navigator.pop(context); // Close loading dialog
+
+      if (result['status'] == 'success') {
+        // Close the detail modal
+        Navigator.pop(context);
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['mensaje'] ?? 'Operación cancelada exitosamente',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+
+        // Refresh the operations list
+        _loadOperations();
+      } else {
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['message'] ?? 'Error al cancelar la operación',
             ),
             backgroundColor: Colors.red,
           ),

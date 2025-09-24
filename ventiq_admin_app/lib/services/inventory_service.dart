@@ -2109,6 +2109,60 @@ class InventoryService {
     }
   }
 
+  /// Cancel an operation by inserting a record in app_dat_estado_operacion with estado = 3
+  static Future<Map<String, dynamic>> cancelOperation({
+    required int idOperacion,
+    required String comentario,
+    required String uuid,
+  }) async {
+    try {
+      print('🚫 Cancelando operación $idOperacion...');
+      print('📋 Parámetros:');
+      print('   - id_operacion: $idOperacion');
+      print('   - estado: 3 (cancelado)');
+      print('   - comentario: $comentario');
+      print('   - uuid: $uuid');
+
+      // Insert record in app_dat_estado_operacion with estado = 3 (cancelado)
+      final response = await _supabase
+          .from('app_dat_estado_operacion')
+          .insert({
+            'id_operacion': idOperacion,
+            'estado': 3, // 3 = Cancelado
+            'uuid': uuid,
+            'comentario': comentario.isEmpty ? 'Operación cancelada desde la app' : comentario,
+          })
+          .select()
+          .single();
+
+      print('✅ Operación $idOperacion cancelada exitosamente');
+      print('📦 Respuesta insert: $response');
+      
+      return {
+        'status': 'success',
+        'mensaje': 'Operación cancelada exitosamente',
+        'data': response,
+      };
+    } catch (e) {
+      print('❌ ERROR DETALLADO cancelando operación $idOperacion:');
+      print('   - Error: $e');
+      print('   - Tipo de error: ${e.runtimeType}');
+      print('   - Stack trace: ${StackTrace.current}');
+
+      // Si es un error de PostgreSQL, mostrar más detalles
+      if (e.toString().contains('PostgrestException')) {
+        print('   - Es un error de PostgreSQL');
+      }
+
+      return {
+        'status': 'error',
+        'message': 'Error cancelando operación: $e',
+        'error': e.toString(),
+        'error_type': e.runtimeType.toString(),
+      };
+    }
+  }
+
   /// Convierte cantidad de ingrediente a unidades de inventario
   static Future<double> _convertirCantidadAInventario({
     required double cantidadNecesaria,
