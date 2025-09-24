@@ -79,11 +79,14 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           pagina: _currentPage,
         );
 
+        // Group products to eliminate duplicates
+        List<InventoryProduct> groupedProducts = _groupProducts(response.products);
+
         setState(() {
           if (reset) {
-            _inventoryProducts = response.products;
+            _inventoryProducts = groupedProducts;
           } else {
-            _inventoryProducts.addAll(response.products);
+            _inventoryProducts.addAll(groupedProducts);
           }
           _inventorySummary = response.summary;
           _paginationInfo = response.pagination;
@@ -93,7 +96,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         });
 
         print(
-          '✅ Loaded ${response.products.length} products (page $_currentPage)',
+          '✅ Loaded ${response.products.length} raw products, grouped to ${groupedProducts.length} unique products (page $_currentPage)',
         );
       } else {
         print('🔍 Loading inventory summary view...');
@@ -127,6 +130,72 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         _isLoadingMore = false;
       });
     }
+  }
+
+  List<InventoryProduct> _groupProducts(List<InventoryProduct> products) {
+    print('🔄 Grouping ${products.length} products to eliminate duplicates...');
+    
+    Map<String, InventoryProduct> groupedMap = {};
+    
+    for (final product in products) {
+      final presentationKey = product.idPresentacion?.toString() ?? 'base';
+      final uniqueKey = '${product.id}_${product.idUbicacion}';
+      
+      if (groupedMap.containsKey(uniqueKey)) {
+        final existing = groupedMap[uniqueKey]!;
+        
+        // Sum quantities
+        final newStockDisponible = existing.stockDisponible + product.stockDisponible;
+        final newStockReservado = existing.stockReservado + product.stockReservado;
+        final newCantidadFinal = existing.cantidadFinal + product.cantidadFinal;
+        
+        // Update existing product with summed quantities
+        groupedMap[uniqueKey] = InventoryProduct(
+          id: existing.id,
+          nombreProducto: existing.nombreProducto,
+          skuProducto: existing.skuProducto,
+          idCategoria: existing.idCategoria,
+          categoria: existing.categoria,
+          idSubcategoria: existing.idSubcategoria,
+          subcategoria: existing.subcategoria,
+          idTienda: existing.idTienda,
+          tienda: existing.tienda,
+          idAlmacen: existing.idAlmacen,
+          almacen: existing.almacen,
+          idUbicacion: existing.idUbicacion,
+          ubicacion: existing.ubicacion,
+          idVariante: existing.idVariante,
+          variante: existing.variante,
+          idOpcionVariante: existing.idOpcionVariante,
+          opcionVariante: existing.opcionVariante,
+          idPresentacion: existing.idPresentacion,
+          presentacion: existing.presentacion,
+          cantidadInicial: existing.cantidadInicial + product.cantidadInicial,
+          cantidadFinal: newCantidadFinal,
+          stockDisponible: newStockDisponible,
+          stockReservado: newStockReservado,
+          stockDisponibleAjustado: existing.stockDisponibleAjustado + product.stockDisponibleAjustado,
+          esVendible: existing.esVendible,
+          esInventariable: existing.esInventariable,
+          esElaborado: existing.esElaborado,
+          precioVenta: existing.precioVenta,
+          costoPromedio: existing.costoPromedio,
+          margenActual: existing.margenActual,
+          clasificacionAbc: existing.clasificacionAbc,
+          abcDescripcion: existing.abcDescripcion,
+          fechaUltimaActualizacion: existing.fechaUltimaActualizacion,
+          totalCount: existing.totalCount,
+          resumenInventario: existing.resumenInventario,
+          infoPaginacion: existing.infoPaginacion,
+        );
+      } else {
+        groupedMap[uniqueKey] = product;
+      }
+    }
+    
+    final result = groupedMap.values.toList();
+    print('✅ Grouped ${products.length} products into ${result.length} unique items');
+    return result;
   }
 
   Future<void> _loadNextPage() async {

@@ -807,6 +807,33 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
+  String _getProductName(Map<String, dynamic> item) {
+    // Intentar múltiples campos para obtener el nombre del producto
+    final possibleNames = [
+      item['denominacion'],
+      item['nombre_producto'],
+      item['producto_nombre'],
+      item['producto'],
+      item['name'],
+      item['nombre'],
+      item['descripcion'],
+    ];
+    
+    for (final name in possibleNames) {
+      if (name != null && name.toString().trim().isNotEmpty) {
+        return name.toString().trim();
+      }
+    }
+    
+    // Si no se encuentra nombre, usar ID del producto si está disponible
+    final productId = item['id_producto'] ?? item['producto_id'] ?? item['id'];
+    if (productId != null) {
+      return 'Producto ID: $productId';
+    }
+    
+    return 'Producto sin nombre';
+  }
+
   Widget _buildFormattedDetails(dynamic detalles) {
     if (detalles == null) return const Text('Sin detalles específicos');
 
@@ -928,9 +955,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                item['nombre_producto'] ??
-                                    item['producto'] ??
-                                    'Producto',
+                                _getProductName(item),
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
