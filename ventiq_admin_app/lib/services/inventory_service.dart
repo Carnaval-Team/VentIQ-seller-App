@@ -905,7 +905,7 @@ class InventoryService {
                 print('🔍 DEBUG CONVERSIÓN:');
                 print('   - unidadIngrediente: "$unidadIngrediente"');
                 print('   - unidadProductoId: $unidadProductoId');
-                print('   - requiredQuantity: $requiredQuantity'); 
+                print('   - requiredQuantity: $requiredQuantity');
                 print('   - ingredient keys: ${ingredient.keys.toList()}');
                 if (unidadIngrediente.isNotEmpty && unidadProductoId != null) {
                   final unidadIngredienteId = await _mapUnidadStringToId(
@@ -1669,11 +1669,35 @@ class InventoryService {
   /// Get inventory summary by user using fn_inventario_resumen_por_usuario RPC
   /// Returns aggregated inventory data with product names, variants, and location/presentation counts
   static Future<List<InventorySummaryByUser>>
-  getInventorySummaryByUser() async {
+  getInventorySummaryByUser(
+    int? idAlmacen,
+    String? busqueda,
+  ) async {
     try {
+      final userData = await _prefsService.getUserData();
+      final idTiendaRaw = userData['idTienda'];
+      final idTienda =
+          idTiendaRaw is int
+              ? idTiendaRaw
+              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+
+      if (idTienda == null) {
+        throw Exception('No se encontró el ID de tienda en las preferencias');
+      }
+
       print('🔍 InventoryService: Getting inventory summary by user...');
 
-      final response = await _supabase.rpc('fn_inventario_resumen_por_usuario');
+      final response = await _supabase.rpc(
+        'fn_inventario_resumen_por_usuario_almacen',
+        params: {
+          'p_id_tienda': idTienda,
+          'p_id_almacen': idAlmacen,
+          'p_busqueda': busqueda,
+          'p_mostrar_sin_stock': true,
+          'p_limite': 9999,
+          'p_pagina':   1,
+        },
+      );
 
       print('📦 Raw response type: ${response.runtimeType}');
       print('📦 Response length: ${response?.length ?? 0}');
@@ -1703,31 +1727,7 @@ class InventoryService {
           /*    print('🔍 Item keys: ${item.keys.toList()}');
           print('🔍 Item values: ${item.values.toList()}');*/
 
-          // Log each field individually
-          /*  print(
-            '  - id_producto: ${item['id_producto']} (${item['id_producto'].runtimeType})',
-          );
-          print(
-            '  - producto_nombre: ${item['producto_nombre']} (${item['producto_nombre'].runtimeType})',
-          );
-          print(
-            '  - variante: ${item['variante']} (${item['variante'].runtimeType})',
-          );
-          print(
-            '  - opcion_variante: ${item['opcion_variante']} (${item['opcion_variante'].runtimeType})',
-          );
-          print(
-            '  - cantidad_total_en_almacen: ${item['cantidad_total_en_almacen']} (${item['cantidad_total_en_almacen'].runtimeType})',
-          );
-          print(
-            '  - zonas_diferentes: ${item['zonas_diferentes']} (${item['zonas_diferentes'].runtimeType})',
-          );
-          print(
-            '  - presentaciones_diferentes: ${item['presentaciones_diferentes']} (${item['presentaciones_diferentes'].runtimeType})',
-          );
-          print(
-            '  - cantidad_total_en_unidades_base: ${item['cantidad_total_en_unidades_base']} (${item['cantidad_total_en_unidades_base'].runtimeType})',
-          );*/
+         
 
           try {
             final summary = InventorySummaryByUser.fromJson(item);
