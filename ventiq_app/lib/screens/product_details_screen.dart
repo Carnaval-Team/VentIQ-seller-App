@@ -802,30 +802,33 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     List<ProductVariant> variants,
   ) {
     final totalStock = _getLocationStock(variants);
+    final locationColor = _getLocationColor(locationName);
+    final locationColorLight = locationColor.withOpacity(0.1);
+    final locationColorSemi = locationColor.withOpacity(0.2);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[300]!, width: 1),
+        border: Border.all(color: locationColor.withOpacity(0.3), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
+            color: locationColor.withOpacity(0.1),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header de la ubicación
+          // Header de la ubicación con color único
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: widget.categoryColor.withOpacity(0.1),
+              color: locationColorLight,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(7),
                 topRight: Radius.circular(7),
@@ -833,7 +836,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             ),
             child: Row(
               children: [
-                Icon(Icons.location_on, color: widget.categoryColor, size: 16),
+                Icon(Icons.location_on, color: locationColor, size: 16),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -841,7 +844,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: widget.categoryColor,
+                      color: locationColor,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -853,7 +856,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: widget.categoryColor.withOpacity(0.2),
+                    color: locationColorSemi,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -861,7 +864,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: widget.categoryColor,
+                      color: locationColor,
                     ),
                   ),
                 ),
@@ -875,7 +878,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               children:
                   variants.map((variant) {
                     final isSelected = variantQuantities[variant]! > 0;
-                    return _buildLocationVariantCard(variant, isSelected);
+                    return _buildLocationVariantCard(variant, isSelected, locationColor);
                   }).toList(),
             ),
           ),
@@ -885,7 +888,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 
   // Método para construir card de variante dentro de una ubicación
-  Widget _buildLocationVariantCard(ProductVariant variant, bool isSelected) {
+  Widget _buildLocationVariantCard(ProductVariant variant, bool isSelected, Color locationColor) {
     int currentQuantity = variantQuantities[variant] ?? 0;
 
     return Container(
@@ -905,28 +908,31 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           decoration: BoxDecoration(
             color:
                 isSelected
-                    ? widget.categoryColor.withOpacity(0.1)
+                    ? locationColor.withOpacity(0.1)
                     : Colors.grey[50],
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: isSelected ? widget.categoryColor : Colors.grey[300]!,
+              color: isSelected ? locationColor : Colors.grey[300]!,
               width: isSelected ? 1.5 : 1,
             ),
           ),
           child: Row(
             children: [
-              // Imagen pequeña de la variante
+              // Imagen pequeña de la variante con color de ubicación
               Container(
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(4),
-                  color: Colors.grey[100],
-                  border: Border.all(color: Colors.grey[300]!, width: 1),
+                  color: isSelected ? locationColor.withOpacity(0.1) : Colors.grey[100],
+                  border: Border.all(
+                    color: isSelected ? locationColor.withOpacity(0.3) : Colors.grey[300]!, 
+                    width: 1
+                  ),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.inventory_2,
-                  color: Colors.grey,
+                  color: isSelected ? locationColor : Colors.grey,
                   size: 16,
                 ),
               ),
@@ -944,7 +950,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                         fontWeight: FontWeight.w600,
                         color:
                             isSelected
-                                ? widget.categoryColor
+                                ? locationColor
                                 : const Color(0xFF1F2937),
                       ),
                       maxLines: 1,
@@ -960,7 +966,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           width: 3,
                           height: 3,
                           decoration: BoxDecoration(
-                            color: Colors.grey[400],
+                            color: isSelected ? locationColor.withOpacity(0.6) : Colors.grey[400],
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -978,13 +984,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   ],
                 ),
               ),
-              // Indicador de selección
+              // Indicador de selección con color de ubicación
               if (isSelected)
                 Container(
                   width: 20,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: widget.categoryColor,
+                    color: locationColor,
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.check, color: Colors.white, size: 12),
@@ -1004,6 +1010,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     String ubicacion, {
     bool isVariant = false,
   }) {
+    final locationColor = _getLocationColor(ubicacion);
     final prices = _calculatePromotionPrices(price);
     final activePromotion = _getActivePromotion();
     final isRecargo =
@@ -1052,7 +1059,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: widget.categoryColor.withOpacity(0.1),
+                  color: locationColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -1060,7 +1067,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: widget.categoryColor,
+                    color: locationColor,
                   ),
                 ),
               ),
@@ -1071,9 +1078,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           Row(
             children: [
               Icon(
-                Icons.location_on_outlined,
+                Icons.location_on,
                 size: 16,
-                color: Colors.grey[600],
+                color: locationColor,
               ),
               const SizedBox(width: 4),
               Expanded(
@@ -1081,8 +1088,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   ubicacion,
                   style: TextStyle(
                     fontSize: 13,
-                    color: Colors.grey[600],
+                    color: locationColor,
                     height: 1.2,
+                    fontWeight: FontWeight.w600,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1110,7 +1118,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             : 'Oferta: \$${PriceUtils.formatDiscountPrice(finalPrice)}',
                         style: TextStyle(
                           fontSize: 13,
-                          color: widget.categoryColor,
+                          color: locationColor,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1120,7 +1128,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     'Precio: \$${price.toStringAsFixed(2)}',
                     style: TextStyle(
                       fontSize: 13,
-                      color: Colors.grey[700],
+                      color: locationColor,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -1551,6 +1559,26 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       print('   ${entry.key}: ${entry.value.length} variantes');
     }
   }
+
+  /// Genera un color único para cada ubicación basado en el color de la categoría
+  Color _getLocationColor(String locationName) {
+    // Crear un hash simple del nombre de la ubicación
+    int hash = locationName.hashCode;
+    
+    // Obtener los componentes RGB del color de la categoría
+    int red = widget.categoryColor.red;
+    int green = widget.categoryColor.green;
+    int blue = widget.categoryColor.blue;
+    
+    // Generar variaciones del color base usando el hash
+    // Usar diferentes operaciones para cada componente RGB
+    int newRed = ((red + (hash % 60) - 30).clamp(50, 255)).toInt();
+    int newGreen = ((green + ((hash >> 8) % 60) - 30).clamp(50, 255)).toInt();
+    int newBlue = ((blue + ((hash >> 16) % 60) - 30).clamp(50, 255)).toInt();
+    
+    return Color.fromARGB(255, newRed, newGreen, newBlue);
+  }
+
 
   /// Get location key from variant's inventory metadata
   String _getLocationKey(ProductVariant variant) {

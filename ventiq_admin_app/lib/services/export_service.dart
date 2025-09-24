@@ -502,9 +502,9 @@ class ExportService {
           // Encabezados de la tabla
           final headers = [
             'Nombre',
-            'Stock Disponible',
-            'Cantidad Inicial',
             'Cantidad Final',
+            'Cantidad Inicial',
+            'Vendido',
             'Precio Venta',
             'Costo Promedio',
           ];
@@ -526,7 +526,7 @@ class ExportService {
               producto['nombre_producto']?.toString() ?? 'Sin nombre',
               (producto['stock_disponible'] ?? 0).toString(),
               (producto['cantidad_inicial'] ?? 0).toString(),
-              (producto['cantidad_final'] ?? 0).toString(),
+              ((producto['cantidad_inicial'] ?? 0) - (producto['stock_disponible'] ?? 0)).toString(),
               '\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}',
               '\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}',
             ];
@@ -713,9 +713,9 @@ class ExportService {
                         decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                         children: [
                           _buildTableHeader('Nombre'),
-                          _buildTableHeader('Stock Disponible'),
+                          _buildTableHeader('Cantidad final'),
                           _buildTableHeader('Cant. Inicial'),
-                          _buildTableHeader('Cant. Final'),
+                          _buildTableHeader('Vendido'),
                           _buildTableHeader('Precio Venta'),
                           _buildTableHeader('Costo Promedio'),
                         ],
@@ -727,7 +727,7 @@ class ExportService {
                           _buildTableCell(producto['nombre_producto']?.toString() ?? 'Sin nombre'),
                           _buildTableCell((producto['stock_disponible'] ?? 0).toString()),
                           _buildTableCell((producto['cantidad_inicial'] ?? 0).toString()),
-                          _buildTableCell((producto['cantidad_final'] ?? 0).toString()),
+                          _buildTableCell(((producto['cantidad_inicial'] ?? 0) - (producto['stock_disponible'] ?? 0)).toString()),
                           _buildTableCell('\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}'),
                           _buildTableCell('\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}'),
                         ],
@@ -885,9 +885,9 @@ class ExportService {
             // Encabezados de la tabla
             final headers = [
               'Nombre',
-              'Stock Disponible',
-              'Cantidad Inicial',
               'Cantidad Final',
+              'Cantidad Inicial',
+              'Vendido',
               'Precio Venta',
               'Costo Promedio USD',
               'Costo Promedio CUP',
@@ -911,7 +911,7 @@ class ExportService {
                 producto['nombre_producto']?.toString() ?? 'Sin nombre',
                 (producto['stock_disponible'] ?? 0).toString(),
                 (producto['cantidad_inicial'] ?? 0).toString(),
-                (producto['cantidad_final'] ?? 0).toString(),
+                ((producto['cantidad_inicial'] ?? 0) - (producto['stock_disponible'] ?? 0)).toString(),
                 '\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}',
                 '\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}',
                 '\$${(producto['costo_promedio_cup'] ?? 0).toStringAsFixed(2)} CUP',
@@ -1081,9 +1081,9 @@ class ExportService {
                           decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                           children: [
                             _buildTableHeader('Nombre'),
-                            _buildTableHeader('Stock Disponible'),
-                            _buildTableHeader('Cant. Inicial'),
                             _buildTableHeader('Cant. Final'),
+                            _buildTableHeader('Cant. Inicial'),
+                            _buildTableHeader('Vendido'),
                             _buildTableHeader('Precio Venta'),
                             _buildTableHeader('Costo USD'),
                             _buildTableHeader('Costo CUP'),
@@ -1097,7 +1097,7 @@ class ExportService {
                             _buildTableCell(producto['nombre_producto']?.toString() ?? 'Sin nombre'),
                             _buildTableCell((producto['stock_disponible'] ?? 0).toString()),
                             _buildTableCell((producto['cantidad_inicial'] ?? 0).toString()),
-                            _buildTableCell((producto['cantidad_final'] ?? 0).toString()),
+                            _buildTableCell((((producto['cantidad_inicial'] ?? 0) - (producto['stock_disponible'] ?? 0)) > 0 ? (((producto['cantidad_inicial'] ?? 0) - (producto['stock_disponible'] ?? 0)).toString()) : 0).toString()),
                             _buildTableCell('\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}'),
                             _buildTableCell('\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}'),
                             _buildTableCell('\$${(producto['costo_promedio_cup'] ?? 0).toStringAsFixed(2)}'),

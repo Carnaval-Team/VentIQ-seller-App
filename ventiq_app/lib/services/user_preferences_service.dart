@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'order_service.dart';
 
 class UserPreferencesService {
-  static final UserPreferencesService _instance = UserPreferencesService._internal();
+  static final UserPreferencesService _instance =
+      UserPreferencesService._internal();
   factory UserPreferencesService() => _instance;
   UserPreferencesService._internal();
 
@@ -11,7 +12,7 @@ class UserPreferencesService {
   static const String _userEmailKey = 'user_email';
   static const String _accessTokenKey = 'access_token';
   static const String _isLoggedInKey = 'is_logged_in';
-  
+
   // Seller data keys
   static const String _idTpvKey = 'id_tpv';
   static const String _idTrabajadorKey = 'id_trabajador';
@@ -21,13 +22,13 @@ class UserPreferencesService {
   static const String _idTiendaKey = 'id_tienda';
   static const String _idRollKey = 'id_roll';
   static const String _appVersionKey = 'app_version';
-  
+
   // Remember me keys
   static const String _rememberMeKey = 'remember_me';
   static const String _savedEmailKey = 'saved_email';
   static const String _savedPasswordKey = 'saved_password';
   static const String _tokenExpiryKey = 'token_expiry';
-  
+
   // Promotion keys
   static const String _promotionIdKey = 'promotion_id';
   static const String _promotionCodeKey = 'promotion_code';
@@ -45,9 +46,10 @@ class UserPreferencesService {
     await prefs.setString(_userEmailKey, email);
     await prefs.setString(_accessTokenKey, accessToken);
     await prefs.setBool(_isLoggedInKey, true);
-    
+
     // Set token expiry (24 hours from now)
-    final expiryTime = DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch;
+    final expiryTime =
+        DateTime.now().add(Duration(hours: 24)).millisecondsSinceEpoch;
     await prefs.setInt(_tokenExpiryKey, expiryTime);
   }
 
@@ -151,14 +153,14 @@ class UserPreferencesService {
     await prefs.remove(_idTiendaKey);
     await prefs.remove(_idRollKey);
     await prefs.setBool(_isLoggedInKey, false);
-    
+
     // Limpiar promociones al cerrar sesión
     await clearPromotionData();
-    
+
     // Limpiar órdenes al cerrar sesión
     await _clearOrdersOnLogout();
   }
-  
+
   // Método privado para limpiar órdenes durante logout
   Future<void> _clearOrdersOnLogout() async {
     try {
@@ -203,7 +205,7 @@ class UserPreferencesService {
       'idRoll': prefs.getInt(_idRollKey),
     };
   }
-  
+
   // Remember Me functionality
   Future<void> saveCredentials(String email, String password) async {
     final prefs = await SharedPreferences.getInstance();
@@ -211,14 +213,14 @@ class UserPreferencesService {
     await prefs.setString(_savedPasswordKey, password);
     await prefs.setBool(_rememberMeKey, true);
   }
-  
+
   Future<void> clearSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_savedEmailKey);
     await prefs.remove(_savedPasswordKey);
     await prefs.setBool(_rememberMeKey, false);
   }
-  
+
   Future<Map<String, String?>> getSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -226,30 +228,33 @@ class UserPreferencesService {
       'password': prefs.getString(_savedPasswordKey),
     };
   }
-  
+
   Future<bool> shouldRememberMe() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_rememberMeKey) ?? false;
   }
-  
+
   // Token validation
   Future<bool> isTokenValid() async {
     final prefs = await SharedPreferences.getInstance();
     final expiryTime = prefs.getInt(_tokenExpiryKey);
     if (expiryTime == null) return false;
-    
+
     final now = DateTime.now().millisecondsSinceEpoch;
     return now < expiryTime;
   }
-  
+
   Future<bool> hasValidSession() async {
     final isLoggedIn = await this.isLoggedIn();
     final hasValidToken = await isTokenValid();
     final accessToken = await getAccessToken();
-    
-    return isLoggedIn && hasValidToken && accessToken != null && accessToken.isNotEmpty;
+
+    return isLoggedIn &&
+        hasValidToken &&
+        accessToken != null &&
+        accessToken.isNotEmpty;
   }
-  
+
   // Promotion management methods
   Future<void> savePromotionData({
     int? idPromocion,
@@ -258,39 +263,39 @@ class UserPreferencesService {
     int? tipoDescuento,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     if (idPromocion != null) {
       await prefs.setInt(_promotionIdKey, idPromocion);
     } else {
       await prefs.remove(_promotionIdKey);
     }
-    
+
     if (codigoPromocion != null) {
       await prefs.setString(_promotionCodeKey, codigoPromocion);
     } else {
       await prefs.remove(_promotionCodeKey);
     }
-    
+
     if (valorDescuento != null) {
       await prefs.setDouble(_promotionValueKey, valorDescuento);
     } else {
       await prefs.remove(_promotionValueKey);
     }
-    
+
     if (tipoDescuento != null) {
       await prefs.setInt(_promotionTypeKey, tipoDescuento);
     } else {
       await prefs.remove(_promotionTypeKey);
     }
   }
-  
+
   Future<Map<String, dynamic>?> getPromotionData() async {
     final prefs = await SharedPreferences.getInstance();
     final idPromocion = prefs.getInt(_promotionIdKey);
     final codigoPromocion = prefs.getString(_promotionCodeKey);
     final valorDescuento = prefs.getDouble(_promotionValueKey);
     final tipoDescuento = prefs.getInt(_promotionTypeKey);
-    
+
     if (idPromocion != null && codigoPromocion != null) {
       return {
         'id_promocion': idPromocion,
@@ -301,7 +306,7 @@ class UserPreferencesService {
     }
     return null;
   }
-  
+
   Future<void> clearPromotionData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_promotionIdKey);

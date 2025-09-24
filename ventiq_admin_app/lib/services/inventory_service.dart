@@ -331,10 +331,10 @@ class InventoryService {
           'p_id_tienda': idTienda,
           'p_id_ubicacion': idUbicacion,
           'p_id_variante': idVariante,
-          'p_limite': limite,
+          'p_limite': 9999,
           'p_mostrar_sin_stock': mostrarSinStock ?? true,
           'p_origen_cambio': origenCambio,
-          'p_pagina': pagina,
+          'p_pagina': 1,
         },
       );
 

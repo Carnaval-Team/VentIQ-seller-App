@@ -75,7 +75,9 @@ class SellerService {
       print('✅ Perfil del trabajador obtenido:');
       print('  - Nombres: ${workerData['nombres']}');
       print('  - Apellidos: ${workerData['apellidos']}');
-      print('  - ID Tienda: ${workerData['id_tienda']} (desde app_dat_trabajadores)');
+      print(
+        '  - ID Tienda: ${workerData['id_tienda']} (desde app_dat_trabajadores)',
+      );
       print('  - ID Roll: ${workerData['id_roll']}');
 
       // 3. Retornar datos combinados con IDs separados
@@ -83,7 +85,8 @@ class SellerService {
         'seller': sellerData,
         'worker': workerData,
         'idTpv': sellerData['id_tpv'], // ID TPV desde app_dat_vendedor
-        'idTienda': workerData['id_tienda'], // ID Tienda desde app_dat_trabajadores
+        'idTienda':
+            workerData['id_tienda'], // ID Tienda desde app_dat_trabajadores
       };
     } catch (e) {
       print('❌ Error en verificación de vendedor: $e');
