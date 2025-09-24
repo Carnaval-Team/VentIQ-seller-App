@@ -3,13 +3,12 @@ import 'package:flutter/services.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
-import '../models/product.dart';
 import '../models/inventory.dart'; // Contains InventoryProduct, InventoryResponse, etc.
-import '../services/product_service.dart';
 import '../services/inventory_service.dart';
 import '../services/warehouse_service.dart';
-import '../services/presentation_service.dart';
 import '../services/user_preferences_service.dart';
+import '../widgets/product_selector_widget.dart';
+import '../services/product_search_service.dart';
 
 class InventoryAdjustmentScreen extends StatefulWidget {
   final int operationType; // 3 para faltante (sumar), 4 para exceso (restar)
@@ -27,14 +26,12 @@ class InventoryAdjustmentScreen extends StatefulWidget {
 
 class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _searchController = TextEditingController();
   final _newQuantityController = TextEditingController();
   final _reasonController = TextEditingController();
   final _observationsController = TextEditingController();
 
-  List<Product> _products = [];
-  List<Product> _filteredProducts = [];
-  Product? _selectedProduct;
+
+  Map<String, dynamic>? _selectedProduct;
   
   List<Map<String, dynamic>> _warehousesWithZones = [];
   Map<String, dynamic>? _selectedZone;
@@ -45,7 +42,6 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
   double? _currentStock;
   
   bool _isLoading = false;
-  bool _isLoadingProducts = false;
   bool _isLoadingZones = false;
   bool _isLoadingPresentations = false;
   bool _isLoadingStock = false;
@@ -53,121 +49,14 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProducts();
+    // Load zones first, then products will be filtered by selected zone
+    _loadInitialZones();
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _newQuantityController.dispose();
-    _reasonController.dispose();
-    _observationsController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadProducts() async {
-    setState(() => _isLoadingProducts = true);
-    try {
-      // Obtener productos con stock disponible usando el servicio real
-      final inventoryResponse = await InventoryService.getInventoryProducts(
-        mostrarSinStock: false, // Solo productos con stock
-        esInventariable: true,  // Solo productos inventariables
-        limite: 100,
-      );
-      
-      // Agrupar productos por ID para evitar duplicados
-      final Map<int, InventoryProduct> uniqueProducts = {};
-      for (final inventoryProduct in inventoryResponse.products) {
-        final productId = inventoryProduct.id;
-        if (!uniqueProducts.containsKey(productId)) {
-          uniqueProducts[productId] = inventoryProduct;
-        } else {
-          // Si ya existe, sumar el stock disponible
-          final existing = uniqueProducts[productId]!;
-          uniqueProducts[productId] = InventoryProduct(
-            id: existing.id,
-            skuProducto: existing.skuProducto,
-            nombreProducto: existing.nombreProducto,
-            idCategoria: existing.idCategoria,
-            categoria: existing.categoria,
-            idSubcategoria: existing.idSubcategoria,
-            subcategoria: existing.subcategoria,
-            idTienda: existing.idTienda,
-            tienda: existing.tienda,
-            idAlmacen: existing.idAlmacen,
-            almacen: existing.almacen,
-            idUbicacion: existing.idUbicacion,
-            ubicacion: existing.ubicacion,
-            idVariante: existing.idVariante,
-            variante: existing.variante,
-            idOpcionVariante: existing.idOpcionVariante,
-            opcionVariante: existing.opcionVariante,
-            idPresentacion: existing.idPresentacion,
-            presentacion: existing.presentacion,
-            cantidadInicial: existing.cantidadInicial + inventoryProduct.cantidadInicial,
-            cantidadFinal: existing.cantidadFinal + inventoryProduct.cantidadFinal,
-            stockDisponible: existing.stockDisponible + inventoryProduct.stockDisponible,
-            stockReservado: existing.stockReservado + inventoryProduct.stockReservado,
-            stockDisponibleAjustado: existing.stockDisponibleAjustado + inventoryProduct.stockDisponibleAjustado,
-            esVendible: existing.esVendible,
-            esInventariable: existing.esInventariable,
-            precioVenta: existing.precioVenta,
-            costoPromedio: existing.costoPromedio,
-            margenActual: existing.margenActual,
-            clasificacionAbc: existing.clasificacionAbc,
-            abcDescripcion: existing.abcDescripcion,
-            fechaUltimaActualizacion: existing.fechaUltimaActualizacion,
-            totalCount: existing.totalCount,
-            resumenInventario: existing.resumenInventario,
-            infoPaginacion: existing.infoPaginacion,
-          );
-        }
-      }
-      
-      // Convertir productos únicos a Product para compatibilidad
-      final productsWithStock = uniqueProducts.values.map((inventoryProduct) => Product(
-        id: inventoryProduct.id.toString(),
-        name: inventoryProduct.nombreProducto,
-        denominacion: inventoryProduct.nombreProducto,
-        description: '', // InventoryProduct doesn't have descripcionProducto
-        categoryId: inventoryProduct.idCategoria.toString(),
-        categoryName: inventoryProduct.categoria, // Use categoria instead of categoriaProducto
-        brand: '', // InventoryProduct doesn't have nombreComercial
-        sku: inventoryProduct.skuProducto,
-        barcode: '', // InventoryProduct doesn't have codigoBarras
-        basePrice: inventoryProduct.precioVenta ?? 0.0,
-        imageUrl: '', // InventoryProduct doesn't have imagenProducto
-        isActive: true,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-        stockDisponible: inventoryProduct.cantidadFinal.toInt(),
-        precioVenta: inventoryProduct.precioVenta ?? 0.0,
-      )).toList();
-      
-      setState(() {
-        _products = productsWithStock;
-        _filteredProducts = productsWithStock;
-        _isLoadingProducts = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingProducts = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al cargar productos: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadZonesForProduct() async {
-    if (_selectedProduct == null) return;
-    
+  Future<void> _loadInitialZones() async {
     setState(() => _isLoadingZones = true);
     try {
-      // Obtener almacenes/zonas donde existe el producto usando el servicio real
+      // Obtener todos los almacenes/zonas disponibles
       final warehouses = await WarehouseService().listWarehouses();
       
       // Convertir almacenes a formato de zonas para el dropdown
@@ -200,18 +89,22 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _newQuantityController.dispose();
+    _reasonController.dispose();
+    _observationsController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadPresentationsForZone() async {
     if (_selectedProduct == null || _selectedZone == null) return;
     
     setState(() => _isLoadingPresentations = true);
     try {
       // Obtener presentaciones del producto que están presentes en la zona seleccionada
-      final productId = int.tryParse(_selectedProduct!.id);
+      final productId = int.tryParse(_selectedProduct!['id']?.toString() ?? '0');
       final zoneId = _selectedZone!['id'] as int;
-      
-      if (productId == null) {
-        throw Exception('ID de producto inválido');
-      }
       
       // Primero obtener todas las presentaciones del producto (sin filtrar por zona)
       final allPresentationsResponse = await InventoryService.getInventoryProducts(
@@ -327,11 +220,11 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     setState(() => _isLoadingStock = true);
     try {
       // Obtener stock específico usando el servicio de inventario real
-      final productId = int.tryParse(_selectedProduct!.id);
+      final productId = int.tryParse(_selectedProduct!['id']?.toString() ?? '0');
       final zoneId = _selectedZone!['id'] as int;
       final presentationId = _selectedPresentation!['id'] as int?;
       
-      if (productId == null) {
+      if (productId == null || productId == 0) {
         throw Exception('ID de producto inválido');
       }
       
@@ -366,40 +259,50 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     }
   }
 
-  void _filterProducts(String query) {
-    setState(() {
-      if (query.isEmpty) {
-        _filteredProducts = _products;
-      } else {
-        _filteredProducts = _products.where((product) {
-          return product.denominacion.toLowerCase().contains(query.toLowerCase()) ||
-                 product.sku.toLowerCase().contains(query.toLowerCase());
-        }).toList();
-      }
-    });
-  }
+  void _selectProduct(Map<String, dynamic> product) {
+    if (_selectedZone == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe seleccionar una zona primero'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
-  void _selectProduct(Product product) {
     setState(() {
       _selectedProduct = product;
-      _searchController.text = '${product.denominacion} (${product.sku})';
-      _filteredProducts = [];
       // Reset dependent selections
-      _selectedZone = null;
       _selectedPresentation = null;
       _currentStock = null;
     });
-    _loadZonesForProduct();
+    
+    // PASO 3: Cargar presentaciones para la combinación zona-producto
+    _loadPresentationsForZone();
   }
 
   void _clearProductSelection() {
+  setState(() {
+    _selectedProduct = null;
+    _selectedZone = null;
+    _selectedPresentation = null;
+    _currentStock = null;
+    _newQuantityController.clear();
+    _reasonController.clear();
+    _observationsController.clear();
+    _warehousesWithZones.clear();
+    _presentations.clear();
+  });
+}
+
+  void _onZoneSelected(Map<String, dynamic> zone) {
     setState(() {
+      _selectedZone = zone;
+      // Reset dependent selections cuando cambia la zona
       _selectedProduct = null;
-      _searchController.clear();
-      _filteredProducts = _products;
-      _selectedZone = null;
       _selectedPresentation = null;
       _currentStock = null;
+      _presentations.clear();
     });
   }
 
@@ -572,7 +475,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
 
       // Preparar datos del ajuste
       final ajusteData = {
-        'idProducto': _selectedProduct!.id,
+        'idProducto': _selectedProduct!['id'],
         'idUbicacion': _selectedZone!['id'],
         'idPresentacion': _selectedPresentation!['id'],
         'cantidadAnterior': _currentStock ?? 0.0,
@@ -584,7 +487,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       };
 
       print('📦 Datos del ajuste preparados:');
-      print('   - Producto: ${_selectedProduct!.denominacion} (ID: ${_selectedProduct!.id})');
+      print('   - Producto: ${_selectedProduct!['denominacion']} (ID: ${_selectedProduct!['id']})');
       print('   - Zona: ${_selectedZone!['denominacion']} (ID: ${_selectedZone!['id']})');
       print('   - Presentación: ${_selectedPresentation!['denominacion']} (ID: ${_selectedPresentation!['id']})');
       print('   - Stock actual: ${_currentStock ?? 0.0} → Nueva cantidad: $nuevaCantidad');
@@ -598,9 +501,9 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       print('🔄 Llamando a InventoryService.insertInventoryAdjustment...');
       
       // Convert string IDs to integers
-      final productId = int.tryParse(_selectedProduct!.id);
-      final zoneId = _selectedZone!['id'] as int?;
-      final presentationId = _selectedPresentation!['id'] as int?;
+      final productId = int.tryParse(_selectedProduct!['id']?.toString() ?? '0');
+      final zoneId = int.tryParse(_selectedZone!['id']?.toString() ?? '0');
+      final presentationId = int.tryParse(_selectedPresentation!['id']?.toString() ?? '0');
       
       if (productId == null || zoneId == null || presentationId == null) {
         throw Exception('Error: IDs inválidos para el ajuste de inventario');
@@ -775,77 +678,41 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
 
               const SizedBox(height: 24),
 
-              // Product selection
-              Text(
-                'Selección de Producto',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              TextFormField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  labelText: 'Buscar producto *',
-                  hintText: 'Escriba el nombre o SKU del producto',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _selectedProduct != null
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: _clearProductSelection,
-                        )
-                      : null,
-                ),
-                onChanged: _filterProducts,
-                validator: (value) {
-                  if (_selectedProduct == null) {
-                    return 'Debe seleccionar un producto';
-                  }
-                  return null;
-                },
-              ),
-
-              // Product suggestions
-              if (_filteredProducts.isNotEmpty && _selectedProduct == null) ...[
-                const SizedBox(height: 8),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 200),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: _isLoadingProducts
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(20),
-                            child: CircularProgressIndicator(),
-                          ),
-                        )
-                      : ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: _filteredProducts.length,
-                          itemBuilder: (context, index) {
-                            final product = _filteredProducts[index];
-                            return ListTile(
-                              title: Text(product.denominacion),
-                              subtitle: Text('SKU: ${product.sku}'),
-                              onTap: () => _selectProduct(product),
-                            );
-                          },
+              // PASO 1: Selección de Zona (PRIMERO)
+              Row(
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: _selectedZone != null ? Colors.green : Colors.blue,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '1',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
                         ),
-                ),
-              ],
-
-              const SizedBox(height: 24),
-
-              // Zone selection
-              Text(
-                'Selección de Zona',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Selección de Zona',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: _selectedZone != null ? Colors.green : null,
+                    ),
+                  ),
+                  if (_selectedZone != null)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
 
@@ -865,7 +732,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text(
-                    'No hay zonas disponibles para este producto',
+                    'No hay zonas disponibles',
                     style: TextStyle(color: Colors.grey),
                   ),
                 )
@@ -919,15 +786,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                                 ? const Icon(Icons.check_circle, color: Colors.green)
                                 : null,
                             selected: isSelected,
-                            onTap: () {
-                              setState(() {
-                                _selectedZone = zone;
-                                // Reset dependent selections
-                                _selectedPresentation = null;
-                                _currentStock = null;
-                              });
-                              _loadPresentationsForZone();
-                            },
+                            onTap: () => _onZoneSelected(zone),
                           );
                         }).toList(),
                       );
@@ -936,15 +795,100 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
                 ),
 
               // Validation message for zone selection
-              if (_selectedZone == null && _selectedProduct != null)
+              if (_selectedZone == null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    'Debe seleccionar una zona',
+                    '⚠️ Debe seleccionar una zona para continuar',
                     style: TextStyle(
-                      color: Colors.red.shade700,
+                      color: Colors.orange.shade700,
                       fontSize: 12,
+                      fontWeight: FontWeight.w500,
                     ),
+                  ),
+                ),
+
+              const SizedBox(height: 24),
+
+              // PASO 2: Selección de Producto (SEGUNDO - Solo activo si hay zona)
+              Row(
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: _selectedProduct != null 
+                          ? Colors.green 
+                          : _selectedZone != null 
+                              ? Colors.blue 
+                              : Colors.grey,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '2',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Selección de Producto',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: _selectedProduct != null 
+                          ? Colors.green 
+                          : _selectedZone != null 
+                              ? null 
+                              : Colors.grey,
+                    ),
+                  ),
+                  if (_selectedProduct != null)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              if (_selectedZone == null)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.lock, color: Colors.grey.shade600),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Seleccione una zona primero para buscar productos',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 200,
+                  child: ProductSelectorWidget(
+                    searchType: ProductSearchType.withStock,
+                    locationId: _selectedZone!['id'],
+                    requireInventory: true,
+                    searchHint: 'Buscar productos en ${_selectedZone!['denominacion']}...',
+                    onProductSelected: _selectProduct,
                   ),
                 ),
 

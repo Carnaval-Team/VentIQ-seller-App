@@ -203,6 +203,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       builder:
           (context) => _ProductQuantityDialog(
             product: product,
+            selectedLocation: _selectedLocation, // Pass selected location
             onProductAdded: (productData) {
               setState(() {
                 _selectedProducts.add(productData);
@@ -1038,11 +1039,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
 
 class _ProductQuantityDialog extends StatefulWidget {
   final Product product;
+  final WarehouseZone? selectedLocation;
   final Function(Map<String, dynamic>) onProductAdded;
 
   const _ProductQuantityDialog({
     required this.product,
     required this.onProductAdded,
+    this.selectedLocation,
   });
 
   @override

@@ -79,6 +79,16 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   void _addProductToTransfer(Map<String, dynamic> product) {
+    // Validar que hay zona de origen seleccionada
+    if (_selectedSourceLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe seleccionar una zona de origen primero'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     showDialog(
       context: context,
       builder:
@@ -583,30 +593,102 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   }
 
   Widget _buildProductSelectionSection() {
+    final isEnabled = _selectedSourceLocation != null;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Seleccionar Productos',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color:
+                        _selectedProducts.isNotEmpty
+                            ? Colors.green
+                            : isEnabled
+                            ? Colors.blue
+                            : Colors.grey,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '3',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Seleccionar Productos',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color:
+                        _selectedProducts.isNotEmpty
+                            ? Colors.green
+                            : isEnabled
+                            ? null
+                            : Colors.grey,
+                  ),
+                ),
+                if (_selectedProducts.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 20,
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              height: 400, // Altura fija necesaria para que funcione
-              child: ProductSelectorWidget(
-                searchType: ProductSearchType.withStock,
-                requireInventory: true,
-                locationId:
-                    _selectedSourceLocation != null
-                        ? _getZoneIdFromLocation(_selectedSourceLocation!)
-                        : null,
-                searchHint: 'Buscar productos para transferir...',
-                onProductSelected: _addProductToTransfer,
+
+            if (!isEnabled)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.lock, color: Colors.grey.shade600),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Seleccione una zona de origen primero para buscar productos',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              SizedBox(
+                height: 400, // Altura fija necesaria para que funcione
+                child: ProductSelectorWidget(
+                  searchType: ProductSearchType.withStock,
+                  requireInventory: true,
+                  locationId: _getZoneIdFromLocation(_selectedSourceLocation!),
+                  searchHint:
+                      'Buscar productos en ${_selectedSourceLocation!.name}...',
+                  onProductSelected: _addProductToTransfer,
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -983,11 +1065,12 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final productName = widget.product['denominacion']?.toString() ??
-                       widget.product['name']?.toString() ??
-                       widget.product['nombre_producto']?.toString() ??
-                       'Producto';
-    
+    final productName =
+        widget.product['denominacion']?.toString() ??
+        widget.product['name']?.toString() ??
+        widget.product['nombre_producto']?.toString() ??
+        'Producto';
+
     return AlertDialog(
       title: Text('Agregar $productName'),
       content: SingleChildScrollView(
@@ -1014,12 +1097,13 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         children: [
                           Text(
                             widget.product['denominacion']?.toString() ??
-                            widget.product['name']?.toString() ??
-                            widget.product['nombre_producto']?.toString() ??
-                            'Sin nombre',
+                                widget.product['name']?.toString() ??
+                                widget.product['nombre_producto']?.toString() ??
+                                'Sin nombre',
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                          if ((widget.product['sku']?.toString() ?? '').isNotEmpty)
+                          if ((widget.product['sku']?.toString() ?? '')
+                              .isNotEmpty)
                             Text(
                               'SKU: ${widget.product['sku']}',
                               style: TextStyle(

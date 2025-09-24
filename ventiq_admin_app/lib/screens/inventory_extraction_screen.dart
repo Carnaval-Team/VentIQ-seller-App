@@ -65,6 +65,17 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
   }
 
   void _addProductToExtraction(Map<String, dynamic> product) {
+    // Validar que hay zona seleccionada
+    if (_selectedSourceLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe seleccionar una zona primero'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder:
@@ -1113,9 +1124,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                     width: double.infinity,
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
-                                      color: AppColors.primary.withOpacity(
-                                        0.1,
-                                      ),
+                                      color: AppColors.primary.withOpacity(0.1),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
                                         color: AppColors.primary.withOpacity(
@@ -1144,47 +1153,68 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                   ),
                                   Expanded(
                                     flex: 2,
-                                    child: _selectedSourceLocation == null
-                                        ? Container(
-                                            padding: const EdgeInsets.all(16),
-                                            child: Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Icon(
-                                                  Icons.info_outline,
-                                                  size: 48,
-                                                  color: AppColors.grey.shade600,
-                                                ),
-                                                const SizedBox(height: 12),
-                                                Text(
-                                                  'Seleccione una zona de origen',
-                                                  style: TextStyle(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: AppColors.grey.shade700,
+                                    child:
+                                        _selectedSourceLocation == null
+                                            ? Container(
+                                              padding: const EdgeInsets.all(16),
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.info_outline,
+                                                    size: 48,
+                                                    color:
+                                                        AppColors.grey.shade600,
                                                   ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  'Debe seleccionar una zona para ver productos disponibles',
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    color: AppColors.grey.shade600,
+                                                  const SizedBox(height: 12),
+                                                  Text(
+                                                    'Seleccione una zona de origen',
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color:
+                                                          AppColors
+                                                              .grey
+                                                              .shade700,
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    'Debe seleccionar una zona para ver productos disponibles',
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      color:
+                                                          AppColors
+                                                              .grey
+                                                              .shade600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            )
+                                            : ProductSelectorWidget(
+                                              onProductSelected:
+                                                  _addProductToExtraction,
+                                              searchType:
+                                                  ProductSearchType.withStock,
+                                              requireInventory: true,
+                                              locationId:
+                                                  _selectedSourceLocation !=
+                                                          null
+                                                      ? int.tryParse(
+                                                        _selectedSourceLocation!
+                                                            .id,
+                                                      )
+                                                      : null,
+                                              searchHint:
+                                                  _selectedSourceLocation !=
+                                                          null
+                                                      ? 'Buscar productos en ${_selectedSourceLocation!.name}...'
+                                                      : 'Buscar productos para extraer...',
                                             ),
-                                          )
-                                        : ProductSelectorWidget(
-                                            onProductSelected:
-                                                _addProductToExtraction,
-                                            searchType: ProductSearchType.withStock,
-                                            requireInventory: true,
-                                            searchHint:
-                                                'Buscar productos para extraer...',
-                                          ),
                                   ),
                                 ],
                               ),
