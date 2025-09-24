@@ -1081,9 +1081,9 @@ class ExportService {
                           decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                           children: [
                             _buildTableHeader('Nombre'),
-                            _buildTableHeader('Cant. Final'),
                             _buildTableHeader('Cant. Inicial'),
                             _buildTableHeader('Vendido'),
+                            _buildTableHeader('Cant. Final'),
                             _buildTableHeader('Precio Venta'),
                             _buildTableHeader('Costo USD'),
                             _buildTableHeader('Costo CUP'),
@@ -1095,9 +1095,9 @@ class ExportService {
                         ...productos.map((producto) => pw.TableRow(
                           children: [
                             _buildTableCell(producto['nombre_producto']?.toString() ?? 'Sin nombre'),
-                            _buildTableCell((producto['stock_disponible'] ?? 0).toString()),
                             _buildTableCell((producto['cantidad_inicial'] ?? 0).toString()),
                             _buildTableCell((((producto['cantidad_inicial'] ?? 0) - (producto['stock_disponible'] ?? 0)) > 0 ? (((producto['cantidad_inicial'] ?? 0) - (producto['stock_disponible'] ?? 0)).toString()) : 0).toString()),
+                            _buildTableCell((producto['stock_disponible'] ?? 0).toString()),
                             _buildTableCell('\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}'),
                             _buildTableCell('\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}'),
                             _buildTableCell('\$${(producto['costo_promedio_cup'] ?? 0).toStringAsFixed(2)}'),
