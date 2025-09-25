@@ -229,7 +229,9 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   }
 
   Future<void> _submitReception() async {
-    if (!_formKey.currentState!.validate() || _selectedProducts.isEmpty) {
+    if (!_formKey.currentState!.validate() ||
+        _selectedProducts.isEmpty ||
+        _selectedLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -410,8 +412,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 labelText: 'Entregado por',
                 border: OutlineInputBorder(),
               ),
-              validator:
-                  (value) => value?.isEmpty == true ? 'Campo requerido' : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -420,8 +420,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 labelText: 'Recibido por',
                 border: OutlineInputBorder(),
               ),
-              validator:
-                  (value) => value?.isEmpty == true ? 'Campo requerido' : null,
             ),
             const SizedBox(height: 12),
             _isLoadingMotivos
