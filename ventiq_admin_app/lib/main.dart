@@ -3,7 +3,9 @@ import 'config/app_colors.dart';
 import 'models/product.dart';
 import 'screens/splash_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/dashboard_web_screen.dart';
 import 'screens/login_screen.dart';
+import 'utils/platform_utils.dart';
 import 'screens/store_registration_screen.dart';
 import 'screens/products_screen.dart';
 import 'screens/product_detail_screen.dart';
@@ -99,7 +101,9 @@ class MyApp extends StatelessWidget {
       routes: {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
-        '/dashboard': (context) => const DashboardScreen(),
+        '/dashboard': (context) => const PlatformAwareDashboardScreen(),
+        '/dashboard-mobile': (context) => const DashboardScreen(),
+        '/dashboard-web': (context) => const DashboardWebScreen(),
         '/products': (context) => const ProductsScreen(),
         '/categories': (context) => const CategoriesScreen(),
         '/inventory': (context) => const InventoryScreen(),
@@ -126,5 +130,20 @@ class MyApp extends StatelessWidget {
         '/store-registration': (context) => const StoreRegistrationScreen(),
       },
     );
+  }
+}
+
+/// Widget que detecta la plataforma y redirige al dashboard apropiado
+class PlatformAwareDashboardScreen extends StatelessWidget {
+  const PlatformAwareDashboardScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Detectar si estamos en web y redirigir al dashboard apropiado
+    if (PlatformUtils.isWeb) {
+      return const DashboardWebScreen();
+    } else {
+      return const DashboardScreen();
+    }
   }
 }
