@@ -53,8 +53,9 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
     });
 
     try {
+      // Solo cargar la lista básica de warehouses, sin conteos de productos
       await Future.wait([_loadWarehouses(), _loadInventoryData()]);
-      await _loadAllProductCounts();
+      // Eliminamos _loadAllProductCounts() para mejorar rendimiento inicial
     } catch (e) {
       setState(() {
         _error = 'Error al cargar datos: $e';
@@ -68,31 +69,14 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
 
   Future<void> _loadWarehouses() async {
     try {
-      // Primero obtener la lista básica de warehouses
+      // Solo obtener la lista básica de warehouses para carga rápida inicial
       final basicWarehouses = await _warehouseService.listWarehouses();
-
-      // Luego obtener el detalle completo de cada warehouse para tener la jerarquía correcta
-      final List<Warehouse> detailedWarehouses = [];
-
-      for (final warehouse in basicWarehouses) {
-        try {
-          // print(
-          //   '🔍 Obteniendo detalle completo para warehouse: ${warehouse.name} (ID: ${warehouse.id})',
-          // );
-          final detailedWarehouse = await _warehouseService.getWarehouseDetail(
-            warehouse.id,
-          );
-          detailedWarehouses.add(detailedWarehouse);
-        } catch (e) {
-          // print('⚠️ Error obteniendo detalle de warehouse ${warehouse.id}: $e');
-          // Si falla el detalle, usar el warehouse básico
-          detailedWarehouses.add(warehouse);
-        }
-      }
-
+      
       setState(() {
-        _warehouses = detailedWarehouses;
+        _warehouses = basicWarehouses;
       });
+      
+      print('✅ Cargados ${basicWarehouses.length} almacenes básicos');
     } catch (e) {
       print('Error loading warehouses: $e');
     }
@@ -114,53 +98,61 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
     }
   }
 
-  Future<void> _loadAllProductCounts() async {
-    print('🚀 === INICIANDO _loadAllProductCounts ===');
-    print('🔍 Warehouses disponibles: ${_warehouses.length}');
+  /// Carga los detalles completos de un warehouse específico cuando se expande
+  Future<void> _loadWarehouseDetails(String warehouseId) async {
+    setState(() {
+      _loadingInventory['warehouse_$warehouseId'] = true;
+    });
 
-    for (final warehouse in _warehouses) {
-      print('🏭 Procesando warehouse: ${warehouse.name} (ID: ${warehouse.id})');
-      print('🔍 Zones en warehouse: ${warehouse.zones.length}');
-
-      for (final zone in warehouse.zones) {
-        final layoutKey = '${warehouse.id}_${zone.id}';
-        print('📍 Procesando zona: ${zone.name} (ID: ${zone.id})');
-        print('🔑 Layout key: $layoutKey');
-
-        try {
-          print('🔄 Llamando getProductosByLayout para zona ${zone.id}...');
-          final productsData = await _warehouseService.getProductosByLayout(
-            zone.id,
-          );
-
-          print(
-            '✅ Respuesta recibida para zona ${zone.id}: ${productsData.length} productos',
-          );
-
-          setState(() {
-            _layoutProductCounts[layoutKey] = productsData.length;
-          });
-
-          print(
-            '💾 Guardado en _layoutProductCounts[$layoutKey] = ${productsData.length}',
-          );
-        } catch (e) {
-          print('❌ Error loading product count for zone ${zone.id}: $e');
-          print(
-            '📍 Zone details: ${zone.name}, Code: ${zone.code}, Type: ${zone.type}',
-          );
-          setState(() {
-            _layoutProductCounts[layoutKey] = 0;
-          });
+    try {
+      print('🔍 Cargando detalles para warehouse: $warehouseId');
+      
+      // Obtener el detalle completo del warehouse
+      final detailedWarehouse = await _warehouseService.getWarehouseDetail(warehouseId);
+      
+      // Actualizar el warehouse en la lista con los detalles completos
+      setState(() {
+        final index = _warehouses.indexWhere((w) => w.id == warehouseId);
+        if (index != -1) {
+          _warehouses[index] = detailedWarehouse;
         }
+      });
+      
+      // Cargar conteos de productos para todas las zonas de este warehouse
+      await _loadWarehouseProductCounts(detailedWarehouse);
+      
+      print('✅ Detalles cargados para warehouse: ${detailedWarehouse.name}');
+    } catch (e) {
+      print('❌ Error cargando detalles del warehouse $warehouseId: $e');
+    } finally {
+      setState(() {
+        _loadingInventory['warehouse_$warehouseId'] = false;
+      });
+    }
+  }
+
+  /// Carga los conteos de productos para todas las zonas de un warehouse específico
+  Future<void> _loadWarehouseProductCounts(Warehouse warehouse) async {
+    print('📊 Cargando conteos de productos para warehouse: ${warehouse.name}');
+    
+    for (final zone in warehouse.zones) {
+      final layoutKey = '${warehouse.id}_${zone.id}';
+      
+      try {
+        final productsData = await _warehouseService.getProductosByLayout(zone.id);
+        
+        setState(() {
+          _layoutProductCounts[layoutKey] = productsData.length;
+        });
+        
+        print('✅ Zona ${zone.name}: ${productsData.length} productos');
+      } catch (e) {
+        print('❌ Error cargando conteo para zona ${zone.name}: $e');
+        setState(() {
+          _layoutProductCounts[layoutKey] = 0;
+        });
       }
     }
-
-    print('🏁 === FIN _loadAllProductCounts ===');
-    print('📊 Resumen de contadores cargados:');
-    _layoutProductCounts.forEach((key, count) {
-      print('  - $key: $count productos');
-    });
   }
 
   @override
@@ -231,12 +223,7 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
 
   Widget _buildWarehouseTreeNode(Warehouse warehouse) {
     final isExpanded = _expandedWarehouses[warehouse.id] ?? false;
-
-    int totalProducts = 0;
-    for (final zone in warehouse.zones) {
-      final layoutKey = '${warehouse.id}_${zone.id}';
-      totalProducts += _layoutProductCounts[layoutKey] ?? 0;
-    }
+    final isLoadingDetails = _loadingInventory['warehouse_${warehouse.id}'] ?? false;
 
     return Card(
       elevation: 2,
@@ -246,13 +233,19 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
         children: [
           // Warehouse header
           InkWell(
-            onTap: () {
+            onTap: () async {
+              if (!isExpanded) {
+                // Cargar detalles del warehouse antes de expandir
+                await _loadWarehouseDetails(warehouse.id);
+              }
+              
               setState(() {
                 _expandedWarehouses[warehouse.id] = !isExpanded;
 
                 // Si se está expandiendo el warehouse, expandir automáticamente todas las zonas
-                if (!isExpanded) {
-                  _expandAllZonesInWarehouse(warehouse.id, warehouse.zones);
+                if (!isExpanded && _warehouses.any((w) => w.id == warehouse.id && w.zones.isNotEmpty)) {
+                  final detailedWarehouse = _warehouses.firstWhere((w) => w.id == warehouse.id);
+                  _expandAllZonesInWarehouse(warehouse.id, detailedWarehouse.zones);
                 }
               });
             },
@@ -294,7 +287,9 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${warehouse.address} • ${warehouse.zones.length} zonas • $totalProducts productos',
+                          isExpanded && !isLoadingDetails
+                              ? '${warehouse.address} • ${warehouse.zones.length} zonas'
+                              : '${warehouse.address} • Toca para ver detalles',
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppColors.textSecondary,
@@ -303,22 +298,18 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                       ],
                     ),
                   ),
-                  if (totalProducts > 0)
+                  if (isLoadingDetails)
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 4,
                       ),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '$totalProducts',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.success,
+                      child: const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
                         ),
                       ),
                     ),
@@ -547,6 +538,7 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
     final isLoading = _loadingInventory[layoutKey] ?? false;
     final inventory = _layoutInventory[layoutKey] ?? [];
     final productCount = _layoutProductCounts[layoutKey] ?? 0;
+    final hasProductCountLoaded = _layoutProductCounts.containsKey(layoutKey);
 
     // Buscar hijos directos de esta zona - MEJORADO
     final directChildren =
@@ -717,7 +709,9 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          '$productCount productos',
+                          hasProductCountLoaded 
+                              ? '$productCount productos'
+                              : 'Cargando...',
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.grey[600],
@@ -753,7 +747,7 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
               const SizedBox(height: 16),
 
               // Botones "Ver productos" y "Exportar"
-              if (productCount > 0)
+              if (hasProductCountLoaded && productCount > 0)
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(

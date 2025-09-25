@@ -83,6 +83,14 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     }
   }
 
+  /// Método para el pull-to-refresh
+  Future<void> _refreshOperations() async {
+    print('🔄 Pull-to-refresh activado - Recargando operaciones...');
+    _currentPage = 1; // Reset to first page
+    await _loadOperations();
+    print('✅ Pull-to-refresh completado');
+  }
+
   Future<void> _showDateRangeDialog() async {
     showModalBottomSheet(
       context: context,
@@ -399,32 +407,54 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Widget _buildOperationsList() {
     return Expanded(
-      child:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _operations.isEmpty
-              ? const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.inventory_2_outlined,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
-                    SizedBox(height: 16),
-                    Text('No se encontraron operaciones'),
-                  ],
-                ),
-              )
-              : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _operations.length,
-                itemBuilder: (context, index) {
-                  final operation = _operations[index];
-                  return _buildOperationCard(operation);
-                },
-              ),
+      child: RefreshIndicator(
+        onRefresh: _refreshOperations,
+        color: Theme.of(context).primaryColor,
+        backgroundColor: Colors.white,
+        displacement: 40.0,
+        strokeWidth: 2.5,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _operations.isEmpty
+                ? ListView(
+                    // Necesario para que el RefreshIndicator funcione con contenido vacío
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: const [
+                      SizedBox(height: 200), // Espacio para permitir el pull
+                      Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.inventory_2_outlined,
+                              size: 64,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 16),
+                            Text('No se encontraron operaciones'),
+                            SizedBox(height: 8),
+                            Text(
+                              'Desliza hacia abajo para actualizar',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _operations.length,
+                    itemBuilder: (context, index) {
+                      final operation = _operations[index];
+                      return _buildOperationCard(operation);
+                    },
+                  ),
+      ),
     );
   }
 
@@ -437,7 +467,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     final observaciones = operation['observaciones'] ?? '';
 
     // Debug: Log the exact status we're getting from the database
-    print('📋 Operation Card - ID: ${operation['id']}, Estado: "$estadoNombre"');
+    print(
+      '📋 Operation Card - ID: ${operation['id']}, Estado: "$estadoNombre"',
+    );
 
     // Determine operation type icon and color
     IconData operationIcon;
@@ -580,25 +612,27 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   Color _getStatusColor(String status) {
     final statusLower = status.toLowerCase().trim();
-    
+
     // Debug: Print the status to see what we're getting
-    print('🎨 Getting color for status: "$status" (normalized: "$statusLower")');
-    
+    print(
+      '🎨 Getting color for status: "$status" (normalized: "$statusLower")',
+    );
+
     // Pendiente/En proceso - Amber (más vibrante que orange)
-    if (statusLower.contains('pendiente') || 
-        statusLower.contains('pending') || 
-        statusLower.contains('en proceso') || 
+    if (statusLower.contains('pendiente') ||
+        statusLower.contains('pending') ||
+        statusLower.contains('en proceso') ||
         statusLower.contains('proceso') ||
         statusLower.contains('esperando') ||
         statusLower.contains('waiting')) {
       print('   → Amber (Pendiente)');
       return Colors.amber[700] ?? Colors.amber;
     }
-    
+
     // Completado/Aprobado - Green más vibrante
-    if (statusLower.contains('completada') || 
-        statusLower.contains('completed') || 
-        statusLower.contains('aprobado') || 
+    if (statusLower.contains('completada') ||
+        statusLower.contains('completed') ||
+        statusLower.contains('aprobado') ||
         statusLower.contains('approved') ||
         statusLower.contains('finalizado') ||
         statusLower.contains('terminado') ||
@@ -606,50 +640,51 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       print('   → Green (Completado)');
       return Colors.green[600] ?? Colors.green;
     }
-    
+
     // Cancelado/Rechazado - Red más vibrante
-    if (statusLower.contains('cancelada') || 
-        statusLower.contains('cancelled') || 
+    if (statusLower.contains('cancelada') ||
+        statusLower.contains('cancelled') ||
         statusLower.contains('canceled') ||
-        statusLower.contains('rechazado') || 
+        statusLower.contains('rechazado') ||
         statusLower.contains('rejected') ||
         statusLower.contains('anulado') ||
         statusLower.contains('eliminado')) {
       print('   → Red (Cancelado)');
       return Colors.red[600] ?? Colors.red;
     }
-    
+
     // En revisión/Verificación - Blue más vibrante
-    if (statusLower.contains('revision') || 
-        statusLower.contains('verificacion') || 
+    if (statusLower.contains('revision') ||
+        statusLower.contains('verificacion') ||
         statusLower.contains('verificación') ||
         statusLower.contains('review') ||
         statusLower.contains('checking')) {
       print('   → Blue (En revisión)');
       return Colors.blue[600] ?? Colors.blue;
     }
-    
+
     // Error/Fallido - Deep Orange más vibrante
-    if (statusLower.contains('error') || 
-        statusLower.contains('fallida') || 
+    if (statusLower.contains('error') ||
+        statusLower.contains('fallida') ||
         statusLower.contains('failed') ||
         statusLower.contains('fallo')) {
       print('   → Deep Orange (Error)');
       return Colors.deepOrange[600] ?? Colors.deepOrange;
     }
-    
+
     // Iniciado/Activo - Teal
-    if (statusLower.contains('iniciada') || 
-        statusLower.contains('activo') || 
+    if (statusLower.contains('iniciada') ||
+        statusLower.contains('activo') ||
         statusLower.contains('active') ||
         statusLower.contains('started')) {
       print('   → Teal (Activo)');
       return Colors.teal[600] ?? Colors.teal;
     }
-    
+
     // Default - Grey más oscuro para mejor contraste
     print('   → Grey (Default) - Status not recognized');
-    return Colors.blueGrey[600] ?? Colors.blueGrey;  }
+    return Colors.blueGrey[600] ?? Colors.blueGrey;
+  }
 
   Widget _buildPagination() {
     if (_totalCount <= _itemsPerPage) return const SizedBox.shrink();
@@ -885,19 +920,19 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       item['nombre'],
       item['descripcion'],
     ];
-    
+
     for (final name in possibleNames) {
       if (name != null && name.toString().trim().isNotEmpty) {
         return name.toString().trim();
       }
     }
-    
+
     // Si no se encuentra nombre, usar ID del producto si está disponible
     final productId = item['id_producto'] ?? item['producto_id'] ?? item['id'];
     if (productId != null) {
       return 'Producto ID: $productId';
     }
-    
+
     return 'Producto sin nombre';
   }
 
@@ -1361,16 +1396,19 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       );
 
       Navigator.pop(context); // Close loading dialog
-
-      if (result['status'] == 'success') {
+    // print('result: ${result['data']}');
+      final response = result['data'];
+      if (response['status'] == 'success') {
         // Close the detail modal
+        await Future.delayed(const Duration(milliseconds: 200));
+
         Navigator.pop(context);
 
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              result['mensaje'] ?? 'Operación completada exitosamente',
+              response['message'] ?? 'Operación completada exitosamente',
             ),
             backgroundColor: Colors.green,
           ),
@@ -1379,11 +1417,12 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         // Refresh the operations list
         _loadOperations();
       } else {
-        // Show error message
+        await Future.delayed(const Duration(milliseconds: 200));
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              result['message'] ?? 'Error al completar la operación',
+              response['message'] ?? 'Error al completar la operación',
             ),
             backgroundColor: Colors.red,
           ),
@@ -1434,7 +1473,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   controller: commentController,
                   decoration: const InputDecoration(
                     labelText: 'Motivo de cancelación',
-                    hintText: 'Ingrese el motivo por el cual cancela la operación',
+                    hintText:
+                        'Ingrese el motivo por el cual cancela la operación',
                     border: OutlineInputBorder(),
                   ),
                   maxLines: 3,
