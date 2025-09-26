@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VentIQ - Sistema de Gestión de Ventas e Inventario</title>
+    <link rel="icon" type="image/svg+xml" href="assets/images/logo.svg">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <img src="assets/images/logo.svg" alt="VentIQ Logo" class="logo">
+                <span class="logo-text">VentIQ</span>
+            </div>
+            <div class="nav-menu">
+                <a href="#inicio" class="nav-link">Inicio</a>
+                <a href="#caracteristicas" class="nav-link">Características</a>
+                <a href="tutorials.html" class="nav-link">Tutoriales</a>
+                <a href="contact.html" class="nav-link">Contacto</a>
+                <div class="download-buttons">
+                    <a href="#" class="download-btn seller-app" title="Descargar VentIQ Seller">
+                        <i class="fas fa-mobile-alt"></i>
+                        <span>Seller App</span>
+                    </a>
+                    <a href="#" class="download-btn admin-app" title="Descargar VentIQ Admin">
+                        <i class="fas fa-desktop"></i>
+                        <span>Admin App</span>
+                    </a>
+                </div>
+            </div>
+            <div class="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="inicio" class="hero">
+        <div class="hero-container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    Gestiona tu negocio con <span class="gradient-text">VentIQ</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Sistema completo de punto de venta e inventario diseñado para potenciar tu negocio. 
+                    Controla ventas, inventario, personal y finanzas desde cualquier dispositivo.
+                </p>
+                <div class="hero-buttons">
+                    <a href="#" class="btn btn-primary">
+                        <i class="fas fa-mobile-alt"></i>
+                        Descargar VentIQ Seller
+                    </a>
+                    <a href="#" class="btn btn-secondary">
+                        <i class="fas fa-desktop"></i>
+                        Descargar VentIQ Admin
+                    </a>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat">
+                        <div class="stat-number">500+</div>
+                        <div class="stat-label">Negocios activos</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">10K+</div>
+                        <div class="stat-label">Ventas procesadas</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">99.9%</div>
+                        <div class="stat-label">Tiempo activo</div>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-image">
+                <div class="phone-mockup">
+                    <img src="assets/images/screenshoot.jpg" alt="VentIQ Seller App" class="app-screenshot">
+                </div>
+                <div class="floating-cards">
+                    <div class="floating-card card-1">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Ventas en tiempo real</span>
+                    </div>
+                    <div class="floating-card card-2">
+                        <i class="fas fa-boxes"></i>
+                        <span>Control de inventario</span>
+                    </div>
+                    <div class="floating-card card-3">
+                        <i class="fas fa-users"></i>
+                        <span>Gestión de personal</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="caracteristicas" class="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Dos aplicaciones, una solución completa</h2>
+                <p class="section-subtitle">
+                    VentIQ combina dos aplicaciones multiplataforma: una para vendedores y otra para administradores
+                </p>
+            </div>
+            
+            <div class="apps-showcase">
+                <!-- Seller App -->
+                <div class="app-card seller-card">
+                    <div class="app-header">
+                        <div class="app-icon seller-icon">
+                            <i class="fas fa-mobile-alt"></i>
+                        </div>
+                        <div class="app-info">
+                            <h3>VentIQ Seller</h3>
+                            <p>Aplicación multiplataforma para vendedores</p>
+                        </div>
+                        <a href="#" class="download-app-btn">
+                            <i class="fas fa-download"></i>
+                        </a>
+                    </div>
+                    <div class="app-features">
+                        <div class="feature-item">
+                            <i class="fas fa-shopping-cart"></i>
+                            <span>Punto de venta rápido</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-barcode"></i>
+                            <span>Escaneo de códigos</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-receipt"></i>
+                            <span>Impresión de tickets</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-sync"></i>
+                            <span>Sincronización en tiempo real</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-credit-card"></i>
+                            <span>Múltiples métodos de pago</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-chart-pie"></i>
+                            <span>Reportes de ventas</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Web -->
+                <div class="app-card admin-card">
+                    <div class="app-header">
+                        <div class="app-icon admin-icon">
+                            <i class="fas fa-desktop"></i>
+                        </div>
+                        <div class="app-info">
+                            <h3>VentIQ Admin</h3>
+                            <p>Aplicación multiplataforma administrativa</p>
+                        </div>
+                        <a href="#" class="download-app-btn">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                    </div>
+                    <div class="app-features">
+                        <div class="feature-item">
+                            <i class="fas fa-store"></i>
+                            <span>Gestión de tiendas</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-boxes"></i>
+                            <span>Control de inventario</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-users-cog"></i>
+                            <span>Administración de personal</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-chart-line"></i>
+                            <span>Dashboard ejecutivo</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-tags"></i>
+                            <span>Gestión de productos</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-dollar-sign"></i>
+                            <span>Análisis financiero</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Benefits Section -->
+    <section class="benefits">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">¿Por qué elegir VentIQ?</h2>
+                <p class="section-subtitle">
+                    Optimiza tu negocio con herramientas diseñadas para el éxito
+                </p>
+            </div>
+            
+            <div class="benefits-grid">
+                <div class="benefit-card">
+                    <div class="benefit-icon">
+                        <i class="fas fa-rocket"></i>
+                    </div>
+                    <h3>Fácil de usar</h3>
+                    <p>Interfaz intuitiva que permite a tu equipo empezar a trabajar inmediatamente</p>
+                </div>
+                
+                <div class="benefit-card">
+                    <div class="benefit-icon">
+                        <i class="fas fa-cloud"></i>
+                    </div>
+                    <h3>En la nube</h3>
+                    <p>Accede a tu información desde cualquier lugar, en cualquier momento</p>
+                </div>
+                
+                <div class="benefit-card">
+                    <div class="benefit-icon">
+                        <i class="fas fa-shield-alt"></i>
+                    </div>
+                    <h3>Seguro</h3>
+                    <p>Tus datos están protegidos con los más altos estándares de seguridad</p>
+                </div>
+                
+                <div class="benefit-card">
+                    <div class="benefit-icon">
+                        <i class="fas fa-expand-arrows-alt"></i>
+                    </div>
+                    <h3>Escalable</h3>
+                    <p>Crece con tu negocio, desde una tienda hasta múltiples sucursales</p>
+                </div>
+                
+                <div class="benefit-card">
+                    <div class="benefit-icon">
+                        <i class="fas fa-headset"></i>
+                    </div>
+                    <h3>Soporte 24/7</h3>
+                    <p>Nuestro equipo está disponible para ayudarte cuando lo necesites</p>
+                </div>
+                
+                <div class="benefit-card">
+                    <div class="benefit-icon">
+                        <i class="fas fa-chart-bar"></i>
+                    </div>
+                    <h3>Reportes avanzados</h3>
+                    <p>Toma decisiones informadas con análisis detallados de tu negocio</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta">
+        <div class="container">
+            <div class="cta-content">
+                <h2>¿Listo para transformar tu negocio?</h2>
+                <p>Únete a cientos de empresarios que ya confían en VentIQ</p>
+                <div class="cta-buttons">
+                    <a href="tutorials.html" class="btn btn-primary">
+                        <i class="fas fa-play"></i>
+                        Ver tutoriales
+                    </a>
+                    <a href="contact.html" class="btn btn-secondary">
+                        <i class="fas fa-envelope"></i>
+                        Contactar ventas
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <div class="footer-logo">
+                        <img src="assets/images/logo.svg" alt="VentIQ Logo" class="logo">
+                        <span class="logo-text">VentIQ</span>
+                    </div>
+                    <p>Sistema completo de gestión de ventas e inventario para hacer crecer tu negocio.</p>
+                    <div class="social-links">
+                        <a href="#"><i class="fab fa-facebook"></i></a>
+                        <a href="#"><i class="fab fa-twitter"></i></a>
+                        <a href="#"><i class="fab fa-linkedin"></i></a>
+                        <a href="#"><i class="fab fa-instagram"></i></a>
+                    </div>
+                </div>
+                
+                <div class="footer-section">
+                    <h4>Aplicaciones</h4>
+                    <ul>
+                        <li><a href="#">VentIQ Seller (Android/iOS/Web)</a></li>
+                        <li><a href="#">VentIQ Admin (Android/iOS/Web)</a></li>
+                        <li><a href="tutorials.html">Tutoriales</a></li>
+                        <li><a href="#">Documentación</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-section">
+                    <h4>Soporte</h4>
+                    <ul>
+                        <li><a href="contact.html">Contacto</a></li>
+                        <li><a href="#">Centro de ayuda</a></li>
+                        <li><a href="#">FAQ</a></li>
+                        <li><a href="#">Estado del servicio</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-section">
+                    <h4>Descargas</h4>
+                    <div class="download-links">
+                        <a href="#" class="download-link">
+                            <i class="fas fa-mobile-alt"></i>
+                            <div>
+                                <span>VentIQ Seller</span>
+                                <small>Android/iOS/Web</small>
+                            </div>
+                        </a>
+                        <a href="#" class="download-link">
+                            <i class="fas fa-desktop"></i>
+                            <div>
+                                <span>VentIQ Admin</span>
+                                <small>Android/iOS/Web</small>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <p>&copy; 2024 VentIQ. Todos los derechos reservados.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="assets/js/main.js"></script>
+</body>
+</html>

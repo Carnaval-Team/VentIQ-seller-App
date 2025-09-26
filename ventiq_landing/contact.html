@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contacto - VentIQ</title>
+    <link rel="icon" type="image/svg+xml" href="assets/images/logo.svg">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/styles.css">
+    <link rel="stylesheet" href="assets/css/contact.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <img src="assets/images/logo.svg" alt="VentIQ Logo" class="logo">
+                <span class="logo-text">VentIQ</span>
+            </div>
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link">Inicio</a>
+                <a href="index.html#caracteristicas" class="nav-link">Características</a>
+                <a href="tutorials.html" class="nav-link">Tutoriales</a>
+                <a href="contact.html" class="nav-link active">Contacto</a>
+                <div class="download-buttons">
+                    <a href="#" class="download-btn seller-app" title="Descargar VentIQ Seller">
+                        <i class="fas fa-mobile-alt"></i>
+                        <span>Seller App</span>
+                    </a>
+                    <a href="#" class="download-btn admin-app" title="Descargar VentIQ Admin">
+                        <i class="fas fa-desktop"></i>
+                        <span>Admin Web</span>
+                    </a>
+                </div>
+            </div>
+            <div class="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="contact-hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    Contáctanos
+                </h1>
+                <p class="hero-subtitle">
+                    Estamos aquí para ayudarte a hacer crecer tu negocio con VentIQ
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section class="contact-section">
+        <div class="container">
+            <div class="contact-grid">
+                <!-- Contact Form -->
+                <div class="contact-form-container">
+                    <div class="form-header">
+                        <h2>Envíanos un mensaje</h2>
+                        <p>Completa el formulario y nos pondremos en contacto contigo pronto</p>
+                    </div>
+                    
+                    <form class="contact-form" id="contactForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="firstName">Nombre *</label>
+                                <input type="text" id="firstName" name="firstName" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="lastName">Apellido *</label>
+                                <input type="text" id="lastName" name="lastName" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="email">Email *</label>
+                                <input type="email" id="email" name="email" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="phone">Teléfono</label>
+                                <input type="tel" id="phone" name="phone">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="company">Empresa</label>
+                            <input type="text" id="company" name="company">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="subject">Asunto *</label>
+                            <select id="subject" name="subject" required>
+                                <option value="">Selecciona un asunto</option>
+                                <option value="demo">Solicitar demo</option>
+                                <option value="pricing">Información de precios</option>
+                                <option value="support">Soporte técnico</option>
+                                <option value="partnership">Asociaciones</option>
+                                <option value="other">Otro</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="message">Mensaje *</label>
+                            <textarea id="message" name="message" rows="5" required placeholder="Cuéntanos cómo podemos ayudarte..."></textarea>
+                        </div>
+                        
+                        <div class="form-group checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="newsletter" name="newsletter">
+                                <span class="checkmark"></span>
+                                Quiero recibir noticias y actualizaciones de VentIQ
+                            </label>
+                        </div>
+                        
+                        <button type="submit" class="submit-btn">
+                            <i class="fas fa-paper-plane"></i>
+                            Enviar mensaje
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Contact Info -->
+                <div class="contact-info">
+                    <div class="info-card">
+                        <div class="info-header">
+                            <h3>Información de contacto</h3>
+                            <p>Múltiples formas de ponerte en contacto con nosotros</p>
+                        </div>
+                        
+                        <div class="contact-methods">
+                            <div class="contact-method">
+                                <div class="method-icon">
+                                    <i class="fas fa-envelope"></i>
+                                </div>
+                                <div class="method-info">
+                                    <h4>Email</h4>
+                                    <p>contacto@ventiq.com</p>
+                                    <small>Respuesta en 24 horas</small>
+                                </div>
+                            </div>
+                            
+                            <div class="contact-method">
+                                <div class="method-icon">
+                                    <i class="fas fa-phone"></i>
+                                </div>
+                                <div class="method-info">
+                                    <h4>Teléfono</h4>
+                                    <p>+1 (555) 123-4567</p>
+                                    <small>Lun - Vie, 9:00 AM - 6:00 PM</small>
+                                </div>
+                            </div>
+                            
+                            <div class="contact-method">
+                                <div class="method-icon">
+                                    <i class="fas fa-comments"></i>
+                                </div>
+                                <div class="method-info">
+                                    <h4>Chat en vivo</h4>
+                                    <p>Disponible en la app</p>
+                                    <small>Soporte 24/7</small>
+                                </div>
+                            </div>
+                            
+                            <div class="contact-method">
+                                <div class="method-icon">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                </div>
+                                <div class="method-info">
+                                    <h4>Oficina</h4>
+                                    <p>123 Business Ave<br>Tech City, TC 12345</p>
+                                    <small>Visitas con cita previa</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="quick-actions">
+                        <h3>Acciones rápidas</h3>
+                        <div class="action-buttons">
+                            <a href="#" class="action-btn demo-btn">
+                                <i class="fas fa-play"></i>
+                                <div>
+                                    <span>Solicitar demo</span>
+                                    <small>Ver VentIQ en acción</small>
+                                </div>
+                            </a>
+                            
+                            <a href="tutorials.html" class="action-btn tutorial-btn">
+                                <i class="fas fa-book"></i>
+                                <div>
+                                    <span>Ver tutoriales</span>
+                                    <small>Aprende a usar VentIQ</small>
+                                </div>
+                            </a>
+                            
+                            <a href="#" class="action-btn download-btn-action">
+                                <i class="fas fa-download"></i>
+                                <div>
+                                    <span>Descargar apps</span>
+                                    <small>Comienza ahora mismo</small>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Preguntas frecuentes</h2>
+                <p class="section-subtitle">
+                    Encuentra respuestas a las preguntas más comunes sobre VentIQ
+                </p>
+            </div>
+            
+            <div class="faq-grid">
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>¿Qué es VentIQ?</h4>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>VentIQ es un sistema completo de punto de venta e inventario que incluye una app móvil para vendedores y una plataforma web para administradores. Te permite gestionar ventas, inventario, personal y finanzas de forma integrada.</p>
+                    </div>
+                </div>
+                
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>¿Necesito internet para usar VentIQ?</h4>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>VentIQ funciona principalmente en línea para mantener sincronizados todos tus datos. Sin embargo, la app móvil tiene funcionalidades básicas offline que se sincronizan cuando recuperas la conexión.</p>
+                    </div>
+                </div>
+                
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>¿Cuánto cuesta VentIQ?</h4>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Ofrecemos diferentes planes según el tamaño de tu negocio. Contáctanos para obtener una cotización personalizada que se adapte a tus necesidades específicas.</p>
+                    </div>
+                </div>
+                
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>¿Puedo probar VentIQ antes de comprarlo?</h4>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>¡Por supuesto! Ofrecemos una demo gratuita de 30 días para que puedas probar todas las funcionalidades de VentIQ sin compromiso.</p>
+                    </div>
+                </div>
+                
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>¿Qué tipo de soporte ofrecen?</h4>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Ofrecemos soporte técnico 24/7 a través de chat en vivo, email y teléfono. También tenemos una base de conocimientos completa y tutoriales en video.</p>
+                    </div>
+                </div>
+                
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>¿Es seguro almacenar mis datos en VentIQ?</h4>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Absolutamente. Utilizamos encriptación de nivel bancario y cumplimos con los más altos estándares de seguridad. Tus datos están protegidos con respaldos automáticos diarios.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Success Message -->
+    <div class="success-message" id="successMessage">
+        <div class="success-content">
+            <i class="fas fa-check-circle"></i>
+            <h3>¡Mensaje enviado!</h3>
+            <p>Gracias por contactarnos. Te responderemos pronto.</p>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <div class="footer-logo">
+                        <img src="assets/images/logo.svg" alt="VentIQ Logo" class="logo">
+                        <span class="logo-text">VentIQ</span>
+                    </div>
+                    <p>Sistema completo de gestión de ventas e inventario para hacer crecer tu negocio.</p>
+                    <div class="social-links">
+                        <a href="#"><i class="fab fa-facebook"></i></a>
+                        <a href="#"><i class="fab fa-twitter"></i></a>
+                        <a href="#"><i class="fab fa-linkedin"></i></a>
+                        <a href="#"><i class="fab fa-instagram"></i></a>
+                    </div>
+                </div>
+                
+                <div class="footer-section">
+                    <h4>Aplicaciones</h4>
+                    <ul>
+                        <li><a href="#">VentIQ Seller (Android/iOS/Web)</a></li>
+                        <li><a href="#">VentIQ Admin (Android/iOS/Web)</a></li>
+                        <li><a href="tutorials.html">Tutoriales</a></li>
+                        <li><a href="#">Documentación</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-section">
+                    <h4>Soporte</h4>
+                    <ul>
+                        <li><a href="contact.html">Contacto</a></li>
+                        <li><a href="#">Centro de ayuda</a></li>
+                        <li><a href="#">FAQ</a></li>
+                        <li><a href="#">Estado del servicio</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-section">
+                    <h4>Descargas</h4>
+                    <div class="download-links">
+                        <a href="#" class="download-link">
+                            <i class="fas fa-mobile-alt"></i>
+                            <div>
+                                <span>VentIQ Seller</span>
+                                <small>Android/iOS/Web</small>
+                            </div>
+                        </a>
+                        <a href="#" class="download-link">
+                            <i class="fas fa-desktop"></i>
+                            <div>
+                                <span>VentIQ Admin</span>
+                                <small>Android/iOS/Web</small>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <p>&copy; 2024 VentIQ. Todos los derechos reservados.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="assets/js/main.js"></script>
+    <script src="assets/js/contact.js"></script>
+</body>
+</html>
