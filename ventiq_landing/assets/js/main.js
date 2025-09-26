@@ -188,14 +188,14 @@ function showDownloadModal(appName, appType) {
                         </button>
                     </div>
                 </div>
-                <div class="download-option">
+                <div class="download-option" style="opacity: 0.5; pointer-events: none;">
                     <i class="fab fa-apple"></i>
                     <div>
                         <h4>iOS</h4>
-                        <p>Disponible en App Store</p>
-                        <button class="btn btn-secondary" onclick="downloadApp('ios-seller')">
-                            <i class="fas fa-external-link-alt"></i>
-                            Ir a App Store
+                        <p>Próximamente disponible</p>
+                        <button class="btn btn-secondary" disabled>
+                            <i class="fas fa-clock"></i>
+                            Próximamente
                         </button>
                     </div>
                 </div>
@@ -226,14 +226,14 @@ function showDownloadModal(appName, appType) {
                         </button>
                     </div>
                 </div>
-                <div class="download-option">
+                <div class="download-option" style="opacity: 0.5; pointer-events: none;">
                     <i class="fab fa-apple"></i>
                     <div>
                         <h4>iOS</h4>
-                        <p>Disponible en App Store</p>
-                        <button class="btn btn-secondary" onclick="downloadApp('ios-admin')">
-                            <i class="fas fa-external-link-alt"></i>
-                            Ir a App Store
+                        <p>Próximamente disponible</p>
+                        <button class="btn btn-secondary" disabled>
+                            <i class="fas fa-clock"></i>
+                            Próximamente
                         </button>
                     </div>
                 </div>
@@ -442,16 +442,14 @@ function closeDownloadModal() {
 function downloadApp(platform) {
     if (platform === 'android-seller') {
         showNotification('Descarga iniciada', 'La descarga del APK de VentIQ Seller comenzará en breve.', 'success');
-        // window.open('path/to/ventiq-seller.apk', '_blank');
+        window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20cuba.apk', '_blank');
     } else if (platform === 'ios-seller') {
-        showNotification('Redirigiendo...', 'Te redirigimos a la App Store para VentIQ Seller.', 'info');
-        // window.open('https://apps.apple.com/app/ventiq-seller', '_blank');
+        showNotification('Próximamente', 'VentIQ Seller para iOS estará disponible pronto.', 'info');
     } else if (platform === 'android-admin') {
         showNotification('Descarga iniciada', 'La descarga del APK de VentIQ Admin comenzará en breve.', 'success');
-        // window.open('path/to/ventiq-admin.apk', '_blank');
+        window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20admin.apk', '_blank');
     } else if (platform === 'ios-admin') {
-        showNotification('Redirigiendo...', 'Te redirigimos a la App Store para VentIQ Admin.', 'info');
-        // window.open('https://apps.apple.com/app/ventiq-admin', '_blank');
+        showNotification('Próximamente', 'VentIQ Admin para iOS estará disponible pronto.', 'info');
     }
     closeDownloadModal();
 }
@@ -459,10 +457,10 @@ function downloadApp(platform) {
 function openWebApp(appType) {
     if (appType === 'seller') {
         showNotification('Abriendo aplicación...', 'VentIQ Seller Web se abrirá en una nueva pestaña.', 'info');
-        // window.open('https://seller.ventiq.com', '_blank');
+        window.open('https://ventiq-seller.appwrite.network', '_blank');
     } else {
         showNotification('Abriendo aplicación...', 'VentIQ Admin Web se abrirá en una nueva pestaña.', 'info');
-        // window.open('https://admin.ventiq.com', '_blank');
+        window.open('https://vendedor-admin.appwrite.network', '_blank');
     }
     closeDownloadModal();
 }
