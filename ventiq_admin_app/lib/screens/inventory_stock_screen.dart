@@ -38,7 +38,8 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   // Warehouses data
   List<Map<String, dynamic>> _warehouses = [];
   bool _isLoadingWarehouses = false;
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
   final SupabaseClient _supabase = Supabase.instance.client;
 
   @override
@@ -89,7 +90,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         );
 
         // Group products to eliminate duplicates
-        List<InventoryProduct> groupedProducts = _groupProducts(response.products);
+        List<InventoryProduct> groupedProducts = _groupProducts(
+          response.products,
+        );
 
         setState(() {
           if (reset) {
@@ -110,7 +113,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       } else {
         print('🔍 Loading inventory summary view...');
         // Load inventory summary by user
-        final summaries = await InventoryService.getInventorySummaryByUser(_selectedWarehouseId, _searchQuery);
+        final summaries = await InventoryService.getInventorySummaryByUser(
+          _selectedWarehouseId,
+          _searchQuery,
+        );
 
         print('📦 Received ${summaries.length} summaries from service');
         for (int i = 0; i < summaries.length && i < 3; i++) {
@@ -148,7 +154,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
 
     try {
       print('🏪 Loading warehouses from Supabase...');
-      
+
       // Obtener el ID de tienda del usuario
       final idTienda = await _userPreferencesService.getIdTienda();
       if (idTienda == null) {
@@ -179,7 +185,6 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       for (final warehouse in _warehouses) {
         print('   - ${warehouse['denominacion']} (ID: ${warehouse['id']})');
       }
-
     } catch (e) {
       print('❌ Error loading warehouses: $e');
       setState(() {
@@ -191,36 +196,43 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
 
   List<InventoryProduct> _groupProducts(List<InventoryProduct> products) {
     print('🔄 Grouping ${products.length} products to eliminate duplicates...');
-    
+
     Map<String, InventoryProduct> groupedMap = {};
-    
+
     for (final product in products) {
       // Crear clave única que incluya TODOS los campos relevantes para evitar agrupamiento incorrecto
-      final uniqueKey = '${product.id}_${product.idUbicacion}_${product.idVariante ?? 'null'}_${product.idOpcionVariante ?? 'null'}_${product.idPresentacion ?? 'null'}';
-      
+      final uniqueKey =
+          '${product.id}_${product.idUbicacion}_${product.idVariante ?? 'null'}_${product.idOpcionVariante ?? 'null'}_${product.idPresentacion ?? 'null'}';
+
       print('🔍 Processing product: ${product.nombreProducto}');
       print('   - ID: ${product.id}');
       print('   - Ubicación: ${product.idUbicacion} (${product.ubicacion})');
       print('   - Variante: ${product.idVariante} (${product.variante})');
-      print('   - Opción Variante: ${product.idOpcionVariante} (${product.opcionVariante})');
-      print('   - Presentación: ${product.idPresentacion} (${product.presentacion})');
+      print(
+        '   - Opción Variante: ${product.idOpcionVariante} (${product.opcionVariante})',
+      );
+      print(
+        '   - Presentación: ${product.idPresentacion} (${product.presentacion})',
+      );
       print('   - Unique Key: $uniqueKey');
       print('   - Stock Disponible: ${product.stockDisponible}');
-      
+
       if (groupedMap.containsKey(uniqueKey)) {
         final existing = groupedMap[uniqueKey]!;
-        
+
         print('   ⚠️  DUPLICADO ENCONTRADO - Sumando cantidades:');
         print('      - Stock anterior: ${existing.stockDisponible}');
         print('      - Stock actual: ${product.stockDisponible}');
-        
+
         // Sum quantities solo si es realmente el mismo producto con misma variante/presentación
-        final newStockDisponible = existing.stockDisponible + product.stockDisponible;
-        final newStockReservado = existing.stockReservado + product.stockReservado;
+        final newStockDisponible =
+            existing.stockDisponible + product.stockDisponible;
+        final newStockReservado =
+            existing.stockReservado + product.stockReservado;
         final newCantidadFinal = existing.cantidadFinal + product.cantidadFinal;
-        
+
         print('      - Stock sumado: $newStockDisponible');
-        
+
         // Update existing product with summed quantities
         groupedMap[uniqueKey] = InventoryProduct(
           id: existing.id,
@@ -246,7 +258,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           cantidadFinal: newCantidadFinal,
           stockDisponible: newStockDisponible,
           stockReservado: newStockReservado,
-          stockDisponibleAjustado: existing.stockDisponibleAjustado + product.stockDisponibleAjustado,
+          stockDisponibleAjustado:
+              existing.stockDisponibleAjustado +
+              product.stockDisponibleAjustado,
           esVendible: existing.esVendible,
           esInventariable: existing.esInventariable,
           esElaborado: existing.esElaborado,
@@ -265,17 +279,21 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         groupedMap[uniqueKey] = product;
       }
     }
-    
+
     final result = groupedMap.values.toList();
-    print('✅ Grouped ${products.length} products into ${result.length} unique items');
-    
+    print(
+      '✅ Grouped ${products.length} products into ${result.length} unique items',
+    );
+
     // Log final de productos agrupados
     print('📋 Productos finales después del agrupamiento:');
     for (int i = 0; i < result.length && i < 5; i++) {
       final item = result[i];
-      print('   ${i + 1}. ${item.nombreProducto} - ${item.variante} ${item.opcionVariante} - Stock: ${item.stockDisponible}');
+      print(
+        '   ${i + 1}. ${item.nombreProducto} - ${item.variante} ${item.opcionVariante} - Stock: ${item.stockDisponible}',
+      );
     }
-    
+
     return result;
   }
 
@@ -349,6 +367,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                   value: true,
                   label: Text('Detallado'),
                   icon: Icon(Icons.view_module, size: 18),
+                  enabled: false,
                 ),
               ],
               selected: {_isDetailedView},
@@ -525,19 +544,20 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                       horizontal: 12,
                       vertical: 8,
                     ),
-                    suffixIcon: _isLoadingWarehouses 
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.primary,
+                    suffixIcon:
+                        _isLoadingWarehouses
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: Padding(
+                                padding: EdgeInsets.all(8.0),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.primary,
+                                ),
                               ),
-                            ),
-                          )
-                        : null,
+                            )
+                            : null,
                   ),
                   isExpanded: true,
                   items: [
@@ -550,9 +570,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                       ),
                     ),
                     ..._warehouses.map((warehouse) {
-                      final warehouseName = warehouse['denominacion'] as String? ?? 'Sin nombre';
+                      final warehouseName =
+                          warehouse['denominacion'] as String? ?? 'Sin nombre';
                       final warehouseId = warehouse['id'].toString();
-                      
+
                       return DropdownMenuItem<String>(
                         value: warehouseId,
                         child: Tooltip(
@@ -567,17 +588,20 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                       );
                     }).toList(),
                   ],
-                  onChanged: _isLoadingWarehouses ? null : (value) {
-                    setState(() {
-                      _selectedWarehouse = value!;
-                      if (value == 'Todos') {
-                        _selectedWarehouseId = null;
-                      } else {
-                        _selectedWarehouseId = int.tryParse(value);
-                      }
-                    });
-                    _loadInventoryData();
-                  },
+                  onChanged:
+                      _isLoadingWarehouses
+                          ? null
+                          : (value) {
+                            setState(() {
+                              _selectedWarehouse = value!;
+                              if (value == 'Todos') {
+                                _selectedWarehouseId = null;
+                              } else {
+                                _selectedWarehouseId = int.tryParse(value);
+                              }
+                            });
+                            _loadInventoryData();
+                          },
                 ),
               ),
               const SizedBox(width: 12),
@@ -774,7 +798,9 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
     // Apply warehouse filter
     if (_selectedWarehouse != 'Todos' && _selectedWarehouseId != null) {
       filtered =
-          filtered.where((item) => item.idAlmacen == _selectedWarehouseId).toList();
+          filtered
+              .where((item) => item.idAlmacen == _selectedWarehouseId)
+              .toList();
       print('🔍 Filtering by warehouse ID: $_selectedWarehouseId');
       print('📋 Filtered to ${filtered.length} items for selected warehouse');
     }
