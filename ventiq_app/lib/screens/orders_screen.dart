@@ -3,6 +3,7 @@ import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/turno_service.dart';
 import '../services/bluetooth_printer_service.dart';
+import '../services/user_preferences_service.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
@@ -17,6 +18,7 @@ class OrdersScreen extends StatefulWidget {
 class _OrdersScreenState extends State<OrdersScreen> {
   final OrderService _orderService = OrderService();
   final BluetoothPrinterService _printerService = BluetoothPrinterService();
+  final UserPreferencesService _userPreferencesService = UserPreferencesService();
   final TextEditingController _searchController = TextEditingController();
   List<Order> _filteredOrders = [];
   String _searchQuery = '';
@@ -879,12 +881,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
             break;
           case OrderStatus.pagoConfirmado:
             statusMessage = 'Pago confirmado exitosamente';
-            // Mostrar diálogo de impresión cuando se confirme el pago
-            print('DEBUG: Llamando a _showPrintDialog para orden ${order.id}');
-            // Agregar un pequeño delay para asegurar que el contexto esté disponible
-            Future.delayed(Duration(milliseconds: 500), () {
-              _showPrintDialog(order);
-            });
+            // Verificar si la impresión está habilitada antes de mostrar el diálogo
+            _checkAndShowPrintDialog(order);
             break;
           default:
             statusMessage = 'Estado actualizado correctamente';
@@ -1135,6 +1133,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
       case 3: // Configuración
         Navigator.pushNamed(context, '/settings');
         break;
+    }
+  }
+
+  /// Verificar configuración de impresión y mostrar diálogo si está habilitada
+  Future<void> _checkAndShowPrintDialog(Order order) async {
+    print('DEBUG: Verificando configuración de impresión para orden ${order.id}');
+    
+    // Verificar si la impresión está habilitada
+    final isPrintEnabled = await _userPreferencesService.isPrintEnabled();
+    print('DEBUG: Impresión habilitada: $isPrintEnabled');
+    
+    if (isPrintEnabled) {
+      print('DEBUG: Impresión habilitada - Mostrando diálogo de impresión');
+      // Agregar un pequeño delay para asegurar que el contexto esté disponible
+      Future.delayed(Duration(milliseconds: 500), () {
+        _showPrintDialog(order);
+      });
+    } else {
+      print('DEBUG: Impresión deshabilitada - No se muestra diálogo de impresión');
     }
   }
 

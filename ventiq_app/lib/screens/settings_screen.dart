@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/order_service.dart';
+import '../services/user_preferences_service.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 
@@ -12,6 +13,42 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final OrderService _orderService = OrderService();
+  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  bool _isPrintEnabled = true; // Valor por defecto
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrintSettings();
+  }
+
+  Future<void> _loadPrintSettings() async {
+    final printEnabled = await _userPreferencesService.isPrintEnabled();
+    setState(() {
+      _isPrintEnabled = printEnabled;
+    });
+  }
+
+  Future<void> _onPrintSettingChanged(bool value) async {
+    setState(() {
+      _isPrintEnabled = value;
+    });
+    
+    await _userPreferencesService.setPrintEnabled(value);
+    
+    // Mostrar confirmación al usuario
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          value 
+            ? '✅ Impresión habilitada - Las órdenes se imprimirán automáticamente'
+            : '❌ Impresión deshabilitada - Las órdenes no se imprimirán',
+        ),
+        backgroundColor: value ? Colors.green : Colors.orange,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +108,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: 'Configurar alertas y avisos',
               onTap: () => _showComingSoon('Notificaciones'),
             ),
+            _buildDivider(),
+            _buildPrintSettingsTile(),
             _buildDivider(),
             _buildSettingsTile(
               icon: Icons.language_outlined,
@@ -222,6 +261,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
       thickness: 1,
       color: Colors.grey[200],
       indent: 60,
+    );
+  }
+
+  Widget _buildPrintSettingsTile() {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4A90E2).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.print_outlined,
+          color: Color(0xFF4A90E2),
+          size: 20,
+        ),
+      ),
+      title: const Text(
+        'Habilitar Impresión',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        _isPrintEnabled ? 'Las órdenes se imprimirán automáticamente' : 'Impresión deshabilitada',
+        style: TextStyle(
+          fontSize: 13,
+          color: Colors.grey[600],
+        ),
+      ),
+      trailing: Switch(
+        value: _isPrintEnabled,
+        onChanged: _onPrintSettingChanged,
+        activeColor: const Color(0xFF4A90E2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
 

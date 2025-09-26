@@ -319,6 +319,9 @@ class UserPreferencesService {
   static const String _turnoIdKey = 'turno_id';
   static const String _turnoDataKey = 'turno_data';
 
+  // Print settings keys
+  static const String _printEnabledKey = 'print_enabled';
+
   Future<void> saveTurnoData(Map<String, dynamic> turnoData) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_turnoIdKey, turnoData['id']);
@@ -343,5 +346,17 @@ class UserPreferencesService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_turnoIdKey);
     await prefs.remove(_turnoDataKey);
+  }
+
+  // Print settings methods
+  Future<void> setPrintEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_printEnabledKey, enabled);
+    print('UserPreferencesService: Configuración de impresión actualizada: $enabled');
+  }
+
+  Future<bool> isPrintEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_printEnabledKey) ?? true; // Por defecto habilitado
   }
 }

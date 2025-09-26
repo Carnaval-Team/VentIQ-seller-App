@@ -1558,6 +1558,41 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     for (var entry in locationGroups.entries) {
       print('   ${entry.key}: ${entry.value.length} variantes');
     }
+
+    // Si solo hay una ubicación, seleccionar automáticamente la primera variante
+    _autoSelectSingleLocation();
+  }
+
+  /// Selecciona automáticamente la primera variante si solo hay una ubicación
+  void _autoSelectSingleLocation() {
+    if (locationGroups.length == 1) {
+      final singleLocationEntry = locationGroups.entries.first;
+      final locationKey = singleLocationEntry.key;
+      final variants = singleLocationEntry.value;
+      
+      if (variants.isNotEmpty) {
+        final firstVariant = variants.first;
+        
+        print('🎯 Solo una ubicación disponible: $locationKey');
+        print('🎯 Seleccionando automáticamente variante: ${firstVariant.nombre}');
+        
+        // Seleccionar la primera variante automáticamente
+        // Usar addPostFrameCallback para asegurar que el setState se ejecute correctamente
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          setState(() {
+            selectedVariant = firstVariant;
+            // Establecer cantidad inicial de 1 para la variante seleccionada
+            variantQuantities[firstVariant] = 1;
+            print('🔄 setState ejecutado - selectedVariant: ${selectedVariant?.nombre}');
+            print('🔄 variantQuantities actualizado: ${variantQuantities.entries.where((e) => e.value > 0).map((e) => '${e.key.nombre}: ${e.value}').toList()}');
+          });
+        });
+        
+        print('🎯 Variante seleccionada automáticamente: ${firstVariant.nombre} con cantidad 1');
+      }
+    } else {
+      print('🏪 Múltiples ubicaciones disponibles (${locationGroups.length}), mostrando opciones al usuario');
+    }
   }
 
   /// Genera un color único para cada ubicación basado en el color de la categoría

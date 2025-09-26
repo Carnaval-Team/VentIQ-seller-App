@@ -417,31 +417,31 @@ class OrderService {
         productos.add(mainProduct);
 
         // If this is an elaborated product, add its ingredients for inventory deduction
-        if (decompositionData != null && decompositionData['es_elaborado'] == true) {
-          print('🍽️ Producto elaborado detectado: ${item.nombre}');
+        // if (decompositionData != null && decompositionData['es_elaborado'] == true) {
+        //   print('🍽️ Producto elaborado detectado: ${item.nombre}');
           
-          final ingredientes = decompositionData['ingredientes_descompuestos'] as List<dynamic>? ?? [];
-          print('📦 Agregando ${ingredientes.length} ingredientes para rebaja de inventario');
+        //   final ingredientes = decompositionData['ingredientes_descompuestos'] as List<dynamic>? ?? [];
+        //   print('📦 Agregando ${ingredientes.length} ingredientes para rebaja de inventario');
           
-          for (final ingrediente in ingredientes) {
-            final ingredientProduct = {
-              'id_producto': ingrediente['id_producto'],
-              'id_variante': null, // Ingredients typically don't have variants
-              'id_opcion_variante': null,
-              'id_ubicacion': inventoryData['id_ubicacion'], // Use same location as main product
-              'id_presentacion': null, // Will be handled by base presentation logic
-              'cantidad': ingrediente['cantidad'],
-              'precio_unitario': 0.0, // Ingredients don't have individual prices
-              'sku_producto': ingrediente['id_producto'].toString(),
-              'sku_ubicacion': inventoryData['sku_ubicacion'],
-              'es_ingrediente_elaborado': true, // Mark as ingredient for inventory
-              'producto_elaborado_id': item.producto.id, // Reference to parent product
-            };
+        //   for (final ingrediente in ingredientes) {
+        //     final ingredientProduct = {
+        //       'id_producto': ingrediente['id_producto'],
+        //       'id_variante': null, // Ingredients typically don't have variants
+        //       'id_opcion_variante': null,
+        //       'id_ubicacion': inventoryData['id_ubicacion'], // Use same location as main product
+        //       'id_presentacion': null, // Will be handled by base presentation logic
+        //       'cantidad': ingrediente['cantidad'],
+        //       'precio_unitario': 0.0, // Ingredients don't have individual prices
+        //       'sku_producto': ingrediente['id_producto'].toString(),
+        //       'sku_ubicacion': inventoryData['sku_ubicacion'],
+        //       'es_ingrediente_elaborado': true, // Mark as ingredient for inventory
+        //       'producto_elaborado_id': item.producto.id, // Reference to parent product
+        //     };
             
-            productos.add(ingredientProduct);
-            print('📦 Ingrediente agregado: ID=${ingrediente['id_producto']}, Cantidad=${ingrediente['cantidad']}');
-          }
-        }
+        //     productos.add(ingredientProduct);
+        //     print('📦 Ingrediente agregado: ID=${ingrediente['id_producto']}, Cantidad=${ingrediente['cantidad']}');
+        //   }
+        // }
       }
 
       // Preparar parámetros para fn_registrar_venta
