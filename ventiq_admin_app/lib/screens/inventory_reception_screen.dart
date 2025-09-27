@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 // import 'dart:convert';
 // import 'dart:io';
 import '../config/app_colors.dart';
@@ -1058,15 +1059,20 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   final _descuentoPorcentajeController = TextEditingController();
   final _descuentoMontoController = TextEditingController();
   final _bonificacionCantidadController = TextEditingController();
-  Map<String, dynamic>? _selectedVariant;
-  Map<String, dynamic>? _selectedPresentation;
+
   List<Map<String, dynamic>> _availableVariants = [];
   List<Map<String, dynamic>> _availablePresentations = [];
-  bool _advancedOptionsExpanded = false;
+  Map<String, dynamic>? _selectedVariant;
+  Map<String, dynamic>? _selectedPresentation;
+  
+  // Variables para el precio histórico
+  double? _lastPurchasePrice;
+  String? _lastPurchaseDate;
+  bool _isLoadingLastPrice = false;
 
   void _initializeVariantsAndPresentations() {
-    final variantMap = <String, Map<String, dynamic>>{};
-    final presentationMap = <String, Map<String, dynamic>>{};
+    final Map<String, Map<String, dynamic>> variantMap = {};
+    final Map<String, Map<String, dynamic>> presentationMap = {};
 
     print(
       '🔍 Inicializando variantes y presentaciones para producto: ${widget.product.id}',
@@ -1209,7 +1215,90 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   void initState() {
     super.initState();
     _initializeVariantsAndPresentations();
-    _precioUnitarioController.text = widget.product.basePrice.toString();
+    _loadLastPurchasePrice();
+  }
+
+  /// Obtiene el último precio de compra del producto desde app_dat_recepcion_productos
+  Future<void> _loadLastPurchasePrice() async {
+    setState(() {
+      _isLoadingLastPrice = true;
+    });
+
+    try {
+      print('🔍 Buscando último precio de compra para producto ID: ${widget.product.id}');
+      
+      final response = await Supabase.instance.client
+          .from('app_dat_recepcion_productos')
+          .select('precio_unitario, created_at')
+          .eq('id_producto', widget.product.id)
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      if (response.isNotEmpty) {
+        final lastRecord = response.first;
+        final precioUnitario = lastRecord['precio_unitario'];
+        final createdAt = lastRecord['created_at'];
+
+        if (precioUnitario != null) {
+          setState(() {
+            _lastPurchasePrice = (precioUnitario as num).toDouble();
+            _lastPurchaseDate = createdAt;
+            _precioUnitarioController.text = _lastPurchasePrice.toString();
+          });
+          
+          print('✅ Último precio encontrado: \$${_lastPurchasePrice} (${_lastPurchaseDate})');
+        } else {
+          _setDefaultPrice();
+        }
+      } else {
+        print('ℹ️ No se encontró historial de compras para este producto');
+        _setDefaultPrice();
+      }
+    } catch (e) {
+      print('❌ Error obteniendo último precio de compra: $e');
+      _setDefaultPrice();
+    } finally {
+      setState(() {
+        _isLoadingLastPrice = false;
+      });
+    }
+  }
+
+  void _setDefaultPrice() {
+    setState(() {
+      _lastPurchasePrice = null;
+      _lastPurchaseDate = null;
+      _precioUnitarioController.text = widget.product.basePrice.toString();
+    });
+    print('📝 Usando precio base del producto: \$${widget.product.basePrice}');
+  }
+
+  /// Formatea la fecha para mostrar en el UI
+  String _formatDate(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      final now = DateTime.now();
+      final difference = now.difference(date);
+
+      if (difference.inDays == 0) {
+        return 'Hoy';
+      } else if (difference.inDays == 1) {
+        return 'Ayer';
+      } else if (difference.inDays < 7) {
+        return 'hace ${difference.inDays} días';
+      } else if (difference.inDays < 30) {
+        final weeks = (difference.inDays / 7).floor();
+        return 'hace ${weeks} semana${weeks > 1 ? 's' : ''}';
+      } else {
+        final day = date.day.toString().padLeft(2, '0');
+        final month = date.month.toString().padLeft(2, '0');
+        final year = date.year;
+        return '$day/$month/$year';
+      }
+    } catch (e) {
+      print('❌ Error formateando fecha: $e');
+      return 'Fecha inválida';
+    }
   }
 
   @override
@@ -1617,43 +1706,83 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                             SizedBox(height: 16),
 
                             // Purchase Price
-                            TextFormField(
-                              controller: _precioUnitarioController,
-                              decoration: InputDecoration(
-                                labelText:
-                                    'Precio de Compra (por presentación seleccionada)',
-                                hintText:
-                                    'Se convertirá automáticamente a precio base',
-                                border: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: AppColors.border,
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                TextFormField(
+                                  controller: _precioUnitarioController,
+                                  decoration: InputDecoration(
+                                    labelText:
+                                        'Precio de Compra (por presentación seleccionada)',
+                                    hintText:
+                                        'Se convertirá automáticamente a precio base',
+                                    border: OutlineInputBorder(
+                                      borderSide: BorderSide(
+                                        color: AppColors.border,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderSide: BorderSide(
+                                        color: AppColors.border,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderSide: BorderSide(
+                                        color: AppColors.primary,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    prefixIcon: _isLoadingLastPrice
+                                        ? SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: Padding(
+                                              padding: EdgeInsets.all(12),
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: AppColors.primary,
+                                              ),
+                                            ),
+                                          )
+                                        : Icon(
+                                            Icons.attach_money,
+                                            color: AppColors.primary,
+                                          ),
                                   ),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: AppColors.border,
+                                  keyboardType: TextInputType.numberWithOptions(
+                                    decimal: true,
                                   ),
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'El precio de compra es obligatorio';
+                                    }
+                                    return null;
+                                  },
                                 ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: AppColors.primary,
-                                    width: 2,
+                                // Mostrar información de la fecha si hay precio histórico
+                                if (_lastPurchaseDate != null && !_isLoadingLastPrice)
+                                  Padding(
+                                    padding: EdgeInsets.only(top: 8, left: 12),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.history,
+                                          size: 16,
+                                          color: AppColors.success,
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Último precio: ${_formatDate(_lastPurchaseDate!)}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.success,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                prefixIcon: Icon(
-                                  Icons.attach_money,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                              keyboardType: TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'El precio de compra es obligatorio';
-                                }
-                                return null;
-                              },
+                              ],
                             ),
 
                             SizedBox(height: 24),

@@ -75,14 +75,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _loadUsdRate();
       
       // Validar que el supervisor tenga id_tienda
+      print('🔍 Validating supervisor store access...');
       final hasValidStore = await _dashboardService.validateSupervisorStore();
       
       if (!hasValidStore) {
-        print('❌ Supervisor no tiene id_tienda válido');
-        // Fallback a datos mock si no hay id_tienda
+        print('❌ Supervisor no tiene id_tienda válido - usando datos mock');
         _loadMockData();
         return;
       }
+      
+      print('✅ Supervisor validation passed - loading real data');
       
       // Llamar a la función RPC con el período seleccionado
       print('🔄 Loading dashboard data for period: $_selectedTimeFilter');
@@ -90,18 +92,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
         periodo: _selectedTimeFilter,
       );
       
-      if (realData != null) {
+      if (realData != null && realData.isNotEmpty) {
         print('✅ Real data loaded successfully');
+        print('📊 Data keys: ${realData.keys.toList()}');
+        
+        // Verificar que los datos no estén vacíos
+        final totalSales = realData['totalSales'] ?? 0.0;
+        final totalProducts = realData['totalProducts'] ?? 0;
+        final period = realData['period'] ?? 'unknown';
+        final lastUpdated = realData['lastUpdated'] ?? 'unknown';
+        
+        print('📊 Key metrics loaded:');
+        print('  - totalSales: $totalSales');
+        print('  - totalProducts: $totalProducts');
+        print('  - period: $period (String)');
+        print('  - lastUpdated: $lastUpdated (String)');
+        
         setState(() {
           _dashboardData = realData;
           _isLoading = false;
         });
       } else {
-        print('⚠️ No real data available, using mock data');
+        print('⚠️ RPC returned null or empty data - using mock data');
         _loadMockData();
       }
     } catch (e) {
       print('❌ Error loading dashboard data: $e');
+      print('❌ Stack trace: ${StackTrace.current}');
       _loadMockData();
     }
   }
@@ -144,6 +161,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _loadMockData() {
+    print('⚠️ Loading mock data as fallback');
+    print('⚠️ Reason: Either validation failed or RPC returned no data');
+    
     // Fallback con datos básicos cuando no hay datos reales
     Future.delayed(const Duration(milliseconds: 500), () {
       setState(() {
@@ -168,6 +188,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         };
         _isLoading = false;
       });
+      
+      print('📊 Mock data loaded:');
+      print('  - totalSales: 0.0');
+      print('  - totalProducts: 0');
+      print('  - period: $_selectedTimeFilter (String)');
+      print('  - lastUpdated: ${DateTime.now().toIso8601String()} (String)');
+      print('⚠️ This indicates the RPC is not returning real data');
     });
   }
 

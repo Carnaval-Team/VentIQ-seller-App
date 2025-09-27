@@ -38,13 +38,17 @@ class DashboardService {
       print('  - Current hour Cuba: ${now.hour}:${now.minute}');
 
       // Llamar a la función RPC (revert to original parameters)
+      print('🚀 Calling RPC with params: {p_id_tienda: $idTienda, p_periodo: $periodo}');
+      
       final response = await _supabase.rpc(
         'fn_dashboard_analisis_tienda',
         params: {'p_id_tienda': idTienda, 'p_periodo': periodo},
       );
 
+      print('📡 RPC call completed');
+      
       if (response == null) {
-        print('❌ RPC response is null');
+        print('❌ RPC response is null - function may not exist or returned null');
         return null;
       }
 
@@ -82,6 +86,18 @@ class DashboardService {
     } catch (e) {
       print('❌ Error calling fn_dashboard_analisis_tienda: $e');
       print('❌ Error type: ${e.runtimeType}');
+      
+      // Verificar si es un error específico de Supabase
+      if (e.toString().contains('function') && e.toString().contains('does not exist')) {
+        print('❌ RPC function fn_dashboard_analisis_tienda does not exist in database');
+        print('❌ Please check if the function has been created in Supabase');
+      } else if (e.toString().contains('permission')) {
+        print('❌ Permission denied - check RLS policies for the function');
+      } else if (e.toString().contains('connection')) {
+        print('❌ Connection error - check internet connectivity');
+      }
+      
+      print('❌ Full error details: $e');
       return null;
     }
   }
@@ -93,14 +109,38 @@ class DashboardService {
 
   /// Valida que el supervisor tenga id_tienda configurado
   Future<bool> validateSupervisorStore() async {
-    final idTienda = await _userPreferencesService.getIdTienda();
-    final isValid = idTienda != null && idTienda > 0;
+    try {
+      final idTienda = await _userPreferencesService.getIdTienda();
+      final isValid = idTienda != null && idTienda > 0;
 
-    print('🔐 Supervisor store validation:');
-    print('  - ID Tienda: $idTienda');
-    print('  - Is Valid: $isValid');
+      print('🔐 Supervisor store validation:');
+      print('  - ID Tienda: $idTienda');
+      print('  - Is Valid: $isValid');
 
-    return isValid;
+      // Obtener información adicional para debugging
+      final userId = await _userPreferencesService.getUserId();
+      final userEmail = await _userPreferencesService.getUserEmail();
+      final adminRole = await _userPreferencesService.getAdminRole();
+      final stores = await _userPreferencesService.getUserStores();
+      
+      print('🔍 Additional validation info:');
+      print('  - User ID: $userId');
+      print('  - User Email: $userEmail');
+      print('  - Admin Role: $adminRole');
+      print('  - User Stores Count: ${stores.length}');
+      
+      if (stores.isNotEmpty) {
+        print('  - Available Stores:');
+        for (final store in stores) {
+          print('    * ID: ${store['id_tienda']}, Name: ${store['denominacion']}');
+        }
+      }
+
+      return isValid;
+    } catch (e) {
+      print('❌ Error in validateSupervisorStore: $e');
+      return false;
+    }
   }
 
   /// Transforma la respuesta RPC al formato esperado por el dashboard
