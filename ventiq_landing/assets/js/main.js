@@ -159,9 +159,9 @@ function initDownloadButtons() {
                               this.textContent.toLowerCase().includes('móvil');
             
             if (isSellerApp) {
-                showDownloadModal('VentIQ Seller App', 'seller');
+                showDownloadModal('Vendedor Cuba', 'seller');
             } else {
-                showDownloadModal('Vendedor Cuba Admin Web', 'admin');
+                showDownloadModal('Vendedor Cuba Admin', 'admin');
             }
         });
     });
@@ -214,7 +214,7 @@ function showDownloadModal(appName, appType) {
                         <p>Acceso directo desde navegador</p>
                         <button class="btn btn-primary" onclick="openWebApp('seller')">
                             <i class="fas fa-external-link-alt"></i>
-                            Abrir VentIQ Seller Web
+                            Abrir Vendedor Cuba Web
                         </button>
                     </div>
                 </div>
@@ -252,7 +252,7 @@ function showDownloadModal(appName, appType) {
                         <p>Acceso directo desde navegador</p>
                         <button class="btn btn-primary" onclick="openWebApp('admin')">
                             <i class="fas fa-external-link-alt"></i>
-                            Abrir Vendedor Cuba Admin Web
+                            Abrir Vendedor Cuba Admin
                         </button>
                     </div>
                 </div>
@@ -449,10 +449,10 @@ function closeDownloadModal() {
 // Download app functions
 function downloadApp(platform) {
     if (platform === 'android-seller') {
-        showNotification('Descarga iniciada', 'La descarga del APK de VentIQ Seller comenzará en breve.', 'success');
+        showNotification('Descarga iniciada', 'La descarga del APK de Vendedor Cuba comenzará en breve.', 'success');
         window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20cuba.apk', '_blank');
     } else if (platform === 'ios-seller') {
-        showNotification('Próximamente', 'VentIQ Seller para iOS estará disponible pronto.', 'info');
+        showNotification('Próximamente', 'Vendedor Cuba para iOS estará disponible pronto.', 'info');
     } else if (platform === 'android-admin') {
         showNotification('Descarga iniciada', 'La descarga del APK de Vendedor Cuba Admin comenzará en breve.', 'success');
         window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20admin.apk', '_blank');
@@ -464,10 +464,10 @@ function downloadApp(platform) {
 
 function openWebApp(appType) {
     if (appType === 'seller') {
-        showNotification('Abriendo aplicación...', 'VentIQ Seller Web se abrirá en una nueva pestaña.', 'info');
+        showNotification('Abriendo aplicación...', 'Vendedor Cuba Web se abrirá en una nueva pestaña.', 'info');
         window.open('https://ventiq-seller.appwrite.network', '_blank');
     } else {
-        showNotification('Abriendo aplicación...', 'Vendedor Cuba Admin Web se abrirá en una nueva pestaña.', 'info');
+        showNotification('Abriendo aplicación...', 'Vendedor Cuba Admin se abrirá en una nueva pestaña.', 'info');
         window.open('https://vendedor-admin.appwrite.network', '_blank');
     }
     closeDownloadModal();
