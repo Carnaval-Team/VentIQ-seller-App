@@ -9,6 +9,18 @@ class DashboardData {
   final int totalProductosRegistrados;
   final List<ChartData> registroTiendasChart;
   final List<ChartData> ventasChart;
+  
+  // Campos adicionales para compatibilidad
+  final int totalUsuarios;
+  final int usuariosActivos;
+  final double ventasTotales;
+  final double ventasDelMes;
+  final int productosTotal;
+  final int pedidosDelDia;
+  final List<double> ventasPorMes;
+  final Map<String, int> tiendasPorPlan;
+  final List<Map<String, dynamic>> topTiendas;
+  final List<Map<String, dynamic>> actividadReciente;
 
   DashboardData({
     required this.totalTiendas,
@@ -19,6 +31,16 @@ class DashboardData {
     required this.totalProductosRegistrados,
     required this.registroTiendasChart,
     required this.ventasChart,
+    this.totalUsuarios = 0,
+    this.usuariosActivos = 0,
+    this.ventasTotales = 0,
+    this.ventasDelMes = 0,
+    this.productosTotal = 0,
+    this.pedidosDelDia = 0,
+    this.ventasPorMes = const [],
+    this.tiendasPorPlan = const {},
+    this.topTiendas = const [],
+    this.actividadReciente = const [],
   });
 
   factory DashboardData.mock() {

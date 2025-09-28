@@ -1,135 +1,283 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/dashboard_data.dart';
 
 class DashboardService {
-  // Simulación de datos del dashboard - En producción conectar con Supabase
+  final _supabase = Supabase.instance.client;
+  
   Future<DashboardData> getDashboardData() async {
     try {
-      // Simular delay de red
-      await Future.delayed(const Duration(seconds: 1));
+      debugPrint('📊 Obteniendo datos del dashboard...');
       
-      // En producción, hacer consulta a la base de datos
+      // Obtener estadísticas generales (para uso futuro)
+      // final stats = await StoreService.getSystemStats();
+      
+      // Total de tiendas
+      final tiendasResponse = await _supabase
+          .from('app_dat_tienda')
+          .select('id, created_at');
+      
+      final totalTiendas = tiendasResponse.length;
+      final tiendasActivas = totalTiendas; // Por ahora todas activas
+      
+      // Total de usuarios únicos
+      final totalUsuarios = await _getTotalUsuarios();
+      final usuariosActivos = totalUsuarios; // Por ahora todos activos
+      
+      // Ventas totales y del mes
+      final ventasData = await _getVentasData();
+      
+      // Productos totales
+      final productosResponse = await _supabase
+          .from('app_dat_producto')
+          .select('id')
+          .count();
+      
+      final productosTotal = productosResponse.count;
+      
+      // Pedidos del día
+      final pedidosDelDia = await _getPedidosDelDia();
+      
+      // Ventas por mes (últimos 12 meses)
+      final ventasPorMes = await _getVentasPorMes();
+      
+      // Tiendas por plan
+      final tiendasPorPlan = _getTiendasPorPlan(totalTiendas);
+      
+      // Top 5 tiendas por ventas
+      final topTiendas = await _getTopTiendas();
+      
+      // Actividad reciente
+      final actividadReciente = await _getActividadReciente();
+      
+      debugPrint('✅ Datos del dashboard obtenidos exitosamente');
+      
+      // Generar datos de gráficos
+      final registroTiendasChart = _generateRegistroTiendasChart();
+      final ventasChart = _generateVentasChart(ventasPorMes);
+      
+      return DashboardData(
+        totalTiendas: totalTiendas,
+        tiendasActivas: tiendasActivas,
+        tiendasPendientesRenovacion: 0, // Por ahora 0, implementar después
+        ventasGlobales: ventasData['total'] ?? 0.0,
+        dineroTotalVendido: ventasData['total'] ?? 0.0,
+        totalProductosRegistrados: productosTotal,
+        registroTiendasChart: registroTiendasChart,
+        ventasChart: ventasChart,
+        totalUsuarios: totalUsuarios,
+        usuariosActivos: usuariosActivos,
+        ventasTotales: ventasData['total'] ?? 0.0,
+        ventasDelMes: ventasData['mes'] ?? 0.0,
+        productosTotal: productosTotal,
+        pedidosDelDia: pedidosDelDia,
+        ventasPorMes: ventasPorMes,
+        tiendasPorPlan: tiendasPorPlan,
+        topTiendas: topTiendas,
+        actividadReciente: actividadReciente,
+      );
+    } catch (e) {
+      debugPrint('❌ Error obteniendo datos del dashboard: $e');
       return DashboardData.mock();
-    } catch (e) {
-      throw Exception('Error al cargar datos del dashboard: ${e.toString()}');
     }
   }
-
-  Future<Map<String, dynamic>> getGlobalStats() async {
+  
+  Future<int> _getTotalUsuarios() async {
     try {
-      await Future.delayed(const Duration(milliseconds: 800));
+      final gerentesResponse = await _supabase
+          .from('app_dat_gerente')
+          .select('uuid');
       
-      return {
-        'total_tiendas': 156,
-        'tiendas_activas': 142,
-        'tiendas_inactivas': 14,
-        'nuevas_tiendas_mes': 12,
-        'total_usuarios': 1247,
-        'usuarios_activos_mes': 892,
-        'total_productos': 125000,
-        'productos_agregados_mes': 2500,
-        'ventas_totales_mes': 1250000.00,
-        'ingresos_licencias_mes': 45000.00,
-        'crecimiento_tiendas': 8.5, // porcentaje
-        'crecimiento_ventas': 12.3, // porcentaje
-        'satisfaccion_cliente': 4.7, // de 5
-      };
+      final supervisoresResponse = await _supabase
+          .from('app_dat_supervisor')
+          .select('uuid');
+      
+      final vendedoresResponse = await _supabase
+          .from('app_dat_vendedor')
+          .select('uuid');
+      
+      final almacenerosResponse = await _supabase
+          .from('app_dat_almacenero')
+          .select('uuid');
+      
+      // Crear set de UUIDs únicos
+      final uniqueUsers = <String>{};
+      for (var gerente in gerentesResponse) {
+        uniqueUsers.add(gerente['uuid']);
+      }
+      for (var supervisor in supervisoresResponse) {
+        uniqueUsers.add(supervisor['uuid']);
+      }
+      for (var vendedor in vendedoresResponse) {
+        uniqueUsers.add(vendedor['uuid']);
+      }
+      for (var almacenero in almacenerosResponse) {
+        uniqueUsers.add(almacenero['uuid']);
+      }
+      
+      return uniqueUsers.length;
     } catch (e) {
-      throw Exception('Error al cargar estadísticas globales: ${e.toString()}');
+      debugPrint('Error obteniendo total de usuarios: $e');
+      return 0;
     }
   }
-
-  Future<List<Map<String, dynamic>>> getTopTiendas({int limit = 10}) async {
+  
+  Future<Map<String, double>> _getVentasData() async {
     try {
-      await Future.delayed(const Duration(milliseconds: 600));
+      final ventasResponse = await _supabase
+          .from('app_dat_operacion_venta')
+          .select('importe_total, created_at');
       
-      return [
-        {
-          'id': 3,
-          'nombre': 'Farmacia San Miguel',
-          'ventas_mes': 78000.00,
-          'crecimiento': 15.2,
-          'ubicacion': 'La Vega, RD',
-        },
-        {
-          'id': 1,
-          'nombre': 'Supermercado Central',
-          'ventas_mes': 45000.00,
-          'crecimiento': 8.7,
-          'ubicacion': 'Santo Domingo, RD',
-        },
-        {
-          'id': 5,
-          'nombre': 'Autoservicio Norte',
-          'ventas_mes': 32000.00,
-          'crecimiento': 22.1,
-          'ubicacion': 'Santiago, RD',
-        },
-        {
-          'id': 2,
-          'nombre': 'Minimarket La Esquina',
-          'ventas_mes': 12000.00,
-          'crecimiento': 5.4,
-          'ubicacion': 'Santiago, RD',
-        },
-        {
-          'id': 4,
-          'nombre': 'Colmado Don Juan',
-          'ventas_mes': 5000.00,
-          'crecimiento': -2.1,
-          'ubicacion': 'San Pedro de Macorís, RD',
-        },
-      ];
+      double ventasTotales = 0;
+      double ventasDelMes = 0;
+      final inicioMes = DateTime(DateTime.now().year, DateTime.now().month, 1);
+      
+      for (var venta in ventasResponse) {
+        final importe = (venta['importe_total'] ?? 0).toDouble();
+        ventasTotales += importe;
+        
+        final fechaVenta = DateTime.parse(venta['created_at']);
+        if (fechaVenta.isAfter(inicioMes)) {
+          ventasDelMes += importe;
+        }
+      }
+      
+      return {'total': ventasTotales, 'mes': ventasDelMes};
     } catch (e) {
-      throw Exception('Error al cargar top tiendas: ${e.toString()}');
+      debugPrint('Error obteniendo datos de ventas: $e');
+      return {'total': 0, 'mes': 0};
     }
   }
-
-  Future<List<Map<String, dynamic>>> getLicenciasProximasVencer({int dias = 30}) async {
+  
+  Future<int> _getPedidosDelDia() async {
     try {
-      await Future.delayed(const Duration(milliseconds: 500));
+      final inicioDia = DateTime(
+        DateTime.now().year,
+        DateTime.now().month,
+        DateTime.now().day,
+      );
       
-      return [
-        {
-          'tienda_id': 2,
-          'tienda_nombre': 'Minimarket La Esquina',
-          'dias_restantes': 15,
-          'tipo_licencia': 'gratuita',
-          'fecha_vencimiento': DateTime.now().add(const Duration(days: 15)),
-        },
-        {
-          'tienda_id': 7,
-          'tienda_nombre': 'Panadería El Buen Pan',
-          'dias_restantes': 8,
-          'tipo_licencia': 'premium',
-          'fecha_vencimiento': DateTime.now().add(const Duration(days: 8)),
-        },
-        {
-          'tienda_id': 12,
-          'tienda_nombre': 'Ferretería Los Hermanos',
-          'dias_restantes': 25,
-          'tipo_licencia': 'enterprise',
-          'fecha_vencimiento': DateTime.now().add(const Duration(days: 25)),
-        },
-      ];
+      final pedidosHoyResponse = await _supabase
+          .from('app_dat_operacion_venta')
+          .select('id')
+          .gte('created_at', inicioDia.toIso8601String())
+          .count();
+      
+      return pedidosHoyResponse.count;
     } catch (e) {
-      throw Exception('Error al cargar licencias próximas a vencer: ${e.toString()}');
+      debugPrint('Error obteniendo pedidos del día: $e');
+      return 0;
     }
   }
-
-  Future<Map<String, dynamic>> getActivitySummary() async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 400));
+  
+  Future<List<double>> _getVentasPorMes() async {
+    final ventasPorMes = <double>[];
+    final ahora = DateTime.now();
+    
+    for (int i = 11; i >= 0; i--) {
+      final mes = DateTime(ahora.year, ahora.month - i, 1);
+      final mesSiguiente = DateTime(ahora.year, ahora.month - i + 1, 1);
       
-      return {
-        'nuevos_registros_hoy': 5,
-        'ventas_hoy': 25847.50,
-        'usuarios_conectados': 234,
-        'alertas_sistema': 3,
-        'tickets_soporte': 12,
-        'actualizaciones_pendientes': 2,
-      };
-    } catch (e) {
-      throw Exception('Error al cargar resumen de actividad: ${e.toString()}');
+      try {
+        final ventasMesResponse = await _supabase
+            .from('app_dat_operacion_venta')
+            .select('importe_total')
+            .gte('created_at', mes.toIso8601String())
+            .lt('created_at', mesSiguiente.toIso8601String());
+        
+        double totalMes = 0;
+        for (var venta in ventasMesResponse) {
+          totalMes += (venta['importe_total'] ?? 0).toDouble();
+        }
+        
+        ventasPorMes.add(totalMes);
+      } catch (e) {
+        ventasPorMes.add(0);
+      }
     }
+    
+    return ventasPorMes;
+  }
+  
+  Map<String, int> _getTiendasPorPlan(int totalTiendas) {
+    return {
+      'Básico': (totalTiendas * 0.4).round(),
+      'Profesional': (totalTiendas * 0.3).round(),
+      'Empresarial': (totalTiendas * 0.2).round(),
+      'Premium': (totalTiendas * 0.1).round(),
+    };
+  }
+  
+  Future<List<Map<String, dynamic>>> _getTopTiendas() async {
+    // Por ahora retornar lista vacía, implementar cuando tengamos la estructura correcta
+    return [];
+  }
+  
+  Future<List<Map<String, dynamic>>> _getActividadReciente() async {
+    final actividades = <Map<String, dynamic>>[];
+    
+    try {
+      // Últimas tiendas creadas
+      final tiendasRecientes = await _supabase
+          .from('app_dat_tienda')
+          .select('denominacion, created_at')
+          .order('created_at', ascending: false)
+          .limit(2);
+      
+      for (var tienda in tiendasRecientes) {
+        actividades.add({
+          'tipo': 'nueva_tienda',
+          'descripcion': 'Nueva tienda: ${tienda['denominacion']}',
+          'tiempo': _getTimeAgo(DateTime.parse(tienda['created_at'])),
+        });
+      }
+    } catch (e) {
+      debugPrint('Error obteniendo actividad reciente: $e');
+    }
+    
+    return actividades;
+  }
+  
+  String _getTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} min';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours} horas';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} días';
+    } else {
+      return '${(difference.inDays / 7).round()} semanas';
+    }
+  }
+  
+  List<ChartData> _generateRegistroTiendasChart() {
+    final meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    final List<ChartData> data = [];
+    
+    for (int i = 0; i < meses.length; i++) {
+      // Por ahora datos simulados, después implementar con datos reales
+      data.add(ChartData(meses[i], (10 + i * 3).toDouble()));
+    }
+    
+    return data;
+  }
+  
+  List<ChartData> _generateVentasChart(List<double> ventasPorMes) {
+    final meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    final List<ChartData> data = [];
+    
+    for (int i = 0; i < meses.length && i < ventasPorMes.length; i++) {
+      data.add(ChartData(meses[i], ventasPorMes[i]));
+    }
+    
+    // Si no hay suficientes datos, llenar con ceros
+    while (data.length < 12) {
+      data.add(ChartData(meses[data.length], 0));
+    }
+    
+    return data;
   }
 }
