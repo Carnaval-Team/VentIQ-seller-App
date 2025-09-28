@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
-import '../models/tienda.dart';
+import '../models/store.dart';
+import '../services/store_service.dart';
 import '../widgets/app_drawer.dart';
 import '../utils/platform_utils.dart';
 
@@ -12,8 +13,8 @@ class TiendasScreen extends StatefulWidget {
 }
 
 class _TiendasScreenState extends State<TiendasScreen> {
-  List<Tienda> _tiendas = [];
-  List<Tienda> _filteredTiendas = [];
+  List<Store> _tiendas = [];
+  List<Store> _filteredTiendas = [];
   bool _isLoading = true;
   String _searchQuery = '';
   String _selectedFilter = 'todas';
@@ -27,30 +28,53 @@ class _TiendasScreenState extends State<TiendasScreen> {
   Future<void> _loadTiendas() async {
     setState(() => _isLoading = true);
     
-    // Simular carga de datos
-    await Future.delayed(const Duration(seconds: 1));
-    
-    setState(() {
-      _tiendas = Tienda.getMockData();
-      _filteredTiendas = _tiendas;
-      _isLoading = false;
-    });
+    try {
+      final tiendas = await StoreService.getAllStores();
+      
+      if (mounted) {
+        setState(() {
+          _tiendas = tiendas;
+          _filteredTiendas = _tiendas;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error cargando tiendas: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar tiendas: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _filterTiendas() {
     setState(() {
       _filteredTiendas = _tiendas.where((tienda) {
-        final matchesSearch = tienda.nombre.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                            tienda.ubicacion.toLowerCase().contains(_searchQuery.toLowerCase());
+        final matchesSearch = tienda.denominacion.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                            (tienda.ubicacion?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false);
         
         final matchesFilter = _selectedFilter == 'todas' ||
-                            (_selectedFilter == 'activas' && tienda.estado == 'activa') ||
-                            (_selectedFilter == 'inactivas' && tienda.estado != 'activa') ||
-                            (_selectedFilter == 'renovacion' && tienda.necesitaRenovacion);
+                            (_selectedFilter == 'activas' && (tienda.activa ?? true)) ||
+                            (_selectedFilter == 'inactivas' && !(tienda.activa ?? true)) ||
+                            (_selectedFilter == 'renovacion' && _necesitaRenovacion(tienda));
         
         return matchesSearch && matchesFilter;
       }).toList();
     });
+  }
+  
+  bool _necesitaRenovacion(Store tienda) {
+    if (tienda.fechaVencimientoSuscripcion == null) return false;
+    final diasRestantes = tienda.fechaVencimientoSuscripcion!.difference(DateTime.now()).inDays;
+    return diasRestantes <= 30;
   }
 
   @override
@@ -159,9 +183,9 @@ class _TiendasScreenState extends State<TiendasScreen> {
   }
 
   Widget _buildStats() {
-    final activas = _tiendas.where((t) => t.estado == 'activa').length;
+    final activas = _tiendas.where((t) => t.activa ?? true).length;
     final inactivas = _tiendas.length - activas;
-    final necesitanRenovacion = _tiendas.where((t) => t.necesitaRenovacion).length;
+    final necesitanRenovacion = _tiendas.where((t) => _necesitaRenovacion(t)).length;
 
     return Row(
       children: [
@@ -339,13 +363,13 @@ class _TiendasScreenState extends State<TiendasScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Text(
-                                    tienda.nombre,
+                                    tienda.denominacion,
                                     style: const TextStyle(fontWeight: FontWeight.w600),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    tienda.direccion,
+                                    tienda.direccion ?? 'Sin dirección',
                                     style: Theme.of(context).textTheme.bodySmall,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -357,7 +381,7 @@ class _TiendasScreenState extends State<TiendasScreen> {
                             SizedBox(
                               width: double.infinity,
                               child: Text(
-                                tienda.ubicacion,
+                                tienda.ubicacion ?? 'Sin ubicación',
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -365,13 +389,13 @@ class _TiendasScreenState extends State<TiendasScreen> {
                           DataCell(
                             SizedBox(
                               width: double.infinity,
-                              child: _buildStatusChip(tienda.estado),
+                              child: _buildStatusChip(tienda.activa ?? true ? 'activa' : 'inactiva'),
                             ),
                           ),
                           DataCell(
                             SizedBox(
                               width: double.infinity,
-                              child: _buildLicenseChip(tienda.tipoLicencia),
+                              child: _buildLicenseChip(tienda.planSuscripcion ?? 'gratuita'),
                             ),
                           ),
                           DataCell(
@@ -384,7 +408,7 @@ class _TiendasScreenState extends State<TiendasScreen> {
                             SizedBox(
                               width: double.infinity,
                               child: Text(
-                                '\$${tienda.ventasMes.toStringAsFixed(0)}',
+                                '\$${(tienda.ventasDelMes ?? 0).toStringAsFixed(0)}',
                                 style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
                             ),
@@ -417,26 +441,26 @@ class _TiendasScreenState extends State<TiendasScreen> {
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: _getStatusColor(tienda.estado).withOpacity(0.1),
+              backgroundColor: _getStatusColor(tienda.activa ?? true ? 'activa' : 'inactiva').withOpacity(0.1),
               child: Icon(
                 Icons.store,
-                color: _getStatusColor(tienda.estado),
+                color: _getStatusColor(tienda.activa ?? true ? 'activa' : 'inactiva'),
               ),
             ),
             title: Text(
-              tienda.nombre,
+              tienda.denominacion,
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(tienda.ubicacion),
+                Text(tienda.ubicacion ?? 'Sin ubicación'),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    _buildStatusChip(tienda.estado),
+                    _buildStatusChip(tienda.activa ?? true ? 'activa' : 'inactiva'),
                     const SizedBox(width: 8),
-                    _buildLicenseChip(tienda.tipoLicencia),
+                    _buildLicenseChip(tienda.planSuscripcion ?? 'gratuita'),
                   ],
                 ),
               ],
@@ -527,12 +551,12 @@ class _TiendasScreenState extends State<TiendasScreen> {
     );
   }
 
-  Widget _buildExpirationInfo(Tienda tienda) {
-    if (tienda.fechaVencimientoLicencia == null) {
+  Widget _buildExpirationInfo(Store tienda) {
+    if (tienda.fechaVencimientoSuscripcion == null) {
       return const Text('Sin vencimiento');
     }
 
-    final dias = tienda.diasParaVencimiento;
+    final dias = tienda.fechaVencimientoSuscripcion!.difference(DateTime.now()).inDays;
     Color color = AppColors.success;
     String text = '$dias días';
 
@@ -552,7 +576,7 @@ class _TiendasScreenState extends State<TiendasScreen> {
     );
   }
 
-  Widget _buildActions(Tienda tienda) {
+  Widget _buildActions(Store tienda) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -586,7 +610,7 @@ class _TiendasScreenState extends State<TiendasScreen> {
     }
   }
 
-  void _handleAction(String action, Tienda tienda) {
+  void _handleAction(String action, Store tienda) {
     switch (action) {
       case 'view':
         _showTiendaDetails(tienda);
@@ -616,22 +640,22 @@ class _TiendasScreenState extends State<TiendasScreen> {
     );
   }
 
-  void _showTiendaDetails(Tienda tienda) {
+  void _showTiendaDetails(Store tienda) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(tienda.nombre),
+        title: Text(tienda.denominacion),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Dirección: ${tienda.direccion}'),
-            Text('Ubicación: ${tienda.ubicacion}'),
-            Text('Estado: ${tienda.estado}'),
-            Text('Tipo de Licencia: ${tienda.tipoLicencia}'),
-            Text('Productos: ${tienda.totalProductos}'),
-            Text('Empleados: ${tienda.totalEmpleados}'),
-            Text('Ventas del Mes: \$${tienda.ventasMes.toStringAsFixed(2)}'),
+            Text('Dirección: ${tienda.direccion ?? "Sin dirección"}'),
+            Text('Ubicación: ${tienda.ubicacion ?? "Sin ubicación"}'),
+            Text('Estado: ${tienda.activa ?? true ? "Activa" : "Inactiva"}'),
+            Text('Plan: ${tienda.planSuscripcion ?? "Gratuito"}'),
+            Text('Productos: ${tienda.totalProductos ?? 0}'),
+            Text('Trabajadores: ${tienda.totalTrabajadores ?? 0}'),
+            Text('Ventas del Mes: \$${(tienda.ventasDelMes ?? 0).toStringAsFixed(2)}'),
           ],
         ),
         actions: [
@@ -644,11 +668,11 @@ class _TiendasScreenState extends State<TiendasScreen> {
     );
   }
 
-  void _showEditTiendaDialog(Tienda tienda) {
+  void _showEditTiendaDialog(Store tienda) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Editar ${tienda.nombre}'),
+        title: Text('Editar ${tienda.denominacion}'),
         content: const Text('Funcionalidad de edición en desarrollo.'),
         actions: [
           TextButton(
@@ -660,12 +684,12 @@ class _TiendasScreenState extends State<TiendasScreen> {
     );
   }
 
-  void _showDeleteConfirmation(Tienda tienda) {
+  void _showDeleteConfirmation(Store tienda) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmar Eliminación'),
-        content: Text('¿Estás seguro de que deseas eliminar "${tienda.nombre}"?'),
+        content: Text('¿Estás seguro de que deseas eliminar "${tienda.denominacion}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),

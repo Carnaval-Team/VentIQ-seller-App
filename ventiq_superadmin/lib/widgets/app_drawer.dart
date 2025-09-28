@@ -245,7 +245,13 @@ class AppDrawer extends StatelessWidget {
             // Rutas implementadas
             if (item.route == '/dashboard' || 
                 item.route == '/tiendas' || 
-                item.route == '/usuarios') {
+                item.route == '/usuarios' ||
+                item.route == '/administradores' ||
+                item.route == '/almacenes' ||
+                item.route == '/tpvs' ||
+                item.route == '/trabajadores' ||
+                item.route == '/licencias' ||
+                item.route == '/renovaciones') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas

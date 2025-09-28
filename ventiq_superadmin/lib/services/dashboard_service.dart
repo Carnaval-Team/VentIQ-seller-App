@@ -122,7 +122,29 @@ class DashboardService {
     }
   }
   
-  Future<Map<String, double>> _getVentasData() async {
+  Future<Map<String, dynamic>> _getVentasData() async {
+    try {
+      // Usar RPC para obtener estadísticas de Ventas de manera eficiente
+      final ventasStats = await _supabase
+          .rpc('get_dashboard_ventas_stats');
+      
+      if (ventasStats != null && ventasStats.isNotEmpty) {
+        final stats = ventasStats.first;
+        return {
+          'total': (stats['ventas_totales'] ?? 0).toDouble(),
+          'mes': (stats['ventas_mes'] ?? 0).toDouble()
+        };
+      }
+      
+      return {'total': 0.0, 'mes': 0.0};
+    } catch (e) {
+      debugPrint('Error obteniendo datos de Ventas con RPC: $e');
+      // Fallback a método anterior
+      return await _getVentasDataFallback();
+    }
+  }
+
+  Future<Map<String, dynamic>> _getVentasDataFallback() async {
     try {
       final ventasResponse = await _supabase
           .from('app_dat_operacion_venta')
@@ -159,7 +181,7 @@ class DashboardService {
       
       final pedidosHoyResponse = await _supabase
           .from('app_dat_operacion_venta')
-          .select('id')
+          .select('id_operacion')
           .gte('created_at', inicioDia.toIso8601String())
           .count();
       

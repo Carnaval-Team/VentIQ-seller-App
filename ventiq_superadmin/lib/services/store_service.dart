@@ -8,73 +8,80 @@ class StoreService {
   // Obtener todas las tiendas con estadísticas
   static Future<List<Store>> getAllStores() async {
     try {
-      debugPrint('📊 Obteniendo todas las tiendas...');
+      debugPrint('📊 Obteniendo todas las tiendas con estadísticas...');
       
+      // UNA SOLA CONSULTA RPC que obtiene todo
       final response = await _supabase
-          .from('app_dat_tienda')
-          .select('''
-            *,
-            app_dat_operaciones!inner(
-              id,
-              id_tipo_operacion
-            ),
-            app_dat_producto!inner(
-              id
-            ),
-            app_dat_trabajadores!inner(
-              id
-            )
-          ''');
+          .rpc('get_tiendas_con_estadisticas');
 
-      debugPrint('✅ Tiendas obtenidas: ${response.length}');
+      debugPrint('✅ Tiendas con estadísticas obtenidas: ${response.length}');
 
       List<Store> stores = [];
       
       for (var storeData in response) {
-        // Calcular estadísticas
+        stores.add(Store(
+          id: storeData['id'],
+          denominacion: storeData['denominacion'],
+          direccion: storeData['direccion'],
+          ubicacion: storeData['ubicacion'],
+          createdAt: DateTime.parse(storeData['created_at']),
+          totalVentas: (storeData['total_ventas'] ?? 0).toInt(),
+          totalProductos: (storeData['total_productos'] ?? 0).toInt(),
+          totalTrabajadores: (storeData['total_trabajadores'] ?? 0).toInt(),
+          ventasDelMes: (storeData['ventas_mes'] ?? 0).toDouble(),
+          activa: true,
+          planSuscripcion: storeData['plan_nombre'],
+          fechaVencimientoSuscripcion: storeData['fecha_vencimiento'] != null
+              ? DateTime.parse(storeData['fecha_vencimiento'])
+              : null,
+        ));
+      }
+
+      return stores;
+    } catch (e) {
+      debugPrint('❌ Error obteniendo tiendas con RPC: $e');
+      // Fallback a método simple si las funciones RPC no existen
+      return await _getAllStoresSimple();
+    }
+  }
+
+  // Método fallback simple sin RPC functions
+  static Future<List<Store>> _getAllStoresSimple() async {
+    try {
+      final response = await _supabase
+          .from('app_dat_tienda')
+          .select('''
+            id,
+            denominacion,
+            direccion,
+            ubicacion,
+            created_at,
+            app_suscripciones!left(
+              id_plan,
+              fecha_inicio,
+              fecha_fin,
+              estado,
+              app_suscripciones_plan!inner(
+                denominacion,
+                precio_mensual
+              )
+            )
+          ''');
+
+      List<Store> stores = [];
+      
+      for (var storeData in response) {
         final storeId = storeData['id'];
+        final suscripciones = storeData['app_suscripciones'] as List?;
         
-        // Total de ventas (tipo_operacion = 1 es venta)
-        final ventasResponse = await _supabase
-            .from('app_dat_operaciones')
-            .select('id')
-            .eq('id_tienda', storeId)
-            .eq('id_tipo_operacion', 1)
-            .count();
-        
-        // Total de productos
-        final productosResponse = await _supabase
-            .from('app_dat_producto')
-            .select('id')
-            .eq('id_tienda', storeId)
-            .count();
-        
-        // Total de trabajadores
-        final trabajadoresResponse = await _supabase
-            .from('app_dat_trabajadores')
-            .select('id')
-            .eq('id_tienda', storeId)
-            .count();
-        
-        // Ventas del mes actual
-        final inicioMes = DateTime(DateTime.now().year, DateTime.now().month, 1);
-        final ventasMesResponse = await _supabase
-            .from('app_dat_operacion_venta')
-            .select('importe_total')
-            .gte('created_at', inicioMes.toIso8601String());
-        
-        double ventasDelMes = 0;
-        for (var venta in ventasMesResponse) {
-          ventasDelMes += (venta['importe_total'] ?? 0).toDouble();
+        // Buscar suscripción activa
+        Map<String, dynamic>? suscripcionActiva;
+        if (suscripciones != null && suscripciones.isNotEmpty) {
+          suscripcionActiva = suscripciones.firstWhere(
+            (s) => s['estado'] == 1,
+            orElse: () => suscripciones.first,
+          );
         }
-        
-        // Información de suscripción
-        final suscripcionResponse = await _supabase
-            .from('app_dat_suscripcion')
-            .select('plan, fecha_vencimiento')
-            .eq('id_tienda', storeId)
-            .eq('activa', true)
-            .maybeSingle();
         
         stores.add(Store(
           id: storeId,
@@ -82,21 +89,21 @@ class StoreService {
           direccion: storeData['direccion'],
           ubicacion: storeData['ubicacion'],
           createdAt: DateTime.parse(storeData['created_at']),
-          totalVentas: ventasResponse.count,
-          totalProductos: productosResponse.count,
-          totalTrabajadores: trabajadoresResponse.count,
-          ventasDelMes: ventasDelMes,
+          totalVentas: 0, // Se calculará después si es necesario
+          totalProductos: 0,
+          totalTrabajadores: 0,
+          ventasDelMes: 0.0,
           activa: true,
-          planSuscripcion: suscripcionResponse?['plan'],
-          fechaVencimientoSuscripcion: suscripcionResponse?['fecha_vencimiento'] != null
-              ? DateTime.parse(suscripcionResponse!['fecha_vencimiento'])
+          planSuscripcion: suscripcionActiva?['app_suscripciones_plan']?['denominacion'],
+          fechaVencimientoSuscripcion: suscripcionActiva?['fecha_fin'] != null
+              ? DateTime.parse(suscripcionActiva!['fecha_fin'])
               : null,
         ));
       }
 
       return stores;
     } catch (e) {
-      debugPrint('❌ Error obteniendo tiendas: $e');
+      debugPrint('❌ Error en método simple: $e');
       return [];
     }
   }

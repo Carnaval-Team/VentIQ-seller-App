@@ -6,6 +6,12 @@ import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/tiendas_screen.dart';
 import 'screens/usuarios_screen.dart';
+import 'screens/administradores_screen.dart';
+import 'screens/almacenes_screen.dart';
+import 'screens/tpvs_screen.dart';
+import 'screens/trabajadores_screen.dart';
+import 'screens/licencias_screen.dart';
+import 'screens/renovaciones_screen.dart';
 import 'services/auth_service.dart';
 
 void main() async {
@@ -36,6 +42,12 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/dashboard': (context) => const DashboardScreen(),
         '/tiendas': (context) => const TiendasScreen(),
         '/usuarios': (context) => const UsuariosScreen(),
+        '/administradores': (context) => const AdministradoresScreen(),
+        '/almacenes': (context) => const AlmacenesScreen(),
+        '/tpvs': (context) => const TpvsScreen(),
+        '/trabajadores': (context) => const TrabajadoresScreen(),
+        '/licencias': (context) => const LicenciasScreen(),
+        '/renovaciones': (context) => const RenovacionesScreen(),
       },
     );
   }
