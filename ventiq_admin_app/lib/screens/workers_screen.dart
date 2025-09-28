@@ -1246,8 +1246,8 @@ class _WorkersScreenState extends State<WorkersScreen>
           'nombres': nombres,
           'apellidos': apellidos,
           'full_name': '$nombres $apellidos',
-          'email_confirm': true,
         },
+        emailRedirectTo: null, // No redirigir, confirmar automáticamente
       );
 
       if (authResponse.user == null) {

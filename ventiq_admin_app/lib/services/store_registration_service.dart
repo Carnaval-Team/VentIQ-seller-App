@@ -16,10 +16,9 @@ class StoreRegistrationService {
         email: email,
         password: password,
         data: {
-          'email_confirm': true,
           'full_name': fullName,
-          
         },
+        emailRedirectTo: null, // No redirigir, confirmar automáticamente
       );
 
       if (response.user == null) {
@@ -169,16 +168,24 @@ class StoreRegistrationService {
 
       final user = userResult['user'] as User;
 
-      // Reemplazar placeholder UUID en personalData con el UUID real del usuario
+      // Reemplazar placeholder UUIDs en personalData con el UUID real del usuario
       List<Map<String, dynamic>>? updatedPersonalData;
       if (personalData != null) {
         updatedPersonalData = personalData.map((personal) {
           final updatedPersonal = Map<String, dynamic>.from(personal);
-          if (updatedPersonal['uuid'] == 'PLACEHOLDER_USER_UUID') {
+          // Reemplazar tanto PLACEHOLDER_USER_UUID como MAIN_USER_UUID con el UUID real
+          if (updatedPersonal['uuid'] == 'PLACEHOLDER_USER_UUID' || 
+              updatedPersonal['uuid'] == 'MAIN_USER_UUID') {
             updatedPersonal['uuid'] = user.id;
+            print('🔄 Reemplazando UUID para ${updatedPersonal['nombres']} ${updatedPersonal['apellidos']} (${updatedPersonal['tipo_rol']})');
           }
           return updatedPersonal;
         }).toList();
+        
+        print('👥 Personal actualizado con UUIDs reales:');
+        for (final personal in updatedPersonalData) {
+          print('  - ${personal['nombres']} ${personal['apellidos']} (${personal['tipo_rol']}) → UUID: ${personal['uuid']}');
+        }
       }
 
       // Paso 2: Crear estructura de tienda

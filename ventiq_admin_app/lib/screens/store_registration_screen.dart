@@ -665,11 +665,36 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              item['denominacion'] ?? item['nombres'] ?? 'Sin nombre',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item['denominacion'] ?? '${item['nombres']} ${item['apellidos']}' ?? 'Sin nombre',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: item['is_main_user'] == true 
+                                          ? Colors.green.shade700 
+                                          : Colors.black,
+                                    ),
+                                  ),
+                                ),
+                                if (item['is_main_user'] == true)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Text(
+                                      'PROPIETARIO',
+                                      style: TextStyle(
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                             if (item['direccion'] != null)
                               Text(
@@ -679,20 +704,17 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                                   color: Colors.grey,
                                 ),
                               ),
-                            if (item['almacen_asignado'] != null)
-                              Text(
-                                'Almacén: ${item['almacen_asignado']}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
                             if (item['tipo_rol'] != null)
                               Text(
                                 'Rol: ${item['tipo_rol']}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.grey,
+                                  color: item['is_main_user'] == true 
+                                      ? Colors.green.shade600 
+                                      : Colors.grey,
+                                  fontWeight: item['is_main_user'] == true 
+                                      ? FontWeight.w500 
+                                      : FontWeight.normal,
                                 ),
                               ),
                             if (item['almacen_asignado'] != null && item['tipo_rol'] == 'almacenero')
@@ -714,16 +736,44 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                           ],
                         ),
                       ),
-                      IconButton(
-                        onPressed: () => onEdit(index),
-                        icon: const Icon(Icons.edit, size: 20),
-                        color: Colors.blue,
-                      ),
-                      IconButton(
-                        onPressed: () => onDelete(index),
-                        icon: const Icon(Icons.delete, size: 20),
-                        color: Colors.red,
-                      ),
+                      // Solo mostrar botones de editar/eliminar si no es el usuario principal
+                      if (items[index]['is_main_user'] != true) ...[
+                        IconButton(
+                          onPressed: () => onEdit(index),
+                          icon: const Icon(Icons.edit, size: 20),
+                          color: Colors.blue,
+                        ),
+                        IconButton(
+                          onPressed: () => onDelete(index),
+                          icon: const Icon(Icons.delete, size: 20),
+                          color: Colors.red,
+                        ),
+                      ] else ...[
+                        // Mostrar indicador de usuario principal
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.green.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(Icons.admin_panel_settings, size: 16, color: Colors.green),
+                              SizedBox(width: 4),
+                              Text(
+                                'ADMIN',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );
@@ -1036,6 +1086,12 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         setState(() {
           _currentStep++;
         });
+        
+        // Si navegamos al paso 3 (configuración), agregar automáticamente al usuario principal
+        if (_currentStep == 2) {
+          _addMainUserToPersonal();
+        }
+        
         _pageController.nextPage(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
@@ -1749,5 +1805,53 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
       default:
         return 4; // Default to vendedor
     }
+  }
+
+  // Agregar automáticamente al usuario principal con roles de gerente y supervisor
+  void _addMainUserToPersonal() {
+    final fullName = _fullNameController.text.trim();
+    if (fullName.isEmpty) return;
+    
+    // Separar nombres y apellidos (simple split por espacio)
+    final nameParts = fullName.split(' ');
+    final nombres = nameParts.isNotEmpty ? nameParts.first : 'Usuario';
+    final apellidos = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : 'Principal';
+    
+    // Verificar si ya existe el usuario principal para evitar duplicados
+    final existingMainUser = _personalData.where((p) => p['is_main_user'] == true).toList();
+    if (existingMainUser.isNotEmpty) {
+      return; // Ya existe, no agregar duplicados
+    }
+    
+    // Agregar como Gerente
+    final gerenteItem = {
+      'nombres': nombres,
+      'apellidos': apellidos,
+      'tipo_rol': 'gerente',
+      'id_roll': 1,
+      'uuid': 'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
+      'is_main_user': true, // Marca especial para identificar al usuario principal
+      'is_editable': false, // No se puede editar
+    };
+    
+    // Agregar como Supervisor
+    final supervisorItem = {
+      'nombres': nombres,
+      'apellidos': apellidos,
+      'tipo_rol': 'supervisor',
+      'id_roll': 2,
+      'uuid': 'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
+      'is_main_user': true, // Marca especial para identificar al usuario principal
+      'is_editable': false, // No se puede editar
+    };
+    
+    setState(() {
+      _personalData.insert(0, gerenteItem); // Insertar al inicio
+      _personalData.insert(1, supervisorItem); // Insertar después del gerente
+    });
+    
+    print('✅ Usuario principal agregado automáticamente como Gerente y Supervisor');
+    print('   - Nombres: $nombres');
+    print('   - Apellidos: $apellidos');
   }
 }
