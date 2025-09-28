@@ -206,25 +206,11 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       }
       print('================================================');
 
-      // Prepare products list for transfer
-      final productosParaEnviar =
-          _selectedProducts.map((product) {
-            return {
-              'id_producto': product['id_producto'],
-              'cantidad': product['cantidad'],
-              'precio_unitario': product['precio_unitario'] ?? 0.0,
-              'id_variante': product['id_variante'],
-              'id_presentacion': product['id_presentacion'],
-            };
-          }).toList();
-
-      print('📤 Productos preparados para envío:');
-      for (int i = 0; i < productosParaEnviar.length; i++) {
-        print('   [$i] ${productosParaEnviar[i]}');
-        print(
-          '   [$i] DEBUG id_presentacion: ${productosParaEnviar[i]['id_presentacion']} (${productosParaEnviar[i]['id_presentacion'].runtimeType})',
-        );
-      }
+      // Extract layout IDs from location objects FIRST
+      final sourceLayoutId = _getZoneIdFromLocation(_selectedSourceLocation!);
+      final destinationLayoutId = _getZoneIdFromLocation(
+        _selectedDestinationLocation!,
+      );
 
       // Extract warehouse IDs from location IDs
       final sourceWarehouseId = _getWarehouseIdFromLocation(
@@ -236,12 +222,33 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
       print('🏭 ID Almacén Origen: $sourceWarehouseId');
       print('🏭 ID Almacén Destino: $destinationWarehouseId');
+      print('🔗 ID Layout Origen: $sourceLayoutId');
+      print('🔗 ID Layout Destino: $destinationLayoutId');
 
-      // Extract layout IDs from location objects
-      final sourceLayoutId = _getZoneIdFromLocation(_selectedSourceLocation!);
-      final destinationLayoutId = _getZoneIdFromLocation(
-        _selectedDestinationLocation!,
-      );
+      // Prepare products list for transfer
+      final productosParaEnviar =
+          _selectedProducts.map((product) {
+            return {
+              'id_producto': product['id_producto'],
+              'cantidad': product['cantidad'],
+              'precio_unitario': product['precio_unitario'] ?? 0.0,
+              'id_variante': product['id_variante'],
+              'id_presentacion': product['id_presentacion'],
+              // CRÍTICO: Agregar ubicación de origen para la extracción
+              'id_ubicacion': sourceLayoutId,
+            };
+          }).toList();
+
+      print('📤 Productos preparados para envío:');
+      for (int i = 0; i < productosParaEnviar.length; i++) {
+        print('   [$i] ${productosParaEnviar[i]}');
+        print(
+          '   [$i] DEBUG id_presentacion: ${productosParaEnviar[i]['id_presentacion']} (${productosParaEnviar[i]['id_presentacion'].runtimeType})',
+        );
+        print(
+          '   [$i] DEBUG id_ubicacion: ${productosParaEnviar[i]['id_ubicacion']} (ubicación origen)',
+        );
+      }
 
       print('🔄 Iniciando transferencia unificada entre layouts...');
       print('📞 Llamando a: InventoryService.transferBetweenLayouts');
