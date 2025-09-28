@@ -16,7 +16,9 @@ class StoreRegistrationService {
         email: email,
         password: password,
         data: {
+          'email_confirm': true,
           'full_name': fullName,
+          
         },
       );
 

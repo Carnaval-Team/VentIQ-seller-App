@@ -1246,6 +1246,7 @@ class _WorkersScreenState extends State<WorkersScreen>
           'nombres': nombres,
           'apellidos': apellidos,
           'full_name': '$nombres $apellidos',
+          'email_confirm': true,
         },
       );
 
