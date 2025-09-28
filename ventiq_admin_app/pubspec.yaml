@@ -1,5 +1,5 @@
 name: ventiq_admin_app
-description: "Vendedor admin - Sistema de administración para gestión de inventarios, productos y ventas."
+description: "Vendedor Cuba Admin - Sistema de administración para gestión de inventarios, productos y ventas."
 publish_to: 'none'
 
 version: 1.0.0+1

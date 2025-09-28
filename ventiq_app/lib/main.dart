@@ -16,10 +16,10 @@ import 'utils/platform_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Inicializar Supabase
   await AuthService.initialize();
-  
+
   runApp(const MyApp());
 }
 

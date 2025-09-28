@@ -161,7 +161,7 @@ function initDownloadButtons() {
             if (isSellerApp) {
                 showDownloadModal('VentIQ Seller App', 'seller');
             } else {
-                showDownloadModal('VentIQ Admin Web', 'admin');
+                showDownloadModal('Vendedor Cuba Admin Web', 'admin');
             }
         });
     });
@@ -252,7 +252,7 @@ function showDownloadModal(appName, appType) {
                         <p>Acceso directo desde navegador</p>
                         <button class="btn btn-primary" onclick="openWebApp('admin')">
                             <i class="fas fa-external-link-alt"></i>
-                            Abrir VentIQ Admin Web
+                            Abrir Vendedor Cuba Admin Web
                         </button>
                     </div>
                 </div>
@@ -454,10 +454,10 @@ function downloadApp(platform) {
     } else if (platform === 'ios-seller') {
         showNotification('Próximamente', 'VentIQ Seller para iOS estará disponible pronto.', 'info');
     } else if (platform === 'android-admin') {
-        showNotification('Descarga iniciada', 'La descarga del APK de VentIQ Admin comenzará en breve.', 'success');
+        showNotification('Descarga iniciada', 'La descarga del APK de Vendedor Cuba Admin comenzará en breve.', 'success');
         window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20admin.apk', '_blank');
     } else if (platform === 'ios-admin') {
-        showNotification('Próximamente', 'VentIQ Admin para iOS estará disponible pronto.', 'info');
+        showNotification('Próximamente', 'Vendedor Cuba Admin para iOS estará disponible pronto.', 'info');
     }
     closeDownloadModal();
 }
@@ -467,7 +467,7 @@ function openWebApp(appType) {
         showNotification('Abriendo aplicación...', 'VentIQ Seller Web se abrirá en una nueva pestaña.', 'info');
         window.open('https://ventiq-seller.appwrite.network', '_blank');
     } else {
-        showNotification('Abriendo aplicación...', 'VentIQ Admin Web se abrirá en una nueva pestaña.', 'info');
+        showNotification('Abriendo aplicación...', 'Vendedor Cuba Admin Web se abrirá en una nueva pestaña.', 'info');
         window.open('https://vendedor-admin.appwrite.network', '_blank');
     }
     closeDownloadModal();

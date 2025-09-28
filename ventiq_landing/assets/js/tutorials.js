@@ -234,7 +234,7 @@ const tutorialData = {
                 title: 'Crear cuenta de administrador',
                 content: 'Registra una nueva cuenta para el administrador de la empresa.',
                 instructions: [
-                    'Accede a la página de registro de VentIQ Admin',
+                    'Accede a la página de registro de Vendedor Cuba Admin',
                     'Ingresa el nombre completo del administrador',
                     'Proporciona un email válido',
                     'Crea una contraseña segura',
@@ -281,7 +281,7 @@ const tutorialData = {
                 title: 'Acceder a almacenes',
                 content: 'Navega a la sección de gestión de almacenes.',
                 instructions: [
-                    'Inicia sesión en VentIQ Admin',
+                    'Inicia sesión en Vendedor Cuba Admin',
                     'Ve al menú principal',
                     'Selecciona "Almacenes" o "Inventario"',
                     'Verás la lista de almacenes existentes'

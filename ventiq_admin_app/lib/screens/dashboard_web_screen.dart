@@ -19,22 +19,23 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
   Map<String, dynamic> _dashboardData = {};
   String _selectedTimeFilter = '1 mes';
   final DashboardService _dashboardService = DashboardService();
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
-  
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+
   String _currentStoreName = 'Cargando...';
   List<Map<String, dynamic>> _userStores = [];
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
-  
+
   final List<String> _timeFilterOptions = [
     '5 años',
-    '3 años', 
+    '3 años',
     '1 año',
     '6 meses',
     '3 meses',
     '1 mes',
     'Semana',
-    'Día'
+    'Día',
   ];
 
   @override
@@ -47,11 +48,13 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
   Future<void> _loadStoreInfo() async {
     try {
       final stores = await _userPreferencesService.getUserStores();
-      final currentStoreInfo = await _userPreferencesService.getCurrentStoreInfo();
-      
+      final currentStoreInfo =
+          await _userPreferencesService.getCurrentStoreInfo();
+
       setState(() {
         _userStores = stores;
-        _currentStoreName = currentStoreInfo?['denominacion'] ?? 'Tienda Principal';
+        _currentStoreName =
+            currentStoreInfo?['denominacion'] ?? 'Tienda Principal';
       });
     } catch (e) {
       print('❌ Error loading store info: $e');
@@ -65,26 +68,26 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       print('💱 Fetching exchange rates...');
       await CurrencyService.fetchAndUpdateExchangeRates();
-      
+
       _loadUsdRate();
-      
+
       final hasValidStore = await _dashboardService.validateSupervisorStore();
-      
+
       if (!hasValidStore) {
         print('❌ Supervisor no tiene id_tienda válido');
         _loadMockData();
         return;
       }
-      
+
       print('🔄 Loading dashboard data for period: $_selectedTimeFilter');
       final realData = await _dashboardService.getStoreAnalysis(
         periodo: _selectedTimeFilter,
       );
-      
+
       if (realData != null) {
         print('✅ Real data loaded successfully');
         setState(() {
@@ -100,21 +103,21 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       _loadMockData();
     }
   }
-  
+
   Future<void> _loadUsdRate() async {
     setState(() {
       _isLoadingUsdRate = true;
     });
-    
+
     try {
       print('💱 Loading USD rate from database...');
       final rates = await CurrencyService.getCurrentRatesFromDatabase();
-      
+
       final usdRateData = rates.firstWhere(
         (rate) => rate['moneda_origen'] == 'USD',
         orElse: () => <String, dynamic>{},
       );
-      
+
       if (usdRateData.isNotEmpty) {
         setState(() {
           _usdRate = (usdRateData['tasa'] as num?)?.toDouble() ?? 0.0;
@@ -154,7 +157,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
           'okStock': 0,
           'salesData': <FlSpot>[],
           'categoryData': [
-            {'name': 'Sin datos', 'value': 1, 'color': 0xFF9E9E9E}
+            {'name': 'Sin datos', 'value': 1, 'color': 0xFF9E9E9E},
           ],
           'period': _selectedTimeFilter,
           'lastUpdated': DateTime.now().toIso8601String(),
@@ -174,7 +177,9 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          isLargeScreen ? 'Dashboard Ejecutivo - VentIQ Admin' : 'Dashboard Ejecutivo',
+          isLargeScreen
+              ? 'Dashboard Ejecutivo - Vendedor Cuba Admin'
+              : 'Dashboard Ejecutivo',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w600,
@@ -193,29 +198,26 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
               tooltip: 'Seleccionar Tienda: $_currentStoreName',
             ),
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
       ),
       body: Stack(
         children: [
           _isLoading ? _buildLoadingState() : _buildWebDashboard(),
-          Positioned(
-            bottom: 16,
-            left: 16,
-            child: _buildUsdRateChip(),
-          ),
+          Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
         ],
       ),
       endDrawer: const AdminDrawer(),
-      bottomNavigationBar: isMediumScreen ? null : AdminBottomNavigation(
-        currentIndex: 0,
-        onTap: _onBottomNavTap,
-      ),
+      bottomNavigationBar:
+          isMediumScreen
+              ? null
+              : AdminBottomNavigation(currentIndex: 0, onTap: _onBottomNavTap),
       floatingActionButton: _buildSpeedDialFAB(),
     );
   }
@@ -229,10 +231,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
           SizedBox(height: 16),
           Text(
             'Cargando dashboard...',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -279,11 +278,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.filter_list,
-            color: AppColors.primary,
-            size: 24,
-          ),
+          const Icon(Icons.filter_list, color: AppColors.primary, size: 24),
           const SizedBox(width: 12),
           const Text(
             'Período:',
@@ -306,18 +301,22 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                 child: DropdownButton<String>(
                   value: _selectedTimeFilter,
                   isExpanded: true,
-                  icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.primary),
+                  icon: const Icon(
+                    Icons.keyboard_arrow_down,
+                    color: AppColors.primary,
+                  ),
                   style: const TextStyle(
                     fontSize: 14,
                     color: AppColors.textPrimary,
                     fontWeight: FontWeight.w500,
                   ),
-                  items: _timeFilterOptions.map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
+                  items:
+                      _timeFilterOptions.map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
                   onChanged: (String? newValue) {
                     if (newValue != null && newValue != _selectedTimeFilter) {
                       setState(() {
@@ -368,8 +367,10 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
               Expanded(
                 child: _buildCompactKPICard(
                   title: 'Ventas Total',
-                  value: '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}',
-                  subtitle: '${_dashboardData['salesChange']>=0 ?'+':'-'} ${_dashboardData['salesChange']?.toStringAsFixed(2) ?? '0.00'}% vs anterior',
+                  value:
+                      '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}',
+                  subtitle:
+                      '${_dashboardData['salesChange'] >= 0 ? '+' : '-'} ${_dashboardData['salesChange']?.toStringAsFixed(2) ?? '0.00'}% vs anterior',
                   icon: Icons.trending_up,
                   color: AppColors.success,
                 ),
@@ -398,7 +399,8 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
               Expanded(
                 child: _buildCompactKPICard(
                   title: 'Gastos',
-                  value: '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
+                  value:
+                      '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
                   subtitle: 'Este período',
                   icon: Icons.money_off,
                   color: AppColors.error,
@@ -412,17 +414,49 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
             children: [
               Row(
                 children: [
-                  Expanded(child: _buildKPICard('Ventas Total', '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}', 'vs anterior', Icons.trending_up, AppColors.success)),
+                  Expanded(
+                    child: _buildKPICard(
+                      'Ventas Total',
+                      '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}',
+                      'vs anterior',
+                      Icons.trending_up,
+                      AppColors.success,
+                    ),
+                  ),
                   const SizedBox(width: 12),
-                  Expanded(child: _buildKPICard('Productos', '${_dashboardData['totalProducts'] ?? 0}', 'sin stock', Icons.inventory, AppColors.warning)),
+                  Expanded(
+                    child: _buildKPICard(
+                      'Productos',
+                      '${_dashboardData['totalProducts'] ?? 0}',
+                      'sin stock',
+                      Icons.inventory,
+                      AppColors.warning,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(child: _buildKPICard('Órdenes', '${_dashboardData['totalOrders'] ?? 0}', 'Completadas', Icons.receipt_long, AppColors.info)),
+                  Expanded(
+                    child: _buildKPICard(
+                      'Órdenes',
+                      '${_dashboardData['totalOrders'] ?? 0}',
+                      'Completadas',
+                      Icons.receipt_long,
+                      AppColors.info,
+                    ),
+                  ),
                   const SizedBox(width: 12),
-                  Expanded(child: _buildKPICard('Gastos', '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}', 'Este período', Icons.money_off, AppColors.error)),
+                  Expanded(
+                    child: _buildKPICard(
+                      'Gastos',
+                      '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
+                      'Este período',
+                      Icons.money_off,
+                      AppColors.error,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -496,7 +530,13 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     );
   }
 
-  Widget _buildKPICard(String title, String value, String subtitle, IconData icon, Color color) {
+  Widget _buildKPICard(
+    String title,
+    String value,
+    String subtitle,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -517,14 +557,35 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title, style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               Icon(icon, size: 20, color: color),
             ],
           ),
           const SizedBox(height: 8),
-          Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(subtitle, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w500)),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );
@@ -569,7 +630,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
         const SizedBox(height: 12),
         Container(
           height: 230,
-          padding: const EdgeInsets.fromLTRB(0,12,12,0),
+          padding: const EdgeInsets.fromLTRB(0, 12, 12, 0),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
@@ -583,16 +644,17 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                   drawVerticalLine: false,
                   horizontalInterval: _getYAxisInterval(),
                   getDrawingHorizontalLine: (value) {
-                    return FlLine(
-                      color: AppColors.border,
-                      strokeWidth: 1,
-                    );
+                    return FlLine(color: AppColors.border, strokeWidth: 1);
                   },
                 ),
                 titlesData: FlTitlesData(
                   show: true,
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
@@ -601,7 +663,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                       getTitlesWidget: (double value, TitleMeta meta) {
                         final label = _getChartLabel(value.toInt());
                         if (label.isEmpty) return const SizedBox.shrink();
-                        
+
                         return SideTitleWidget(
                           axisSide: meta.axisSide,
                           child: Container(
@@ -660,13 +722,14 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                     spots: _dashboardData['salesData'] ?? [],
                     isCurved: true,
                     gradient: LinearGradient(
-                      colors: [AppColors.primary, AppColors.primary.withOpacity(0.3)],
+                      colors: [
+                        AppColors.primary,
+                        AppColors.primary.withOpacity(0.3),
+                      ],
                     ),
                     barWidth: 3,
                     isStrokeCapRound: true,
-                    dotData: const FlDotData(
-                      show: true,
-                    ),
+                    dotData: const FlDotData(show: true),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
@@ -689,8 +752,9 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
   }
 
   Widget _buildCategoryChart() {
-    final categoryData = _dashboardData['categoryData'] as List<Map<String, dynamic>>? ?? [];
-    
+    final categoryData =
+        _dashboardData['categoryData'] as List<Map<String, dynamic>>? ?? [];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -735,35 +799,36 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
-                  children: categoryData.map((item) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: Color(item['color'] ?? 0xFF9E9E9E),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              item['name'] ?? 'Sin nombre',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                                fontWeight: FontWeight.w500,
+                  children:
+                      categoryData.map((item) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: Color(item['color'] ?? 0xFF9E9E9E),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
                               ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  item['name'] ?? 'Sin nombre',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+                        );
+                      }).toList(),
                 ),
               ),
             ],
@@ -773,7 +838,9 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     );
   }
 
-  List<PieChartSectionData> _buildPieSections(List<Map<String, dynamic>> categoryData) {
+  List<PieChartSectionData> _buildPieSections(
+    List<Map<String, dynamic>> categoryData,
+  ) {
     return categoryData.map((item) {
       return PieChartSectionData(
         color: Color(item['color'] ?? 0xFF9E9E9E),
@@ -795,15 +862,43 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Estado del Inventario', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+          const Text(
+            'Estado del Inventario',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildInventoryItem('Sin Stock', '${_dashboardData['outOfStock'] ?? 0}', Icons.warning, AppColors.error)),
+              Expanded(
+                child: _buildInventoryItem(
+                  'Sin Stock',
+                  '${_dashboardData['outOfStock'] ?? 0}',
+                  Icons.warning,
+                  AppColors.error,
+                ),
+              ),
               Container(width: 1, height: 40, color: AppColors.border),
-              Expanded(child: _buildInventoryItem('Stock Bajo', '${_dashboardData['lowStock'] ?? 0}', Icons.inventory_2, AppColors.warning)),
+              Expanded(
+                child: _buildInventoryItem(
+                  'Stock Bajo',
+                  '${_dashboardData['lowStock'] ?? 0}',
+                  Icons.inventory_2,
+                  AppColors.warning,
+                ),
+              ),
               Container(width: 1, height: 40, color: AppColors.border),
-              Expanded(child: _buildInventoryItem('Stock OK', '${_dashboardData['okStock'] ?? 0}', Icons.check_circle, AppColors.success)),
+              Expanded(
+                child: _buildInventoryItem(
+                  'Stock OK',
+                  '${_dashboardData['okStock'] ?? 0}',
+                  Icons.check_circle,
+                  AppColors.success,
+                ),
+              ),
             ],
           ),
         ],
@@ -811,14 +906,30 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     );
   }
 
-  Widget _buildInventoryItem(String title, String value, IconData icon, Color color) {
+  Widget _buildInventoryItem(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Column(
       children: [
         Icon(icon, size: 24, color: color),
         const SizedBox(height: 8),
-        Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(title, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary), textAlign: TextAlign.center),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          textAlign: TextAlign.center,
+        ),
       ],
     );
   }
@@ -893,7 +1004,12 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     );
   }
 
-  Widget _buildQuickActionItem(String title, IconData icon, Color color, VoidCallback onTap) {
+  Widget _buildQuickActionItem(
+    String title,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
     return InkWell(
       onTap: () {
         Navigator.of(context).pop(); // Cerrar diálogo
@@ -948,14 +1064,21 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
           const SizedBox(width: 4),
           _isLoadingUsdRate
               ? const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                )
-              : Text(
-                  'USD: \$${_usdRate.toStringAsFixed(0)}',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
                 ),
+              )
+              : Text(
+                'USD: \$${_usdRate.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
         ],
       ),
     );
@@ -975,12 +1098,12 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
 
   String _getChartLabel(int index) {
     // Usar las etiquetas reales del servicio si están disponibles
-    if (_dashboardData['salesLabels'] != null && 
+    if (_dashboardData['salesLabels'] != null &&
         _dashboardData['salesLabels'] is List<String>) {
       final labels = _dashboardData['salesLabels'] as List<String>;
       return index < labels.length ? labels[index] : '';
     }
-    
+
     // Fallback a etiquetas estáticas si no hay datos del servicio
     switch (_selectedTimeFilter) {
       case 'Día':
@@ -1015,7 +1138,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
   /// Obtiene el intervalo para mostrar etiquetas en el eje X
   double _getXAxisInterval() {
     final maxX = _getMaxX();
-    
+
     // Para evitar sobreposición de etiquetas según el período
     switch (_selectedTimeFilter) {
       case 'Día':
@@ -1052,7 +1175,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
         return salesData.length.toDouble() - 1;
       }
     }
-    
+
     // Fallback a valores por defecto
     switch (_selectedTimeFilter) {
       case 'Día':
@@ -1082,20 +1205,22 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     if (salesData.isEmpty) {
       return 1000; // Valor por defecto
     }
-    
-    double maxValue = salesData.map((spot) => spot.y).reduce((a, b) => a > b ? a : b);
-    
+
+    double maxValue = salesData
+        .map((spot) => spot.y)
+        .reduce((a, b) => a > b ? a : b);
+
     // Agregar un 20% de margen superior para que el gráfico se vea mejor
     return maxValue * 1.2;
   }
 
   double _getYAxisInterval() {
     final maxY = _getMaxY();
-    
+
     // Calcular intervalo dinámico para mostrar máximo 10 etiquetas
     // Dividir maxY entre 8-10 para obtener un intervalo apropiado
     double targetInterval = maxY / 8;
-    
+
     // Redondear a números "bonitos"
     if (targetInterval <= 1) {
       return 1;
@@ -1146,7 +1271,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
 
   String _formatYAxisLabel(double value) {
     if (value == 0) return '0';
-    
+
     if (value >= 1000000) {
       // Para millones, mostrar con 1 decimal si es necesario
       double millions = value / 1000000;

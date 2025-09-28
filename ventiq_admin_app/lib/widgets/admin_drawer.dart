@@ -280,7 +280,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 8),
                 Text(
-                  'Vendedor admin v1.0',
+                  'Vendedor Cuba Admin v1.0',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
@@ -410,11 +410,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
           color: Colors.grey.withOpacity(0.1),
           borderRadius: BorderRadius.circular(6),
         ),
-        child: Icon(
-          icon,
-          color: Colors.grey[600],
-          size: 18,
-        ),
+        child: Icon(icon, color: Colors.grey[600], size: 18),
       ),
       title: Text(
         title,

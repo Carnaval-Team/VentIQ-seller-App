@@ -88,7 +88,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                      Icon(
+                        Icons.error_outline,
+                        color: AppColors.error,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -134,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 24),
         const Text(
-          'Vendedor admin',
+          'Vendedor Cuba Admin',
           style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,
@@ -236,10 +240,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const Text(
                 'Recordarme',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                ),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
               ),
             ],
           ),
@@ -296,7 +297,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        
+
         // Botón para registrar nueva tienda
         Container(
           width: double.infinity,
@@ -308,10 +309,7 @@ class _LoginScreenState extends State<LoginScreen> {
             icon: const Icon(Icons.store, size: 20),
             label: const Text(
               'Registrar Nueva Tienda',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.primary,
@@ -323,7 +321,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        
+
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -367,22 +365,30 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      
+
       final user = loginData['user'];
       final session = loginData['session'];
-      final supervisorStores = loginData['supervisorStores'] as List<Map<String, dynamic>>;
+      final supervisorStores =
+          loginData['supervisorStores'] as List<Map<String, dynamic>>;
       final defaultStore = loginData['defaultStore'] as Map<String, dynamic>;
-      
+
       // Get admin profile
       final adminProfile = await _authService.getAdminProfile(user.id);
-      
+
       // Prepare stores list for preferences
-      final storesForPreferences = supervisorStores.map((store) => {
-        'id_tienda': store['id_tienda'],
-        'denominacion': store['app_dat_tienda']?['denominacion'] ?? 'Tienda ${store['id_tienda']}',
-        'id': store['app_dat_tienda']?['id'] ?? store['id_tienda'],
-      }).toList();
-      
+      final storesForPreferences =
+          supervisorStores
+              .map(
+                (store) => {
+                  'id_tienda': store['id_tienda'],
+                  'denominacion':
+                      store['app_dat_tienda']?['denominacion'] ??
+                      'Tienda ${store['id_tienda']}',
+                  'id': store['app_dat_tienda']?['id'] ?? store['id_tienda'],
+                },
+              )
+              .toList();
+
       // Save user data in preferences including stores list and default store
       await _userPreferencesService.saveUserData(
         userId: user.id,
@@ -393,50 +399,50 @@ class _LoginScreenState extends State<LoginScreen> {
         idTienda: defaultStore['id_tienda'],
         userStores: storesForPreferences,
       );
-        
-        print('✅ Supervisor user saved in preferences:');
-        print('  - ID: ${user.id}');
-        print('  - Email: ${user.email}');
-        print('  - Role: ${adminProfile?['role']}');
-        print('  - Default Store ID: ${defaultStore['id_tienda']}');
-        print('  - Total Stores: ${supervisorStores.length}');
-        
-        // Save credentials if user marked "Remember me"
-        if (_rememberMe) {
-          await _userPreferencesService.saveCredentials(
-            _emailController.text.trim(),
-            _passwordController.text,
-          );
-        } else {
-          await _userPreferencesService.clearSavedCredentials();
-        }
-        
-        print('✅ Supervisor login successful');
-        
-        // Navigate to dashboard
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/dashboard');
-        }
-        
+
+      print('✅ Supervisor user saved in preferences:');
+      print('  - ID: ${user.id}');
+      print('  - Email: ${user.email}');
+      print('  - Role: ${adminProfile?['role']}');
+      print('  - Default Store ID: ${defaultStore['id_tienda']}');
+      print('  - Total Stores: ${supervisorStores.length}');
+
+      // Save credentials if user marked "Remember me"
+      if (_rememberMe) {
+        await _userPreferencesService.saveCredentials(
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
+      } else {
+        await _userPreferencesService.clearSavedCredentials();
+      }
+
+      print('✅ Supervisor login successful');
+
+      // Navigate to dashboard
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
     } catch (e) {
       print('❌ Login error: $e');
       setState(() {
         if (e.toString().contains('NO_SUPERVISOR_PRIVILEGES')) {
           _errorMessage = 'No tienes los privilegios para entrar aquí.';
         } else if (e.toString().contains('Invalid login credentials')) {
-          _errorMessage = 'Credenciales inválidas. Verifica tu email y contraseña.';
+          _errorMessage =
+              'Credenciales inválidas. Verifica tu email y contraseña.';
         } else if (e.toString().contains('Email not confirmed')) {
           _errorMessage = 'Email no confirmado. Revisa tu bandeja de entrada.';
         } else if (e.toString().contains('Too many requests')) {
           _errorMessage = 'Demasiados intentos. Intenta de nuevo más tarde.';
         } else {
-          _errorMessage = 'Error de conexión. Verifica tu internet e intenta de nuevo.';
+          _errorMessage =
+              'Error de conexión. Verifica tu internet e intenta de nuevo.';
         }
         _isLoading = false;
       });
     }
   }
-
 
   void _showComingSoonDialog(String feature) {
     showDialog(

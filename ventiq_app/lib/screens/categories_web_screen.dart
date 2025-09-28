@@ -17,7 +17,8 @@ class CategoriesWebScreen extends StatefulWidget {
   State<CategoriesWebScreen> createState() => _CategoriesWebScreenState();
 }
 
-class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsBindingObserver {
+class _CategoriesWebScreenState extends State<CategoriesWebScreen>
+    with WidgetsBindingObserver {
   final CategoryService _categoryService = CategoryService();
   final UserPreferencesService _preferencesService = UserPreferencesService();
   final ChangelogService _changelogService = ChangelogService();
@@ -55,10 +56,10 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
   Future<void> _checkForChangelog() async {
     try {
       final isFirstTime = await _preferencesService.isFirstTimeOpening();
-      
+
       if (isFirstTime) {
         await Future.delayed(const Duration(milliseconds: 500));
-        
+
         final changelog = await _changelogService.getLatestChangelog();
         if (changelog != null && mounted) {
           await showDialog(
@@ -66,7 +67,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
             barrierDismissible: false,
             builder: (context) => ChangelogDialog(changelog: changelog),
           );
-          
+
           await _preferencesService.saveAppVersion('1.0.0');
         }
       }
@@ -90,7 +91,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
       });
 
       final categories = await _categoryService.getCategories();
-      
+
       setState(() {
         _categories = categories;
         _isLoading = false;
@@ -111,7 +112,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
     setState(() {
       _isLoadingUsdRate = true;
     });
-    
+
     try {
       final rate = await CurrencyService.getUsdRate();
       setState(() {
@@ -145,29 +146,25 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.attach_money,
-            size: 20,
-            color: Color(0xFF4A90E2),
-          ),
+          const Icon(Icons.attach_money, size: 20, color: Color(0xFF4A90E2)),
           const SizedBox(width: 6),
           _isLoadingUsdRate
               ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF4A90E2),
-                  ),
-                )
-              : Text(
-                  'USD: \$${_usdRate.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2C3E50),
-                  ),
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFF4A90E2),
                 ),
+              )
+              : Text(
+                'USD: \$${_usdRate.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
         ],
       ),
     );
@@ -184,7 +181,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
-    
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
@@ -220,21 +217,18 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
           ),
           const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(
-              Icons.refresh,
-              color: Colors.white,
-              size: 26,
-            ),
+            icon: const Icon(Icons.refresh, color: Colors.white, size: 26),
             onPressed: () => _loadCategories(forceRefresh: true),
             tooltip: 'Actualizar categorías',
           ),
           const SizedBox(width: 8),
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white, size: 28),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white, size: 28),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
           const SizedBox(width: 8),
         ],
@@ -243,11 +237,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
         children: [
           _buildBody(screenSize),
           // USD Rate Chip positioned at bottom left
-          Positioned(
-            bottom: 24,
-            left: 24,
-            child: _buildUsdRateChip(),
-          ),
+          Positioned(bottom: 24, left: 24, child: _buildUsdRateChip()),
         ],
       ),
       endDrawer: const AppDrawer(),
@@ -265,10 +255,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(
-              color: Color(0xFF4A90E2),
-              strokeWidth: 3,
-            ),
+            CircularProgressIndicator(color: Color(0xFF4A90E2), strokeWidth: 3),
             SizedBox(height: 20),
             Text(
               'Cargando categorías...',
@@ -302,19 +289,12 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.error_outline,
-                size: 80,
-                color: Colors.grey[400],
-              ),
+              Icon(Icons.error_outline, size: 80, color: Colors.grey[400]),
               const SizedBox(height: 24),
               Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 18,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 18, color: Colors.grey[600]),
               ),
               const SizedBox(height: 24),
               ElevatedButton(
@@ -322,7 +302,10 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4A90E2),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -357,11 +340,7 @@ class _CategoriesWebScreenState extends State<CategoriesWebScreen> with WidgetsB
           child: const Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.category_outlined,
-                size: 80,
-                color: Colors.grey,
-              ),
+              Icon(Icons.category_outlined, size: 80, color: Colors.grey),
               SizedBox(height: 24),
               Text(
                 'No hay categorías disponibles',
@@ -433,7 +412,7 @@ class _CategoryWebCard extends StatefulWidget {
   final String name;
   final String? imageUrl;
   final Color color;
-  
+
   const _CategoryWebCard({
     required this.id,
     required this.name,
@@ -445,7 +424,8 @@ class _CategoryWebCard extends StatefulWidget {
   State<_CategoryWebCard> createState() => _CategoryWebCardState();
 }
 
-class _CategoryWebCardState extends State<_CategoryWebCard> with SingleTickerProviderStateMixin {
+class _CategoryWebCardState extends State<_CategoryWebCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _elevationAnimation;
@@ -458,20 +438,12 @@ class _CategoryWebCardState extends State<_CategoryWebCard> with SingleTickerPro
       duration: const Duration(milliseconds: 200),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.05,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
-    _elevationAnimation = Tween<double>(
-      begin: 4.0,
-      end: 12.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+    _elevationAnimation = Tween<double>(begin: 4.0, end: 12.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -493,11 +465,12 @@ class _CategoryWebCardState extends State<_CategoryWebCard> with SingleTickerPro
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ProductsScreen(
-          categoryId: widget.id,
-          categoryName: widget.name,
-          categoryColor: widget.color,
-        ),
+        builder:
+            (_) => ProductsScreen(
+              categoryId: widget.id,
+              categoryName: widget.name,
+              categoryColor: widget.color,
+            ),
       ),
     );
   }
@@ -544,7 +517,7 @@ class _CategoryWebCardState extends State<_CategoryWebCard> with SingleTickerPro
                         ),
                       ),
                     ),
-                    
+
                     // Image
                     if (widget.imageUrl != null)
                       Positioned(
@@ -583,7 +556,11 @@ class _CategoryWebCardState extends State<_CategoryWebCard> with SingleTickerPro
                                     ),
                                   );
                                 },
-                                loadingBuilder: (context, child, loadingProgress) {
+                                loadingBuilder: (
+                                  context,
+                                  child,
+                                  loadingProgress,
+                                ) {
                                   if (loadingProgress == null) return child;
                                   return Container(
                                     decoration: BoxDecoration(
@@ -603,7 +580,7 @@ class _CategoryWebCardState extends State<_CategoryWebCard> with SingleTickerPro
                           ),
                         ),
                       ),
-                    
+
                     // Category name
                     Positioned(
                       top: 20,
@@ -632,7 +609,10 @@ class _CategoryWebCardState extends State<_CategoryWebCard> with SingleTickerPro
                           ),
                           const SizedBox(height: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(12),
@@ -649,7 +629,7 @@ class _CategoryWebCardState extends State<_CategoryWebCard> with SingleTickerPro
                         ],
                       ),
                     ),
-                    
+
                     // Hover effect overlay
                     if (_isHovered)
                       Positioned.fill(

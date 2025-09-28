@@ -25,7 +25,7 @@ class _SplashScreenState extends State<SplashScreen> {
     if (mounted) {
       // Check if user has a valid session
       final hasValidSession = await _userPreferencesService.hasValidSession();
-      
+
       if (hasValidSession) {
         print('✅ Valid admin session found, navigating to dashboard...');
         Navigator.of(context).pushReplacementNamed('/dashboard');
@@ -61,7 +61,7 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 32),
               // App name
               const Text(
-                'Vendedor admin',
+                'Vendedor Cuba Admin',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 28,
@@ -87,7 +87,7 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 24),
               // Loading text
               const Text(
-                'Iniciando Vendedor admin...',
+                'Iniciando Vendedor Cuba Admin...',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,

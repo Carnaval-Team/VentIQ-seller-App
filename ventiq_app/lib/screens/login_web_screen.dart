@@ -228,11 +228,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF4A90E2),
-              Color(0xFF357ABD),
-              Color(0xFF2E6BA8),
-            ],
+            colors: [Color(0xFF4A90E2), Color(0xFF357ABD), Color(0xFF2E6BA8)],
           ),
         ),
         child: Center(
@@ -275,7 +271,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    
+
                     // Título
                     const Text(
                       'VentIQ POS',
@@ -286,17 +282,14 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    
+
                     // Subtítulo
                     Text(
                       'Inicia sesión en tu cuenta',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                     ),
                     const SizedBox(height: 40),
-                    
+
                     // Formulario
                     Form(
                       key: _formKey,
@@ -318,9 +311,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                               keyboardType: TextInputType.emailAddress,
                               decoration: const InputDecoration(
                                 hintText: 'Correo electrónico',
-                                hintStyle: TextStyle(
-                                  color: Color(0xFF9CA3AF),
-                                ),
+                                hintStyle: TextStyle(color: Color(0xFF9CA3AF)),
                                 prefixIcon: Icon(
                                   Icons.email_outlined,
                                   color: Color(0xFF4A90E2),
@@ -343,7 +334,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                             ),
                           ),
                           const SizedBox(height: 20),
-                          
+
                           // Campo de contraseña
                           Container(
                             decoration: BoxDecoration(
@@ -367,7 +358,9 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                                   color: Color(0xFF4A90E2),
                                 ),
                                 suffixIcon: IconButton(
-                                  onPressed: () => setState(() => _obscure = !_obscure),
+                                  onPressed:
+                                      () =>
+                                          setState(() => _obscure = !_obscure),
                                   icon: Icon(
                                     _obscure
                                         ? Icons.visibility_off_outlined
@@ -382,14 +375,15 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                                 ),
                               ),
                               onFieldSubmitted: (_) => _submit(),
-                              validator: (v) =>
-                                  (v == null || v.isEmpty)
-                                      ? 'Ingrese su contraseña'
-                                      : null,
+                              validator:
+                                  (v) =>
+                                      (v == null || v.isEmpty)
+                                          ? 'Ingrese su contraseña'
+                                          : null,
                             ),
                           ),
                           const SizedBox(height: 20),
-                          
+
                           // Checkbox recordarme
                           Row(
                             children: [
@@ -415,7 +409,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                             ],
                           ),
                           const SizedBox(height: 24),
-                          
+
                           // Mensaje de error
                           if (_errorMessage != null)
                             Container(
@@ -425,9 +419,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                               decoration: BoxDecoration(
                                 color: Colors.red.shade50,
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Colors.red.shade200,
-                                ),
+                                border: Border.all(color: Colors.red.shade200),
                               ),
                               child: Row(
                                 children: [
@@ -449,7 +441,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                                 ],
                               ),
                             ),
-                          
+
                           // Botón de login
                           SizedBox(
                             width: double.infinity,
@@ -462,31 +454,35 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 elevation: 2,
-                                shadowColor: const Color(0xFF4A90E2).withOpacity(0.3),
+                                shadowColor: const Color(
+                                  0xFF4A90E2,
+                                ).withOpacity(0.3),
                               ),
                               onPressed: _isLoading ? null : _submit,
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      height: 24,
-                                      width: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
+                              child:
+                                  _isLoading
+                                      ? const SizedBox(
+                                        height: 24,
+                                        width: 24,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                      : const Text(
+                                        'Iniciar Sesión',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
-                                    )
-                                  : const Text(
-                                      'Iniciar Sesión',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
                             ),
                           ),
                           const SizedBox(height: 24),
-                          
+
                           // Enlace de contraseña olvidada
                           TextButton(
                             onPressed: () {
