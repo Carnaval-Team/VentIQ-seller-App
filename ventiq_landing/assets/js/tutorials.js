@@ -225,6 +225,97 @@ const tutorialData = {
             }
         ]
     },
+    'turnos': {
+        title: 'Gestión de Turnos',
+        steps: [
+            {
+                title: 'Apertura de turno',
+                content: 'Inicia tu turno registrando el efectivo inicial.',
+                instructions: [
+                    'Abre VentIQ Seller',
+                    'Selecciona "Apertura de Turno"',
+                    'Registra el dinero inicial',
+                    'Confirma la apertura'
+                ]
+            },
+            {
+                title: 'Dashboard del turno',
+                content: 'Monitorea ventas y estado de caja durante el turno.',
+                instructions: [
+                    'Observa ventas realizadas',
+                    'Revisa transacciones',
+                    'Verifica totales del turno',
+                    'Monitorea el estado de caja'
+                ]
+            },
+            {
+                title: 'Imprimir reporte de productos',
+                content: 'Genera un reporte de productos vendidos.',
+                instructions: [
+                    'Entra a "Reportes del Turno"',
+                    'Selecciona "Productos Vendidos"',
+                    'Revisa la lista',
+                    'Imprime si es necesario'
+                ]
+            },
+            {
+                title: 'Preparar cierre',
+                content: 'Verifica totales y documentos antes de cerrar.',
+                instructions: [
+                    'Revisa ventas del turno',
+                    'Verifica totales de efectivo',
+                    'Cuenta dinero en caja',
+                    'Prepara documentos'
+                ]
+            },
+            {
+                title: 'Cierre de turno',
+                content: 'Finaliza el turno registrando el cierre de caja.',
+                instructions: [
+                    'Selecciona "Cierre de Turno"',
+                    'Ingresa el dinero final',
+                    'Verifica contra el sistema',
+                    'Confirma el cierre'
+                ]
+            }
+        ]
+    },
+
+    'egresos': {
+        title: 'Manejo de Egresos',
+        steps: [
+            {
+                title: 'Acceder a egresos',
+                content: 'Ingresa a la sección para registrar salidas de dinero.',
+                instructions: [
+                    'Desde el menú principal',
+                    'Selecciona "Egresos" o "Gastos"',
+                    'Elige "Nuevo Egreso"',
+                    'Inicia el registro'
+                ]
+            },
+            {
+                title: 'Registrar egreso parcial',
+                content: 'Registra una extracción parcial de efectivo.',
+                instructions: [
+                    'Selecciona tipo de egreso',
+                    'Ingresa el monto',
+                    'Especifica el motivo',
+                    'Agrega observaciones'
+                ]
+            },
+            {
+                title: 'Confirmar egreso',
+                content: 'Finaliza y confirma la salida de dinero.',
+                instructions: [
+                    'Revisa la información',
+                    'Verifica el monto',
+                    'Confirma el egreso',
+                    'El saldo de caja se actualiza automáticamente'
+                ]
+            }
+        ]
+    },
 
     // Admin Web Tutorials
     'registro-empresa': {
