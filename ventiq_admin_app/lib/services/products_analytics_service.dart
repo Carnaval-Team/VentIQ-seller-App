@@ -549,10 +549,32 @@ class ProductsAnalyticsService {
         return {
           'precio_venta': 0.0,
           'costo_promedio': 0.0,
+          'costo_promedio_cup': 0.0,
+          'moneda_costo': 'CUP',
+          'tasa_cambio': 1.0,
           'ventas_totales': 0.0,
           'porcentaje_utilidad': 0.0,
           'cantidad_vendida': 0,
         };
+      }
+
+      // Obtener tasa de cambio USD -> CUP
+      double tasaUSD = 1.0;
+      try {
+        final tasasResponse =
+            await supabase
+                .from('tasas_conversion')
+                .select('tasa')
+                .eq('moneda_origen', 'USD')
+                .eq('moneda_destino', 'CUP')
+                .order('fecha_actualizacion', ascending: false)
+                .limit(1)
+                .maybeSingle();
+
+        tasaUSD = (tasasResponse?['tasa'] as num?)?.toDouble() ?? 1.0;
+        print('💱 Tasa USD->CUP: ${tasaUSD.toDouble()}');
+      } catch (e) {
+        print('⚠️ Error obteniendo tasa de cambio, usando 1.0: $e');
       }
 
       // 1. Obtener precio de venta actual
@@ -573,9 +595,9 @@ class ProductsAnalyticsService {
               .maybeSingle();
 
       final precioVenta = (precioResponse?['precio_venta_cup'] ?? 0.0) as num;
-      print('💰 Precio de venta encontrado: \$${precioVenta.toDouble()}');
+      print('💰 Precio de venta: \$${precioVenta.toDouble()} CUP');
 
-      // 2. Obtener costo unitario promedio de las RECEPCIONES
+      // 2. Obtener costo unitario promedio con moneda de la operación de recepción
       final recepcionesResponse = await supabase
           .from('app_dat_recepcion_productos')
           .select('''
@@ -583,7 +605,11 @@ class ProductsAnalyticsService {
           app_dat_operaciones!inner(
             id,
             id_tipo_operacion,
-            created_at
+            created_at,
+            app_dat_operacion_recepcion!inner(
+              moneda_factura,
+              tasa_cambio_aplicada
+            )
           )
         ''')
           .eq('id_producto', productId)
@@ -595,17 +621,74 @@ class ProductsAnalyticsService {
       print('📦 Recepciones encontradas: ${recepcionesResponse.length}');
 
       double costoPromedio = 0.0;
-      if (recepcionesResponse.isNotEmpty) {
-        final costos =
-            recepcionesResponse
-                .map((e) => (e['costo_real'] ?? 0.0) as num)
-                .map((e) => e.toDouble())
-                .where((e) => e > 0)
-                .toList();
+      double costoPromedioCUP = 0.0;
+      String monedaCosto = 'CUP';
 
-        if (costos.isNotEmpty) {
-          costoPromedio = costos.reduce((a, b) => a + b) / costos.length;
-          print('💵 Costo promedio: \$${costoPromedio.toStringAsFixed(2)}');
+      if (recepcionesResponse.isNotEmpty) {
+        final costosUSD = <double>[];
+        final costosUSDenCUP = <double>[]; // Para calcular promedio en CUP
+        final costosCUP = <double>[];
+
+        for (final recepcion in recepcionesResponse) {
+          final costo = ((recepcion['costo_real'] ?? 0.0) as num).toDouble();
+
+          // Obtener moneda de la operación de recepción
+          final operacion = recepcion['app_dat_operaciones'];
+          final operacionRecepcion =
+              operacion is Map &&
+                      operacion['app_dat_operacion_recepcion'] is List
+                  ? (operacion['app_dat_operacion_recepcion'] as List)
+                          .isNotEmpty
+                      ? (operacion['app_dat_operacion_recepcion'] as List)[0]
+                      : null
+                  : null;
+
+          final monedaRaw = operacionRecepcion?['moneda_factura'];
+          final moneda = (monedaRaw ?? 'CUP').toString().toUpperCase();
+          final tasaCambioAplicada =
+              ((operacionRecepcion?['tasa_cambio_aplicada'] ?? tasaUSD) as num)
+                  .toDouble();
+
+          print(
+            '🔍 Recepción: costo=$costo, moneda_raw=$monedaRaw, moneda=$moneda, tasa=$tasaCambioAplicada',
+          );
+
+          if (costo > 0) {
+            if (moneda == 'USD' || moneda == 'U') {
+              costosUSD.add(costo);
+              // Convertir cada costo USD a CUP usando su tasa de cambio aplicada
+              costosUSDenCUP.add(costo * tasaCambioAplicada);
+              print(
+                '  ➡️ Agregado como USD: \$${costo} USD = \$${(costo * tasaCambioAplicada).toStringAsFixed(2)} CUP',
+              );
+            } else {
+              costosCUP.add(costo);
+              print('  ➡️ Agregado como CUP: \$${costo} CUP');
+            }
+          }
+        }
+
+        print(
+          '📊 Resumen: ${costosUSD.length} costos USD, ${costosCUP.length} costos CUP',
+        );
+
+        // Priorizar USD si hay costos en USD
+        if (costosUSD.isNotEmpty) {
+          costoPromedio = costosUSD.reduce((a, b) => a + b) / costosUSD.length;
+          monedaCosto = 'USD';
+          // Usar el promedio de los costos ya convertidos con sus tasas específicas
+          costoPromedioCUP =
+              costosUSDenCUP.reduce((a, b) => a + b) / costosUSDenCUP.length;
+          print(
+            '💵 Costo promedio: \$${costoPromedio.toStringAsFixed(2)} USD (\$${costoPromedioCUP.toStringAsFixed(2)} CUP)',
+          );
+        } else if (costosCUP.isNotEmpty) {
+          costoPromedio = costosCUP.reduce((a, b) => a + b) / costosCUP.length;
+          monedaCosto = 'CUP';
+          costoPromedioCUP = costoPromedio;
+          print('💵 Costo promedio: \$${costoPromedio.toStringAsFixed(2)} CUP');
+        } else {
+          print('⚠️ No se encontraron costos válidos');
         }
       }
 
@@ -638,20 +721,26 @@ class ProductsAnalyticsService {
           ventasTotales += cantidad * precioVenta.toDouble();
         }
         print('📊 Cantidad vendida: $cantidadVendida unidades');
-        print('💸 Ventas totales: \$${ventasTotales.toStringAsFixed(2)}');
+        print('💸 Ventas totales: \$${ventasTotales.toStringAsFixed(2)} CUP');
       }
 
-      // 4. Calcular porcentaje de utilidad
+      // 4. Calcular porcentaje de utilidad usando costo en CUP
       double porcentajeUtilidad = 0.0;
-      if (costoPromedio > 0 && precioVenta > 0) {
+      if (costoPromedioCUP > 0 && precioVenta > 0) {
         porcentajeUtilidad =
-            ((precioVenta.toDouble() - costoPromedio) / costoPromedio) * 100;
-        print('📈 Utilidad: ${porcentajeUtilidad.toStringAsFixed(1)}%');
+            ((precioVenta.toDouble() - costoPromedioCUP) / costoPromedioCUP) *
+            100;
+        print(
+          '📈 Utilidad: ${porcentajeUtilidad.toStringAsFixed(1)}% (calculada con costo en CUP)',
+        );
       }
 
       final resultado = {
         'precio_venta': precioVenta.toDouble(),
         'costo_promedio': costoPromedio,
+        'costo_promedio_cup': costoPromedioCUP,
+        'moneda_costo': monedaCosto,
+        'tasa_cambio': tasaUSD,
         'ventas_totales': ventasTotales,
         'porcentaje_utilidad': porcentajeUtilidad,
         'cantidad_vendida': cantidadVendida,
@@ -665,12 +754,16 @@ class ProductsAnalyticsService {
       return {
         'precio_venta': 0.0,
         'costo_promedio': 0.0,
+        'costo_promedio_cup': 0.0,
+        'moneda_costo': 'CUP',
+        'tasa_cambio': 1.0,
         'ventas_totales': 0.0,
         'porcentaje_utilidad': 0.0,
         'cantidad_vendida': 0,
       };
     }
   }
+
   // MÉTODOS PRIVADOS PARA DATOS POR DEFECTO
 
   static Map<String, dynamic> _getDefaultKPIs() {

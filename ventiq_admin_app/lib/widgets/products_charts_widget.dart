@@ -848,6 +848,13 @@ class ProductsBCGChart extends StatelessWidget {
                                         detalles['precio_venta'] as double;
                                     final costoPromedio =
                                         detalles['costo_promedio'] as double;
+                                    final costoPromedioCUP =
+                                        detalles['costo_promedio_cup']
+                                            as double;
+                                    final monedaCosto =
+                                        detalles['moneda_costo'] as String;
+                                    final tasaCambio =
+                                        detalles['tasa_cambio'] as double;
                                     final ventasTotales =
                                         detalles['ventas_totales'] as double;
                                     final porcentajeUtilidad =
@@ -868,21 +875,23 @@ class ProductsBCGChart extends StatelessWidget {
                                         children: [
                                           _buildDetailRow(
                                             'Precio de Venta',
-                                            '\$${precioVenta.toStringAsFixed(2)}',
+                                            '\$${precioVenta.toStringAsFixed(2)} CUP',
                                             Icons.attach_money,
                                             Colors.green,
                                           ),
                                           const SizedBox(height: 8),
                                           _buildDetailRow(
                                             'Costo Unitario Promedio',
-                                            '\$${costoPromedio.toStringAsFixed(2)}',
+                                            monedaCosto == 'USD'
+                                                ? '\$${costoPromedio.toStringAsFixed(2)} USD (\$${costoPromedioCUP.toStringAsFixed(2)} CUP)'
+                                                : '\$${costoPromedio.toStringAsFixed(2)} CUP',
                                             Icons.shopping_cart,
                                             Colors.orange,
                                           ),
                                           const SizedBox(height: 8),
                                           _buildDetailRow(
                                             'Ventas Totales (30 días)',
-                                            '\$${ventasTotales.toStringAsFixed(2)}',
+                                            '\$${ventasTotales.toStringAsFixed(2)} CUP',
                                             Icons.trending_up,
                                             Colors.blue,
                                           ),
