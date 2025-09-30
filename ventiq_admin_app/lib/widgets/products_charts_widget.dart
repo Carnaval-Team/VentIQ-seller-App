@@ -448,32 +448,207 @@ class ProductsBCGChart extends StatelessWidget {
 
   Widget _buildBCGSummary() {
     final resumen = bcgData['resumen'] as Map<String, dynamic>? ?? {};
+    final distribucion =
+        resumen['distribucion_por_categoria'] as Map<String, dynamic>? ?? {};
+
+    // Obtener ventas totales (el campo correcto es 'ventas_totales_cup')
+    final ventasTotales =
+        (resumen['ventas_totales_cup'] ?? resumen['ventas_totales'] ?? 0.0)
+            as num;
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Título
+          Row(
+            children: [
+              Icon(Icons.analytics, color: AppColors.primary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Resumen del Portafolio',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[800],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Métricas principales
+          _buildSummaryRow(
+            'Total de productos',
+            '${resumen['total_productos'] ?? 0}',
+            Icons.inventory_2,
+            AppColors.primary,
+          ),
+          const SizedBox(height: 8),
+          _buildSummaryRow(
+            'Ventas totales',
+            _formatCurrency(ventasTotales.toDouble()),
+            Icons.attach_money,
+            Colors.green,
+          ),
+
+          const SizedBox(height: 16),
+          Divider(color: Colors.grey[300]),
+          const SizedBox(height: 16),
+
+          // Distribución por categoría BCG
           Text(
-            'Resumen del Portafolio',
+            'Distribución por Categoría',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.grey[800],
+              color: Colors.grey[700],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Total de productos: ${resumen['total_productos'] ?? 0}',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          const SizedBox(height: 12),
+
+          // Estrellas
+          if (distribucion.containsKey('Estrella'))
+            _buildCategoryDistribution(
+              'Estrellas',
+              distribucion['Estrella'],
+              Colors.green,
+              Icons.star,
+            ),
+
+          // Vacas Lecheras
+          if (distribucion.containsKey('Vaca lechera'))
+            _buildCategoryDistribution(
+              'Vacas Lecheras',
+              distribucion['Vaca lechera'],
+              Colors.blue,
+              Icons.water_drop,
+            ),
+
+          // Interrogantes
+          if (distribucion.containsKey('Interrogante'))
+            _buildCategoryDistribution(
+              'Interrogantes',
+              distribucion['Interrogante'],
+              Colors.orange,
+              Icons.help,
+            ),
+
+          // Perros
+          if (distribucion.containsKey('Perro'))
+            _buildCategoryDistribution(
+              'Perros',
+              distribucion['Perro'],
+              Colors.red,
+              Icons.pets,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
           ),
-          Text(
-            'Ventas totales: \$${(resumen['ventas_totales'] ?? 0.0).toStringAsFixed(2)}',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[800],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryDistribution(
+    String nombre,
+    Map<String, dynamic> datos,
+    Color color,
+    IconData icon,
+  ) {
+    final total = datos['total'] ?? 0;
+    final porcentajeVentas = (datos['porcentaje_ventas'] ?? 0.0) as num;
+    final margenPromedio = (datos['margen_promedio'] ?? 0.0) as num;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Text(
+                nombre,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '$total productos',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '% Ventas: ${porcentajeVentas.toStringAsFixed(1)}%',
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+              Text(
+                'Margen: ${margenPromedio.toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: margenPromedio >= 0 ? Colors.green : Colors.red,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -891,7 +1066,7 @@ class ProductsBCGChart extends StatelessWidget {
                                           const SizedBox(height: 8),
                                           _buildDetailRow(
                                             'Ventas Totales (30 días)',
-                                            '\$${ventasTotales.toStringAsFixed(2)} CUP',
+                                            '${_formatCurrency(ventasTotales)} CUP',
                                             Icons.trending_up,
                                             Colors.blue,
                                           ),
@@ -925,6 +1100,15 @@ class ProductsBCGChart extends StatelessWidget {
             ],
           ),
     );
+  }
+
+  String _formatCurrency(double value) {
+    final formatter = NumberFormat.currency(
+      locale: 'es_CU',
+      symbol: '\$',
+      decimalDigits: 0,
+    );
+    return formatter.format(value);
   }
 
   String _getGeneralDiagnosis(
