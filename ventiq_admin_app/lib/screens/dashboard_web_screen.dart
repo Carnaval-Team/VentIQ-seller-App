@@ -373,6 +373,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                       '${_dashboardData['salesChange'] >= 0 ? '+' : '-'} ${_dashboardData['salesChange']?.toStringAsFixed(2) ?? '0.00'}% vs anterior',
                   icon: Icons.trending_up,
                   color: AppColors.success,
+                  onTap: () => Navigator.pushNamed(context, '/sales'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -471,7 +472,71 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     required String subtitle,
     required IconData icon,
     required Color color,
+    VoidCallback? onTap,
+
   }) {
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(icon, size: 18, color: color),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 10,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    )
+      );
+    }
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -528,6 +593,8 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
         ],
       ),
     );
+
+    
   }
 
   Widget _buildKPICard(
