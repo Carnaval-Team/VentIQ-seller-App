@@ -1889,7 +1889,7 @@ class _SalesScreenState extends State<SalesScreen>
       case 1: // Ventas (current)
         break;
       case 2: // Productos
-        Navigator.pushNamed(context, '/products');
+        Navigator.pushNamed(context, '/products-dashboard');
         break;
       case 3: // Inventario
         Navigator.pushNamed(context, '/inventory');

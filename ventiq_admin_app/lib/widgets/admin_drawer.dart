@@ -156,7 +156,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   subtitle: 'Gestión del catálogo',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, '/products');
+                    Navigator.pushNamed(context, '/products-dashboard');
                   },
                 ),
                 const Divider(height: 1),

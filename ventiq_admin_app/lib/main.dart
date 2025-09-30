@@ -8,6 +8,7 @@ import 'screens/login_screen.dart';
 import 'utils/platform_utils.dart';
 import 'screens/store_registration_screen.dart';
 import 'screens/products_screen.dart';
+import 'screens/products_dashboard_screen.dart';
 import 'screens/product_detail_screen.dart';
 import 'screens/add_product_screen.dart';
 import 'screens/categories_screen.dart';
@@ -105,6 +106,7 @@ class MyApp extends StatelessWidget {
         '/dashboard-mobile': (context) => const DashboardScreen(),
         '/dashboard-web': (context) => const DashboardWebScreen(),
         '/products': (context) => const ProductsScreen(),
+        '/products-dashboard': (context) => const ProductsDashboardScreen(),
         '/categories': (context) => const CategoriesScreen(),
         '/inventory': (context) => const InventoryScreen(),
         '/sales': (context) => const SalesScreen(),

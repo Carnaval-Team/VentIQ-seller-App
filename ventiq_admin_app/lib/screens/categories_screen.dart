@@ -700,7 +700,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> with TickerProvider
         Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
         break;
       case 1: // Productos
-        Navigator.pushNamed(context, '/products');
+        Navigator.pushNamed(context, '/products-dashboard');
         break;
       case 2: // Inventario
         Navigator.pushNamed(context, '/inventory');

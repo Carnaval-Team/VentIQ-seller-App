@@ -1010,7 +1010,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               'Productos',
               Icons.inventory_2,
               AppColors.primary,
-              () => Navigator.pushNamed(context, '/products'),
+              () => Navigator.pushNamed(context, '/products-dashboard'),
             ),
             _buildQuickActionCard(
               'Categorías',
@@ -1354,7 +1354,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 0: // Dashboard (current)
         break;
       case 1: // Productos
-        Navigator.pushNamed(context, '/products');
+        Navigator.pushNamed(context, '/products-dashboard');
         break;
       case 2: // Inventario
         Navigator.pushNamed(context, '/inventory');
