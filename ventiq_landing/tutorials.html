@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,7 +10,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/styles.css">
     <link rel="stylesheet" href="assets/css/tutorials.css">
+    <link rel="stylesheet" href="assets/css/tutorial-screenshots.css">
 </head>
+
 <body>
     <!-- Navigation -->
     <nav class="navbar">
@@ -24,11 +27,13 @@
                 <a href="tutorials.html" class="nav-link active">Tutoriales</a>
                 <a href="contact.html" class="nav-link">Contacto</a>
                 <div class="download-buttons">
-                    <a href="https://ventiq-seller.appwrite.network" target="_blank" class="download-btn seller-app" title="Abrir VentIQ Seller Web">
+                    <a href="https://ventiq-seller.appwrite.network" target="_blank" class="download-btn seller-app"
+                        title="Abrir VentIQ Seller Web">
                         <i class="fas fa-mobile-alt"></i>
                         <span>Seller App</span>
                     </a>
-                    <a href="https://vendedor-admin.appwrite.network" target="_blank" class="download-btn admin-app" title="Abrir Vendedor Cuba Admin Web">
+                    <a href="https://vendedor-admin.appwrite.network" target="_blank" class="download-btn admin-app"
+                        title="Abrir Vendedor Cuba Admin Web">
                         <i class="fas fa-desktop"></i>
                         <span>Admin App</span>
                     </a>
@@ -67,7 +72,7 @@
                     <h3>Vendedor Cuba</h3>
                     <p>Aplicación multiplataforma para vendedores</p>
                 </div>
-                
+
                 <div class="category-card admin-category" data-category="admin">
                     <div class="category-icon">
                         <i class="fas fa-desktop"></i>
@@ -117,7 +122,55 @@
                         </div>
                     </div>
                 </div>
+                <!-- Tutorial: Gestión de Turnos -->
+                <div class="tutorial-card" data-tutorial="turnos">
+                    <div class="tutorial-header">
+                        <div class="tutorial-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="tutorial-info">
+                            <h3>Gestión de Turnos</h3>
+                            <p>Apertura, seguimiento y cierre de caja</p>
+                        </div>
+                        <div class="tutorial-duration">
+                            <i class="fas fa-clock"></i>
+                            <span>5 min</span>
+                        </div>
+                    </div>
+                    <div class="tutorial-preview">
+                        <div class="step-indicator">
+                            <span class="step active">1</span>
+                            <span class="step">2</span>
+                            <span class="step">3</span>
+                            <span class="step">4</span>
+                            <span class="step">5</span>
+                        </div>
+                    </div>
+                </div>
 
+                <!-- Tutorial: Manejo de Egresos -->
+                <div class="tutorial-card" data-tutorial="egresos">
+                    <div class="tutorial-header">
+                        <div class="tutorial-icon">
+                            <i class="fas fa-money-bill-wave"></i>
+                        </div>
+                        <div class="tutorial-info">
+                            <h3>Manejo de Egresos</h3>
+                            <p>Registrar salidas de dinero desde caja</p>
+                        </div>
+                        <div class="tutorial-duration">
+                            <i class="fas fa-clock"></i>
+                            <span>3 min</span>
+                        </div>
+                    </div>
+                    <div class="tutorial-preview">
+                        <div class="step-indicator">
+                            <span class="step active">1</span>
+                            <span class="step">2</span>
+                            <span class="step">3</span>
+                        </div>
+                    </div>
+                </div>
                 <!-- Tutorial 2: Gestión de inventario -->
                 <div class="tutorial-card" data-tutorial="inventario">
                     <div class="tutorial-header">
@@ -209,7 +262,31 @@
                         </div>
                     </div>
                 </div>
-
+                <!-- Tutorial: Configuración de Categorías y Subcategorías -->
+                <div class="tutorial-card" data-tutorial="configuracion-categorias">
+                    <div class="tutorial-header">
+                        <div class="tutorial-icon">
+                            <i class="fas fa-sitemap"></i>
+                        </div>
+                        <div class="tutorial-info">
+                            <h3>Configuración de Categorías y Subcategorías</h3>
+                            <p>Gestiona categorías y subcategorías por tienda</p>
+                        </div>
+                        <div class="tutorial-duration">
+                            <i class="fas fa-clock"></i>
+                            <span>4 min</span>
+                        </div>
+                    </div>
+                    <div class="tutorial-preview">
+                        <div class="step-indicator">
+                            <span class="step active">1</span>
+                            <span class="step">2</span>
+                            <span class="step">3</span>
+                            <span class="step">4</span>
+                            <span class="step">5</span>
+                        </div>
+                    </div>
+                </div>
                 <!-- Tutorial 2: Gestionar almacenes -->
                 <div class="tutorial-card" data-tutorial="almacenes">
                     <div class="tutorial-header">
@@ -235,7 +312,6 @@
                         </div>
                     </div>
                 </div>
-
                 <!-- Tutorial 3: Agregar productos -->
                 <div class="tutorial-card" data-tutorial="productos">
                     <div class="tutorial-header">
@@ -260,7 +336,6 @@
                         </div>
                     </div>
                 </div>
-
                 <!-- Tutorial 4: Recepcionar productos -->
                 <div class="tutorial-card" data-tutorial="recepcion">
                     <div class="tutorial-header">
@@ -281,6 +356,55 @@
                             <span class="step active">1</span>
                             <span class="step">2</span>
                             <span class="step">3</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Tutorial: Transferencias entre Zonas -->
+                <div class="tutorial-card" data-tutorial="transferencias">
+                    <div class="tutorial-header">
+                        <div class="tutorial-icon">
+                            <i class="fas fa-exchange-alt"></i>
+                        </div>
+                        <div class="tutorial-info">
+                            <h3>Transferencias entre Zonas</h3>
+                            <p>Mover productos entre diferentes ubicaciones</p>
+                        </div>
+                        <div class="tutorial-duration">
+                            <i class="fas fa-clock"></i>
+                            <span>5 min</span>
+                        </div>
+                    </div>
+                    <div class="tutorial-preview">
+                        <div class="step-indicator">
+                            <span class="step active">1</span>
+                            <span class="step">2</span>
+                            <span class="step">3</span>
+                            <span class="step">4</span>
+                            <span class="step">5</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Tutorial: Dashboard de Ventas -->
+                <div class="tutorial-card" data-tutorial="dashboard-ventas">
+                    <div class="tutorial-header">
+                        <div class="tutorial-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div class="tutorial-info">
+                            <h3>Dashboard de Ventas</h3>
+                            <p>Analizar métricas y reportes de ventas</p>
+                        </div>
+                        <div class="tutorial-duration">
+                            <i class="fas fa-clock"></i>
+                            <span>4 min</span>
+                        </div>
+                    </div>
+                    <div class="tutorial-preview">
+                        <div class="step-indicator">
+                            <span class="step active">1</span>
+                            <span class="step">2</span>
+                            <span class="step">3</span>
+                            <span class="step">4</span>
                         </div>
                     </div>
                 </div>
@@ -336,7 +460,7 @@
                         <a href="#"><i class="fab fa-instagram"></i></a>
                     </div>
                 </div>
-                
+
                 <div class="footer-section">
                     <h4>Aplicaciones</h4>
                     <ul>
@@ -346,7 +470,7 @@
                         <li><a href="#">Documentación</a></li>
                     </ul>
                 </div>
-                
+
                 <div class="footer-section">
                     <h4>Soporte</h4>
                     <ul>
@@ -356,7 +480,7 @@
                         <li><a href="#">Estado del servicio</a></li>
                     </ul>
                 </div>
-                
+
                 <div class="footer-section">
                     <h4>Descargas</h4>
                     <div class="download-links">
@@ -377,7 +501,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="footer-bottom">
                 <p>&copy; 2024 VentIQ. Todos los derechos reservados.</p>
             </div>
@@ -386,5 +510,7 @@
 
     <script src="assets/js/main.js"></script>
     <script src="assets/js/tutorials.js"></script>
+    <script src="assets/js/tutorial-screenshots.js"></script>
 </body>
+
 </html>
