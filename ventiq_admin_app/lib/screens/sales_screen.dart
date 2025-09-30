@@ -494,12 +494,15 @@ class _SalesScreenState extends State<SalesScreen>
                       cells: [
                         DataCell(
                           SizedBox(
-                            width: 100,
+                            width: 180,
                             child: Text(
                               report.nombreProducto,
-                              overflow: TextOverflow.ellipsis,
+                              overflow: TextOverflow.visible,
+                              softWrap: true,
+                              maxLines: 2,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w500,
+                                fontSize: 13,
                               ),
                             ),
                           ),
@@ -730,12 +733,15 @@ class _SalesScreenState extends State<SalesScreen>
                         cells: [
                           DataCell(
                             SizedBox(
-                              width: 120,
+                              width: 200,
                               child: Text(
                                 analysis.nombreProducto,
-                                overflow: TextOverflow.ellipsis,
+                                overflow: TextOverflow.visible,
+                                softWrap: true,
+                                maxLines: 2,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w500,
+                                  fontSize: 13,
                                 ),
                               ),
                             ),

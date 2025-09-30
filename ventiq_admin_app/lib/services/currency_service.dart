@@ -1,22 +1,35 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/currency_rate.dart';
 
 class CurrencyService {
-  static const String _apiUrl = 'https://eltoqueapi.netlify.app/consultar-precios';
+  static const String _apiUrl = 'https://tasas.eltoque.com/v1/trmi';
+  static const String _apiToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1ODA0NDg1NSwianRpIjoiOWRlMmE2MjgtNzZhZC00ZTAyLTk3ZjctNTJlN2U0NjhmODdkIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjY4YzQzZDg0MGU1NmM1MDMzZDQ0Nzc4MSIsIm5iZiI6MTc1ODA0NDg1NSwiZXhwIjoxNzg5NTgwODU1fQ.L4DayrQx1LGWOEFMSG6SWdAneKwNkW5F9PiwAc8Ine0';
   static final SupabaseClient _supabase = Supabase.instance.client;
+  static const String _savedRatesKey = 'saved_exchange_rates';
 
-  /// Fetches current exchange rates from the API
+  /// Fetches current exchange rates from the ElToque API
   static Future<CurrencyRatesResponse> fetchExchangeRates() async {
     try {
-      print('🌍 Fetching exchange rates from: $_apiUrl');
+      print('🌍 Starting exchange rates fetch process...');
+      
+      // Check if we have recent rates in storage (less than 1 hour old)
+      final cachedRates = await _getCachedRatesIfRecent();
+      if (cachedRates != null) {
+        print('⚡ Using cached rates (less than 1 hour old)');
+        return cachedRates;
+      }
+      
+      print('🌐 Fetching fresh rates from ElToque: $_apiUrl');
       
       final response = await http.get(
         Uri.parse(_apiUrl),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Authorization': 'Bearer $_apiToken',
         },
       ).timeout(const Duration(seconds: 10));
 
@@ -24,18 +37,25 @@ class CurrencyService {
       
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
-        print('✅ Exchange rates fetched successfully: $data');
+        print('✅ Exchange rates fetched successfully from ElToque');
+        print('📊 Raw API response: $data');
         
-        return CurrencyRatesResponse.fromJson(data);
+        final rates = _parseElToqueResponse(data);
+        
+        // Save rates to local storage for fallback
+        await _saveRatesToStorage(rates);
+        print('💾 Fresh rates saved to local storage');
+        
+        return rates;
       } else {
-        print('❌ API request failed with status: ${response.statusCode}');
+        print('❌ ElToque API request failed with status: ${response.statusCode}');
         print('Response body: ${response.body}');
-        return CurrencyRatesResponse.defaultRates();
+        return await _loadFallbackRates();
       }
     } catch (e) {
-      print('❌ Error fetching exchange rates: $e');
-      print('🔄 Using default rates as fallback');
-      return CurrencyRatesResponse.defaultRates();
+      print('❌ Error fetching exchange rates from ElToque: $e');
+      print('🔄 Loading fallback rates...');
+      return await _loadFallbackRates();
     }
   }
 
@@ -78,6 +98,134 @@ class CurrencyService {
     }
   }
 
+  /// Parses the ElToque API response to CurrencyRatesResponse
+  static CurrencyRatesResponse _parseElToqueResponse(Map<String, dynamic> data) {
+    try {
+      final tasas = data['tasas'] as Map<String, dynamic>;
+      final date = data['date'] as String;
+      final hour = data['hour'] as int;
+      final minutes = data['minutes'] as int;
+      final seconds = data['seconds'] as int;
+      
+      // Create timestamp from API response
+      final timestamp = DateTime.parse('$date ${hour.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}');
+      
+      print('📅 ElToque timestamp: $timestamp');
+      print('💱 Available rates: ${tasas.keys.toList()}');
+      
+      return CurrencyRatesResponse(
+        usd: CurrencyRate(
+          currency: 'USD',
+          value: (tasas['USD'] as num?)?.toDouble() ?? 440.0,
+          lastUpdate: timestamp,
+          timestamp: timestamp,
+        ),
+        eur: CurrencyRate(
+          currency: 'EUR',
+          value: (tasas['ECU'] as num?)?.toDouble() ?? 495.0, // ElToque uses ECU for EUR
+          lastUpdate: timestamp,
+          timestamp: timestamp,
+        ),
+        mlc: CurrencyRate(
+          currency: 'MLC',
+          value: (tasas['MLC'] as num?)?.toDouble() ?? 210.0,
+          lastUpdate: timestamp,
+          timestamp: timestamp,
+        ),
+        lastUpdate: timestamp,
+        timestamp: timestamp,
+      );
+    } catch (e) {
+      print('❌ Error parsing ElToque response: $e');
+      rethrow;
+    }
+  }
+
+  /// Saves exchange rates to local storage for fallback
+  static Future<void> _saveRatesToStorage(CurrencyRatesResponse rates) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ratesJson = {
+        'usd': rates.usd.toJson(),
+        'eur': rates.eur.toJson(),
+        'mlc': rates.mlc.toJson(),
+        'lastUpdate': rates.lastUpdate.toIso8601String(),
+        'timestamp': rates.timestamp.toIso8601String(),
+      };
+      
+      await prefs.setString(_savedRatesKey, json.encode(ratesJson));
+      print('💾 Exchange rates saved to local storage');
+    } catch (e) {
+      print('❌ Error saving rates to storage: $e');
+    }
+  }
+
+  /// Loads fallback rates from local storage or default values
+  static Future<CurrencyRatesResponse> _loadFallbackRates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedRatesString = prefs.getString(_savedRatesKey);
+      
+      if (savedRatesString != null) {
+        print('📱 Loading saved rates from local storage');
+        final savedRatesJson = json.decode(savedRatesString) as Map<String, dynamic>;
+        
+        return CurrencyRatesResponse(
+          usd: CurrencyRate.fromJson(savedRatesJson['usd']),
+          eur: CurrencyRate.fromJson(savedRatesJson['eur']),
+          mlc: CurrencyRate.fromJson(savedRatesJson['mlc']),
+          lastUpdate: DateTime.parse(savedRatesJson['lastUpdate']),
+          timestamp: DateTime.parse(savedRatesJson['timestamp']),
+        );
+      } else {
+        print('🔄 No saved rates found, using default rates');
+        return CurrencyRatesResponse.defaultRates();
+      }
+    } catch (e) {
+      print('❌ Error loading fallback rates: $e');
+      print('🔄 Using default rates as final fallback');
+      return CurrencyRatesResponse.defaultRates();
+    }
+  }
+
+  /// Checks if cached rates are recent (less than 1 hour old) and returns them
+  static Future<CurrencyRatesResponse?> _getCachedRatesIfRecent() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedRatesString = prefs.getString(_savedRatesKey);
+      
+      if (savedRatesString == null) {
+        print('📭 No cached rates found');
+        return null;
+      }
+      
+      final savedRatesJson = json.decode(savedRatesString) as Map<String, dynamic>;
+      final lastUpdate = DateTime.parse(savedRatesJson['lastUpdate']);
+      final now = DateTime.now();
+      final hoursSinceUpdate = now.difference(lastUpdate).inHours;
+      
+      print('⏰ Last update: $lastUpdate');
+      print('⏰ Hours since update: $hoursSinceUpdate');
+      
+      if (hoursSinceUpdate < 1) {
+        print('✅ Cached rates are recent (${hoursSinceUpdate}h old), using cached version');
+        return CurrencyRatesResponse(
+          usd: CurrencyRate.fromJson(savedRatesJson['usd']),
+          eur: CurrencyRate.fromJson(savedRatesJson['eur']),
+          mlc: CurrencyRate.fromJson(savedRatesJson['mlc']),
+          lastUpdate: DateTime.parse(savedRatesJson['lastUpdate']),
+          timestamp: DateTime.parse(savedRatesJson['timestamp']),
+        );
+      } else {
+        print('⏳ Cached rates are old (${hoursSinceUpdate}h), need fresh data');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error checking cached rates: $e');
+      return null;
+    }
+  }
+
   /// Fetches and updates exchange rates in one operation
   static Future<CurrencyRatesResponse> fetchAndUpdateExchangeRates() async {
     try {
@@ -98,7 +246,7 @@ class CurrencyService {
       return rates;
     } catch (e) {
       print('❌ Error in fetch and update process: $e');
-      return CurrencyRatesResponse.defaultRates();
+      return await _loadFallbackRates();
     }
   }
 

@@ -886,7 +886,7 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children:
-                          inventory.take(5).map((product) {
+                          inventory.map((product) {
                             return Container(
                               margin: const EdgeInsets.only(bottom: 8),
                               padding: const EdgeInsets.all(12),
@@ -957,21 +957,21 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
                           }).toList(),
                     ),
                   ),
-                if (inventory.length > 5)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Text(
-                      'y ${inventory.length - 5} productos más...',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
+                // if (inventory.length > 5)
+                //   Container(
+                //     padding: const EdgeInsets.symmetric(
+                //       horizontal: 16,
+                //       vertical: 8,
+                //     ),
+                //     child: Text(
+                //       'y ${inventory.length - 5} productos más...',
+                //       style: TextStyle(
+                //         fontSize: 12,
+                //         color: Colors.grey[600],
+                //         fontStyle: FontStyle.italic,
+                //       ),
+                //     ),
+                //   ),
               ],
             ],
           ),

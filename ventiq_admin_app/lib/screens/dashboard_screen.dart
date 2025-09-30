@@ -1016,7 +1016,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               'Categorías',
               Icons.category,
               AppColors.success,
-              () => Navigator.pushNamed(context, '/categories'),
+              () => Navigator.pushNamed(context, '/settings'),
             ),
             _buildQuickActionCard(
               'Inventario',

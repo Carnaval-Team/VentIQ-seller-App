@@ -73,25 +73,25 @@ class CurrencyRatesResponse {
     );
   }
 
-  // Default rates to use when API fails
+  // Default rates to use when API fails (based on ElToque rates)
   factory CurrencyRatesResponse.defaultRates() {
     final now = DateTime.now();
     return CurrencyRatesResponse(
       usd: CurrencyRate(
         currency: 'USD',
-        value: 420.0,
+        value: 440.0, // Updated from ElToque
         lastUpdate: now,
         timestamp: now,
       ),
       eur: CurrencyRate(
         currency: 'EUR',
-        value: 470.0,
+        value: 495.0, // Updated from ElToque (ECU)
         lastUpdate: now,
         timestamp: now,
       ),
       mlc: CurrencyRate(
         currency: 'MLC',
-        value: 60.0,
+        value: 210.0, // Updated from ElToque
         lastUpdate: now,
         timestamp: now,
       ),
