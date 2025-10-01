@@ -1,21 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-// import 'dart:convert';
-// import 'dart:io';
+import '../widgets/reception_total_widget.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
-import '../services/warehouse_service.dart';
 import '../services/currency_display_service.dart';
 import '../models/warehouse.dart';
 import '../widgets/conversion_info_widget.dart';
-import '../widgets/currency_converter_widget.dart';
+import '../widgets/product_quantity_dialog.dart';
+import '../widgets/location_selector_widget.dart';
 import '../widgets/currency_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
 import '../services/product_search_service.dart';
-import '../utils/presentation_converter.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
   const InventoryReceptionScreen({super.key});
@@ -37,27 +34,22 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   static String _lastEntregadoPor = '';
   static String _lastRecibidoPor = '';
   static String _lastObservaciones = '';
-  // ← NUEVAS VARIABLES PARA MONEDAS
   String _selectedCurrency = 'USD'; // Moneda seleccionada para la factura
   double? _currentExchangeRate; // Tasa de cambio actual
   double? _totalAmountInCUP; // Monto total convertido a CUP
-  bool _showCurrencyConverter = false; // Mostrar/ocultar convertidor
   List<Map<String, dynamic>> _selectedProducts = [];
   List<Map<String, dynamic>> _motivoOptions = [];
   Map<String, dynamic>? _selectedMotivo;
-  List<Warehouse> _warehouses = [];
   WarehouseZone? _selectedLocation;
   bool _isLoading = false;
   bool _isLoadingProducts = true;
   bool _isLoadingMotivos = true;
-  bool _isLoadingWarehouses = true;
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _loadMotivoOptions();
-    _loadWarehouses();
     _loadExchangeRate();
     _searchController.addListener(_onSearchChanged);
     _montoTotalController.addListener(_updateTotalAmountInCUP);
@@ -157,59 +149,19 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     }
   }
 
-  Future<void> _loadWarehouses() async {
-    try {
-      setState(() => _isLoadingWarehouses = true);
-      final warehouseService = WarehouseService();
-      final warehouses = await warehouseService.listWarehouses();
-
-      // Keep warehouses with their zones for tree structure
-      List<WarehouseZone> allLocations = [];
-      for (final warehouse in warehouses) {
-        for (final zone in warehouse.zones) {
-          // Add warehouse info to zone for display
-          final zoneWithWarehouse = WarehouseZone(
-            id: zone.id,
-            warehouseId: warehouse.id,
-            name: zone.name,
-            code: zone.code,
-            type: zone.type,
-            conditions: zone.conditions,
-            capacity: zone.capacity,
-            currentOccupancy: zone.currentOccupancy,
-            locations: zone.locations,
-            conditionCodes: zone.conditionCodes,
-          );
-          allLocations.add(zoneWithWarehouse);
-        }
-      }
-
-      setState(() {
-        _warehouses = warehouses;
-        _isLoadingWarehouses = false;
-      });
-    } catch (e) {
-      setState(() => _isLoadingWarehouses = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar almacenes: $e')),
-        );
-      }
-    }
-  }
-
   void _addProductToReception(Product product) {
     showDialog(
       context: context,
       builder:
-          (context) => _ProductQuantityDialog(
+          (context) => ProductQuantityDialog(
             product: product,
-            selectedLocation: _selectedLocation, // Pass selected location
+            selectedLocation: _selectedLocation,
+            invoiceCurrency: _selectedCurrency, // ← Moneda de factura
+            exchangeRate: _currentExchangeRate, // ← Tasa actual
             onProductAdded: (productData) {
               setState(() {
                 _selectedProducts.add(productData);
               });
-              // ❌ Removido Navigator.pop(context) - el diálogo se cierra desde adentro
             },
           ),
     );
@@ -229,18 +181,56 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
     });
   }
 
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.error,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   Future<void> _submitReception() async {
-    if (!_formKey.currentState!.validate() ||
-        _selectedProducts.isEmpty ||
-        _selectedLocation == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Complete todos los campos y agregue al menos un producto',
-          ),
-        ),
-      );
+    // Validaciones mejoradas
+    if (!_formKey.currentState!.validate()) {
+      _showError('Complete todos los campos requeridos');
       return;
+    }
+    if (_selectedProducts.isEmpty) {
+      _showError('Debe agregar al menos un producto');
+      return;
+    }
+    if (_selectedLocation == null) {
+      _showError('Debe seleccionar una ubicación de destino');
+      return;
+    }
+    if (_selectedCurrency.isEmpty) {
+      _showError('Debe seleccionar una moneda para la factura');
+      return;
+    }
+    if (_selectedCurrency != 'CUP' && _currentExchangeRate == null) {
+      _showError('No se pudo cargar la tasa de cambio para $_selectedCurrency');
+      return;
+    }
+
+    // Validar que todos los productos tengan datos válidos
+    for (final product in _selectedProducts) {
+      final precio = product['precio_unitario'] as double?;
+      final cantidad = product['cantidad'] as double?;
+
+      if (precio == null || precio < 0) {
+        _showError(
+          'Producto "${product['denominacion']}" tiene precio inválido',
+        );
+        return;
+      }
+      if (cantidad == null || cantidad <= 0) {
+        _showError(
+          'Producto "${product['denominacion']}" tiene cantidad inválida',
+        );
+        return;
+      }
     }
 
     setState(() => _isLoading = true);
@@ -262,21 +252,14 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
             if (_selectedLocation != null) {
               // Remove prefix ('z' for zones, 'w' for warehouses) before parsing as int
               try {
-                String cleanId = _selectedLocation!.id;
-                // Remove 'z' or 'w' prefix if present
-                if (cleanId.startsWith('z') || cleanId.startsWith('w')) {
-                  cleanId = cleanId.substring(1);
-                }
-                print("location: ${_selectedLocation!.toJson()}");
-                print("Clean ID after removing prefix: $cleanId");
-                productWithLocation['id_ubicacion'] = int.parse(cleanId);
+                // El LocationSelectorWidget ahora devuelve directamente el ID de la zona
+                final locationId = int.parse(_selectedLocation!.id);
+                print("Location ID: $locationId");
+                productWithLocation['id_ubicacion'] = locationId;
               } catch (e) {
-                print(
-                  'Warning: Could not parse location ID "${_selectedLocation!.id}" as integer: $e',
+                throw Exception(
+                  'Error: ID de ubicación inválido "${_selectedLocation!.id}"',
                 );
-                // If the ID is not a valid integer, we might need to handle it differently
-                // For now, we'll skip adding the id_ubicacion or use a default value
-                productWithLocation['id_ubicacion'] = null;
               }
             }
             return productWithLocation;
@@ -773,22 +756,14 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Total:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '\$${_totalAmount.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                ),
-              ),
-            ],
+          // Widget de total con conversión de monedas
+          ReceptionTotalWidget(
+            totalAmount: _totalAmount,
+            invoiceCurrency: _selectedCurrency,
+            selectedProducts: _selectedProducts,
+            onTotalConverted: (convertedAmount, currency) {
+              print('Total convertido: $convertedAmount $currency');
+            },
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -825,150 +800,25 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            _isLoadingWarehouses
-                ? const Center(child: CircularProgressIndicator())
-                : _buildWarehouseTree(),
-            if (_selectedLocation != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Ubicación seleccionada: ${_getWarehouseName(_selectedLocation!.warehouseId)} - ${_selectedLocation!.name}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          if (_selectedLocation!.code.isNotEmpty)
-                            Text(
-                              'Código: ${_selectedLocation!.code}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            LocationSelectorWidget(
+              type: LocationSelectorType.single,
+              title: 'Seleccionar Ubicación de Destino',
+              subtitle: 'Zona donde se almacenarán los productos recibidos',
+              selectedLocation: _selectedLocation,
+              onLocationChanged: (location) {
+                setState(() {
+                  _selectedLocation = location;
+                });
+              },
+              validationMessage:
+                  _selectedLocation == null
+                      ? 'Debe seleccionar una ubicación'
+                      : null,
+            ),
           ],
         ),
       ),
     );
-  }
-
-  Widget _buildWarehouseTree() {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children:
-            _warehouses.map((warehouse) {
-              return ExpansionTile(
-                leading: Icon(Icons.warehouse, color: AppColors.primary),
-                title: Text(
-                  warehouse.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                subtitle: Text(
-                  warehouse.address,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                ),
-                children:
-                    warehouse.zones.map((zone) {
-                      final isSelected = _selectedLocation?.id == zone.id;
-                      return ListTile(
-                        contentPadding: const EdgeInsets.only(
-                          left: 56,
-                          right: 16,
-                        ),
-                        leading: Icon(
-                          Icons.location_on,
-                          color: isSelected ? AppColors.primary : Colors.grey,
-                          size: 20,
-                        ),
-                        title: Text(
-                          zone.name,
-                          style: TextStyle(
-                            color: isSelected ? AppColors.primary : null,
-                            fontWeight: isSelected ? FontWeight.w600 : null,
-                          ),
-                        ),
-                        subtitle:
-                            zone.code.isNotEmpty
-                                ? Text(
-                                  'Código: ${zone.code}',
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 11,
-                                  ),
-                                )
-                                : null,
-                        trailing:
-                            isSelected
-                                ? Icon(
-                                  Icons.check_circle,
-                                  color: AppColors.primary,
-                                  size: 20,
-                                )
-                                : null,
-                        onTap: () {
-                          setState(() {
-                            _selectedLocation = zone;
-                          });
-                        },
-                      );
-                    }).toList(),
-              );
-            }).toList(),
-      ),
-    );
-  }
-
-  String _getWarehouseName(String warehouseId) {
-    final warehouse = _warehouses.firstWhere(
-      (w) => w.id == warehouseId,
-      orElse:
-          () => Warehouse(
-            id: '',
-            name: 'Almacén',
-            description: '',
-            address: '',
-            city: '',
-            country: '',
-            type: '',
-            isActive: true,
-            createdAt: DateTime.now(),
-            denominacion: 'Almacén',
-            direccion: '',
-          ),
-    );
-    return warehouse.name;
   }
 
   String _buildVariantInfo(Map<String, dynamic> item) {
@@ -1033,1039 +883,5 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       default:
         return '';
     }
-  }
-}
-
-class _ProductQuantityDialog extends StatefulWidget {
-  final Product product;
-  final WarehouseZone? selectedLocation;
-  final Function(Map<String, dynamic>) onProductAdded;
-
-  const _ProductQuantityDialog({
-    required this.product,
-    required this.onProductAdded,
-    this.selectedLocation,
-  });
-
-  @override
-  State<_ProductQuantityDialog> createState() => _ProductQuantityDialogState();
-}
-
-class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
-  final _formKey = GlobalKey<FormState>();
-  final _quantityController = TextEditingController();
-  final _precioUnitarioController = TextEditingController();
-  final _precioReferenciaController = TextEditingController();
-  final _descuentoPorcentajeController = TextEditingController();
-  final _descuentoMontoController = TextEditingController();
-  final _bonificacionCantidadController = TextEditingController();
-
-  List<Map<String, dynamic>> _availableVariants = [];
-  List<Map<String, dynamic>> _availablePresentations = [];
-  Map<String, dynamic>? _selectedVariant;
-  Map<String, dynamic>? _selectedPresentation;
-  
-  // Variables para el precio histórico
-  double? _lastPurchasePrice;
-  String? _lastPurchaseDate;
-  bool _isLoadingLastPrice = false;
-
-  void _initializeVariantsAndPresentations() {
-    final Map<String, Map<String, dynamic>> variantMap = {};
-    final Map<String, Map<String, dynamic>> presentationMap = {};
-
-    print(
-      '🔍 Inicializando variantes y presentaciones para producto: ${widget.product.id}',
-    );
-
-    // Process variants from variantesDisponibles
-    if (widget.product.variantesDisponibles.isNotEmpty) {
-      for (final varianteDisponible in widget.product.variantesDisponibles) {
-        // Process variant
-        if (varianteDisponible['variante'] != null) {
-          final variant = varianteDisponible['variante'];
-
-          if (variant['opciones'] != null && variant['opciones'] is List) {
-            final opciones = variant['opciones'] as List<dynamic>;
-
-            for (final opcion in opciones) {
-              final variantKey = '${variant['id']}_${opcion['id']}';
-              if (!variantMap.containsKey(variantKey)) {
-                variantMap[variantKey] = {
-                  'id': variant['id'],
-                  'atributo': variant['atributo'],
-                  'opcion': opcion,
-                };
-              }
-            }
-          } else {
-            // Handle variants without specific options
-            final variantKey = '${variant['id']}_no_option';
-            if (!variantMap.containsKey(variantKey)) {
-              variantMap[variantKey] = {
-                'id': variant['id'],
-                'atributo': variant['atributo'],
-                'opcion': null,
-              };
-            }
-          }
-        }
-
-        // Process presentations from variantesDisponibles
-        if (varianteDisponible['presentaciones'] != null) {
-          final presentaciones =
-              varianteDisponible['presentaciones'] as List<dynamic>;
-
-          for (final presentation in presentaciones) {
-            final presentationKey = presentation['id'].toString();
-            if (!presentationMap.containsKey(presentationKey)) {
-              presentationMap[presentationKey] = presentation;
-            }
-          }
-        }
-      }
-    }
-
-    // Add direct presentations from product
-    for (int i = 0; i < widget.product.presentaciones.length; i++) {
-      final presentation = widget.product.presentaciones[i];
-      final presentationKey = presentation['id']?.toString() ?? i.toString();
-
-      if (!presentationMap.containsKey(presentationKey)) {
-        presentationMap[presentationKey] = presentation;
-      }
-    }
-
-    _availableVariants = variantMap.values.toList();
-    _availablePresentations = presentationMap.values.toList();
-
-    // Set defaults
-    _selectedVariant = null;
-    _selectedPresentation = null;
-
-    // Auto-select base presentation if available
-    if (_availablePresentations.isNotEmpty) {
-      final basePresentation = _availablePresentations.firstWhere((p) {
-        final name = _getPresentationName(p).toLowerCase();
-        return name.contains('base') ||
-            name.contains('unidad') ||
-            name.contains('individual');
-      }, orElse: () => _availablePresentations.first);
-      _selectedPresentation = basePresentation;
-    }
-
-    print(
-      '✅ Inicialización completa: ${_availableVariants.length} variantes, ${_availablePresentations.length} presentaciones',
-    );
-  }
-
-  String _getPresentationName(Map<String, dynamic> presentation) {
-    return presentation['denominacion'] ??
-        presentation['presentacion'] ??
-        presentation['nombre'] ??
-        presentation['tipo'] ??
-        'Sin nombre';
-  }
-
-  Map<String, dynamic>? _findMatchingInventoryItem() {
-    // Find inventory item that matches both selected variant and presentation
-    for (final inventoryItem in widget.product.inventario) {
-      bool variantMatches = true;
-      bool presentationMatches = true;
-
-      // Check variant match
-      if (_selectedVariant != null && inventoryItem['variante'] != null) {
-        final itemVariant = inventoryItem['variante'];
-
-        if (variantMatches &&
-            itemVariant['id'] == _selectedVariant!['id'] &&
-            itemVariant['opcion']?['id'] ==
-                _selectedVariant!['opcion']?['id']) {
-          variantMatches = true;
-        } else {
-          variantMatches = false;
-        }
-      } else if (_selectedVariant != null ||
-          inventoryItem['variante'] != null) {
-        variantMatches = false;
-      }
-
-      // Check presentation match
-      if (_selectedPresentation != null &&
-          inventoryItem['presentacion'] != null) {
-        presentationMatches =
-            inventoryItem['presentacion']['id'] == _selectedPresentation!['id'];
-      } else if (_selectedPresentation != null ||
-          inventoryItem['presentacion'] != null) {
-        presentationMatches = false;
-      }
-
-      if (variantMatches && presentationMatches) {
-        return inventoryItem;
-      }
-    }
-
-    // If no exact match, return first item as fallback
-    return widget.product.inventario.isNotEmpty
-        ? widget.product.inventario.first
-        : null;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeVariantsAndPresentations();
-    _loadLastPurchasePrice();
-  }
-
-  /// Obtiene el último precio de compra del producto desde app_dat_recepcion_productos
-  Future<void> _loadLastPurchasePrice() async {
-    setState(() {
-      _isLoadingLastPrice = true;
-    });
-
-    try {
-      print('🔍 Buscando último precio de compra para producto ID: ${widget.product.id}');
-      
-      final response = await Supabase.instance.client
-          .from('app_dat_recepcion_productos')
-          .select('precio_unitario, created_at')
-          .eq('id_producto', widget.product.id)
-          .order('created_at', ascending: false)
-          .limit(1);
-
-      if (response.isNotEmpty) {
-        final lastRecord = response.first;
-        final precioUnitario = lastRecord['precio_unitario'];
-        final createdAt = lastRecord['created_at'];
-
-        if (precioUnitario != null) {
-          setState(() {
-            _lastPurchasePrice = (precioUnitario as num).toDouble();
-            _lastPurchaseDate = createdAt;
-            _precioUnitarioController.text = _lastPurchasePrice.toString();
-          });
-          
-          print('✅ Último precio encontrado: \$${_lastPurchasePrice} (${_lastPurchaseDate})');
-        } else {
-          _setDefaultPrice();
-        }
-      } else {
-        print('ℹ️ No se encontró historial de compras para este producto');
-        _setDefaultPrice();
-      }
-    } catch (e) {
-      print('❌ Error obteniendo último precio de compra: $e');
-      _setDefaultPrice();
-    } finally {
-      setState(() {
-        _isLoadingLastPrice = false;
-      });
-    }
-  }
-
-  void _setDefaultPrice() {
-    setState(() {
-      _lastPurchasePrice = null;
-      _lastPurchaseDate = null;
-      _precioUnitarioController.text = widget.product.basePrice.toString();
-    });
-    print('📝 Usando precio base del producto: \$${widget.product.basePrice}');
-  }
-
-  /// Formatea la fecha para mostrar en el UI
-  String _formatDate(String dateString) {
-    try {
-      final date = DateTime.parse(dateString);
-      final now = DateTime.now();
-      final difference = now.difference(date);
-
-      if (difference.inDays == 0) {
-        return 'Hoy';
-      } else if (difference.inDays == 1) {
-        return 'Ayer';
-      } else if (difference.inDays < 7) {
-        return 'hace ${difference.inDays} días';
-      } else if (difference.inDays < 30) {
-        final weeks = (difference.inDays / 7).floor();
-        return 'hace ${weeks} semana${weeks > 1 ? 's' : ''}';
-      } else {
-        final day = date.day.toString().padLeft(2, '0');
-        final month = date.month.toString().padLeft(2, '0');
-        final year = date.year;
-        return '$day/$month/$year';
-      }
-    } catch (e) {
-      print('❌ Error formateando fecha: $e');
-      return 'Fecha inválida';
-    }
-  }
-
-  @override
-  void dispose() {
-    _quantityController.dispose();
-    _precioUnitarioController.dispose();
-    _precioReferenciaController.dispose();
-    _descuentoPorcentajeController.dispose();
-    _descuentoMontoController.dispose();
-    _bonificacionCantidadController.dispose();
-    super.dispose();
-  }
-
-  void _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      final cantidad = double.tryParse(_quantityController.text) ?? 0;
-      final precioUnitario =
-          double.tryParse(_precioUnitarioController.text) ?? 0;
-      final precioReferencia =
-          double.tryParse(_precioReferenciaController.text) ?? 0;
-      final descuentoPorcentaje =
-          double.tryParse(_descuentoPorcentajeController.text) ?? 0;
-      final descuentoMonto =
-          double.tryParse(_descuentoMontoController.text) ?? 0;
-      final bonificacionCantidad =
-          double.tryParse(_bonificacionCantidadController.text) ?? 0;
-
-      try {
-        print('🔍 DEBUG: Presentación seleccionada: $_selectedPresentation');
-        print('🔍 DEBUG: Variante seleccionada: $_selectedVariant');
-        print(
-          '🔍 DEBUG: Denominación presentación: ${_selectedPresentation?['denominacion']}',
-        );
-        print(
-          '🔍 DEBUG: Otros campos presentación: ${_selectedPresentation?.keys.toList()}',
-        );
-
-        // Datos base del producto
-        final baseProductData = {
-          'id_producto': widget.product.id,
-          'precio_referencia': precioReferencia,
-          'descuento_porcentaje': descuentoPorcentaje,
-          'descuento_monto': descuentoMonto,
-          'bonificacion_cantidad': bonificacionCantidad,
-          'denominacion': widget.product.name,
-          'sku': widget.product.sku,
-        };
-
-        // AGREGAR INFORMACIÓN DE VARIANTES
-        if (_selectedVariant != null) {
-          baseProductData['id_variante'] = _selectedVariant!['id'];
-          if (_selectedVariant!['opcion'] != null) {
-            baseProductData['id_opcion_variante'] =
-                _selectedVariant!['opcion']['id'];
-          }
-          baseProductData['variant_info'] = _selectedVariant!;
-        }
-
-        // Procesar producto con conversión automática
-        final productData =
-            await PresentationConverter.processProductForReception(
-              productId: widget.product.id,
-              selectedPresentation: _selectedPresentation,
-              cantidad: cantidad,
-              precioUnitario: precioUnitario,
-              baseProductData: baseProductData,
-            );
-
-        print('🔍 DEBUG: Producto procesado: $productData');
-
-        widget.onProductAdded(productData);
-        Navigator.of(context).pop();
-      } catch (e) {
-        print('Error al agregar producto: $e');
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: MediaQuery.of(context).size.height * 0.8,
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                ),
-                border: Border(
-                  bottom: BorderSide(color: AppColors.border, width: 1),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.add_shopping_cart,
-                      color: AppColors.primary,
-                      size: 24,
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Agregar Producto',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          widget.product.name,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(Icons.close, color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-
-            // Content
-            Expanded(
-              child: Form(
-                key: _formKey,
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Product Information Section
-                      _buildSection(
-                        title: 'Información del Producto',
-                        icon: Icons.info_outline,
-                        child: Container(
-                          padding: EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: AppColors.border.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 60,
-                                height: 60,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(
-                                  Icons.inventory_2,
-                                  color: AppColors.primary,
-                                  size: 30,
-                                ),
-                              ),
-                              SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      widget.product.name,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                    if (widget.product.sku.isNotEmpty)
-                                      Text(
-                                        'SKU: ${widget.product.sku}',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: AppColors.textSecondary,
-                                        ),
-                                      ),
-                                    Text(
-                                      'Stock actual: ${widget.product.stockDisponible}',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 24),
-
-                      // Datos de Entrada Section
-                      _buildSection(
-                        title: 'Datos de Entrada',
-                        icon: Icons.input,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Presentation Selection
-                            if (_availablePresentations.isNotEmpty) ...[
-                              DropdownButtonFormField<Map<String, dynamic>>(
-                                value: _selectedPresentation,
-                                decoration: InputDecoration(
-                                  labelText: 'Presentación',
-                                  border: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: AppColors.border,
-                                    ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: AppColors.border,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: AppColors.primary,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                ),
-                                isExpanded: true,
-                                items: [
-                                  DropdownMenuItem<Map<String, dynamic>>(
-                                    value: null,
-                                    child: Text(
-                                      'Sin presentación específica',
-                                      style: TextStyle(
-                                        color: AppColors.textSecondary,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  ..._availablePresentations.map((
-                                    presentation,
-                                  ) {
-                                    return DropdownMenuItem<
-                                      Map<String, dynamic>
-                                    >(
-                                      value: presentation,
-                                      child: Text(
-                                        _getPresentationName(presentation),
-                                        style: TextStyle(
-                                          color: AppColors.textPrimary,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    );
-                                  }).toList(),
-                                ],
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedPresentation = value;
-                                  });
-                                },
-                              ),
-                              SizedBox(height: 16),
-                            ],
-
-                            // Variant Selection
-                            if (_availableVariants.isNotEmpty) ...[
-                              DropdownButtonFormField<Map<String, dynamic>>(
-                                value: _selectedVariant,
-                                decoration: InputDecoration(
-                                  labelText: 'Variante',
-                                  border: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: AppColors.border,
-                                    ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: AppColors.border,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: AppColors.primary,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                ),
-                                isExpanded: true,
-                                items: [
-                                  DropdownMenuItem<Map<String, dynamic>>(
-                                    value: null,
-                                    child: Text(
-                                      'Sin variante',
-                                      style: TextStyle(
-                                        color: AppColors.textSecondary,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  ..._availableVariants.map((variant) {
-                                    final atributo =
-                                        variant['atributo']?['denominacion'] ??
-                                        variant['atributo']?['label'] ??
-                                        '';
-                                    final opcion =
-                                        variant['opcion']?['valor'] ?? '';
-                                    return DropdownMenuItem<
-                                      Map<String, dynamic>
-                                    >(
-                                      value: variant,
-                                      child: Text(
-                                        '$atributo - $opcion',
-                                        style: TextStyle(
-                                          color: AppColors.textPrimary,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    );
-                                  }).toList(),
-                                ],
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedVariant = value;
-                                  });
-                                },
-                              ),
-                              SizedBox(height: 16),
-                            ],
-
-                            // Quantity
-                            TextFormField(
-                              controller: _quantityController,
-                              decoration: InputDecoration(
-                                labelText: 'Cantidad',
-                                border: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: AppColors.border,
-                                  ),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: AppColors.border,
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: AppColors.primary,
-                                    width: 2,
-                                  ),
-                                ),
-                                prefixIcon: Icon(
-                                  Icons.inventory,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                              keyboardType: TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'La cantidad es obligatoria';
-                                }
-                                if (double.tryParse(value) == null ||
-                                    double.parse(value) <= 0) {
-                                  return 'Ingrese una cantidad válida';
-                                }
-                                return null;
-                              },
-                            ),
-                            SizedBox(height: 16),
-
-                            // Purchase Price
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TextFormField(
-                                  controller: _precioUnitarioController,
-                                  decoration: InputDecoration(
-                                    labelText:
-                                        'Precio de Compra (por presentación seleccionada)',
-                                    hintText:
-                                        'Se convertirá automáticamente a precio base',
-                                    border: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.border,
-                                      ),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.border,
-                                      ),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.primary,
-                                        width: 2,
-                                      ),
-                                    ),
-                                    prefixIcon: _isLoadingLastPrice
-                                        ? SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: Padding(
-                                              padding: EdgeInsets.all(12),
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: AppColors.primary,
-                                              ),
-                                            ),
-                                          )
-                                        : Icon(
-                                            Icons.attach_money,
-                                            color: AppColors.primary,
-                                          ),
-                                  ),
-                                  keyboardType: TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'El precio de compra es obligatorio';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                // Mostrar información de la fecha si hay precio histórico
-                                if (_lastPurchaseDate != null && !_isLoadingLastPrice)
-                                  Padding(
-                                    padding: EdgeInsets.only(top: 8, left: 12),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.history,
-                                          size: 16,
-                                          color: AppColors.success,
-                                        ),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          'Último precio: ${_formatDate(_lastPurchaseDate!)}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.success,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
-
-                            SizedBox(height: 24),
-
-                            // Advanced Reception Data Subsection
-                            ExpansionTile(
-                              title: Text(
-                                'Datos Avanzados de Recepción',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              children: [
-                                ListTile(
-                                  title: Text(
-                                    'Expandir para ver opciones avanzadas',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(height: 12),
-                                // Reference Price
-                                TextFormField(
-                                  controller: _precioReferenciaController,
-                                  decoration: InputDecoration(
-                                    labelText:
-                                        'Precio de Referencia (Opcional)',
-                                    prefixText: '\$ ',
-                                    border: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.border,
-                                      ),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.border,
-                                      ),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.primary,
-                                        width: 2,
-                                      ),
-                                    ),
-                                    prefixIcon: Icon(
-                                      Icons.price_check,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                  keyboardType: TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                                ),
-                                SizedBox(height: 16),
-
-                                // Discounts Row
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller:
-                                            _descuentoPorcentajeController,
-                                        decoration: InputDecoration(
-                                          labelText: 'Descuento %',
-                                          border: OutlineInputBorder(
-                                            borderSide: BorderSide(
-                                              color: AppColors.warning,
-                                            ),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderSide: BorderSide(
-                                              color: AppColors.warning,
-                                            ),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderSide: BorderSide(
-                                              color: AppColors.warning,
-                                              width: 2,
-                                            ),
-                                          ),
-                                          prefixIcon: Icon(
-                                            Icons.percent,
-                                            color: AppColors.warning,
-                                          ),
-                                        ),
-                                        keyboardType:
-                                            TextInputType.numberWithOptions(
-                                              decimal: true,
-                                            ),
-                                      ),
-                                    ),
-                                    SizedBox(width: 12),
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _descuentoMontoController,
-                                        decoration: InputDecoration(
-                                          labelText: 'Descuento \$',
-                                          prefixText: '\$ ',
-                                          border: OutlineInputBorder(
-                                            borderSide: BorderSide(
-                                              color: AppColors.warning,
-                                            ),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderSide: BorderSide(
-                                              color: AppColors.warning,
-                                            ),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderSide: BorderSide(
-                                              color: AppColors.warning,
-                                              width: 2,
-                                            ),
-                                          ),
-                                          prefixIcon: Icon(
-                                            Icons.money_off,
-                                            color: AppColors.warning,
-                                          ),
-                                        ),
-                                        keyboardType:
-                                            TextInputType.numberWithOptions(
-                                              decimal: true,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                SizedBox(height: 16),
-
-                                // Bonification
-                                TextFormField(
-                                  controller: _bonificacionCantidadController,
-                                  decoration: InputDecoration(
-                                    labelText: 'Bonificación (Cantidad Extra)',
-                                    border: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.success,
-                                      ),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.success,
-                                      ),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderSide: BorderSide(
-                                        color: AppColors.success,
-                                        width: 2,
-                                      ),
-                                    ),
-                                    prefixIcon: Icon(
-                                      Icons.add_circle_outline,
-                                      color: AppColors.success,
-                                    ),
-                                  ),
-                                  keyboardType: TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // Actions
-            Container(
-              padding: EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(
-                  top: BorderSide(color: AppColors.border, width: 1),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(
-                      'Cancelar',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 16),
-                  ElevatedButton(
-                    onPressed: _submitForm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 32,
-                        vertical: 16,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      'Agregar',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSection({
-    required String title,
-    required IconData icon,
-    required Widget child,
-    bool isCollapsible = false,
-  }) {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: AppColors.border.withOpacity(0.3)),
-      ),
-      child:
-          isCollapsible
-              ? ExpansionTile(
-                leading: Icon(icon, color: AppColors.primary),
-                title: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
-                ),
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: child,
-                  ),
-                ],
-              )
-              : Padding(
-                padding: EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(icon, color: AppColors.primary),
-                        SizedBox(width: 8),
-                        Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 16),
-                    child,
-                  ],
-                ),
-              ),
-    );
   }
 }
