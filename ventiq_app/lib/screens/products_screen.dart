@@ -33,6 +33,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   final ProductService _productService = ProductService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
+  bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
 
   // Search functionality
   bool _isSearchVisible = false;
@@ -58,10 +59,20 @@ class _ProductsScreenState extends State<ProductsScreen> {
     _searchController.addListener(_onSearchChanged);
     _loadPromotionData();
     _loadUsdRate();
+    _loadDataUsageSettings();
     // Asegurar que se inicialice filteredProductsBySubcategory
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadProducts();
     });
+  }
+  
+  Future<void> _loadDataUsageSettings() async {
+    final isEnabled = await _userPreferencesService.isLimitDataUsageEnabled();
+    if (mounted) {
+      setState(() {
+        _isLimitDataUsageEnabled = isEnabled;
+      });
+    }
   }
 
   @override
@@ -84,7 +95,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     setState(() {
       _isLoadingUsdRate = true;
     });
-    
+
     try {
       final rate = await CurrencyService.getUsdRate();
       setState(() {
@@ -213,7 +224,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
         // Extract just the message from the exception
         String cleanMessage = e.toString();
         if (cleanMessage.startsWith('Exception: ')) {
-          cleanMessage = cleanMessage.substring(11); // Remove "Exception: " prefix
+          cleanMessage = cleanMessage.substring(
+            11,
+          ); // Remove "Exception: " prefix
         }
         errorMessage = cleanMessage;
         isLoading = false;
@@ -253,6 +266,24 @@ class _ProductsScreenState extends State<ProductsScreen> {
         ),
         centerTitle: true,
         actions: [
+          if (_isLimitDataUsageEnabled)
+            IconButton(
+              icon: const Icon(
+                Icons.data_saver_on,
+                color: Colors.orange,
+                size: 24,
+              ),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos'),
+                    backgroundColor: Colors.orange,
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              tooltip: 'Modo ahorro de datos activado',
+            ),
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white, size: 28),
             onPressed: _toggleSearch,
@@ -393,6 +424,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             products: products,
                             categoryColor: widget.categoryColor,
                             promotionData: _promotionData,
+                            isLimitDataUsageEnabled: _isLimitDataUsageEnabled,
                           );
                         },
                       ),
@@ -488,11 +520,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
               ),
             ),
           // USD Rate Chip positioned at bottom left
-          Positioned(
-            bottom: 16,
-            left: 16,
-            child: _buildUsdRateChip(),
-          ),
+          Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
         ],
       ),
     );
@@ -516,29 +544,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.attach_money,
-            size: 16,
-            color: Color(0xFF4A90E2),
-          ),
+          const Icon(Icons.attach_money, size: 16, color: Color(0xFF4A90E2)),
           const SizedBox(width: 4),
           _isLoadingUsdRate
               ? const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF4A90E2),
-                  ),
-                )
-              : Text(
-                  'USD: \$${_usdRate.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2C3E50),
-                  ),
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFF4A90E2),
                 ),
+              )
+              : Text(
+                'USD: \$${_usdRate.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
         ],
       ),
     );
@@ -562,7 +586,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
         Navigator.pushNamed(context, '/settings');
         Navigator.pushNamed(context, '/settings');
         break;
-    };
+    }
+    ;
   }
 }
 
@@ -572,12 +597,14 @@ class _SubcategorySection extends StatelessWidget {
   final List<Product> products;
   final Color categoryColor;
   final Map<String, dynamic>? promotionData;
+  final bool isLimitDataUsageEnabled;
 
   const _SubcategorySection({
     required this.title,
     required this.products,
     required this.categoryColor,
     this.promotionData,
+    required this.isLimitDataUsageEnabled,
   });
 
   @override
@@ -641,6 +668,7 @@ class _SubcategorySection extends StatelessWidget {
                     product: product,
                     categoryColor: categoryColor,
                     promotionData: promotionData,
+                    isLimitDataUsageEnabled: isLimitDataUsageEnabled,
                   ),
                 );
               }).toList(),
@@ -683,6 +711,7 @@ class _SubcategorySection extends StatelessWidget {
                         product: product,
                         categoryColor: categoryColor,
                         promotionData: promotionData,
+                        isLimitDataUsageEnabled: isLimitDataUsageEnabled,
                       ),
                     );
                   }).toList(),
@@ -699,11 +728,13 @@ class _PlayStoreProductCard extends StatefulWidget {
   final Product product;
   final Color categoryColor;
   final Map<String, dynamic>? promotionData;
+  final bool isLimitDataUsageEnabled;
 
   const _PlayStoreProductCard({
     required this.product,
     required this.categoryColor,
     this.promotionData,
+    required this.isLimitDataUsageEnabled,
   });
 
   @override
@@ -729,10 +760,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
               const SizedBox(width: 12),
               const Text(
                 'Producto Agotado',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -750,10 +778,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
               const SizedBox(height: 8),
               Text(
                 'Este producto está actualmente agotado y no se puede agregar a la orden.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
             ],
           ),
@@ -765,10 +790,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
               ),
               child: const Text(
                 'Entendido',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
               ),
             ),
           ],
@@ -821,7 +843,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
           _showOutOfStockDialog(context);
           return;
         }
-        
+
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -858,29 +880,44 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  widget.product.foto ?? '',
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      color: Colors.grey[200],
-                      child: Icon(
-                        Icons.shopping_bag,
-                        size: 24,
-                        color: Colors.grey[400],
+                child: widget.isLimitDataUsageEnabled
+                    ? Image.asset(
+                        'assets/ni_image.png',
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.grey[200],
+                            child: Icon(
+                              Icons.shopping_bag,
+                              size: 24,
+                              color: Colors.grey[400],
+                            ),
+                          );
+                        },
+                      )
+                    : Image.network(
+                        widget.product.foto ?? '',
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.grey[200],
+                            child: Icon(
+                              Icons.shopping_bag,
+                              size: 24,
+                              color: Colors.grey[400],
+                            ),
+                          );
+                        },
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            color: Colors.grey[200],
+                            child: const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Container(
-                      color: Colors.grey[200],
-                      child: const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
-                  },
-                ),
               ),
             ),
             const SizedBox(width: 16),

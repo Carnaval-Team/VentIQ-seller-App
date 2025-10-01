@@ -34,6 +34,9 @@ class UserPreferencesService {
   static const String _promotionCodeKey = 'promotion_code';
   static const String _promotionValueKey = 'promotion_value';
   static const String _promotionTypeKey = 'promotion_type';
+  
+  // Data usage keys
+  static const String _limitDataUsageKey = 'limit_data_usage';
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -352,11 +355,27 @@ class UserPreferencesService {
   Future<void> setPrintEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_printEnabledKey, enabled);
-    print('UserPreferencesService: Configuración de impresión actualizada: $enabled');
+    print(
+      'UserPreferencesService: Configuración de impresión actualizada: $enabled',
+    );
   }
 
   Future<bool> isPrintEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_printEnabledKey) ?? true; // Por defecto habilitado
+  }
+  
+  // Data usage settings methods
+  Future<void> setLimitDataUsage(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_limitDataUsageKey, enabled);
+    print(
+      'UserPreferencesService: Límite de datos actualizado: $enabled',
+    );
+  }
+
+  Future<bool> isLimitDataUsageEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_limitDataUsageKey) ?? false; // Por defecto deshabilitado
   }
 }

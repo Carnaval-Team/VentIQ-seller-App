@@ -17,14 +17,17 @@ class CategoriesScreen extends StatefulWidget {
   State<CategoriesScreen> createState() => _CategoriesScreenState();
 }
 
-class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBindingObserver {
+class _CategoriesScreenState extends State<CategoriesScreen>
+    with WidgetsBindingObserver {
   final CategoryService _categoryService = CategoryService();
   final UserPreferencesService _preferencesService = UserPreferencesService();
   final ChangelogService _changelogService = ChangelogService();
   List<Category> _categories = [];
   bool _isLoading = true;
   String? _errorMessage;
-  bool _categoriesLoaded = false; // Flag para controlar si ya se cargaron las categorías
+  bool _categoriesLoaded =
+      false; // Flag para controlar si ya se cargaron las categorías
+  bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
 
   // USD rate data
   double _usdRate = 0.0;
@@ -37,6 +40,16 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
     _checkForChangelog();
     _loadCategories();
     _loadUsdRate();
+    _loadDataUsageSettings();
+  }
+  
+  Future<void> _loadDataUsageSettings() async {
+    final isEnabled = await _preferencesService.isLimitDataUsageEnabled();
+    if (mounted) {
+      setState(() {
+        _isLimitDataUsageEnabled = isEnabled;
+      });
+    }
   }
 
   @override
@@ -56,11 +69,11 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
   Future<void> _checkForChangelog() async {
     try {
       final isFirstTime = await _preferencesService.isFirstTimeOpening();
-      
+
       if (isFirstTime) {
         // Wait a bit for the screen to load
         await Future.delayed(const Duration(milliseconds: 500));
-        
+
         final changelog = await _changelogService.getLatestChangelog();
         if (changelog != null && mounted) {
           await showDialog(
@@ -68,7 +81,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
             barrierDismissible: false,
             builder: (context) => ChangelogDialog(changelog: changelog),
           );
-          
+
           // Save current app version to preferences
           await _preferencesService.saveAppVersion('1.0.0');
         }
@@ -94,7 +107,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
       });
 
       final categories = await _categoryService.getCategories();
-      
+
       setState(() {
         _categories = categories;
         _isLoading = false;
@@ -115,7 +128,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
     setState(() {
       _isLoadingUsdRate = true;
     });
-    
+
     try {
       final rate = await CurrencyService.getUsdRate();
       setState(() {
@@ -149,29 +162,25 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.attach_money,
-            size: 16,
-            color: Color(0xFF4A90E2),
-          ),
+          const Icon(Icons.attach_money, size: 16, color: Color(0xFF4A90E2)),
           const SizedBox(width: 4),
           _isLoadingUsdRate
               ? const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF4A90E2),
-                  ),
-                )
-              : Text(
-                  'USD: \$${_usdRate.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2C3E50),
-                  ),
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFF4A90E2),
                 ),
+              )
+              : Text(
+                'USD: \$${_usdRate.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
         ],
       ),
     );
@@ -195,6 +204,24 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          if (_isLimitDataUsageEnabled)
+            IconButton(
+              icon: const Icon(
+                Icons.data_saver_on,
+                color: Colors.orange,
+                size: 24,
+              ),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos'),
+                    backgroundColor: Colors.orange,
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              tooltip: 'Modo ahorro de datos activado',
+            ),
           IconButton(
             icon: const Icon(
               Icons.qr_code_scanner,
@@ -212,11 +239,12 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
             tooltip: 'Escanear código de barras',
           ),
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
       ),
@@ -224,11 +252,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
         children: [
           _buildBody(),
           // USD Rate Chip positioned at bottom left
-          Positioned(
-            bottom: 16,
-            left: 16,
-            child: _buildUsdRateChip(),
-          ),
+          Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
         ],
       ),
       endDrawer: const AppDrawer(),
@@ -246,16 +270,11 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(
-              color: Color(0xFF4A90E2),
-            ),
+            CircularProgressIndicator(color: Color(0xFF4A90E2)),
             SizedBox(height: 16),
             Text(
               'Cargando categorías...',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
           ],
         ),
@@ -267,19 +286,12 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.error_outline, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
               _errorMessage!,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
@@ -300,18 +312,11 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.category_outlined,
-              size: 64,
-              color: Colors.grey,
-            ),
+            Icon(Icons.category_outlined, size: 64, color: Colors.grey),
             SizedBox(height: 16),
             Text(
               'No hay categorías disponibles',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
           ],
         ),
@@ -338,6 +343,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> with WidgetsBinding
               name: category.name,
               imageUrl: category.imageUrl,
               color: category.color,
+              isLimitDataUsageEnabled: _isLimitDataUsageEnabled,
             );
           },
         ),
@@ -378,19 +384,22 @@ class _CategoryCard extends StatefulWidget {
   final String name;
   final String? imageUrl;
   final Color color;
-  
+  final bool isLimitDataUsageEnabled;
+
   const _CategoryCard({
     required this.id,
     required this.name,
     this.imageUrl,
     required this.color,
+    required this.isLimitDataUsageEnabled,
   });
 
   @override
   State<_CategoryCard> createState() => _CategoryCardState();
 }
 
-class _CategoryCardState extends State<_CategoryCard> with SingleTickerProviderStateMixin {
+class _CategoryCardState extends State<_CategoryCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   bool _isPressed = false;
@@ -402,13 +411,9 @@ class _CategoryCardState extends State<_CategoryCard> with SingleTickerProviderS
       duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.95,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -429,11 +434,12 @@ class _CategoryCardState extends State<_CategoryCard> with SingleTickerProviderS
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ProductsScreen(
-          categoryId: widget.id,
-          categoryName: widget.name,
-          categoryColor: widget.color,
-        ),
+        builder:
+            (_) => ProductsScreen(
+              categoryId: widget.id,
+              categoryName: widget.name,
+              categoryColor: widget.color,
+            ),
       ),
     );
   }
@@ -456,12 +462,14 @@ class _CategoryCardState extends State<_CategoryCard> with SingleTickerProviderS
             onTapCancel: _onTapCancel,
             child: Container(
               decoration: BoxDecoration(
-                color: _isPressed 
-                    ? widget.color.withOpacity(0.8)
-                    : widget.color,
+                color:
+                    _isPressed ? widget.color.withOpacity(0.8) : widget.color,
                 border: Border(
                   right: const BorderSide(color: Color(0xFFE0E0E0), width: 0.5),
-                  bottom: const BorderSide(color: Color(0xFFE0E0E0), width: 0.5),
+                  bottom: const BorderSide(
+                    color: Color(0xFFE0E0E0),
+                    width: 0.5,
+                  ),
                 ),
               ),
               child: Stack(
@@ -487,14 +495,70 @@ class _CategoryCardState extends State<_CategoryCard> with SingleTickerProviderS
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(1),
-                          child: widget.imageUrl != null 
-                            ? Image.network(
-                                widget.imageUrl!,
-                                width: 120,
-                                height: 80,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
+                          child: widget.isLimitDataUsageEnabled
+                              ? Image.asset(
+                                  'assets/ni_image.png',
+                                  width: 120,
+                                  height: 80,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(
+                                        _getCategoryIcon(widget.name),
+                                        size: 40,
+                                        color: Colors.white,
+                                      ),
+                                    );
+                                  },
+                                )
+                              : widget.imageUrl != null
+                                  ? Image.network(
+                                    widget.imageUrl!,
+                                    width: 120,
+                                    height: 80,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          _getCategoryIcon(widget.name),
+                                          size: 40,
+                                          color: Colors.white,
+                                        ),
+                                      );
+                                    },
+                                    loadingBuilder: (
+                                      context,
+                                      child,
+                                      loadingProgress,
+                                    ) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: const Center(
+                                          child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  )
+                                  : Container(
                                     decoration: BoxDecoration(
                                       color: Colors.white.withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(12),
@@ -504,35 +568,7 @@ class _CategoryCardState extends State<_CategoryCard> with SingleTickerProviderS
                                       size: 40,
                                       color: Colors.white,
                                     ),
-                                  );
-                                },
-                                loadingBuilder: (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Center(
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              )
-                            : Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(
-                                  _getCategoryIcon(widget.name),
-                                  size: 40,
-                                  color: Colors.white,
-                                ),
-                              ),
+                                  ),
                         ),
                       ),
                     ),

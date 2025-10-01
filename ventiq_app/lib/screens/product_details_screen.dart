@@ -38,6 +38,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   String? _errorMessage;
   Map<String, dynamic>? _globalPromotionData;
   Map<String, dynamic>? _productPromotionData;
+  bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
 
   // USD rate data
   double _usdRate = 0.0;
@@ -63,6 +64,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     _loadPromotionData();
     _loadUsdRate();
     _loadProductPresentations();
+    _loadDataUsageSettings();
+  }
+  
+  Future<void> _loadDataUsageSettings() async {
+    final isEnabled = await _userPreferencesService.isLimitDataUsageEnabled();
+    if (mounted) {
+      setState(() {
+        _isLimitDataUsageEnabled = isEnabled;
+      });
+    }
   }
 
   /// Cargar detalles completos del producto desde Supabase
@@ -461,6 +472,26 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           ],
         ),
         centerTitle: true,
+        actions: [
+          if (_isLimitDataUsageEnabled)
+            IconButton(
+              icon: const Icon(
+                Icons.data_saver_on,
+                color: Colors.orange,
+                size: 24,
+              ),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos'),
+                    backgroundColor: Colors.orange,
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              tooltip: 'Modo ahorro de datos activado',
+            ),
+        ],
       ),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 0, // No tab selected since this is a detail screen
@@ -537,8 +568,35 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(11),
-                            child:
-                                currentProduct.foto != null
+                            child: _isLimitDataUsageEnabled
+                                ? Image.asset(
+                                    'assets/ni_image.png',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        color: Colors.grey[100],
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(
+                                              Icons.inventory_2,
+                                              color: Colors.grey,
+                                              size: 32,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Sin imagen',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : currentProduct.foto != null
                                     ? Image.network(
                                       _compressImageUrl(currentProduct.foto!),
                                       fit: BoxFit.cover,
