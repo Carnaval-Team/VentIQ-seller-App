@@ -400,16 +400,45 @@ class ProductService {
       if (response == null) return [];
 
       final List<dynamic> data = response as List<dynamic>;
-      return data
-          .map(
-            (item) => {
-              'ubicacion':
-                  item['ubicacion'] ?? item['almacen'] ?? 'Sin ubicación',
-              'cantidad': (item['cantidad_final'] ?? 0).toDouble(),
-              'reservado': (item['stock_reservado'] ?? 0).toDouble(),
-            },
-          )
-          .toList();
+
+      print('📊 Total registros recibidos: ${data.length}');
+
+      // ✅ CORRECCIÓN: Agrupar por ubicación para eliminar duplicados
+      final Map<String, Map<String, dynamic>> ubicacionesAgrupadas = {};
+
+      for (var item in data) {
+        final ubicacion =
+            item['ubicacion'] ?? item['almacen'] ?? 'Sin ubicación';
+        final cantidad = (item['cantidad_final'] ?? 0).toDouble();
+        final reservado = (item['stock_reservado'] ?? 0).toDouble();
+
+        if (ubicacionesAgrupadas.containsKey(ubicacion)) {
+          // Sumar cantidades si la ubicación ya existe
+          ubicacionesAgrupadas[ubicacion]!['cantidad'] += cantidad;
+          ubicacionesAgrupadas[ubicacion]!['reservado'] += reservado;
+        } else {
+          // Crear nueva entrada para la ubicación
+          ubicacionesAgrupadas[ubicacion] = {
+            'ubicacion': ubicacion,
+            'cantidad': cantidad,
+            'reservado': reservado,
+          };
+        }
+      }
+
+      final ubicacionesUnicas = ubicacionesAgrupadas.values.toList();
+
+      print(
+        '📦 Ubicaciones únicas después de agrupar: ${ubicacionesUnicas.length}',
+      );
+      print('🔍 Ubicaciones encontradas:');
+      for (var ub in ubicacionesUnicas) {
+        print(
+          '   - ${ub['ubicacion']}: ${ub['cantidad']} unidades (${ub['reservado']} reservadas)',
+        );
+      }
+
+      return ubicacionesUnicas;
     } catch (e, stackTrace) {
       print('❌ Error al obtener ubicaciones de stock: $e');
       print('📍 StackTrace: $stackTrace');
@@ -537,14 +566,28 @@ class ProductService {
 
       if (response.isEmpty) return [];
 
-      return response
-          .map<Map<String, dynamic>>(
-            (item) => {
-              'fecha': DateTime.parse(item['fecha_desde']),
-              'precio': (item['precio_venta_cup'] ?? 0.0).toDouble(),
-            },
-          )
-          .toList();
+      final priceHistory =
+          response
+              .map<Map<String, dynamic>>(
+                (item) => {
+                  'fecha': DateTime.parse(item['fecha_desde']),
+                  'precio': (item['precio_venta_cup'] ?? 0.0).toDouble(),
+                },
+              )
+              .toList();
+
+      // ✅ CORRECCIÓN 3: Si solo hay 1 precio, agregar punto actual para mostrar línea
+      if (priceHistory.length == 1) {
+        print(
+          '📊 Solo 1 precio encontrado, agregando punto actual para gráfico',
+        );
+        priceHistory.add({
+          'fecha': DateTime.now(),
+          'precio': priceHistory[0]['precio'], // Mismo precio
+        });
+      }
+
+      return priceHistory;
     } catch (e, stackTrace) {
       print('❌ Error al obtener histórico de precios: $e');
       print('📍 StackTrace: $stackTrace');
@@ -564,29 +607,78 @@ class ProductService {
         params: {'p_id_producto': int.tryParse(productId)},
       );
 
-      if (response == null) return [];
+      print('📊 Respuesta de fn_listar_promociones_producto: $response');
+
+      if (response == null) {
+        print('⚠️ Response es null');
+        return [];
+      }
 
       final List<dynamic> data = response as List<dynamic>;
-      return data
-          .map<Map<String, dynamic>>(
-            (promo) => {
-              'promocion': promo['nombre'] ?? 'Promoción sin nombre',
-              'precio_original': (promo['precio_base'] ?? 0.0).toDouble(),
-              'precio_promocional': _calculatePromotionalPrice(
-                (promo['precio_base'] ?? 0.0).toDouble(),
-                (promo['valor_descuento'] ?? 0.0).toDouble(),
-                promo['es_recargo'] ?? false,
-              ),
+      print('📊 Total promociones recibidas: ${data.length}');
+
+      if (data.isEmpty) {
+        print('⚠️ No hay promociones para el producto $productId');
+        return [];
+      }
+
+      // Debug: Mostrar estructura del primer elemento
+      if (data.isNotEmpty) {
+        print('🔍 Estructura del primer elemento:');
+        print('   Keys: ${(data.first as Map).keys.toList()}');
+        print('   Values: ${data.first}');
+      }
+
+      final promociones =
+          data.map<Map<String, dynamic>>((promo) {
+            // Convertir valores con logging detallado
+            final nombre =
+                promo['nombre']?.toString() ?? 'Promoción sin nombre';
+            final precioBase = (promo['precio_base'] ?? 0.0).toDouble();
+            final valorDescuento = (promo['valor_descuento'] ?? 0.0).toDouble();
+            final esRecargo = promo['es_recargo'] == true;
+
+            // ✅ CORRECCIÓN: estado es BOOLEAN, no int
+            final estadoBool = promo['estado'] == true;
+
+            // Fechas como strings ISO 8601
+            final fechaInicio = promo['fecha_inicio']?.toString();
+            final fechaFin = promo['fecha_fin']?.toString();
+
+            print('📋 Procesando promoción: $nombre');
+            print('   - Precio base: $precioBase');
+            print('   - Descuento: $valorDescuento%');
+            print('   - Es recargo: $esRecargo');
+            print('   - Estado: $estadoBool');
+            print('   - Vigencia: $fechaInicio → $fechaFin');
+
+            final precioPromocional = _calculatePromotionalPrice(
+              precioBase,
+              valorDescuento,
+              esRecargo,
+            );
+
+            final activa = _isPromotionActive(
+              fechaInicio,
+              fechaFin,
+              estadoBool, // ✅ Pasar boolean directamente
+            );
+
+            print('   - Precio promocional: $precioPromocional');
+            print('   - Activa: $activa');
+
+            return {
+              'promocion': nombre,
+              'precio_original': precioBase,
+              'precio_promocional': precioPromocional,
               'vigencia':
-                  '${_formatDate(promo['fecha_inicio'])} - ${_formatDate(promo['fecha_fin'])}',
-              'activa': _isPromotionActive(
-                promo['fecha_inicio'],
-                promo['fecha_fin'],
-                promo['estado'],
-              ),
-            },
-          )
-          .toList();
+                  '${_formatDate(fechaInicio)} - ${_formatDate(fechaFin)}',
+              'activa': activa,
+            };
+          }).toList();
+
+      print('✅ Promociones procesadas: ${promociones.length}');
+      return promociones;
     } catch (e, stackTrace) {
       print('❌ Error al obtener precios promocionales: $e');
       print('📍 StackTrace: $stackTrace');
@@ -1013,11 +1105,13 @@ class ProductService {
   }
 
   static String _formatDate(String? dateStr) {
-    if (dateStr == null) return 'N/A';
+    if (dateStr == null || dateStr.isEmpty) return 'N/A';
     try {
+      // Manejar tanto formato ISO 8601 como TIMESTAMP de PostgreSQL
       final date = DateTime.parse(dateStr);
       return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
     } catch (e) {
+      print('⚠️ Error formateando fecha: $dateStr - $e');
       return 'N/A';
     }
   }
@@ -1025,16 +1119,31 @@ class ProductService {
   static bool _isPromotionActive(
     String? startDate,
     String? endDate,
-    int? status,
+    bool estado, // ✅ Cambiar de int? a bool
   ) {
-    if (startDate == null || endDate == null || status != 1) return false;
+    // ✅ CORRECCIÓN: Validar boolean directamente
+    if (startDate == null || endDate == null || !estado) {
+      return true;
+    }
 
     try {
       final now = DateTime.now();
       final start = DateTime.parse(startDate);
       final end = DateTime.parse(endDate);
-      return now.isAfter(start) && now.isBefore(end);
+
+      // Verificar que esté dentro del rango de fechas
+      final enVigencia = now.isAfter(start) && now.isBefore(end);
+
+      print('🔍 Validando vigencia:');
+      print('   - Ahora: $now');
+      print('   - Inicio: $start');
+      print('   - Fin: $end');
+      print('   - En vigencia: $enVigencia');
+      print('   - Estado activo: $estado');
+
+      return enVigencia && estado;
     } catch (e) {
+      print('❌ Error validando promoción activa: $e');
       return false;
     }
   }
@@ -1205,8 +1314,10 @@ class ProductService {
   /// Obtiene productos para ingredientes filtrados por tienda del usuario
   static Future<List<Map<String, dynamic>>> getProductsForIngredients() async {
     try {
-      print('🔍 ===== INICIANDO CARGA RÁPIDA DE PRODUCTOS PARA INGREDIENTES =====');
-      
+      print(
+        '🔍 ===== INICIANDO CARGA RÁPIDA DE PRODUCTOS PARA INGREDIENTES =====',
+      );
+
       final userPrefs = UserPreferencesService();
       final idTienda = await userPrefs.getIdTienda();
       if (idTienda == null) {
@@ -1226,20 +1337,23 @@ class ProductService {
       print('📦 Productos obtenidos: ${response.length}');
 
       // Convertir directamente sin cálculos de costo
-      final List<Map<String, dynamic>> productos = response.map((item) {
-        return {
-          'id': item['id'],
-          'denominacion': item['denominacion'],
-          'sku': item['sku'],
-          'imagen': item['imagen'],
-          'es_elaborado': item['es_elaborado'] ?? false,
-          'precio_venta': 0.0, // Valor por defecto
-          'stock_disponible': 0, // Valor por defecto
-        };
-      }).toList();
+      final List<Map<String, dynamic>> productos =
+          response.map((item) {
+            return {
+              'id': item['id'],
+              'denominacion': item['denominacion'],
+              'sku': item['sku'],
+              'imagen': item['imagen'],
+              'es_elaborado': item['es_elaborado'] ?? false,
+              'precio_venta': 0.0, // Valor por defecto
+              'stock_disponible': 0, // Valor por defecto
+            };
+          }).toList();
 
-      print('✅ Procesamiento completado rápidamente: ${productos.length} productos');
-      
+      print(
+        '✅ Procesamiento completado rápidamente: ${productos.length} productos',
+      );
+
       // DEBUG: Mostrar detalles de los primeros 3 productos
       if (productos.isNotEmpty) {
         print('🔍 ===== ANÁLISIS DE PRODUCTOS RECIBIDOS (SIN COSTOS) =====');
@@ -1715,124 +1829,129 @@ class ProductService {
   }
 
   static Future<double> _calcularCostoUnitarioIngrediente(int productId) async {
-  try {
-    print('🔧 Iniciando cálculo de costo para producto ID: $productId');
+    try {
+      print('🔧 Iniciando cálculo de costo para producto ID: $productId');
 
-    // 1. Obtener presentación base
-    print('📋 Paso 1: Obteniendo presentación base...');
-    final basePresentacion = await getBasePresentacion(productId);
-    if (basePresentacion == null) {
-      print('❌ No se encontró presentación base para producto $productId');
-      return 0.0;
-    }
-    print(
-      '✅ Presentación base encontrada: ${basePresentacion['denominacion']} (ID: ${basePresentacion['id_presentacion']})',
-    );
-
-    // 2. Obtener última recepción por compra - CONSULTA CORREGIDA
-    print('📋 Paso 2: Buscando última recepción por compra...');
-    
-    // Primero intentemos una consulta más simple para verificar la estructura
-    final recepcionResponse = await _supabase
-        .from('app_dat_recepcion_productos')
-        .select('costo_real, cantidad, created_at')
-        .eq('id_producto', productId)
-        .eq('id_presentacion', basePresentacion['id_presentacion'])
-        .order('created_at', ascending: false)
-        .limit(1);
-
-    print(
-      '📊 Consulta de recepción ejecutada. Resultados encontrados: ${recepcionResponse.length}',
-    );
-
-    if (recepcionResponse.isEmpty) {
+      // 1. Obtener presentación base
+      print('📋 Paso 1: Obteniendo presentación base...');
+      final basePresentacion = await getBasePresentacion(productId);
+      if (basePresentacion == null) {
+        print('❌ No se encontró presentación base para producto $productId');
+        return 0.0;
+      }
       print(
-        '❌ No se encontraron recepciones para producto $productId con presentación ${basePresentacion['id_presentacion']}',
+        '✅ Presentación base encontrada: ${basePresentacion['denominacion']} (ID: ${basePresentacion['id_presentacion']})',
       );
-      
-      // Intentar obtener cualquier recepción del producto sin filtrar por presentación
-      print('🔄 Intentando buscar recepciones sin filtro de presentación...');
-      final recepcionAnyResponse = await _supabase
+
+      // 2. Obtener última recepción por compra - CONSULTA CORREGIDA
+      print('📋 Paso 2: Buscando última recepción por compra...');
+
+      // Primero intentemos una consulta más simple para verificar la estructura
+      final recepcionResponse = await _supabase
           .from('app_dat_recepcion_productos')
-          .select('costo_real, cantidad, created_at, id_presentacion')
+          .select('costo_real, cantidad, created_at')
           .eq('id_producto', productId)
+          .eq('id_presentacion', basePresentacion['id_presentacion'])
           .order('created_at', ascending: false)
           .limit(1);
-          
-      if (recepcionAnyResponse.isEmpty) {
-        print('❌ No se encontraron recepciones para producto $productId');
-        return 0.0;
-      } else {
-        print('✅ Encontrada recepción con presentación diferente: ${recepcionAnyResponse.first}');
-        // Usar esta recepción aunque sea de otra presentación
-        final recepcion = recepcionAnyResponse.first;
-        final costoReal = (recepcion['costo_real'] ?? 0.0).toDouble();
-        final cantidadRecibida = (recepcion['cantidad'] ?? 1.0).toDouble();
-        
-        if (costoReal > 0 && cantidadRecibida > 0) {
-          final costoUnitario = costoReal / cantidadRecibida;
-          print('✅ Costo unitario calculado (presentación diferente): $costoUnitario');
-          return costoUnitario;
-        }
-      }
-      
-      return 0.0;
-    }
 
-    final recepcion = recepcionResponse.first;
-    final costoReal = (recepcion['costo_real'] ?? 0.0).toDouble();
-    final cantidadRecibida = (recepcion['cantidad'] ?? 1.0).toDouble();
-
-    print(
-      '✅ Recepción encontrada - Costo real: $costoReal, Cantidad: $cantidadRecibida',
-    );
-
-    // 3. Obtener cantidad de UM por presentación
-    print('📋 Paso 3: Obteniendo cantidad de unidades de medida...');
-    final umResponse = await _supabase
-        .from('app_dat_presentacion_unidad_medida')
-        .select('cantidad_um')
-        .eq('id_producto', productId)
-        .eq('id_presentacion', basePresentacion['id_presentacion'])
-        .limit(1);
-
-    print(
-      '📊 Consulta de UM ejecutada. Resultados encontrados: ${umResponse.length}',
-    );
-
-    double cantidadUM = 1.0;
-    if (umResponse.isNotEmpty) {
-      cantidadUM = (umResponse.first['cantidad_um'] ?? 1.0).toDouble();
-      print('✅ Cantidad UM encontrada: $cantidadUM');
-    } else {
       print(
-        '⚠️ No se encontró cantidad UM, usando valor por defecto: $cantidadUM',
+        '📊 Consulta de recepción ejecutada. Resultados encontrados: ${recepcionResponse.length}',
       );
-    }
 
-    // 4. Calcular costo por UM
-    print('📋 Paso 4: Calculando costo final...');
-    
-    if (cantidadRecibida <= 0) {
-      print('❌ Cantidad recibida inválida: $cantidadRecibida');
+      if (recepcionResponse.isEmpty) {
+        print(
+          '❌ No se encontraron recepciones para producto $productId con presentación ${basePresentacion['id_presentacion']}',
+        );
+
+        // Intentar obtener cualquier recepción del producto sin filtrar por presentación
+        print('🔄 Intentando buscar recepciones sin filtro de presentación...');
+        final recepcionAnyResponse = await _supabase
+            .from('app_dat_recepcion_productos')
+            .select('costo_real, cantidad, created_at, id_presentacion')
+            .eq('id_producto', productId)
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        if (recepcionAnyResponse.isEmpty) {
+          print('❌ No se encontraron recepciones para producto $productId');
+          return 0.0;
+        } else {
+          print(
+            '✅ Encontrada recepción con presentación diferente: ${recepcionAnyResponse.first}',
+          );
+          // Usar esta recepción aunque sea de otra presentación
+          final recepcion = recepcionAnyResponse.first;
+          final costoReal = (recepcion['costo_real'] ?? 0.0).toDouble();
+          final cantidadRecibida = (recepcion['cantidad'] ?? 1.0).toDouble();
+
+          if (costoReal > 0 && cantidadRecibida > 0) {
+            final costoUnitario = costoReal / cantidadRecibida;
+            print(
+              '✅ Costo unitario calculado (presentación diferente): $costoUnitario',
+            );
+            return costoUnitario;
+          }
+        }
+
+        return 0.0;
+      }
+
+      final recepcion = recepcionResponse.first;
+      final costoReal = (recepcion['costo_real'] ?? 0.0).toDouble();
+      final cantidadRecibida = (recepcion['cantidad'] ?? 1.0).toDouble();
+
+      print(
+        '✅ Recepción encontrada - Costo real: $costoReal, Cantidad: $cantidadRecibida',
+      );
+
+      // 3. Obtener cantidad de UM por presentación
+      print('📋 Paso 3: Obteniendo cantidad de unidades de medida...');
+      final umResponse = await _supabase
+          .from('app_dat_presentacion_unidad_medida')
+          .select('cantidad_um')
+          .eq('id_producto', productId)
+          .eq('id_presentacion', basePresentacion['id_presentacion'])
+          .limit(1);
+
+      print(
+        '📊 Consulta de UM ejecutada. Resultados encontrados: ${umResponse.length}',
+      );
+
+      double cantidadUM = 1.0;
+      if (umResponse.isNotEmpty) {
+        cantidadUM = (umResponse.first['cantidad_um'] ?? 1.0).toDouble();
+        print('✅ Cantidad UM encontrada: $cantidadUM');
+      } else {
+        print(
+          '⚠️ No se encontró cantidad UM, usando valor por defecto: $cantidadUM',
+        );
+      }
+
+      // 4. Calcular costo por UM
+      print('📋 Paso 4: Calculando costo final...');
+
+      if (cantidadRecibida <= 0) {
+        print('❌ Cantidad recibida inválida: $cantidadRecibida');
+        return 0.0;
+      }
+
+      final costoPorPresentacion = costoReal / cantidadRecibida;
+      final costoFinal = costoPorPresentacion / cantidadUM;
+
+      print(
+        '🧮 Cálculo: ($costoReal / $cantidadRecibida) / $cantidadUM = $costoFinal',
+      );
+      print('✅ Costo unitario calculado para producto $productId: $costoFinal');
+
+      return costoFinal;
+    } catch (e) {
+      print('❌ Error calculando costo unitario para producto $productId: $e');
+      print('📍 Stack trace: ${StackTrace.current}');
       return 0.0;
     }
-    
-    final costoPorPresentacion = costoReal / cantidadRecibida;
-    final costoFinal = costoPorPresentacion / cantidadUM;
-
-    print(
-      '🧮 Cálculo: ($costoReal / $cantidadRecibida) / $cantidadUM = $costoFinal',
-    );
-    print('✅ Costo unitario calculado para producto $productId: $costoFinal');
-
-    return costoFinal;
-  } catch (e) {
-    print('❌ Error calculando costo unitario para producto $productId: $e');
-    print('📍 Stack trace: ${StackTrace.current}');
-    return 0.0;
   }
-}
+
   /// Obtiene ID de unidad usando RestaurantService (método correcto)
   static Future<int?> _getUnidadIdFromString(String unidadString) async {
     try {

@@ -31,6 +31,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   List<Map<String, dynamic>> _stockHistory = [];
   List<Map<String, dynamic>> _ingredientes = [];
   bool _isLoadingIngredients = false;
+  bool _isLoadingPromotions = false; // ✅ AGREGAR ESTA LÍNEA
+  // Pagination and filtering for reception operations
   // Pagination and filtering for reception operations
   int _currentPage = 1;
   int _totalPages = 0;
@@ -134,13 +136,36 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _loadPromotionalPrices() async {
+    setState(() => _isLoadingPromotions = true);
     try {
-      _promotionalPrices = await ProductService.getProductPromotionalPrices(
+      print('🔍 ===== CARGANDO PROMOCIONES =====');
+      print('🔍 Producto ID: ${_product.id}');
+
+      final promociones = await ProductService.getProductPromotionalPrices(
         _product.id,
       );
-    } catch (e) {
-      print('Error loading promotional prices: $e');
-      _promotionalPrices = [];
+
+      print('📊 Promociones recibidas en pantalla: ${promociones.length}');
+      if (promociones.isNotEmpty) {
+        print('🔍 Primera promoción:');
+        print('   ${promociones.first}');
+      }
+
+      setState(() {
+        _promotionalPrices = promociones;
+        _isLoadingPromotions = false;
+      });
+
+      print(
+        '✅ Estado actualizado - Promociones en _promotionalPrices: ${_promotionalPrices.length}',
+      );
+    } catch (e, stackTrace) {
+      print('❌ Error loading promotional prices: $e');
+      print('📍 StackTrace: $stackTrace');
+      setState(() {
+        _promotionalPrices = [];
+        _isLoadingPromotions = false;
+      });
     }
   }
 
@@ -820,12 +845,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       reservedSize: 60,
                       getTitlesWidget:
                           (value, meta) => Text(
-                        '\$${value.toInt()}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey[600],
-                        ),
-                      ),
+                            '\$${value.toInt()}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
+                          ),
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -888,111 +913,144 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       title: 'Precios Promocionales',
       icon: Icons.local_offer,
       children: [
-        if (_promotionalPrices.isEmpty)
-          Text(
-            'No hay promociones activas para este producto',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontStyle: FontStyle.italic,
+        // ✅ AGREGAR: Indicador de carga
+        if (_isLoadingPromotions)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: CircularProgressIndicator(),
             ),
+          )
+        else if (_promotionalPrices.isEmpty)
+          Column(
+            children: [
+              Text(
+                'No hay promociones activas para este producto',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // ✅ AGREGAR: Botón para recargar
+              TextButton.icon(
+                onPressed: () {
+                  print('🔄 Recargando promociones manualmente...');
+                  _loadPromotionalPrices();
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Recargar promociones'),
+              ),
+            ],
           )
         else
           Column(
-            children:
-                _promotionalPrices
-                    .map(
-                      (promo) => Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color:
-                              promo['activa']
-                                  ? AppColors.success.withOpacity(0.05)
-                                  : Colors.grey[50],
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color:
-                                promo['activa']
-                                    ? AppColors.success.withOpacity(0.3)
-                                    : Colors.grey[200]!,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  promo['promocion'],
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        promo['activa']
-                                            ? AppColors.success.withOpacity(0.1)
-                                            : AppColors.error.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    promo['activa'] ? 'Activa' : 'Inactiva',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color:
-                                          promo['activa']
-                                              ? AppColors.success
-                                              : AppColors.error,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Text(
-                                  'Precio original: \$${NumberFormat('#,###.00').format(promo['precio_original'])}',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.grey[600],
-                                    decoration: TextDecoration.lineThrough,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Text(
-                                  'Precio promocional: \$${NumberFormat('#,###.00').format(promo['precio_promocional'])}',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color:
-                                        promo['activa']
-                                            ? AppColors.success
-                                            : Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Vigencia: ${promo['vigencia']}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
+            children: [
+              // ✅ AGREGAR: Contador de promociones
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  '${_promotionalPrices.length} promoción(es) encontrada(s)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+              ..._promotionalPrices.map(
+                (promo) => Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color:
+                        promo['activa']
+                            ? AppColors.success.withOpacity(0.05)
+                            : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color:
+                          promo['activa']
+                              ? AppColors.success.withOpacity(0.3)
+                              : Colors.grey[200]!,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              promo['promocion'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  promo['activa']
+                                      ? AppColors.success.withOpacity(0.1)
+                                      : AppColors.error.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              promo['activa'] ? 'Activa' : 'Inactiva',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color:
+                                    promo['activa']
+                                        ? AppColors.success
+                                        : AppColors.error,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    )
-                    .toList(),
+                      const SizedBox(height: 8),
+// ✅ CORRECCIÓN: Cambiar Row por Column para evitar overflow
+Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    Text(
+      'Precio original: \$${NumberFormat('#,###.00').format(promo['precio_original'])}',
+      style: TextStyle(
+        fontSize: 13,
+        color: Colors.grey[600],
+        decoration: TextDecoration.lineThrough,
+      ),
+    ),
+    const SizedBox(height: 4),
+    Text(
+      'Precio promocional: \$${NumberFormat('#,###.00').format(promo['precio_promocional'])}',
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.bold,
+        color: promo['activa']
+            ? AppColors.success
+            : Colors.grey[600],
+      ),
+    ),
+  ],
+),
+const SizedBox(height: 4),
+Text(
+  'Vigencia: ${promo['vigencia']}',
+  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
       ],
     );
@@ -1029,12 +1087,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       reservedSize: 60,
                       getTitlesWidget:
                           (value, meta) => Text(
-                        value.toInt().toString(),
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey[600],
-                        ),
-                      ),
+                            value.toInt().toString(),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                            ),
+                          ),
                     ),
                   ),
                   bottomTitles: AxisTitles(
@@ -1377,9 +1435,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     return _buildInfoCard(
       title: 'Variantes (${_getVariantCount()})',
       icon: Icons.tune,
-      children: [
-        ..._buildVariantsList(),
-      ],
+      children: [..._buildVariantsList()],
     );
   }
 
@@ -1400,32 +1456,36 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   List<Widget> _buildVariantsList() {
     List<Widget> variantWidgets = [];
-    
+
     for (final varianteDisponible in _product.variantesDisponibles) {
       if (varianteDisponible['variante'] != null) {
         final variant = varianteDisponible['variante'];
         final atributo = variant['atributo'];
-        
+
         if (variant['opciones'] != null && variant['opciones'] is List) {
           final opciones = variant['opciones'] as List<dynamic>;
           for (final opcion in opciones) {
-            variantWidgets.add(_buildVariantCard(
-              atributo: atributo,
-              opcion: opcion,
-              presentations: varianteDisponible['presentaciones'] ?? [],
-            ));
+            variantWidgets.add(
+              _buildVariantCard(
+                atributo: atributo,
+                opcion: opcion,
+                presentations: varianteDisponible['presentaciones'] ?? [],
+              ),
+            );
           }
         } else {
           // Variante sin opciones específicas
-          variantWidgets.add(_buildVariantCard(
-            atributo: atributo,
-            opcion: null,
-            presentations: varianteDisponible['presentaciones'] ?? [],
-          ));
+          variantWidgets.add(
+            _buildVariantCard(
+              atributo: atributo,
+              opcion: null,
+              presentations: varianteDisponible['presentaciones'] ?? [],
+            ),
+          );
         }
       }
     }
-    
+
     if (variantWidgets.isEmpty) {
       variantWidgets.add(
         Container(
@@ -1445,7 +1505,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ),
       );
     }
-    
+
     return variantWidgets;
   }
 
@@ -1490,20 +1550,26 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           // Información de la opción
           if (opcion != null) ...[
-            if (opcion['sku_codigo'] != null && opcion['sku_codigo'].toString().isNotEmpty)
+            if (opcion['sku_codigo'] != null &&
+                opcion['sku_codigo'].toString().isNotEmpty)
               _buildInfoRow('SKU', opcion['sku_codigo'].toString()),
-            
-            if (opcion['codigo_barras'] != null && opcion['codigo_barras'].toString().isNotEmpty)
-              _buildInfoRow('Código de Barras', opcion['codigo_barras'].toString()),
+
+            if (opcion['codigo_barras'] != null &&
+                opcion['codigo_barras'].toString().isNotEmpty)
+              _buildInfoRow(
+                'Código de Barras',
+                opcion['codigo_barras'].toString(),
+              ),
           ],
-          
+
           // Información del atributo
-          if (atributo['descripcion'] != null && atributo['descripcion'].toString().isNotEmpty) ...[
+          if (atributo['descripcion'] != null &&
+              atributo['descripcion'].toString().isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
               atributo['descripcion'].toString(),
@@ -1514,7 +1580,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ),
           ],
-          
+
           // Presentaciones disponibles para esta variante
           if (presentations.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -1530,7 +1596,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.view_module, color: Colors.blue[700], size: 16),
+                      Icon(
+                        Icons.view_module,
+                        color: Colors.blue[700],
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Presentaciones disponibles:',
@@ -1543,16 +1613,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  ...presentations.map((presentation) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '• ${presentation['presentacion'] ?? presentation['denominacion'] ?? 'Presentación'} (${presentation['cantidad'] ?? 1} unidades)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue[700],
-                      ),
-                    ),
-                  )).toList(),
+                  ...presentations
+                      .map(
+                        (presentation) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            '• ${presentation['presentacion'] ?? presentation['denominacion'] ?? 'Presentación'} (${presentation['cantidad'] ?? 1} unidades)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue[700],
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
                 ],
               ),
             ),
