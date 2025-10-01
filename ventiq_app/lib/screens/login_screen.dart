@@ -58,6 +58,46 @@ class _LoginScreenState extends State<LoginScreen> {
 
       FocusScope.of(context).unfocus();
 
+      // PASO 1: Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline activado - Verificando credenciales locales...');
+        
+        // Verificar si el usuario existe en el array de usuarios offline
+        final hasOfflineUser = await _userPreferencesService.hasOfflineUser(
+          _emailController.text.trim(),
+        );
+        
+        if (hasOfflineUser) {
+          print('📱 Usuario encontrado en modo offline');
+          
+          // Intentar login offline
+          final offlineLoginSuccess = await _attemptOfflineLogin();
+          
+          if (offlineLoginSuccess) {
+            return; // Login offline exitoso
+          } else {
+            // Credenciales incorrectas en modo offline
+            setState(() {
+              _errorMessage = 'Contraseña incorrecta (Modo Offline)';
+              _isLoading = false;
+            });
+            return;
+          }
+        } else {
+          print('⚠️ Usuario no encontrado en modo offline - Requiere conexión');
+          setState(() {
+            _errorMessage = 'Usuario no sincronizado. Requiere conexión a internet para primer login.';
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+      
+      // PASO 2: Login normal con conexión (modo online)
+      print('🌐 Modo online - Autenticando con Supabase...');
+      
       try {
         final response = await _authService.signInWithEmailAndPassword(
           email: _emailController.text.trim(),
@@ -198,6 +238,96 @@ class _LoginScreenState extends State<LoginScreen> {
           });
         }
       }
+    }
+  }
+
+  /// Intentar login offline validando credenciales locales
+  Future<bool> _attemptOfflineLogin() async {
+    try {
+      print('🔐 Intentando login offline...');
+      
+      // Validar credenciales contra el array de usuarios offline
+      final offlineUser = await _userPreferencesService.validateOfflineUser(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      
+      if (offlineUser == null) {
+        print('❌ Credenciales offline inválidas');
+        return false;
+      }
+      
+      print('✅ Credenciales offline válidas');
+      print('  - Email: ${offlineUser['email']}');
+      print('  - UserId: ${offlineUser['userId']}');
+      print('  - idTienda: ${offlineUser['idTienda']}');
+      print('  - idTpv: ${offlineUser['idTpv']}');
+      print('  - Última sincronización: ${offlineUser['lastSync']}');
+      
+      // Cargar datos offline del usuario
+      final offlineData = await _userPreferencesService.getOfflineData();
+      
+      if (offlineData == null) {
+        print('❌ No hay datos offline guardados');
+        setState(() {
+          _errorMessage = 'No hay datos sincronizados. Active modo offline con conexión primero.';
+          _isLoading = false;
+        });
+        return false;
+      }
+      
+      // Restaurar TODOS los datos del usuario en SharedPreferences
+      await _userPreferencesService.saveUserData(
+        userId: offlineUser['userId'],
+        email: offlineUser['email'],
+        accessToken: 'offline_mode', // Token especial para modo offline
+      );
+      
+      // Restaurar datos del vendedor
+      if (offlineUser['idTpv'] != null && offlineUser['idTrabajador'] != null) {
+        await _userPreferencesService.saveSellerData(
+          idTpv: offlineUser['idTpv'],
+          idTrabajador: offlineUser['idTrabajador'],
+        );
+      }
+      
+      // Restaurar ID del vendedor
+      if (offlineUser['idSeller'] != null) {
+        await _userPreferencesService.saveIdSeller(offlineUser['idSeller']);
+      }
+      
+      // Restaurar perfil del trabajador
+      if (offlineUser['nombres'] != null && 
+          offlineUser['apellidos'] != null && 
+          offlineUser['idTienda'] != null && 
+          offlineUser['idRoll'] != null) {
+        await _userPreferencesService.saveWorkerProfile(
+          nombres: offlineUser['nombres'],
+          apellidos: offlineUser['apellidos'],
+          idTienda: offlineUser['idTienda'],
+          idRoll: offlineUser['idRoll'],
+        );
+      }
+      
+      print('✅ Login offline exitoso - Todos los datos restaurados');
+      print('🔌 Trabajando en modo offline');
+      
+      // Navegar a categorías
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        Navigator.of(context).pushReplacementNamed('/categories');
+      }
+      
+      return true;
+    } catch (e) {
+      print('❌ Error en login offline: $e');
+      setState(() {
+        _errorMessage = 'Error en login offline: $e';
+        _isLoading = false;
+      });
+      return false;
     }
   }
 

@@ -76,7 +76,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     }
   }
 
-  /// Cargar detalles completos del producto desde Supabase
+  /// Cargar detalles completos del producto desde Supabase o cache offline
   Future<void> _loadProductDetails() async {
     setState(() {
       _isLoadingDetails = true;
@@ -84,9 +84,155 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     });
 
     try {
-      final detailedProduct = await _productDetailService.getProductDetail(
-        widget.product.id,
-      );
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
+      
+      Product detailedProduct;
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Cargando detalles del producto desde cache...');
+        
+        // Cargar datos offline
+        final offlineData = await _userPreferencesService.getOfflineData();
+        
+        if (offlineData != null && offlineData['products'] != null) {
+          final productsData = offlineData['products'] as Map<String, dynamic>;
+          
+          // Buscar el producto en todas las categorías
+          Product? foundProduct;
+          for (var categoryProducts in productsData.values) {
+            final productsList = categoryProducts as List<dynamic>;
+            final productData = productsList.firstWhere(
+              (p) => p['id'] == widget.product.id,
+              orElse: () => null,
+            );
+            
+            if (productData != null && productData['detalles_completos'] != null) {
+              // Construir Product desde detalles completos
+              final detalles = productData['detalles_completos'];
+              final productoInfo = detalles['producto'];
+              final inventarioList = detalles['inventario'] as List<dynamic>? ?? [];
+              
+              // Crear variantes desde el inventario (igual que en modo normal)
+              final variantes = <ProductVariant>[];
+              
+              for (int i = 0; i < inventarioList.length; i++) {
+                final item = inventarioList[i];
+                
+                // Validar que el item no sea null
+                if (item == null) continue;
+                
+                final varianteData = item['variante'] as Map<String, dynamic>?;
+                final presentacionData = item['presentacion'] as Map<String, dynamic>?;
+                final ubicacionData = item['ubicacion'] as Map<String, dynamic>?;
+                final cantidadDisponible = (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
+                
+                // Construir nombre de variante (igual que en ProductDetailService)
+                String variantName = 'Variante ${i + 1}';
+                String variantDescription = '';
+                
+                if (varianteData != null) {
+                  final opcion = varianteData['opcion'] as Map<String, dynamic>?;
+                  final atributo = varianteData['atributo'] as Map<String, dynamic>?;
+                  
+                  if (opcion != null && atributo != null) {
+                    final valor = opcion['valor'] as String? ?? '';
+                    final label = atributo['label'] as String? ?? '';
+                    variantName = '$label: $valor';
+                    variantDescription = 'Variante de $label con valor $valor';
+                  }
+                }
+                
+                // Agregar presentación al nombre (igual que en modo normal)
+                if (presentacionData != null) {
+                  final presentacionNombre = presentacionData['denominacion'] as String? ?? '';
+                  final cantidad = (presentacionData['cantidad'] as num?)?.toInt() ?? 1;
+                  if (presentacionNombre.isNotEmpty) {
+                    variantName += ' - $presentacionNombre';
+                    if (cantidad > 1) {
+                      variantDescription += ' (Presentación: $cantidad unidades)';
+                    }
+                  }
+                }
+                
+                // Extraer precio
+                double precio = (productoInfo['precio_actual'] as num?)?.toDouble() ?? 0.0;
+                if (item['precio'] != null) {
+                  precio = (item['precio'] as num).toDouble();
+                } else if (varianteData != null && varianteData['precio'] != null) {
+                  precio = (varianteData['precio'] as num).toDouble();
+                } else if (presentacionData != null && presentacionData['precio'] != null) {
+                  precio = (presentacionData['precio'] as num).toDouble();
+                }
+                
+                // Extraer metadata de inventario (igual que en modo normal)
+                final almacenData = ubicacionData?['almacen'] as Map<String, dynamic>?;
+                final inventoryMetadata = {
+                  'id_inventario': item['id_inventario'],
+                  'id_variante': varianteData?['id'],
+                  'id_opcion_variante': varianteData?['opcion']?['id'],
+                  'id_presentacion': presentacionData?['id'],
+                  'id_ubicacion': ubicacionData?['id'],
+                  'sku_producto': item['sku_producto'],
+                  'sku_ubicacion': ubicacionData?['sku_codigo'],
+                  'cantidad_disponible': cantidadDisponible,
+                  'ubicacion_nombre': ubicacionData?['denominacion'],
+                  'almacen_nombre': almacenData?['denominacion'],
+                };
+                
+                variantes.add(
+                  ProductVariant(
+                    id: i + 1, // ID secuencial
+                    nombre: variantName,
+                    precio: precio,
+                    cantidad: cantidadDisponible,
+                    descripcion: variantDescription.isNotEmpty ? variantDescription : null,
+                    inventoryMetadata: inventoryMetadata,
+                  ),
+                );
+              }
+              
+              foundProduct = Product(
+                id: productoInfo['id'] as int,
+                denominacion: productoInfo['denominacion'] as String,
+                descripcion: productoInfo['descripcion'] as String?,
+                foto: productoInfo['foto'] as String?,
+                precio: (productoInfo['precio_actual'] as num).toDouble(),
+                cantidad: inventarioList.fold(0, (sum, inv) => sum + (inv['cantidad_disponible'] as num)),
+                categoria: productoInfo['categoria']['denominacion'] as String,
+                esRefrigerado: productoInfo['es_refrigerado'] as bool? ?? false,
+                esFragil: productoInfo['es_fragil'] as bool? ?? false,
+                esPeligroso: productoInfo['es_peligroso'] as bool? ?? false,
+                esVendible: true,
+                esComprable: true,
+                esInventariable: true,
+                esPorLotes: false,
+                esElaborado: productoInfo['es_elaborado'] as bool? ?? false,
+                variantes: variantes,
+              );
+              
+              print('✅ Detalles del producto cargados desde cache offline');
+              print('  - Producto: ${foundProduct.denominacion}');
+              print('  - Variantes: ${foundProduct.variantes.length}');
+              break;
+            }
+          }
+          
+          if (foundProduct == null) {
+            throw Exception('No se encontraron detalles del producto en cache offline');
+          }
+          
+          detailedProduct = foundProduct;
+        } else {
+          throw Exception('No hay datos de productos sincronizados en modo offline');
+        }
+      } else {
+        print('🌐 Modo online - Cargando detalles desde Supabase...');
+        detailedProduct = await _productDetailService.getProductDetail(
+          widget.product.id,
+        );
+        print('✅ Detalles del producto cargados desde Supabase');
+      }
 
       setState(() {
         _detailedProduct = detailedProduct;
@@ -103,9 +249,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           variantQuantities[variant] = 0;
         }
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ Error cargando detalles del producto: $e $stackTrace');
       setState(() {
-        _errorMessage = 'Error al cargar detalles: $e';
+        _errorMessage = 'Error al cargar detalles: $e $stackTrace';
         _isLoadingDetails = false;
       });
     }

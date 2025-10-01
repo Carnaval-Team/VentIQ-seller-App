@@ -37,6 +37,11 @@ class UserPreferencesService {
   
   // Data usage keys
   static const String _limitDataUsageKey = 'limit_data_usage';
+  
+  // Offline mode keys
+  static const String _offlineModeKey = 'offline_mode_enabled';
+  static const String _offlineDataKey = 'offline_data';
+  static const String _offlineUsersKey = 'offline_users'; // Array de usuarios offline
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -377,5 +382,205 @@ class UserPreferencesService {
   Future<bool> isLimitDataUsageEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_limitDataUsageKey) ?? false; // Por defecto deshabilitado
+  }
+  
+  // Offline mode settings methods
+  Future<void> setOfflineMode(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_offlineModeKey, enabled);
+    print(
+      'UserPreferencesService: Modo offline actualizado: $enabled',
+    );
+  }
+
+  Future<bool> isOfflineModeEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_offlineModeKey) ?? false; // Por defecto deshabilitado
+  }
+  
+  // Guardar datos offline completos
+  Future<void> saveOfflineData(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_offlineDataKey, jsonEncode(data));
+    print('UserPreferencesService: Datos offline guardados');
+  }
+  
+  // Obtener datos offline
+  Future<Map<String, dynamic>?> getOfflineData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dataString = prefs.getString(_offlineDataKey);
+    if (dataString != null) {
+      return jsonDecode(dataString) as Map<String, dynamic>;
+    }
+    return null;
+  }
+  
+  // Limpiar datos offline
+  Future<void> clearOfflineData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_offlineDataKey);
+    await prefs.setBool(_offlineModeKey, false);
+    print('UserPreferencesService: Datos offline eliminados');
+  }
+  
+  // ============= MÉTODOS PARA MÚLTIPLES USUARIOS OFFLINE =============
+  
+  /// Guardar credenciales de un usuario para modo offline
+  /// Mantiene un array de usuarios con sus credenciales y datos necesarios
+  Future<void> saveOfflineUser({
+    required String email,
+    required String password,
+    required String userId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Obtener datos actuales del usuario de SharedPreferences
+    final idTienda = prefs.getInt(_idTiendaKey);
+    final idTpv = prefs.getInt(_idTpvKey);
+    final idTrabajador = prefs.getInt(_idTrabajadorKey);
+    final idSeller = prefs.getInt(_idSellerKey);
+    final nombres = prefs.getString(_nombresKey);
+    final apellidos = prefs.getString(_apellidosKey);
+    final idRoll = prefs.getInt(_idRollKey);
+    
+    // Obtener lista actual de usuarios offline
+    final usersJson = prefs.getString(_offlineUsersKey);
+    List<Map<String, dynamic>> offlineUsers = [];
+    
+    if (usersJson != null) {
+      final decoded = jsonDecode(usersJson);
+      offlineUsers = List<Map<String, dynamic>>.from(decoded);
+    }
+    
+    // Verificar si el usuario ya existe (por email)
+    final existingIndex = offlineUsers.indexWhere((user) => user['email'] == email);
+    
+    final userData = {
+      'email': email,
+      'password': password,
+      'userId': userId,
+      'idTienda': idTienda,
+      'idTpv': idTpv,
+      'idTrabajador': idTrabajador,
+      'idSeller': idSeller,
+      'nombres': nombres,
+      'apellidos': apellidos,
+      'idRoll': idRoll,
+      'lastSync': DateTime.now().toIso8601String(),
+    };
+    
+    if (existingIndex != -1) {
+      // Actualizar usuario existente
+      offlineUsers[existingIndex] = userData;
+      print('✅ Usuario offline actualizado: $email');
+    } else {
+      // Agregar nuevo usuario
+      offlineUsers.add(userData);
+      print('✅ Nuevo usuario offline guardado: $email');
+    }
+    
+    // Guardar array actualizado
+    await prefs.setString(_offlineUsersKey, jsonEncode(offlineUsers));
+    print('📱 Total de usuarios offline: ${offlineUsers.length}');
+    print('📊 Datos guardados: idTienda=$idTienda, idTpv=$idTpv, idTrabajador=$idTrabajador');
+  }
+  
+  /// Verificar si un usuario tiene credenciales guardadas para modo offline
+  Future<bool> hasOfflineUser(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    final usersJson = prefs.getString(_offlineUsersKey);
+    
+    if (usersJson == null) return false;
+    
+    final decoded = jsonDecode(usersJson);
+    final offlineUsers = List<Map<String, dynamic>>.from(decoded);
+    
+    return offlineUsers.any((user) => user['email'] == email);
+  }
+  
+  /// Validar credenciales de un usuario offline
+  /// Retorna todos los datos del usuario si las credenciales son válidas
+  Future<Map<String, dynamic>?> validateOfflineUser({
+    required String email,
+    required String password,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final usersJson = prefs.getString(_offlineUsersKey);
+    
+    if (usersJson == null) {
+      print('❌ No hay usuarios offline guardados');
+      return null;
+    }
+    
+    final decoded = jsonDecode(usersJson);
+    final offlineUsers = List<Map<String, dynamic>>.from(decoded);
+    
+    // Buscar usuario por email
+    final user = offlineUsers.firstWhere(
+      (user) => user['email'] == email,
+      orElse: () => {},
+    );
+    
+    if (user.isEmpty) {
+      print('❌ Usuario no encontrado en modo offline: $email');
+      return null;
+    }
+    
+    // Validar password
+    if (user['password'] == password) {
+      print('✅ Credenciales offline válidas para: $email');
+      // Retornar TODOS los datos del usuario
+      return {
+        'email': user['email'],
+        'userId': user['userId'],
+        'idTienda': user['idTienda'],
+        'idTpv': user['idTpv'],
+        'idTrabajador': user['idTrabajador'],
+        'idSeller': user['idSeller'],
+        'nombres': user['nombres'],
+        'apellidos': user['apellidos'],
+        'idRoll': user['idRoll'],
+        'lastSync': user['lastSync'],
+      };
+    } else {
+      print('❌ Contraseña incorrecta para usuario offline: $email');
+      return null;
+    }
+  }
+  
+  /// Obtener todos los usuarios offline guardados
+  Future<List<Map<String, dynamic>>> getOfflineUsers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final usersJson = prefs.getString(_offlineUsersKey);
+    
+    if (usersJson == null) return [];
+    
+    final decoded = jsonDecode(usersJson);
+    return List<Map<String, dynamic>>.from(decoded);
+  }
+  
+  /// Eliminar un usuario offline específico
+  Future<void> removeOfflineUser(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    final usersJson = prefs.getString(_offlineUsersKey);
+    
+    if (usersJson == null) return;
+    
+    final decoded = jsonDecode(usersJson);
+    final offlineUsers = List<Map<String, dynamic>>.from(decoded);
+    
+    // Filtrar para remover el usuario
+    offlineUsers.removeWhere((user) => user['email'] == email);
+    
+    // Guardar array actualizado
+    await prefs.setString(_offlineUsersKey, jsonEncode(offlineUsers));
+    print('🗑️ Usuario offline eliminado: $email');
+  }
+  
+  /// Limpiar todos los usuarios offline
+  Future<void> clearAllOfflineUsers() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_offlineUsersKey);
+    print('🗑️ Todos los usuarios offline eliminados');
   }
 }

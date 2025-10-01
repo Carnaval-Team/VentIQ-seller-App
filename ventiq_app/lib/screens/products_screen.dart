@@ -198,13 +198,75 @@ class _ProductsScreenState extends State<ProductsScreen> {
         return;
       }
 
-      print('🔄 Loading products for category ${widget.categoryId}');
-      final products = await _productService.getProductsByCategory(
-        widget.categoryId,
-      );
-      print(
-        '✅ Loaded ${products.values.fold(0, (sum, list) => sum + list.length)} products',
-      );
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
+      
+      Map<String, List<Product>> products;
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Cargando productos desde cache...');
+        
+        // Cargar datos offline
+        final offlineData = await _userPreferencesService.getOfflineData();
+        
+        if (offlineData != null && offlineData['products'] != null) {
+          final productsData = offlineData['products'] as Map<String, dynamic>;
+          
+          // Buscar productos de esta categoría
+          final categoryKey = widget.categoryId.toString();
+          
+          if (productsData.containsKey(categoryKey)) {
+            final categoryProducts = productsData[categoryKey] as List<dynamic>;
+            
+            // Agrupar productos por subcategoría
+            products = {};
+            for (var prodData in categoryProducts) {
+              final subcategory = prodData['subcategoria'] as String? ?? 'General';
+              
+              // Crear objeto Product desde datos offline
+              final product = Product(
+                id: prodData['id'] as int,
+                denominacion: prodData['denominacion'] as String,
+                descripcion: prodData['descripcion'] as String?,
+                foto: prodData['foto'] as String?,
+                precio: (prodData['precio'] as num).toDouble(),
+                cantidad: prodData['cantidad'] as num,
+                categoria: prodData['categoria'] as String,
+                esRefrigerado: false,
+                esFragil: false,
+                esPeligroso: false,
+                esVendible: true,
+                esComprable: true,
+                esInventariable: true,
+                esPorLotes: false,
+                esElaborado: false,
+                variantes: [],
+              );
+              
+              if (!products.containsKey(subcategory)) {
+                products[subcategory] = [];
+              }
+              products[subcategory]!.add(product);
+            }
+            
+            print('✅ Productos cargados desde cache offline: ${categoryProducts.length}');
+          } else {
+            products = {};
+            print('⚠️ No hay productos para esta categoría en cache offline');
+          }
+        } else {
+          throw Exception('No hay productos sincronizados en modo offline');
+        }
+      } else {
+        print('🌐 Modo online - Cargando productos desde Supabase...');
+        print('🔄 Loading products for category ${widget.categoryId}');
+        products = await _productService.getProductsByCategory(
+          widget.categoryId,
+        );
+        print(
+          '✅ Loaded ${products.values.fold(0, (sum, list) => sum + list.length)} products',
+        );
+      }
 
       // Guardar en caché
       _productsCache[widget.categoryId] = products;
@@ -218,8 +280,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
       // Aplicar filtro actual si existe
       _filterProducts();
-    } catch (e) {
-      print('❌ Error loading products: $e');
+    } catch (e, stackTrace) {
+      print('❌ Error loading products: $e $stackTrace');
       setState(() {
         // Extract just the message from the exception
         String cleanMessage = e.toString();

@@ -106,7 +106,39 @@ class _CategoriesScreenState extends State<CategoriesScreen>
         _errorMessage = null;
       });
 
-      final categories = await _categoryService.getCategories();
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _preferencesService.isOfflineModeEnabled();
+      
+      List<Category> categories;
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Cargando categorías desde cache...');
+        
+        // Cargar datos offline
+        final offlineData = await _preferencesService.getOfflineData();
+        
+        if (offlineData != null && offlineData['categories'] != null) {
+          final categoriesData = offlineData['categories'] as List<dynamic>;
+          
+          // Convertir datos JSON a objetos Category
+          categories = categoriesData.map((catData) {
+            return Category(
+              id: catData['id'] as int,
+              name: catData['name'] as String,
+              imageUrl: catData['imageUrl'] as String,
+              color: Color(catData['color'] as int),
+            );
+          }).toList();
+          
+          print('✅ Categorías cargadas desde cache offline: ${categories.length}');
+        } else {
+          throw Exception('No hay categorías sincronizadas en modo offline');
+        }
+      } else {
+        print('🌐 Modo online - Cargando categorías desde Supabase...');
+        categories = await _categoryService.getCategories();
+        print('✅ Categorías cargadas desde Supabase: ${categories.length}');
+      }
 
       setState(() {
         _categories = categories;
