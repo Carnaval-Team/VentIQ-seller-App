@@ -692,223 +692,106 @@ class ProductService {
     double stockActual,
   ) async {
     try {
-      print('🔍 Obteniendo histórico de inventario para producto: $productId');
-      print('📦 Stock actual recibido como parámetro: $stockActual');
-
       final response = await _supabase.rpc(
         'fn_listar_historial_inventario_producto_v2',
         params: {'p_id_producto': int.tryParse(productId), 'p_dias': 30},
       );
 
-      if (response == null) return [];
-
-      final List<dynamic> data = response as List<dynamic>;
-
-      // Convertir las operaciones a formato para gráfico de stock acumulativo
-      List<Map<String, dynamic>> stockHistory = [];
-
-      if (data.isNotEmpty) {
-        print('📊 Total operaciones recibidas: ${data.length}');
-
-        // Ordenar operaciones por fecha (más antigua primero para calcular hacia adelante)
-        data.sort(
-          (a, b) =>
-              DateTime.parse(a['fecha']).compareTo(DateTime.parse(b['fecha'])),
-        );
-
-        print('🔍 ANÁLISIS DETALLADO DE OPERACIONES:');
-        for (int i = 0; i < data.length; i++) {
-          var op = data[i];
-          print(
-            'Op ${i + 1}: ${op['tipo_operacion']} | Cantidad: ${op['cantidad']} | Stock inicial: ${op['stock_inicial']} | Stock final: ${op['stock_final']} | Fecha: ${op['fecha']}',
-          );
-        }
-
-        // Calcular stock hacia adelante desde 0
-        double stockAcumulado = 0.0;
-
-        // Agregar punto inicial (antes de cualquier operación)
-        if (data.isNotEmpty) {
-          final primeraFecha = DateTime.parse(data.first['fecha']);
-          final fechaInicial = primeraFecha.subtract(Duration(days: 1));
-
-          stockHistory.add({
-            'fecha': fechaInicial,
-            'cantidad': 0.0,
-            'operacion_cantidad': 0.0,
-            'tipo_operacion': 'Inicial',
-            'documento': 'Stock inicial',
-          });
-
-          print(
-            '📈 Punto inicial agregado: Stock = 0.0, Fecha = $fechaInicial',
-          );
-        }
-
-        print('🔄 CALCULANDO STOCK PASO A PASO:');
-        print('🔍 VALIDANDO CONSISTENCIA DE OPERACIONES:');
-
-        double stockAnteriorEsperado = 0.0;
-        int inconsistenciasDetectadas = 0;
-
-        for (int i = 0; i < data.length; i++) {
-          var operation = data[i];
-          final fecha = DateTime.parse(operation['fecha']);
-          final cantidad = (operation['cantidad'] ?? 0).toDouble();
-          final tipoOperacion = operation['tipo_operacion'] ?? 'Operación';
-          final stockInicialBD = (operation['stock_inicial'] ?? 0).toDouble();
-          final stockFinalBD = (operation['stock_final'] ?? 0).toDouble();
-
-          // Mostrar detalles de las primeras 15 operaciones
-          bool mostrarDetalle = i < 15;
-
-          if (mostrarDetalle) {
-            print('--- Operación ${i + 1} ---');
-            print('Tipo: $tipoOperacion');
-            print('Cantidad: $cantidad');
-            print('Stock inicial BD: $stockInicialBD');
-            print('Stock final BD: $stockFinalBD');
-            print('Stock esperado anterior: $stockAnteriorEsperado');
-          }
-
-          // Validar consistencia PARA TODAS LAS OPERACIONES
-          if (i > 0 && (stockInicialBD - stockAnteriorEsperado).abs() > 0.01) {
-            inconsistenciasDetectadas++;
-            if (mostrarDetalle || inconsistenciasDetectadas <= 20) {
-              // Mostrar primeras 20 inconsistencias
-              print(
-                '⚠️ INCONSISTENCIA ${inconsistenciasDetectadas} DETECTADA!',
-              );
-              print('   Operación ${i + 1}: $tipoOperacion');
-              print('   Stock inicial BD: $stockInicialBD');
-              print('   Stock esperado: $stockAnteriorEsperado');
-              print('   Diferencia: ${stockInicialBD - stockAnteriorEsperado}');
-              print('   Fecha: $fecha');
-            }
-          }
-
-          // Determinar si es entrada o salida según el tipo de operación
-          double cantidadConSigno;
-          if (tipoOperacion == 'Recepción') {
-            cantidadConSigno = cantidad; // Entrada: suma al stock
-            if (mostrarDetalle) print('Es ENTRADA: +$cantidad');
-          } else {
-            cantidadConSigno =
-                -cantidad; // Salida: resta del stock (Venta, Extracción, Salida)
-            if (mostrarDetalle) print('Es SALIDA: -$cantidad');
-          }
-
-          // Sumar la operación al stock acumulado
-          stockAcumulado += cantidadConSigno;
-
-          if (mostrarDetalle) {
-            print('Stock después (calculado): $stockAcumulado');
-            print('Stock final BD: $stockFinalBD');
-
-            // Validar que nuestro cálculo coincida con la BD
-            if ((stockAcumulado - stockFinalBD).abs() > 0.01) {
-              print('⚠️ DISCREPANCIA EN CÁLCULO!');
-              print('   Calculado: $stockAcumulado');
-              print('   BD: $stockFinalBD');
-              print('   Diferencia: ${stockAcumulado - stockFinalBD}');
-            }
-            print('Stock en gráfico: ${stockAcumulado.abs()}');
-            print('---');
-          }
-
-          stockHistory.add({
-            'fecha': fecha,
-            'cantidad':
-                stockAcumulado
-                    .abs(), // Usar valor absoluto para evitar negativos
-            'operacion_cantidad': cantidadConSigno,
-            'tipo_operacion': tipoOperacion,
-            'documento': operation['documento'] ?? '',
-          });
-
-          // Actualizar stock esperado para la siguiente operación
-          stockAnteriorEsperado = stockFinalBD;
-
-          // Mostrar progreso cada 50 operaciones
-          if (i > 0 && (i + 1) % 50 == 0) {
-            print('📊 Procesadas ${i + 1} operaciones...');
-          }
-        }
-
-        print('');
-        print('📊 RESUMEN DE ANÁLISIS COMPLETO:');
-        print('Total operaciones procesadas: ${data.length}');
-        print('Inconsistencias detectadas: $inconsistenciasDetectadas');
-        if (inconsistenciasDetectadas > 20) {
-          print('(Mostrando solo las primeras 20 inconsistencias en detalle)');
-        }
-
-        // Agregar punto actual si es diferente del último calculado
-        if (stockAcumulado.abs() != stockActual) {
-          print('⚠️ DISCREPANCIA DETECTADA:');
-          print('Stock calculado: ${stockAcumulado.abs()}');
-          print('Stock actual real: $stockActual');
-          print('Diferencia: ${stockActual - stockAcumulado.abs()}');
-
-          // En lugar de ajustar, mostrar el gráfico con los datos calculados
-          // pero agregar una nota sobre la discrepancia
-          stockHistory.add({
-            'fecha': DateTime.now(),
-            'cantidad': stockActual,
-            'operacion_cantidad': stockActual - stockAcumulado.abs(),
-            'tipo_operacion': 'Discrepancia',
-            'documento':
-                'Diferencia entre histórico y stock actual: ${(stockActual - stockAcumulado.abs()).toStringAsFixed(0)} unidades',
-          });
-        }
-
-        print('📈 RESUMEN FINAL:');
-        print('Stock inicial en gráfico: ${stockHistory.first['cantidad']}');
-        print('Stock final calculado: ${stockAcumulado.abs()}');
-        print('Stock actual real: $stockActual');
-        print('Total puntos en gráfico: ${stockHistory.length}');
-        print(
-          'Última operación: ${data.last['tipo_operacion']} - ${data.last['cantidad']} - ${data.last['fecha']}',
-        );
-
-        // Agregar información sobre la integridad de los datos
-        final diferencia = stockActual - stockAcumulado.abs();
-        if (diferencia.abs() > 100) {
-          // Si la diferencia es significativa
-          print('⚠️ ADVERTENCIA: Discrepancia significativa en los datos');
-          print('   Esto puede indicar:');
-          print('   - Operaciones no registradas en el histórico');
-          print('   - Ajustes manuales de inventario no documentados');
-          print('   - Diferencias entre el stock teórico y físico');
-
-          // Ejecutar análisis de inconsistencias automáticamente
-          print('');
-          print('🔍 EJECUTANDO ANÁLISIS DE INCONSISTENCIAS...');
-          await detectStockInconsistencies(productId);
-        }
-
-        print('✅ Histórico de stock calculado: ${stockHistory.length} puntos');
-        return stockHistory;
-      } else {
-        print(
-          '📊 No hay operaciones de inventario para este producto en los últimos 30 días',
-        );
-        // Crear un punto único con el stock actual
+      if (response == null || response.isEmpty) {
         return [
-          {
-            'fecha': DateTime.now(),
-            'cantidad': stockActual,
-            'operacion_cantidad': 0.0,
-            'tipo_operacion': 'Stock Actual',
-            'documento': 'Sin operaciones recientes',
-          },
+          _createCurrentStockPoint(stockActual, 'Sin operaciones recientes'),
         ];
       }
-    } catch (e, stackTrace) {
+
+      final List<dynamic> data = response as List<dynamic>;
+      data.sort(
+        (a, b) =>
+            DateTime.parse(a['fecha']).compareTo(DateTime.parse(b['fecha'])),
+      );
+
+      List<Map<String, dynamic>> stockHistory = [];
+
+      // Punto inicial
+      if (data.isNotEmpty) {
+        final primeraFecha = DateTime.parse(data.first['fecha']);
+        stockHistory.add(
+          _createStockPoint(
+            primeraFecha.subtract(const Duration(days: 1)),
+            0.0,
+            0.0,
+            'Inicial',
+            'Stock inicial',
+          ),
+        );
+      }
+
+      // Procesar operaciones usando stock_final de BD
+      for (var operation in data) {
+        final fecha = DateTime.parse(operation['fecha']);
+        final stockFinal = (operation['stock_final'] ?? 0).toDouble();
+        final cantidad = (operation['cantidad'] ?? 0).toDouble();
+        final tipoOperacion = operation['tipo_operacion'] ?? 'Operación';
+
+        final cantidadConSigno =
+            tipoOperacion == 'Recepción' ? cantidad : -cantidad;
+
+        stockHistory.add(
+          _createStockPoint(
+            fecha,
+            stockFinal.abs(),
+            cantidadConSigno,
+            tipoOperacion,
+            operation['documento'] ?? '',
+          ),
+        );
+      }
+
+      // Punto actual si difiere
+      final ultimoStock =
+          stockHistory.isNotEmpty ? stockHistory.last['cantidad'] : 0.0;
+      if ((ultimoStock - stockActual).abs() > 0.01) {
+        stockHistory.add(
+          _createCurrentStockPoint(stockActual, 'Stock actual del sistema'),
+        );
+      }
+
+      return stockHistory;
+    } catch (e) {
       print('❌ Error al obtener histórico de inventario: $e');
-      print('📍 StackTrace: $stackTrace');
-      return [];
+      return [
+        _createCurrentStockPoint(stockActual, 'Error al cargar histórico'),
+      ];
     }
+  }
+
+  // Métodos auxiliares para crear puntos de stock
+  static Map<String, dynamic> _createStockPoint(
+    DateTime fecha,
+    double cantidad,
+    double operacionCantidad,
+    String tipoOperacion,
+    String documento,
+  ) {
+    return {
+      'fecha': fecha,
+      'cantidad': cantidad,
+      'operacion_cantidad': operacionCantidad,
+      'tipo_operacion': tipoOperacion,
+      'documento': documento,
+    };
+  }
+
+  static Map<String, dynamic> _createCurrentStockPoint(
+    double stockActual,
+    String documento,
+  ) {
+    return _createStockPoint(
+      DateTime.now(),
+      stockActual,
+      0.0,
+      'Stock Actual',
+      documento,
+    );
   }
 
   /// Actualiza un producto existente
