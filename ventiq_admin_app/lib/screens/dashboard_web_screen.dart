@@ -377,7 +377,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              Expanded(
+              Expanded( 
                 child: _buildCompactKPICard(
                   title: 'Productos',
                   value: '${_dashboardData['totalProducts'] ?? 0}',
