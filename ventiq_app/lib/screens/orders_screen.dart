@@ -22,26 +22,68 @@ class _OrdersScreenState extends State<OrdersScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Order> _filteredOrders = [];
   String _searchQuery = '';
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _filteredOrders = _orderService.orders;
     _searchController.addListener(_onSearchChanged);
-    // Cargar órdenes desde Supabase
-    _loadOrdersFromSupabase();
+    // Cargar órdenes desde Supabase y órdenes pendientes offline
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadOrdersFromSupabase();
+    });
   }
 
   Future<void> _loadOrdersFromSupabase() async {
-    // Limpiar órdenes antes de cargar las nuevas para evitar mezclar usuarios
-    _orderService.clearAllOrders();
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      // Limpiar órdenes antes de cargar las nuevas para evitar mezclar usuarios
+      _orderService.clearAllOrders();
 
-    await _orderService.listOrdersFromSupabase();
-    // Actualizar la UI después de cargar las órdenes
-    if (mounted) {
-      setState(() {
-        _filteredOrders = _orderService.orders;
-      });
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Cargando órdenes desde cache y pendientes...');
+        
+        // Cargar órdenes sincronizadas desde cache
+        final offlineData = await _userPreferencesService.getOfflineData();
+        if (offlineData != null && offlineData['orders'] != null) {
+          final ordersData = offlineData['orders'] as List<dynamic>;
+          _orderService.transformSupabaseToOrdersPublic(ordersData);
+          print('✅ Órdenes sincronizadas cargadas desde cache: ${ordersData.length}');
+        }
+        
+        // Cargar órdenes pendientes de sincronización
+        final pendingOrders = await _userPreferencesService.getPendingOrders();
+        if (pendingOrders.isNotEmpty) {
+          _orderService.addPendingOrdersToList(pendingOrders);
+          print('⏳ Órdenes pendientes de sincronización: ${pendingOrders.length}');
+        }
+      } else {
+        print('🌐 Modo online - Cargando órdenes desde Supabase...');
+        await _orderService.listOrdersFromSupabase();
+        print('✅ Órdenes cargadas desde Supabase');
+      }
+      
+      // Actualizar la UI después de cargar las órdenes
+      if (mounted) {
+        setState(() {
+          _filteredOrders = _orderService.orders;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error cargando órdenes: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -92,23 +134,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
       // Si tienen la misma prioridad, ordenar por fecha (más recientes primero)
       return b.fechaCreacion.compareTo(a.fechaCreacion);
     });
-
     _filteredOrders = filtered;
   }
 
   int _getStatusPriority(OrderStatus status) {
     switch (status) {
+      case OrderStatus.pendienteDeSincronizacion:
+        return 0; // Órdenes offline - prioridad máxima
+      case OrderStatus.borrador:
+        return 1; // Borradores - prioridad muy alta
       case OrderStatus.enviada:
       case OrderStatus.procesando:
-        return 1; // Pendientes - prioridad alta
+        return 2; // Pendientes - prioridad alta
       case OrderStatus.pagoConfirmado:
-        return 2; // Pago confirmado - prioridad media
+        return 3; // Pago confirmado - prioridad media
       case OrderStatus.completada:
       case OrderStatus.cancelada:
       case OrderStatus.devuelta:
-        return 3; // Finalizadas - prioridad baja
-      case OrderStatus.borrador:
-        return 0; // Borradores - prioridad más alta
+        return 4; // Finalizadas - prioridad baja
     }
   }
 
@@ -139,20 +182,39 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _refreshOrders,
-        child: Column(
-          children: [
-            _buildSearchBar(),
-            Expanded(
-              child:
-                  orders.isEmpty
-                      ? _buildEmptyState()
-                      : _buildOrdersList(orders),
+      body: _isLoading
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Cargando órdenes...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _refreshOrders,
+              child: Column(
+                children: [
+                  _buildSearchBar(),
+                  Expanded(
+                    child:
+                        orders.isEmpty
+                            ? _buildEmptyState()
+                            : _buildOrdersList(orders),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
       endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 2, // Órdenes tab
@@ -239,35 +301,52 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Widget _buildOrdersList(List<Order> orders) {
     if (orders.isEmpty) return _buildEmptyState();
 
-    // Agrupar órdenes por estado
+    // Agrupar órdenes por prioridad actualizada
+    final offlineOrders =
+        orders.where((o) => _getStatusPriority(o.status) == 0).toList(); // Pendientes de sincronización
+    final draftOrders =
+        orders.where((o) => _getStatusPriority(o.status) == 1).toList(); // Borradores
     final pendingOrders =
-        orders.where((o) => _getStatusPriority(o.status) == 1).toList();
+        orders.where((o) => _getStatusPriority(o.status) == 2).toList(); // Enviadas/Procesando
     final paymentConfirmedOrders =
-        orders.where((o) => _getStatusPriority(o.status) == 2).toList();
+        orders.where((o) => _getStatusPriority(o.status) == 3).toList(); // Pago confirmado
     final completedOrders =
-        orders.where((o) => _getStatusPriority(o.status) == 3).toList();
+        orders.where((o) => _getStatusPriority(o.status) == 4).toList(); // Completadas/Canceladas
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Órdenes offline pendientes de sincronización
+        if (offlineOrders.isNotEmpty) ...[
+          _buildSectionHeader('⏳ Pendientes de Sincronización', offlineOrders.length),
+          ...offlineOrders.map((order) => _buildOrderCard(order)),
+          const SizedBox(height: 16),
+        ],
+
+        // Órdenes borrador
+        if (draftOrders.isNotEmpty) ...[
+          _buildSectionHeader('📝 Borradores', draftOrders.length),
+          ...draftOrders.map((order) => _buildOrderCard(order)),
+          const SizedBox(height: 16),
+        ],
+
         // Órdenes pendientes
         if (pendingOrders.isNotEmpty) ...[
-          _buildSectionHeader('Órdenes Pendientes', pendingOrders.length),
+          _buildSectionHeader('📋 Órdenes Pendientes', pendingOrders.length),
           ...pendingOrders.map((order) => _buildOrderCard(order)),
+          const SizedBox(height: 16),
         ],
 
         // Órdenes con pago confirmado
         if (paymentConfirmedOrders.isNotEmpty) ...[
-          if (pendingOrders.isNotEmpty) const SizedBox(height: 16),
-          _buildSectionHeader('Pago Confirmado', paymentConfirmedOrders.length),
+          _buildSectionHeader('💰 Pago Confirmado', paymentConfirmedOrders.length),
           ...paymentConfirmedOrders.map((order) => _buildOrderCard(order)),
+          const SizedBox(height: 16),
         ],
 
         // Órdenes completadas/finalizadas
         if (completedOrders.isNotEmpty) ...[
-          if (pendingOrders.isNotEmpty || paymentConfirmedOrders.isNotEmpty)
-            const SizedBox(height: 16),
-          _buildSectionHeader('Completadas', completedOrders.length),
+          _buildSectionHeader('✅ Completadas', completedOrders.length),
           ...completedOrders.map((order) => _buildOrderCard(order)),
         ],
       ],
@@ -490,6 +569,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return const Color(0xFFFF6B35);
       case OrderStatus.pagoConfirmado:
         return const Color(0xFF10B981);
+      case OrderStatus.pendienteDeSincronizacion:
+        return const Color(0xFFFF8C00); // Naranja oscuro para offline
     }
   }
 

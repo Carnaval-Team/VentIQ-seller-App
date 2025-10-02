@@ -209,6 +209,14 @@ class OrderService {
     OrderStatus newStatus,
   ) async {
     try {
+      final userPrefs = UserPreferencesService();
+      final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Actualizando estado de orden offline...');
+        return await _updateOrderStatusOffline(orderId, newStatus);
+      }
+      
       // Extraer el ID de operación del orderId (formato: ORD-{id_operacion})
       final operationId = int.tryParse(orderId.replaceFirst('ORD-', ''));
       if (operationId == null) {
@@ -826,4 +834,163 @@ class OrderService {
   int get totalOrders => _orders.length;
   int get currentOrderItemCount => _currentOrder?.totalItems ?? 0;
   double get currentOrderTotal => _currentOrder?.total ?? 0.0;
+  
+  // ==================== MÉTODOS PARA MODO OFFLINE ====================
+  
+  /// Hacer público el método de transformación para uso en orders_screen
+  void transformSupabaseToOrdersPublic(List<dynamic> supabaseOrders) {
+    _transformSupabaseToOrders(supabaseOrders);
+  }
+  
+  /// Agregar órdenes pendientes de sincronización a la lista
+  void addPendingOrdersToList(List<Map<String, dynamic>> pendingOrders) {
+    try {
+      print('📋 Agregando ${pendingOrders.length} órdenes pendientes a la lista...');
+      
+      for (var orderData in pendingOrders) {
+        // Crear items de la orden
+        final items = (orderData['items'] as List<dynamic>).map((itemData) {
+          // Crear producto básico
+          final product = Product(
+            id: itemData['id_producto'] as int,
+            denominacion: itemData['denominacion'] as String,
+            precio: (itemData['precio_unitario'] as num).toDouble(),
+            cantidad: (itemData['cantidad'] as num).toInt(),
+            esRefrigerado: false,
+            esFragil: false,
+            esPeligroso: false,
+            esVendible: true,
+            esComprable: true,
+            esInventariable: true,
+            esPorLotes: false,
+            esElaborado: false,
+            categoria: 'General',
+            descripcion: null,
+            foto: null,
+          );
+          
+          // Extraer ubicación del almacén desde inventory_metadata
+          final inventoryMetadata = itemData['inventory_metadata'] as Map<String, dynamic>?;
+          final ubicacion = inventoryMetadata?['ubicacion_nombre'] as String? ?? 'Sin ubicación';
+          final almacen = inventoryMetadata?['almacen_nombre'] as String? ?? 'Sin almacén';
+          final ubicacionAlmacen = '$almacen - $ubicacion';
+          
+          // Crear OrderItem
+          return OrderItem(
+            id: '${orderData['id']}_${itemData['id_producto']}',
+            producto: product,
+            variante: null,
+            cantidad: (itemData['cantidad'] as num).toInt(),
+            precioUnitario: (itemData['precio_unitario'] as num).toDouble(),
+            ubicacionAlmacen: ubicacionAlmacen,
+            inventoryData: inventoryMetadata,
+            paymentMethod: null, // Se reconstruirá si es necesario
+          );
+        }).toList();
+        
+        // Crear orden con status pendiente de sincronización
+        final order = Order(
+          id: orderData['id'] as String,
+          fechaCreacion: DateTime.parse(orderData['fecha_creacion'] as String),
+          items: items,
+          total: (orderData['total'] as num).toDouble(),
+          status: OrderStatus.pendienteDeSincronizacion, // Estado pendiente de sincronización para órdenes offline pendientes
+        );
+        
+        _orders.add(order);
+      }
+      
+    } catch (e, stackTrace) {
+      print('❌ Error agregando órdenes pendientes: $e');
+      print('Stack trace: $stackTrace');
+    }
+  }
+
+  /// Actualizar estado de orden en modo offline
+  Future<Map<String, dynamic>> _updateOrderStatusOffline(
+    String orderId,
+    OrderStatus newStatus,
+  ) async {
+    try {
+      final userPrefs = UserPreferencesService();
+      
+      // 1. Actualizar estado local inmediatamente
+      final orderIndex = _orders.indexWhere((order) => order.id == orderId);
+      if (orderIndex != -1) {
+        final updatedOrder = _orders[orderIndex].copyWith(status: newStatus);
+        _orders[orderIndex] = updatedOrder;
+        print('✅ Estado local actualizado: $orderId -> ${newStatus.toString()}');
+      } else {
+        print('⚠️ Orden no encontrada localmente: $orderId');
+      }
+      
+      // 2. Verificar si la orden está en órdenes pendientes de sincronización
+      final pendingOrders = await userPrefs.getPendingOrders();
+      bool isOrderPending = false;
+      
+      for (var pendingOrder in pendingOrders) {
+        if (pendingOrder['id'] == orderId) {
+          isOrderPending = true;
+          break;
+        }
+      }
+      
+      if (isOrderPending) {
+        // 3. Si es una orden pendiente, actualizar su estado en las órdenes pendientes
+        await userPrefs.updatePendingOrderStatus(orderId, _orderStatusToString(newStatus), {
+          'updated_offline_at': DateTime.now().toIso8601String(),
+          'operation_type': 'status_change',
+        });
+        
+        print('📝 Estado actualizado en órdenes pendientes: $orderId -> ${newStatus.toString()}');
+      } else {
+        // 4. Si no es una orden pendiente, crear operación de cambio de estado
+        await userPrefs.savePendingOperation({
+          'type': 'order_status_change',
+          'order_id': orderId,
+          'new_status': _orderStatusToString(newStatus),
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+        
+        print('💾 Operación de cambio de estado guardada: $orderId -> ${newStatus.toString()}');
+      }
+      
+      return {
+        'success': true,
+        'message': 'Estado actualizado offline. Se sincronizará cuando tengas conexión.',
+        'offline': true,
+      };
+      
+    } catch (e, stackTrace) {
+      print('❌ Error actualizando estado offline: $e');
+      print('Stack trace: $stackTrace');
+      
+      return {
+        'success': false,
+        'error': 'Error actualizando estado offline: ${e.toString()}',
+      };
+    }
+  }
+
+  /// Convertir OrderStatus a string para almacenamiento
+  String _orderStatusToString(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.borrador:
+        return 'borrador';
+      case OrderStatus.enviada:
+        return 'enviada';
+      case OrderStatus.procesando:
+        return 'procesando';
+      case OrderStatus.pagoConfirmado:
+        return 'pago_confirmado';
+      case OrderStatus.completada:
+        return 'completada';
+      case OrderStatus.cancelada:
+        return 'cancelada';
+      case OrderStatus.devuelta:
+        return 'devuelta';
+      case OrderStatus.pendienteDeSincronizacion:
+        return 'pendiente_sincronizacion';
+    }
+  }
 }

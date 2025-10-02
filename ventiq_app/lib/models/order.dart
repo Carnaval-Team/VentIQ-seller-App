@@ -170,6 +170,7 @@ enum OrderStatus {
   cancelada,
   devuelta,
   pagoConfirmado,
+  pendienteDeSincronizacion, // Para órdenes creadas offline
 }
 
 extension OrderStatusExtension on OrderStatus {
@@ -189,6 +190,8 @@ extension OrderStatusExtension on OrderStatus {
         return 'Devuelta';
       case OrderStatus.pagoConfirmado:
         return 'Pago Confirmado';
+      case OrderStatus.pendienteDeSincronizacion:
+        return 'Pendiente Sincronización';
     }
   }
 
@@ -208,6 +211,8 @@ extension OrderStatusExtension on OrderStatus {
         return '#FF6B35'; // Naranja rojizo
       case OrderStatus.pagoConfirmado:
         return '#10B981'; // Verde esmeralda
+      case OrderStatus.pendienteDeSincronizacion:
+        return '#FF8C00'; // Naranja oscuro para órdenes offline
     }
   }
 }

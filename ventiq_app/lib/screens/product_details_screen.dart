@@ -717,7 +717,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             borderRadius: BorderRadius.circular(11),
                             child: _isLimitDataUsageEnabled
                                 ? Image.asset(
-                                    'assets/ni_image.png',
+                                    'assets/no_image.png',
                                     fit: BoxFit.cover,
                                     errorBuilder: (context, error, stackTrace) {
                                       return Container(

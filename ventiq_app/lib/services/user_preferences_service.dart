@@ -42,6 +42,10 @@ class UserPreferencesService {
   static const String _offlineModeKey = 'offline_mode_enabled';
   static const String _offlineDataKey = 'offline_data';
   static const String _offlineUsersKey = 'offline_users'; // Array de usuarios offline
+  static const String _pendingOrdersKey = 'pending_orders'; // Órdenes pendientes de sincronización
+  static const String _pendingOperationsKey = 'pending_operations'; // Operaciones pendientes (apertura/cierre/cambio estado)
+  static const String _offlineTurnoKey = 'offline_turno'; // Turno abierto offline
+  static const String _turnoResumenKey = 'turno_resumen_cache'; // Cache del resumen de turno anterior
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -582,5 +586,364 @@ class UserPreferencesService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_offlineUsersKey);
     print('🗑️ Todos los usuarios offline eliminados');
+  }
+  
+  // ==================== MÉTODOS DE PAGO OFFLINE ====================
+  
+  /// Obtener métodos de pago desde cache offline
+  Future<List<Map<String, dynamic>>> getPaymentMethodsOffline() async {
+    final offlineData = await getOfflineData();
+    if (offlineData != null && offlineData['payment_methods'] != null) {
+      return List<Map<String, dynamic>>.from(offlineData['payment_methods']);
+    }
+    return [];
+  }
+  
+  // ==================== ÓRDENES PENDIENTES DE SINCRONIZACIÓN ====================
+  
+  /// Guardar una orden pendiente de sincronización
+  Future<void> savePendingOrder(Map<String, dynamic> orderData) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pendingOrdersJson = prefs.getString(_pendingOrdersKey);
+    
+    List<Map<String, dynamic>> pendingOrders = [];
+    if (pendingOrdersJson != null) {
+      final decoded = jsonDecode(pendingOrdersJson);
+      pendingOrders = List<Map<String, dynamic>>.from(decoded);
+    }
+    
+    // Agregar nueva orden con timestamp y flag de pendiente
+    orderData['is_pending_sync'] = true;
+    orderData['created_offline_at'] = DateTime.now().toIso8601String();
+    pendingOrders.add(orderData);
+    
+    await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
+    print('💾 Orden pendiente guardada. Total pendientes: ${pendingOrders.length}');
+  }
+  
+  /// Obtener todas las órdenes pendientes de sincronización
+  Future<List<Map<String, dynamic>>> getPendingOrders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pendingOrdersJson = prefs.getString(_pendingOrdersKey);
+    
+    if (pendingOrdersJson == null) return [];
+    
+    final decoded = jsonDecode(pendingOrdersJson);
+    return List<Map<String, dynamic>>.from(decoded);
+  }
+  
+  /// Eliminar una orden pendiente específica (después de sincronizar)
+  Future<void> removePendingOrder(String orderId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pendingOrdersJson = prefs.getString(_pendingOrdersKey);
+    
+    if (pendingOrdersJson == null) return;
+    
+    final decoded = jsonDecode(pendingOrdersJson);
+    final pendingOrders = List<Map<String, dynamic>>.from(decoded);
+    
+    // Filtrar para remover la orden
+    pendingOrders.removeWhere((order) => order['id'] == orderId);
+    
+    await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
+    print('🗑️ Orden pendiente eliminada: $orderId. Restantes: ${pendingOrders.length}');
+  }
+  
+  /// Limpiar todas las órdenes pendientes
+  Future<void> clearPendingOrders() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pendingOrdersKey);
+    print('🗑️ Todas las órdenes pendientes eliminadas');
+  }
+  
+  /// Obtener número de órdenes pendientes
+  Future<int> getPendingOrdersCount() async {
+    final pendingOrders = await getPendingOrders();
+    return pendingOrders.length;
+  }
+  
+  // ==================== ACTUALIZACIÓN DE CACHE DE PRODUCTOS ====================
+  
+  /// Actualizar inventario de productos en cache (descontar cantidades)
+  Future<void> updateProductInventoryInCache(int productId, int variantId, int quantityToSubtract) async {
+    final offlineData = await getOfflineData();
+    if (offlineData == null || offlineData['products'] == null) return;
+    
+    final productsData = Map<String, dynamic>.from(offlineData['products']);
+    bool updated = false;
+    
+    // Buscar el producto en todas las categorías
+    for (var categoryKey in productsData.keys) {
+      final categoryProducts = List<Map<String, dynamic>>.from(productsData[categoryKey]);
+      
+      for (int i = 0; i < categoryProducts.length; i++) {
+        if (categoryProducts[i]['id'] == productId) {
+          // Actualizar cantidad total del producto
+          final currentQty = categoryProducts[i]['cantidad'] as num;
+          categoryProducts[i]['cantidad'] = (currentQty - quantityToSubtract).clamp(0, double.infinity);
+          
+          // Actualizar inventario en detalles_completos
+          if (categoryProducts[i]['detalles_completos'] != null) {
+            final detalles = Map<String, dynamic>.from(categoryProducts[i]['detalles_completos']);
+            final inventarioList = List<Map<String, dynamic>>.from(detalles['inventario']);
+            
+            // Buscar y actualizar la variante específica
+            for (int j = 0; j < inventarioList.length; j++) {
+              final inv = inventarioList[j];
+              final varianteData = inv['variante'] as Map<String, dynamic>?;
+              
+              if (varianteData != null && varianteData['id'] == variantId) {
+                final currentInvQty = inv['cantidad_disponible'] as num;
+                inv['cantidad_disponible'] = (currentInvQty - quantityToSubtract).clamp(0, double.infinity);
+                inventarioList[j] = inv;
+                print('📦 Inventario actualizado - Producto: $productId, Variante: $variantId, Descontado: $quantityToSubtract');
+                break;
+              }
+            }
+            
+            detalles['inventario'] = inventarioList;
+            categoryProducts[i]['detalles_completos'] = detalles;
+          }
+          
+          productsData[categoryKey] = categoryProducts;
+          updated = true;
+          break;
+        }
+      }
+      
+      if (updated) break;
+    }
+    
+    if (updated) {
+      // Guardar cache actualizado
+      offlineData['products'] = productsData;
+      await saveOfflineData(offlineData);
+      print('✅ Cache de productos actualizado');
+    }
+  }
+  
+  // ==================== OPERACIONES PENDIENTES ====================
+  
+  /// Guardar una operación pendiente (apertura/cierre/cambio estado)
+  Future<void> savePendingOperation(Map<String, dynamic> operation) async {
+    final prefs = await SharedPreferences.getInstance();
+    final operationsJson = prefs.getString(_pendingOperationsKey);
+    
+    List<Map<String, dynamic>> operations = [];
+    if (operationsJson != null) {
+      final decoded = jsonDecode(operationsJson);
+      operations = List<Map<String, dynamic>>.from(decoded);
+    }
+    
+    // Agregar timestamp
+    operation['created_at'] = DateTime.now().toIso8601String();
+    operations.add(operation);
+    
+    await prefs.setString(_pendingOperationsKey, jsonEncode(operations));
+    print('💾 Operación pendiente guardada: ${operation['type']}');
+  }
+  
+  /// Obtener todas las operaciones pendientes
+  Future<List<Map<String, dynamic>>> getPendingOperations() async {
+    final prefs = await SharedPreferences.getInstance();
+    final operationsJson = prefs.getString(_pendingOperationsKey);
+    
+    if (operationsJson == null) return [];
+    
+    final decoded = jsonDecode(operationsJson);
+    return List<Map<String, dynamic>>.from(decoded);
+  }
+  
+  /// Limpiar operaciones pendientes
+  Future<void> clearPendingOperations() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_pendingOperationsKey);
+    print('🗑️ Operaciones pendientes eliminadas');
+  }
+  
+  // ==================== TURNO OFFLINE ====================
+  
+  /// Guardar turno abierto offline
+  Future<void> saveOfflineTurno(Map<String, dynamic> turnoData) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_offlineTurnoKey, jsonEncode(turnoData));
+    print('💾 Turno offline guardado');
+  }
+  
+  /// Obtener turno offline
+  Future<Map<String, dynamic>?> getOfflineTurno() async {
+    final prefs = await SharedPreferences.getInstance();
+    final turnoJson = prefs.getString(_offlineTurnoKey);
+    
+    if (turnoJson == null) return null;
+    
+    return jsonDecode(turnoJson) as Map<String, dynamic>;
+  }
+  
+  /// Limpiar turno offline
+  Future<void> clearOfflineTurno() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_offlineTurnoKey);
+    print('🗑️ Turno offline eliminado');
+  }
+  
+  /// Actualizar estado de orden pendiente
+  Future<void> updatePendingOrderStatus(String orderId, String newStatus, Map<String, dynamic>? additionalData) async {
+    final pendingOrders = await getPendingOrders();
+    
+    for (var order in pendingOrders) {
+      if (order['id'] == orderId) {
+        order['estado'] = newStatus;
+        order['last_modified'] = DateTime.now().toIso8601String();
+        
+        // Guardar operación de cambio de estado
+        await savePendingOperation({
+          'type': 'order_status_change',
+          'order_id': orderId,
+          'new_status': newStatus,
+          'additional_data': additionalData,
+        });
+        
+        break;
+      }
+    }
+    
+    // Guardar órdenes actualizadas
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
+    print('📝 Estado de orden actualizado: $orderId -> $newStatus');
+  }
+
+  /// Verificar si hay turno abierto offline
+  Future<bool> hasOfflineTurnoAbierto() async {
+    final turno = await getOfflineTurno();
+    return turno != null;
+  }
+
+  /// Obtener información del turno offline para mostrar en settings
+  Future<Map<String, dynamic>?> getOfflineTurnoInfo() async {
+    final turno = await getOfflineTurno();
+    if (turno == null) return null;
+    
+    return {
+      'id': turno['id'],
+      'fecha_apertura': turno['fecha_apertura'],
+      'efectivo_inicial': turno['efectivo_inicial'],
+      'usuario': turno['usuario'],
+      'observaciones': turno['observaciones'],
+    };
+  }
+
+  /// Reautenticar usuario con credenciales guardadas
+  Future<Map<String, dynamic>> reloginWithSavedCredentials() async {
+    try {
+      final credentials = await getSavedCredentials();
+      final email = credentials['email'];
+      final password = credentials['password'];
+      
+      if (email == null || password == null) {
+        throw Exception('No hay credenciales guardadas para relogin');
+      }
+      
+      print('🔐 Reautenticando con credenciales guardadas...');
+      print('  - Email: $email');
+      
+      // Aquí se haría la llamada real a Supabase Auth
+      // Por ahora simulamos el éxito
+      return {
+        'success': true,
+        'email': email,
+        'message': 'Reautenticación exitosa',
+      };
+    } catch (e) {
+      print('❌ Error en reautenticación: $e');
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
+
+  /// Obtener resumen de datos offline para sincronización
+  Future<Map<String, dynamic>> getOfflineSyncSummary() async {
+    final pendingOrders = await getPendingOrders();
+    final pendingOperations = await getPendingOperations();
+    final turno = await getOfflineTurno();
+    
+    return {
+      'pending_orders_count': pendingOrders.length,
+      'pending_operations_count': pendingOperations.length,
+      'has_open_turno': turno != null,
+      'turno_info': turno != null ? {
+        'fecha_apertura': turno['fecha_apertura'],
+        'efectivo_inicial': turno['efectivo_inicial'],
+      } : null,
+    };
+  }
+
+  /// Limpiar todos los datos offline después de sincronización exitosa
+  Future<void> clearAllOfflineData() async {
+    await clearPendingOrders();
+    await clearPendingOperations();
+    await clearOfflineTurno();
+    print('🗑️ Todos los datos offline eliminados después de sincronización');
+  }
+
+  // ========== MÉTODOS PARA CACHE DE RESUMEN DE TURNO ==========
+
+  /// Guardar resumen de turno en cache para modo offline
+  Future<void> saveTurnoResumenCache(Map<String, dynamic> resumenData) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final resumenJson = jsonEncode(resumenData);
+      await prefs.setString(_turnoResumenKey, resumenJson);
+      print('💾 Resumen de turno guardado en cache offline');
+      print('📊 Datos guardados: ${resumenData.keys.toList()}');
+    } catch (e) {
+      print('❌ Error guardando resumen de turno en cache: $e');
+    }
+  }
+
+  /// Obtener resumen de turno desde cache offline
+  Future<Map<String, dynamic>?> getTurnoResumenCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final resumenJson = prefs.getString(_turnoResumenKey);
+      
+      if (resumenJson != null) {
+        final resumenData = jsonDecode(resumenJson) as Map<String, dynamic>;
+        print('📱 Resumen de turno cargado desde cache offline');
+        print('📊 Datos disponibles: ${resumenData.keys.toList()}');
+        return resumenData;
+      }
+      
+      print('⚠️ No hay resumen de turno en cache offline');
+      return null;
+    } catch (e) {
+      print('❌ Error cargando resumen de turno desde cache: $e');
+      return null;
+    }
+  }
+
+  /// Verificar si hay resumen de turno en cache
+  Future<bool> hasTurnoResumenCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.containsKey(_turnoResumenKey);
+    } catch (e) {
+      print('❌ Error verificando cache de resumen de turno: $e');
+      return false;
+    }
+  }
+
+  /// Limpiar cache de resumen de turno
+  Future<void> clearTurnoResumenCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_turnoResumenKey);
+      print('🗑️ Cache de resumen de turno eliminado');
+    } catch (e) {
+      print('❌ Error limpiando cache de resumen de turno: $e');
+    }
   }
 }

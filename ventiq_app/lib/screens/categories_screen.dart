@@ -529,7 +529,7 @@ class _CategoryCardState extends State<_CategoryCard>
                           borderRadius: BorderRadius.circular(1),
                           child: widget.isLimitDataUsageEnabled
                               ? Image.asset(
-                                  'assets/ni_image.png',
+                                  'assets/no_image.png',
                                   width: 120,
                                   height: 80,
                                   fit: BoxFit.cover,

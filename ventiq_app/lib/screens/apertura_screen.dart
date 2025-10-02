@@ -105,13 +105,35 @@ class _AperturaScreenState extends State<AperturaScreen> {
         _isLoadingPreviousShift = true;
       });
 
-      final resumenTurno = await TurnoService.getResumenTurnoKPI();
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      Map<String, dynamic>? resumenTurno;
+
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline activado - Cargando resumen desde cache...');
+        resumenTurno = await _userPrefs.getTurnoResumenCache();
+        
+        if (resumenTurno != null) {
+          print('📱 Resumen de turno cargado desde cache offline');
+        } else {
+          print('⚠️ No hay resumen de turno en cache offline');
+        }
+      } else {
+        print('🌐 Modo online - Obteniendo resumen desde servidor...');
+        resumenTurno = await TurnoService.getResumenTurnoKPI();
+        
+        if (resumenTurno != null) {
+          // Guardar en cache para futuro uso offline
+          await _userPrefs.saveTurnoResumenCache(resumenTurno);
+          print('💾 Resumen guardado en cache para uso offline');
+        }
+      }
 
       if (resumenTurno != null) {
         print('🔍 Debug - Resumen Turno Data: $resumenTurno');
         setState(() {
           _previousShiftSales =
-              (resumenTurno['ventas_totales'] ?? 0.0).toDouble();
+              (resumenTurno!['ventas_totales'] ?? 0.0).toDouble();
           _previousShiftCash =
               (resumenTurno['efectivo_inicial'] ?? 0.0).toDouble();
           _previousShiftProducts =
@@ -121,12 +143,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
           _isLoadingPreviousShift = false;
         });
       } else {
+        print('ℹ️ No hay datos de resumen de turno disponibles');
         setState(() {
           _isLoadingPreviousShift = false;
         });
       }
     } catch (e) {
-      print('Error loading previous shift summary: $e');
+      print('❌ Error loading previous shift summary: $e');
       setState(() {
         _isLoadingPreviousShift = false;
       });
@@ -552,34 +575,48 @@ class _AperturaScreenState extends State<AperturaScreen> {
       print('📦 Productos para apertura: $productCounts (inventario deshabilitado)');
       print('📊 Total productos: ${productCounts.length}');
 
-      // Usar el nuevo método del TurnoService
-      final result = await TurnoService.registrarAperturaTurno(
-        efectivoInicial: double.parse(_montoInicialController.text),
-        idTpv: tpvId,
-        idVendedor: sellerId,
-        usuario: userUuid,
-        manejaInventario: _manejaInventario,
-        productos: null, // Always null since inventory is disabled
-      );
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Creando apertura offline...');
+        await _createOfflineApertura(
+          efectivoInicial: double.parse(_montoInicialController.text),
+          idTpv: tpvId,
+          idVendedor: sellerId,
+          usuario: userUuid,
+        );
+      } else {
+        print('🌐 Modo online - Creando apertura en Supabase...');
+        // Usar el nuevo método del TurnoService
+        final result = await TurnoService.registrarAperturaTurno(
+          efectivoInicial: double.parse(_montoInicialController.text),
+          idTpv: tpvId,
+          idVendedor: sellerId,
+          usuario: userUuid,
+          manejaInventario: _manejaInventario,
+          productos: null, // Always null since inventory is disabled
+        );
 
-      if (mounted) {
-        if (result['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                result['message'] ?? 'Apertura creada exitosamente',
+        if (mounted) {
+          if (result['success'] == true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  result['message'] ?? 'Apertura creada exitosamente',
+                ),
+                backgroundColor: Colors.green,
               ),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.of(context).pop(true);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result['message'] ?? 'Error desconocido'),
-              backgroundColor: Colors.red,
-            ),
-          );
+            );
+            Navigator.of(context).pop(true);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(result['message'] ?? 'Error desconocido'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       }
     } catch (e) {
@@ -801,5 +838,68 @@ class _AperturaScreenState extends State<AperturaScreen> {
         ],
       ),
     );
+  }
+
+  /// Crear apertura offline
+  Future<void> _createOfflineApertura({
+    required double efectivoInicial,
+    required int idTpv,
+    required int idVendedor,
+    required String usuario,
+  }) async {
+    try {
+      // Generar ID único para la apertura offline
+      final aperturaId = '${DateTime.now().millisecondsSinceEpoch}';
+      
+      // Crear estructura de apertura offline
+      final aperturaData = {
+        'id': aperturaId,
+        'id_tpv': idTpv,
+        'id_vendedor': idVendedor,
+        'usuario': usuario,
+        'tipo_operacion': 'apertura',
+        'efectivo_inicial': efectivoInicial,
+        'fecha_apertura': DateTime.now().toIso8601String(),
+        'observaciones': _observacionesController.text.trim(),
+        'maneja_inventario': _manejaInventario,
+        'productos': [], // Siempre vacío ya que el inventario está deshabilitado
+        'created_offline_at': DateTime.now().toIso8601String(),
+      };
+      
+      // Guardar turno offline
+      await _userPrefs.saveOfflineTurno(aperturaData);
+      
+      // Guardar operación pendiente
+      await _userPrefs.savePendingOperation({
+        'type': 'apertura_turno',
+        'data': aperturaData,
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Apertura creada offline. Se sincronizará cuando tengas conexión.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        Navigator.of(context).pop(true);
+      }
+      
+      print('✅ Apertura offline creada: $aperturaId');
+      
+    } catch (e, stackTrace) {
+      print('❌ Error creando apertura offline: $e');
+      print('Stack trace: $stackTrace');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creando apertura offline: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

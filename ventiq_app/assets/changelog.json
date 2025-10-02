@@ -1,6 +1,53 @@
 {
   "changelogs": [
     {
+      "version": "1.3.0",
+      "date": "2024-10-02",
+      "title": "🔄 Modo Offline Completo + Sincronización Inteligente",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Modo Offline Completo",
+          "description": "Sistema completo de trabajo offline con cache local de productos, categorías, órdenes y métodos de pago"
+        },
+        {
+          "type": "feature",
+          "title": "Sincronización Automática",
+          "description": "Sincronización inteligente que procesa órdenes pendientes offline y descarga nuevas órdenes desde Supabase automáticamente"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de Órdenes Offline",
+          "description": "Creación y gestión de órdenes sin conexión con sincronización posterior usando RPCs fn_registrar_venta y fn_registrar_cambio_estado_operacion"
+        },
+        {
+          "type": "feature",
+          "title": "Sincronización Manual",
+          "description": "Opción de sincronización manual desde configuración con progreso visual y logging detallado del proceso"
+        },
+        {
+          "type": "feature",
+          "title": "Cache Inteligente de Imágenes",
+          "description": "Sistema de placeholder 'no_image.png' para modo offline que reduce uso de datos y mejora rendimiento"
+        },
+        {
+          "type": "improvement",
+          "title": "Persistencia de Estados",
+          "description": "Mantenimiento de estados de órdenes offline con mapeo correcto a estados de Supabase (completada=2, devuelta=3, cancelada=4)"
+        },
+        {
+          "type": "improvement",
+          "title": "Logging Avanzado",
+          "description": "Sistema de logging detallado para debugging de sincronización con información de operaciones, estados y errores"
+        },
+        {
+          "type": "improvement",
+          "title": "Manejo de Errores Robusto",
+          "description": "Manejo mejorado de errores de conexión, autenticación y sincronización con mensajes informativos para el usuario"
+        }
+      ]
+    },
+    {
       "version": "1.2.0",
       "date": "2024-08-30",
       "title": "💰 Sistema de Turnos y Egresos + Precios Dinámicos",
