@@ -50,6 +50,13 @@ dependencies:
   # Barcode scanner
   mobile_scanner: ^5.2.3
   
+  # Connectivity monitoring
+  connectivity_plus: ^7.0.0
+  http: ^1.5.0
+  
+  # Crypto for hashing
+  crypto: ^3.0.6
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -419,6 +419,37 @@ class UserPreferencesService {
     return null;
   }
   
+  // Verificar si hay datos offline disponibles
+  Future<bool> hasOfflineData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dataString = prefs.getString(_offlineDataKey);
+    
+    if (dataString == null || dataString.isEmpty) {
+      return false;
+    }
+    
+    try {
+      final data = jsonDecode(dataString) as Map<String, dynamic>;
+      
+      // Verificar que hay datos esenciales para modo offline
+      final hasCredentials = data['credentials'] != null;
+      final hasCategories = data['categories'] != null && (data['categories'] as List).isNotEmpty;
+      final hasProducts = data['products'] != null && (data['products'] as Map).isNotEmpty;
+      
+      print('📊 Verificación de datos offline:');
+      print('  - Credenciales: ${hasCredentials ? "✅" : "❌"}');
+      print('  - Categorías: ${hasCategories ? "✅" : "❌"} (${hasCategories ? (data['categories'] as List).length : 0})');
+      print('  - Productos: ${hasProducts ? "✅" : "❌"} (${hasProducts ? (data['products'] as Map).keys.length : 0} categorías)');
+      
+      // Requiere al menos credenciales y categorías para funcionar offline
+      return hasCredentials && hasCategories;
+      
+    } catch (e) {
+      print('❌ Error verificando datos offline: $e');
+      return false;
+    }
+  }
+  
   // Limpiar datos offline
   Future<void> clearOfflineData() async {
     final prefs = await SharedPreferences.getInstance();

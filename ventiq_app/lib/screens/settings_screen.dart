@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/category_service.dart';
 import '../services/product_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
+import '../services/settings_integration_service.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/connection_status_widget.dart';
 import '../models/order.dart';
+import 'dart:async';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -21,16 +26,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final OrderService _orderService = OrderService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
+  final SettingsIntegrationService _integrationService = SettingsIntegrationService();
+  
   bool _isPrintEnabled = true; // Valor por defecto
   bool _isLimitDataUsageEnabled = false; // Valor por defecto
   bool _isOfflineModeEnabled = false; // Valor por defecto
   bool _hasOfflineTurno = false; // Turno abierto offline
   Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
+  
+  // Nuevas variables para servicios inteligentes
+  StreamSubscription<SettingsIntegrationEvent>? _integrationSubscription;
+  bool _isSmartServicesInitialized = false;
+  String? _lastSmartEvent;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _initializeSmartServices();
+  }
+
+  @override
+  void dispose() {
+    _integrationSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadSettings() async {
@@ -47,6 +66,133 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _hasOfflineTurno = hasOfflineTurno;
       _offlineTurnoInfo = offlineTurnoInfo;
     });
+  }
+
+  /// Inicializar servicios inteligentes
+  Future<void> _initializeSmartServices() async {
+    try {
+      print('🚀 Inicializando servicios inteligentes en Settings...');
+      
+      await _integrationService.initialize();
+      
+      // Configurar listener para eventos
+      _integrationSubscription = _integrationService.eventStream.listen(
+        _onSmartServiceEvent,
+        onError: (error) {
+          print('❌ Error en stream de integración: $error');
+        },
+      );
+      
+      setState(() {
+        _isSmartServicesInitialized = true;
+      });
+      
+      print('✅ Servicios inteligentes inicializados en Settings');
+      
+    } catch (e) {
+      print('❌ Error inicializando servicios inteligentes: $e');
+      
+      // Mostrar error al usuario
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ Error inicializando servicios inteligentes: $e'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Manejar eventos de servicios inteligentes
+  void _onSmartServiceEvent(SettingsIntegrationEvent event) {
+    print('📡 Evento de integración: ${event.type} - ${event.message}');
+    
+    setState(() {
+      _lastSmartEvent = event.message;
+    });
+    
+    // Mostrar notificaciones importantes al usuario
+    if (mounted) {
+      switch (event.type) {
+        case SettingsIntegrationEventType.offlineModeAutoActivated:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🔌 Modo offline activado automáticamente por pérdida de conexión'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 5),
+            ),
+          );
+          // Recargar configuraciones para reflejar el cambio
+          _loadSettings();
+          break;
+          
+        case SettingsIntegrationEventType.connectionRestored:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('📶 Conexión restaurada - Datos sincronizándose automáticamente'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          break;
+          
+        case SettingsIntegrationEventType.autoSyncStarted:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🔄 Sincronización automática iniciada'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          break;
+          
+        case SettingsIntegrationEventType.reauthenticationStarted:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🔐 Reautenticando usuario...'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
+          );
+          break;
+          
+        case SettingsIntegrationEventType.reauthenticationSuccess:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Usuario reautenticado correctamente'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          break;
+          
+        case SettingsIntegrationEventType.reauthenticationFailed:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Error en reautenticación - Puede requerir login manual'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 5),
+            ),
+          );
+          break;
+          
+        case SettingsIntegrationEventType.error:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ ${event.message}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          break;
+          
+        default:
+          // No mostrar notificación para otros eventos
+          break;
+      }
+    }
   }
 
   Future<void> _onPrintSettingChanged(bool value) async {
@@ -92,21 +238,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _onOfflineModeChanged(bool value) async {
-    if (value) {
-      // Si se activa, mostrar diálogo de sincronización
-      await _showSyncDialog();
-    } else {
-      // Si se desactiva, simplemente actualizar el estado
+    try {
+      if (value) {
+        // Si se activa, mostrar diálogo de sincronización
+        await _showSyncDialog();
+      } else {
+        // Si se desactiva, notificar al servicio de integración
+        setState(() {
+          _isOfflineModeEnabled = false;
+        });
+        await _userPreferencesService.setOfflineMode(false);
+        
+        // Notificar al servicio de integración sobre el cambio manual
+        if (_isSmartServicesInitialized) {
+          await _integrationService.handleOfflineModeChanged(false);
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🌐 Modo offline desactivado - Sincronización automática iniciada'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error cambiando modo offline: $e');
+      
+      // Revertir el estado en caso de error
       setState(() {
-        _isOfflineModeEnabled = false;
+        _isOfflineModeEnabled = !value;
       });
-      await _userPreferencesService.setOfflineMode(false);
       
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🌐 Modo offline desactivado'),
-          backgroundColor: Colors.blue,
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text('❌ Error cambiando modo offline: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -129,6 +297,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         centerTitle: true,
         actions: [
+          // Indicador de estado de conexión
+          if (_isSmartServicesInitialized)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Center(
+                child: ConnectionStatusWidget(
+                  showDetails: true,
+                  compact: true,
+                ),
+              ),
+            ),
           Builder(
             builder:
                 (context) => IconButton(
@@ -197,6 +376,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildDataUsageSettingsTile(),
             _buildDivider(),
             _buildOfflineModeSettingsTile(),
+            if (_isSmartServicesInitialized) ...[
+              _buildDivider(),
+              _buildSmartSyncStatusTile(),
+            ],
           ]),
 
           const SizedBox(height: 16),
@@ -215,11 +398,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSettingsCard([
             _buildSettingsTile(
               icon: Icons.sync_outlined,
-              title: 'Sincronización',
+              title: 'Sincronización Manual',
               subtitle: 'Sincronizar datos offline pendientes',
               onTap: () => _showSyncDialog(),
             ),
             _buildDivider(),
+            if (_isSmartServicesInitialized)
+              _buildSettingsTile(
+                icon: Icons.sync_alt,
+                title: 'Forzar Sincronización',
+                subtitle: 'Sincronizar datos inmediatamente',
+                onTap: () => _forceSyncNow(),
+              ),
+            if (_isSmartServicesInitialized)
+              _buildDivider(),
             _buildSettingsTile(
               icon: Icons.storage_outlined,
               title: 'Almacenamiento',
@@ -586,12 +778,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (BuildContext context) {
         return _SyncDialog(
           userPreferencesService: _userPreferencesService,
-          onSyncComplete: (bool success) {
+          onSyncComplete: (bool success) async {
             Navigator.of(context).pop();
             if (success) {
               setState(() {
                 _isOfflineModeEnabled = true;
               });
+              
+              // Notificar al servicio de integración sobre la activación manual
+              if (_isSmartServicesInitialized) {
+                try {
+                  await _integrationService.handleOfflineModeChanged(true);
+                } catch (e) {
+                  print('❌ Error notificando activación de modo offline: $e');
+                }
+              }
+              
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('✅ Datos sincronizados correctamente - Modo offline activado'),
@@ -936,6 +1138,288 @@ class _SettingsScreenState extends State<SettingsScreen> {
         break;
       case 3: // Configuración (current)
         break;
+    }
+  }
+
+  /// Widget para mostrar el estado de sincronización inteligente
+  Widget _buildSmartSyncStatusTile() {
+    return FutureBuilder<SettingsIntegrationStatus>(
+      future: _integrationService.getStatus(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+            title: const Text(
+              'Estado de Sincronización',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+            subtitle: const Text(
+              'Cargando estado...',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          );
+        }
+
+        final status = snapshot.data!;
+        final smartStatus = status.smartOfflineStatus;
+        
+        IconData icon;
+        Color iconColor;
+        String title;
+        String subtitle;
+
+        if (status.isOfflineModeEnabled) {
+          icon = Icons.cloud_off;
+          iconColor = Colors.orange;
+          title = 'Modo Offline Activo';
+          subtitle = 'Trabajando sin conexión';
+        } else if (smartStatus.isConnected && smartStatus.isAutoSyncRunning) {
+          icon = Icons.sync;
+          iconColor = Colors.green;
+          title = 'Sincronización Automática';
+          final syncCount = smartStatus.syncStats['syncCount'] ?? 0;
+          subtitle = 'Ejecutándose - $syncCount sincronizaciones';
+        } else if (smartStatus.isConnected) {
+          icon = Icons.wifi;
+          iconColor = Colors.blue;
+          title = 'Conectado';
+          subtitle = 'Listo para sincronizar';
+        } else {
+          icon = Icons.wifi_off;
+          iconColor = Colors.red;
+          title = 'Sin Conexión';
+          subtitle = 'Verificando conectividad...';
+        }
+
+        return ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF1F2937),
+            ),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.info_outline, color: Colors.grey),
+            onPressed: () => _showSmartSyncDetails(status),
+            tooltip: 'Ver detalles',
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        );
+      },
+    );
+  }
+
+  /// Mostrar detalles del estado de sincronización inteligente
+  void _showSmartSyncDetails(SettingsIntegrationStatus status) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Estado de Sincronización'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildDetailRow('Servicios Inicializados', status.isInitialized ? 'Sí' : 'No'),
+              _buildDetailRow('Conexión', status.smartOfflineStatus.isConnected ? 'Conectado' : 'Desconectado'),
+              _buildDetailRow('Modo Offline', status.isOfflineModeEnabled ? 'Activado' : 'Desactivado'),
+              _buildDetailRow('Sincronización Auto', status.smartOfflineStatus.isAutoSyncRunning ? 'Ejecutándose' : 'Detenida'),
+              
+              if (status.smartOfflineStatus.syncStats['lastSyncTime'] != null) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Última Sincronización:',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+                Text(
+                  _formatDateTime(DateTime.parse(status.smartOfflineStatus.syncStats['lastSyncTime'])),
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              ],
+              
+              if (status.smartOfflineStatus.lastAutoActivation != null) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Última Activación Automática:',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+                Text(
+                  _formatDateTime(status.smartOfflineStatus.lastAutoActivation!),
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              ],
+              
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ℹ️ Información:',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '• La sincronización automática se ejecuta cada minuto cuando el modo offline está desactivado',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      '• El modo offline se activa automáticamente si se pierde la conexión',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      '• Los datos se mantienen sincronizados para uso offline',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+          if (!status.smartOfflineStatus.isAutoSyncRunning && status.smartOfflineStatus.isConnected)
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _forceSyncNow();
+              },
+              child: const Text('Sincronizar Ahora'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Widget para mostrar una fila de detalles
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 14)),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[700],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Forzar sincronización inmediata
+  Future<void> _forceSyncNow() async {
+    try {
+      // Mostrar loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(width: 12),
+              Text('🔄 Iniciando sincronización...'),
+            ],
+          ),
+          backgroundColor: Colors.blue,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      await _integrationService.forceSyncNow();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Sincronización completada'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+    } catch (e) {
+      print('❌ Error forzando sincronización: $e');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error en sincronización: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  /// Formatear fecha y hora de manera amigable
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    if (difference.inMinutes < 1) {
+      return 'Hace unos segundos';
+    } else if (difference.inMinutes < 60) {
+      return 'Hace ${difference.inMinutes} minuto${difference.inMinutes > 1 ? 's' : ''}';
+    } else if (difference.inHours < 24) {
+      return 'Hace ${difference.inHours} hora${difference.inHours > 1 ? 's' : ''}';
+    } else {
+      return '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
     }
   }
 }
@@ -1500,6 +1984,21 @@ class _SyncDialogState extends State<_SyncDialog> {
       if (idTpv == null || userId == null) {
         throw Exception('Datos de usuario incompletos para sincronización');
       }
+
+      // 1. PRIMERO: Registrar cliente si hay datos de comprador
+      int? idCliente = orderData['idCliente'];
+      final buyerName = orderData['buyerName'];
+      final buyerPhone = orderData['buyerPhone'];
+      
+      if (idCliente == null && buyerName != null && buyerName.isNotEmpty) {
+        print('👤 Registrando cliente desde datos offline...');
+        idCliente = await _registerClientFromOfflineData(buyerName, buyerPhone);
+        if (idCliente != null) {
+          print('✅ Cliente registrado con ID: $idCliente');
+          // Actualizar orderData con el nuevo ID de cliente
+          orderData['idCliente'] = idCliente;
+        }
+      }
       
       // Preparar productos desde los datos offline
       final productos = <Map<String, dynamic>>[];
@@ -1547,6 +2046,13 @@ class _SyncDialogState extends State<_SyncDialog> {
           // Guardar el ID de operación para usarlo en la actualización de estado
           orderData['_operation_id'] = operationId;
           print('📝 ID de operación guardado: $operationId');
+          
+          // 2. SEGUNDO: Registrar desgloses de pago si existen
+          final paymentBreakdown = orderData['paymentBreakdown'] as Map<String, dynamic>?;
+          if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
+            print('💳 Registrando desgloses de pago...');
+            await _registerPaymentBreakdownFromOfflineData(operationId, paymentBreakdown);
+          }
         }
       } else {
         throw Exception(response?['message'] ?? 'Error en el registro de venta');
@@ -1626,6 +2132,138 @@ class _SyncDialogState extends State<_SyncDialog> {
     } catch (e) {
       print('❌ Error actualizando estado: $e');
       throw e;
+    }
+  }
+
+  /// Registrar cliente desde datos offline usando fn_insertar_cliente_con_contactos
+  Future<int?> _registerClientFromOfflineData(String buyerName, String? buyerPhone) async {
+    try {
+      print('🔄 Registrando cliente desde datos offline...');
+      print('  - Nombre: $buyerName');
+      print('  - Teléfono: ${buyerPhone?.isNotEmpty == true ? buyerPhone : "No proporcionado"}');
+      
+      // Generar código de cliente encriptado (similar al checkout_screen.dart)
+      final clientCode = _generateClientCode(buyerName);
+      
+      final response = await Supabase.instance.client.rpc(
+        'fn_insertar_cliente_con_contactos',
+        params: {
+          'p_codigo_cliente': clientCode,
+          'p_contactos': null,
+          'p_direccion': null,
+          'p_documento_identidad': null,
+          'p_email': null,
+          'p_fecha_nacimiento': null,
+          'p_genero': null,
+          'p_limite_credito': 0,
+          'p_nombre_completo': buyerName,
+          'p_telefono': buyerPhone?.isNotEmpty == true ? buyerPhone : null,
+          'p_tipo_cliente': 1,
+        },
+      );
+      
+      print('✅ Respuesta fn_insertar_cliente_con_contactos: $response');
+      
+      if (response != null && response['status'] == 'success') {
+        final idCliente = response['id_cliente'] as int;
+        print('✅ Cliente registrado exitosamente desde offline - ID: $idCliente');
+        return idCliente;
+      } else {
+        print('⚠️ Advertencia al registrar cliente offline: ${response?['message'] ?? "Respuesta vacía"}');
+        return null;
+      }
+      
+    } catch (e) {
+      print('❌ Error al registrar cliente desde offline: $e');
+      return null;
+    }
+  }
+
+  /// Generar código de cliente encriptado
+  String _generateClientCode(String buyerName) {
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final input = '$buyerName-$timestamp';
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return digest.toString().substring(0, 16).toUpperCase();
+  }
+
+  /// Registrar desgloses de pago desde datos offline
+  Future<void> _registerPaymentBreakdownFromOfflineData(
+    int operationId, 
+    Map<String, dynamic> paymentBreakdown
+  ) async {
+    try {
+      print('💳 Registrando ${paymentBreakdown.length} métodos de pago...');
+      
+      for (final entry in paymentBreakdown.entries) {
+        final methodName = entry.key;
+        final amount = entry.value as double;
+        
+        // Mapear nombre del método a ID (esto debería coincidir con los IDs reales)
+        int? methodId = _getPaymentMethodIdByName(methodName);
+        
+        if (methodId != null && amount > 0) {
+          print('  💰 Registrando: $methodName (ID: $methodId) - \$${amount.toStringAsFixed(2)}');
+          
+          final paymentResponse = await Supabase.instance.client.rpc(
+            'fn_registrar_pago_venta',
+            params: {
+              'p_id_operacion_venta': operationId,
+              'p_id_metodo_pago': methodId,
+              'p_monto': amount,
+              'p_observaciones': 'Pago sincronizado desde offline - $methodName',
+            },
+          );
+          
+          print('    📡 Respuesta pago $methodName: $paymentResponse');
+          
+          if (paymentResponse != null && paymentResponse['status'] == 'success') {
+            print('    ✅ Pago $methodName registrado exitosamente');
+          } else {
+            print('    ⚠️ Advertencia registrando pago $methodName: ${paymentResponse?['message']}');
+          }
+        } else {
+          print('  ⚠️ Método de pago no reconocido o monto inválido: $methodName (\$${amount.toStringAsFixed(2)})');
+        }
+      }
+      
+      print('✅ Desgloses de pago procesados');
+    } catch (e) {
+      print('❌ Error registrando desgloses de pago: $e');
+      // No lanzamos excepción para no interrumpir la sincronización
+    }
+  }
+
+  /// Mapear nombre de método de pago a ID
+  int? _getPaymentMethodIdByName(String methodName) {
+    // Mapeo básico de nombres comunes a IDs
+    // Esto debería coincidir con los datos reales de la tabla app_nom_metodo_pago
+    switch (methodName.toLowerCase()) {
+      case 'efectivo':
+      case 'cash':
+        return 1;
+      case 'transferencia':
+      case 'transfer':
+      case 'transferencia bancaria':
+        return 2;
+      case 'tarjeta':
+      case 'tarjeta de crédito':
+      case 'tarjeta de débito':
+      case 'card':
+        return 3;
+      case 'pago móvil':
+      case 'pago movil':
+      case 'mobile payment':
+        return 4;
+      default:
+        // Intentar extraer ID si el nombre tiene formato "Método (ID: X)"
+        final regex = RegExp(r'\(ID:\s*(\d+)\)');
+        final match = regex.firstMatch(methodName);
+        if (match != null) {
+          return int.tryParse(match.group(1)!);
+        }
+        return null;
     }
   }
 

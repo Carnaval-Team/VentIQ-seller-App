@@ -28,6 +28,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   bool _categoriesLoaded =
       false; // Flag para controlar si ya se cargaron las categorías
   bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
+  bool _isOfflineModeEnabled = false; // Para el estado del modo offline
 
   // USD rate data
   double _usdRate = 0.0;
@@ -41,13 +42,23 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     _loadCategories();
     _loadUsdRate();
     _loadDataUsageSettings();
+    _loadOfflineModeSettings();
   }
-  
+
   Future<void> _loadDataUsageSettings() async {
     final isEnabled = await _preferencesService.isLimitDataUsageEnabled();
     if (mounted) {
       setState(() {
         _isLimitDataUsageEnabled = isEnabled;
+      });
+    }
+  }
+
+  Future<void> _loadOfflineModeSettings() async {
+    final isEnabled = await _preferencesService.isOfflineModeEnabled();
+    if (mounted) {
+      setState(() {
+        _isOfflineModeEnabled = isEnabled;
       });
     }
   }
@@ -62,6 +73,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // Refresh the screen when returning from other screens
+      _loadDataUsageSettings();
+      _loadOfflineModeSettings();
       setState(() {});
     }
   }
@@ -107,30 +120,34 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       });
 
       // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _preferencesService.isOfflineModeEnabled();
-      
+      final isOfflineModeEnabled =
+          await _preferencesService.isOfflineModeEnabled();
+
       List<Category> categories;
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Cargando categorías desde cache...');
-        
+
         // Cargar datos offline
         final offlineData = await _preferencesService.getOfflineData();
-        
+
         if (offlineData != null && offlineData['categories'] != null) {
           final categoriesData = offlineData['categories'] as List<dynamic>;
-          
+
           // Convertir datos JSON a objetos Category
-          categories = categoriesData.map((catData) {
-            return Category(
-              id: catData['id'] as int,
-              name: catData['name'] as String,
-              imageUrl: catData['imageUrl'] as String,
-              color: Color(catData['color'] as int),
-            );
-          }).toList();
-          
-          print('✅ Categorías cargadas desde cache offline: ${categories.length}');
+          categories =
+              categoriesData.map((catData) {
+                return Category(
+                  id: catData['id'] as int,
+                  name: catData['name'] as String,
+                  imageUrl: catData['imageUrl'] as String,
+                  color: Color(catData['color'] as int),
+                );
+              }).toList();
+
+          print(
+            '✅ Categorías cargadas desde cache offline: ${categories.length}',
+          );
         } else {
           throw Exception('No hay categorías sincronizadas en modo offline');
         }
@@ -174,6 +191,64 @@ class _CategoriesScreenState extends State<CategoriesScreen>
         _isLoadingUsdRate = false;
       });
     }
+  }
+
+  Widget _buildConnectionStatusChip() {
+    return GestureDetector(
+      onTap: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _isOfflineModeEnabled
+                  ? '🔌 Modo offline activado - Trabajando con datos sincronizados'
+                  : '🌐 Modo online - Conectado al servidor',
+            ),
+            backgroundColor: _isOfflineModeEnabled ? Colors.grey[600] : Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        decoration: BoxDecoration(
+          color: _isOfflineModeEnabled ? Colors.grey[100] : Colors.green[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _isOfflineModeEnabled ? Colors.grey[400]! : Colors.green[400]!,
+            width: 0.8,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 1,
+              offset: const Offset(0, 0.5),
+            ),
+          ],
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _isOfflineModeEnabled ? Icons.cloud_off : Icons.cloud_done,
+                size: 12,
+                color: _isOfflineModeEnabled ? Colors.grey[600] : Colors.green[600],
+              ),
+              const SizedBox(width: 3),
+              Text(
+                _isOfflineModeEnabled ? 'Offline' : 'Online',
+                style: TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.bold,
+                  color: _isOfflineModeEnabled ? Colors.grey[600] : Colors.green[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildUsdRateChip() {
@@ -223,6 +298,10 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
+        leading: Container(
+          margin: const EdgeInsets.only(left: 12, top: 12, bottom: 12),
+          child: _buildConnectionStatusChip(),
+        ),
         title: const Text(
           'Categorías',
           style: TextStyle(
@@ -246,7 +325,9 @@ class _CategoriesScreenState extends State<CategoriesScreen>
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos'),
+                    content: Text(
+                      '📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos',
+                    ),
                     backgroundColor: Colors.orange,
                     duration: Duration(seconds: 2),
                   ),
@@ -527,27 +608,30 @@ class _CategoryCardState extends State<_CategoryCard>
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(1),
-                          child: widget.isLimitDataUsageEnabled
-                              ? Image.asset(
-                                  'assets/no_image.png',
-                                  width: 120,
-                                  height: 80,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Icon(
-                                        _getCategoryIcon(widget.name),
-                                        size: 40,
-                                        color: Colors.white,
-                                      ),
-                                    );
-                                  },
-                                )
-                              : widget.imageUrl != null
+                          child:
+                              widget.isLimitDataUsageEnabled
+                                  ? Image.asset(
+                                    'assets/no_image.png',
+                                    width: 120,
+                                    height: 80,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          _getCategoryIcon(widget.name),
+                                          size: 40,
+                                          color: Colors.white,
+                                        ),
+                                      );
+                                    },
+                                  )
+                                  : widget.imageUrl != null
                                   ? Image.network(
                                     widget.imageUrl!,
                                     width: 120,
