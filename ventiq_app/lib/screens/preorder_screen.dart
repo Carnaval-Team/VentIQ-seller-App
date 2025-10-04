@@ -43,7 +43,9 @@ class _PreorderScreenState extends State<PreorderScreen> {
         _checkingShift = true;
       });
 
+      print('🔍 PreorderScreen: Verificando turno abierto...');
       final hasShift = await TurnoService.hasOpenShift();
+      print('📋 PreorderScreen: Resultado verificación turno: $hasShift');
 
       setState(() {
         _hasOpenShift = hasShift;
@@ -51,12 +53,14 @@ class _PreorderScreenState extends State<PreorderScreen> {
       });
 
       if (_hasOpenShift) {
+        print('✅ PreorderScreen: Turno encontrado, cargando métodos de pago...');
         _loadPaymentMethods();
       } else {
+        print('❌ PreorderScreen: No hay turno abierto, mostrando diálogo...');
         _showNoShiftDialog();
       }
     } catch (e) {
-      print('Error checking shift: $e');
+      print('❌ PreorderScreen: Error checking shift: $e');
       setState(() {
         _checkingShift = false;
         _hasOpenShift = false;

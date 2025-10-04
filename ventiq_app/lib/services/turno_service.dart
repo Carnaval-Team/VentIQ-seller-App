@@ -90,6 +90,22 @@ class TurnoService {
 
   static Future<Map<String, dynamic>?> getTurnoAbierto() async {
     try {
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Obteniendo turno offline...');
+        final turnoOffline = await _userPrefs.getOfflineTurno();
+        if (turnoOffline != null) {
+          print('📱 Turno offline encontrado: ${turnoOffline['id']}');
+          return turnoOffline;
+        } else {
+          print('⚠️ No hay turno offline abierto');
+          return null;
+        }
+      }
+
+      // Modo online - consultar base de datos
       final workerProfile = await _userPrefs.getWorkerProfile();
       final idTpv = workerProfile['idTpv'];
       final idSeller = await _userPrefs.getIdSeller();
@@ -386,11 +402,24 @@ class TurnoService {
     }
   }
 
-  /// Valida si el vendedor tiene un turno abierto
+  /// Valida si el vendedor tiene un turno abierto (online u offline)
   static Future<bool> hasOpenShift() async {
     try {
-      final turnoAbierto = await getTurnoAbierto();
-      return turnoAbierto != null;
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Verificando turno offline...');
+        final hasOfflineTurno = await _userPrefs.hasOfflineTurnoAbierto();
+        print('📱 Turno offline encontrado: $hasOfflineTurno');
+        return hasOfflineTurno;
+      } else {
+        print('🌐 Modo online - Verificando turno en base de datos...');
+        final turnoAbierto = await getTurnoAbierto();
+        final hasOnlineTurno = turnoAbierto != null;
+        print('💾 Turno online encontrado: $hasOnlineTurno');
+        return hasOnlineTurno;
+      }
     } catch (e) {
       print('❌ Error checking open shift: $e');
       return false;
