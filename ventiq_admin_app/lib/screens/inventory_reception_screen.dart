@@ -7,11 +7,13 @@ import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_display_service.dart';
 import '../models/warehouse.dart';
+import '../models/supplier.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_quantity_dialog.dart';
 import '../widgets/location_selector_widget.dart';
 import '../widgets/currency_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
+import '../widgets/supplier/supplier_reception_integration.dart';
 import '../services/product_search_service.dart';
 
 class InventoryReceptionScreen extends StatefulWidget {
@@ -45,6 +47,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
   bool _isLoadingProducts = true;
   bool _isLoadingMotivos = true;
   String _searchQuery = '';
+  Supplier? _selectedSupplier;
 
   @override
   void initState() {
@@ -213,7 +216,6 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
       _showError('No se pudo cargar la tasa de cambio para $_selectedCurrency');
       return;
     }
-
     // Validar que todos los productos tengan datos válidos
     for (final product in _selectedProducts) {
       final precio = product['precio_unitario'] as double?;
@@ -284,6 +286,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         observaciones: _observacionesController.text,
         productos: productosParaEnviar,
         recibidoPor: _recibidoPorController.text,
+        idProveedor: _selectedSupplier?.id,
         uuid: userUuid,
       );
 
@@ -367,6 +370,14 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                     _buildProductSelectionSection(),
                     const SizedBox(height: 24),
                     _buildSelectedProductsSection(),
+                    const SizedBox(height: 24),
+                    SupplierReceptionIntegration(
+                      selectedSupplier: _selectedSupplier,
+                      onSupplierSelected: (supplier) {
+                        setState(() => _selectedSupplier = supplier);
+                      },
+                      isRequired: false,
+                    ),
                   ],
                 ),
               ),

@@ -125,7 +125,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
         break;
       case 1:
-        Navigator.pushNamed(context, '/products');
+        Navigator.pushNamed(context, '/products-dashboard');
         break;
       case 2:
         Navigator.pushNamed(context, '/inventory');

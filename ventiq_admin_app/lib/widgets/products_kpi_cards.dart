@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
+import '../../utils/number_formatter.dart';
 
 // Reemplazar el widget ProductsKPICards existente
 
@@ -77,7 +78,7 @@ class ProductsKPICards extends StatelessWidget {
         _buildKPICard(
           context,
           'Valor Inventario',
-          '\$${(kpis['valorTotalInventario'] ?? 0.0).toStringAsFixed(0)}',
+          'CUP \$${NumberFormatter.formatCurrency(kpis['valorTotalInventario'] ?? 0.0)}',
           Icons.attach_money,
           Colors.green,
         ),

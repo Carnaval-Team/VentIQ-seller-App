@@ -5,6 +5,7 @@ import '../widgets/products_kpi_cards.dart';
 import '../widgets/products_charts_widget.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/admin_drawer.dart';
+import '../utils/number_formatter.dart';
 
 class ProductsDashboardScreen extends StatefulWidget {
   const ProductsDashboardScreen({super.key});
@@ -951,7 +952,7 @@ class ProductsAdditionalInfo extends StatelessWidget {
             _buildInfoRow(
               context,
               'Valor promedio por producto:',
-              '\$${valorPromedio.toStringAsFixed(2)}',
+              'CUP \$${NumberFormatter.formatCurrency(valorPromedio)}',
               Colors.green,
             ),
             const SizedBox(height: 8),

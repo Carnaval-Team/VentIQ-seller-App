@@ -76,7 +76,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       
       // Validar que el supervisor tenga id_tienda
       print('🔍 Validating supervisor store access...');
-      final hasValidStore = await _dashboardService.validateSupervisorStore();
+      final hasValidStore = await DashboardService.validateSupervisorStore();
       
       if (!hasValidStore) {
         print('❌ Supervisor no tiene id_tienda válido - usando datos mock');
@@ -88,7 +88,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       
       // Llamar a la función RPC con el período seleccionado
       print('🔄 Loading dashboard data for period: $_selectedTimeFilter');
-      final realData = await _dashboardService.getStoreAnalysis(
+      final realData = await DashboardService.getStoreAnalysis(
         periodo: _selectedTimeFilter,
       );
       
@@ -540,7 +540,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: _buildKPICard(
                 title: 'Ventas Total',
                 value: '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}',
-                subtitle: '${_dashboardData['salesChange']>=0 ?'+':'-'} ${_dashboardData['salesChange']?.toStringAsFixed(2) ?? '0.00'}% ${_getPreviousPeriodLabel()}',
+                subtitle: '${(_dashboardData['salesChange'] ?? 0.0) >= 0 ? '+' : '-'} ${(_dashboardData['salesChange'] ?? 0.0).toStringAsFixed(2)}% ${_getPreviousPeriodLabel()}',
                 icon: Icons.trending_up,
                 color: AppColors.success,
                 onTap: () => Navigator.pushNamed(context, '/sales'),

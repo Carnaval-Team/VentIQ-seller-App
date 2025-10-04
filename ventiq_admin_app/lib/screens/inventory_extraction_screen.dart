@@ -9,6 +9,7 @@ import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
+import '../widgets/location_selector_widget.dart';
 import '../services/product_search_service.dart';
 import '../utils/presentation_converter.dart';
 
@@ -32,17 +33,13 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
   List<Map<String, dynamic>> _selectedProducts = [];
   List<Map<String, dynamic>> _motivoOptions = [];
   Map<String, dynamic>? _selectedMotivo;
-  List<Warehouse> _warehouses = [];
   WarehouseZone? _selectedSourceLocation;
-  String? _selectedWarehouseName; // Store warehouse name for display
   bool _isLoading = false;
   bool _isLoadingMotivos = true;
-  bool _isLoadingWarehouses = true;
 
   @override
   void initState() {
     super.initState();
-    _loadWarehouses();
     _loadMotivoOptions();
     _loadPersistedValues();
   }
@@ -81,16 +78,11 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
       builder:
           (context) => _ProductQuantityDialog(
             product: product,
-            sourceLayoutId:
-                _selectedSourceLocation?.id != null
-                    ? int.tryParse(_selectedSourceLocation!.id)
-                    : null,
-            warehouseName: _selectedWarehouseName,
-            onAdd: (productData) {
+            sourceLocation: _selectedSourceLocation,
+            onProductAdded: (productData) {
               setState(() {
                 _selectedProducts.add(productData);
               });
-              Navigator.pop(context);
             },
           ),
     );
@@ -146,10 +138,6 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                 ),
                               ),
                               Text(
-                                _selectedWarehouseName ?? 'No seleccionada',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              Text(
                                 _selectedSourceLocation?.name ??
                                     'No seleccionada',
                                 style: const TextStyle(fontSize: 14),
@@ -183,7 +171,9 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            productData['nombreProducto'],
+                            productData['denominacion'] ??
+                                productData['nombre_producto'] ??
+                                'Sin nombre',
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           if (productData['variante'] != null &&
@@ -322,21 +312,29 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
 
       // Prepare products list for the RPC
       final productos =
-          _selectedProducts
-              .map(
-                (product) => {
-                  'id_producto': product['id_producto'],
-                  'id_variante': product['id_variante'],
-                  'id_opcion_variante': product['id_opcion_variante'],
-                  'id_ubicacion': product['id_ubicacion'],
-                  'id_presentacion': product['id_presentacion'],
-                  'cantidad': product['cantidad'],
-                  'precio_unitario': product['precio_unitario'],
-                  'sku_producto': product['sku_producto'],
-                  'sku_ubicacion': product['sku_ubicacion'],
-                },
-              )
-              .toList();
+          _selectedProducts.map((product) {
+            // Validar que id_presentacion no sea null
+            final idPresentacion = product['id_presentacion'];
+            if (idPresentacion == null) {
+              print(
+                '⚠️ Producto sin id_presentacion: ${product['denominacion']}',
+              );
+              print('⚠️ Datos del producto: $product');
+            }
+
+            return {
+              'id_producto': product['id_producto'],
+              'id_variante': product['id_variante'],
+              'id_opcion_variante': product['id_opcion_variante'],
+              'id_ubicacion': product['id_ubicacion'],
+              'id_presentacion':
+                  idPresentacion ?? 1, // Fallback a 1 (Unidad base)
+              'cantidad': product['cantidad'],
+              'precio_unitario': product['precio_unitario'],
+              'sku_producto': product['sku_producto'],
+              'sku_ubicacion': product['sku_ubicacion'],
+            };
+          }).toList();
 
       final result = await InventoryService.insertCompleteExtraction(
         autorizadoPor: _autorizadoPorController.text.trim(),
@@ -427,97 +425,160 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
     }
   }
 
-  Future<void> _loadWarehouses() async {
-    setState(() => _isLoadingWarehouses = true);
+  Widget _buildExtractionInfoSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Información de Extracción',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
 
-    try {
-      final warehouseService = WarehouseService();
-      final warehouses = await warehouseService.listWarehouses();
+            // Motivo
+            DropdownButtonFormField<Map<String, dynamic>>(
+              value: _selectedMotivo,
+              decoration: const InputDecoration(
+                labelText: 'Motivo de Extracción',
+                border: OutlineInputBorder(),
+              ),
+              items:
+                  _motivoOptions.map((motivo) {
+                    return DropdownMenuItem(
+                      value: motivo,
+                      child: Text(motivo['denominacion'] ?? ''),
+                    );
+                  }).toList(),
+              onChanged: (motivo) {
+                setState(() => _selectedMotivo = motivo);
+              },
+              validator: (value) {
+                if (value == null) return 'Campo requerido';
+                return null;
+              },
+            ),
 
-      setState(() {
-        _warehouses = warehouses;
-        _isLoadingWarehouses = false;
-      });
-    } catch (e) {
-      print('Error loading warehouses: $e');
-      setState(() => _isLoadingWarehouses = false);
-    }
+            const SizedBox(height: 12),
+
+            // Autorizado por
+            TextFormField(
+              controller: _autorizadoPorController,
+              decoration: const InputDecoration(
+                labelText: 'Autorizado por',
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Campo requerido';
+                }
+                return null;
+              },
+            ),
+
+            const SizedBox(height: 12),
+
+            // Observaciones
+            TextFormField(
+              controller: _observacionesController,
+              decoration: const InputDecoration(
+                labelText: 'Observaciones',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
-  Widget _buildWarehouseTree() {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(8),
+  Widget _buildLocationSelectionSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Seleccionar Ubicación',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            LocationSelectorWidget(
+              type: LocationSelectorType.single,
+              title: 'Seleccionar Zona de Origen',
+              subtitle: 'Zona desde donde se extraerán los productos',
+              selectedLocation: _selectedSourceLocation,
+              onLocationChanged: (location) {
+                setState(() {
+                  _selectedSourceLocation = location;
+                  _selectedProducts.clear();
+                });
+              },
+              validationMessage:
+                  _selectedSourceLocation == null
+                      ? 'Debe seleccionar una zona de origen'
+                      : null,
+            ),
+          ],
+        ),
       ),
-      child: Column(
-        children:
-            _warehouses.map((warehouse) {
-              return ExpansionTile(
-                leading: Icon(Icons.warehouse, color: AppColors.primary),
-                title: Text(
-                  warehouse.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
+    );
+  }
+
+  Widget _buildProductSelectionSection() {
+    final isEnabled = _selectedSourceLocation != null;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Seleccionar Productos',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+
+            if (!isEnabled)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3)),
                 ),
-                subtitle: Text(
-                  warehouse.address,
-                  style: TextStyle(
-                    color: AppColors.grey.shade600,
-                    fontSize: 12,
-                  ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange[700]),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Seleccione una zona de origen para ver productos disponibles',
+                        style: TextStyle(color: Colors.orange[700]),
+                      ),
+                    ),
+                  ],
                 ),
-                children:
-                    warehouse.zones.map((zone) {
-                      final isSelected = _selectedSourceLocation?.id == zone.id;
-                      return ListTile(
-                        contentPadding: const EdgeInsets.only(
-                          left: 56,
-                          right: 16,
-                        ),
-                        leading: Icon(
-                          Icons.location_on,
-                          color:
-                              isSelected ? AppColors.primary : AppColors.grey,
-                          size: 20,
-                        ),
-                        title: Text(
-                          '${warehouse.name} - ${zone.name}',
-                          style: TextStyle(
-                            color: isSelected ? AppColors.primary : null,
-                            fontWeight: isSelected ? FontWeight.w600 : null,
-                          ),
-                        ),
-                        subtitle:
-                            zone.code.isNotEmpty
-                                ? Text(
-                                  'Código: ${zone.code}',
-                                  style: TextStyle(
-                                    color: AppColors.grey.shade600,
-                                    fontSize: 11,
-                                  ),
-                                )
-                                : null,
-                        trailing:
-                            isSelected
-                                ? Icon(
-                                  Icons.check_circle,
-                                  color: AppColors.primary,
-                                  size: 20,
-                                )
-                                : null,
-                        onTap: () {
-                          setState(() {
-                            _selectedSourceLocation = zone;
-                            _selectedWarehouseName = warehouse.name;
-                          });
-                        },
-                      );
-                    }).toList(),
-              );
-            }).toList(),
+              )
+            else
+              SizedBox(
+                height: 300,
+                child: ProductSelectorWidget(
+                  searchType: ProductSearchType.withStock,
+                  requireInventory: true,
+                  locationId: int.tryParse(_selectedSourceLocation!.id),
+                  searchHint:
+                      'Buscar productos en ${_selectedSourceLocation!.name}...',
+                  onProductSelected: _addProductToExtraction,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -539,7 +600,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Selected products summary with improved design
+          // Selected products summary
           if (_selectedProducts.isNotEmpty) ...[
             Container(
               width: double.infinity,
@@ -624,7 +685,9 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      '${product['nombreProducto']}',
+                                      product['denominacion'] ??
+                                          product['nombre_producto'] ??
+                                          'Sin nombre',
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
@@ -633,10 +696,9 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                         ),
                                       ),
                                     ),
-                                    if (product['nombreAlmacen'] != null &&
-                                        product['nombreZona'] != null)
+                                    if (product['zona_nombre'] != null)
                                       Text(
-                                        '${product['nombreAlmacen']} - ${product['nombreZona']}',
+                                        'Zona: ${product['zona_nombre']}',
                                         style: TextStyle(
                                           fontSize: 10,
                                           color: AppColors.warning.withOpacity(
@@ -645,7 +707,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                                         ),
                                       ),
                                     Text(
-                                      'Cant: ${product['cantidad']} • N/A',
+                                      'Cant: ${product['cantidad']}',
                                       style: TextStyle(
                                         fontSize: 10,
                                         color: AppColors.warning.withOpacity(
@@ -678,7 +740,6 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                     const SizedBox(height: 4),
                     GestureDetector(
                       onTap: () {
-                        // Mostrar diálogo con todos los productos
                         _showAllSelectedProducts();
                       },
                       child: Container(
@@ -712,7 +773,6 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                       ),
                     ),
                   ],
-                  // NUEVO: Agregar widget de conversiones después de la lista de productos
                   ConversionInfoWidget(
                     conversions: _selectedProducts,
                     showDetails: true,
@@ -721,111 +781,6 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
               ),
             ),
           ],
-
-          // Form fields
-          Row(
-            children: [
-              // Motivo dropdown
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Motivo de Extracción',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 4),
-                    DropdownButtonFormField<Map<String, dynamic>>(
-                      value: _selectedMotivo,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                      hint: const Text('Seleccionar motivo'),
-                      items:
-                          _motivoOptions.map((motivo) {
-                            return DropdownMenuItem<Map<String, dynamic>>(
-                              value: motivo,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                ),
-                                child: Text(
-                                  '${motivo['denominacion']}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedMotivo = value;
-                        });
-                      },
-                      validator: (value) {
-                        if (value == null) {
-                          return 'Requerido';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // Autorizado por field
-          TextFormField(
-            controller: _autorizadoPorController,
-            decoration: InputDecoration(
-              labelText: 'Autorizado por',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-            ),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Este campo es requerido';
-              }
-              return null;
-            },
-          ),
-
-          const SizedBox(height: 12),
-
-          // Observaciones field
-          TextFormField(
-            controller: _observacionesController,
-            decoration: InputDecoration(
-              labelText: 'Observaciones (opcional)',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-            ),
-            maxLines: 2,
-          ),
-
-          const SizedBox(height: 16),
 
           // Submit button
           SizedBox(
@@ -1001,223 +956,20 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    // Header compacto con zona seleccionada
-                    if (_selectedSourceLocation != null)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
-                          border: Border(
-                            bottom: BorderSide(color: AppColors.border),
-                          ),
-                        ),
-                        child: Row(
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.location_on,
-                              size: 16,
-                              color: AppColors.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Zona: $_selectedWarehouseName - ${_selectedSourceLocation!.name}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.primary,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  _selectedSourceLocation = null;
-                                  _selectedWarehouseName = null;
-                                });
-                              },
-                              icon: const Icon(Icons.change_circle, size: 16),
-                              label: const Text(
-                                'Cambiar',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                            ),
+                            _buildExtractionInfoSection(),
+                            const SizedBox(height: 24),
+                            _buildLocationSelectionSection(),
+                            const SizedBox(height: 24),
+                            _buildProductSelectionSection(),
                           ],
                         ),
                       ),
-
-                    // Selector de zona O lista de productos
-                    Expanded(
-                      child:
-                          _selectedSourceLocation == null
-                              ? Column(
-                                children: [
-                                  // Header para selección de zona
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.background,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: AppColors.grey.withOpacity(
-                                            0.1,
-                                          ),
-                                          spreadRadius: 1,
-                                          blurRadius: 3,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.location_on,
-                                          size: 20,
-                                          color: AppColors.grey.shade600,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Text(
-                                          'Seleccione la zona de origen',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.black87,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  // Árbol de zonas con expansión completa
-                                  Expanded(
-                                    child:
-                                        _isLoadingWarehouses
-                                            ? const Center(
-                                              child:
-                                                  CircularProgressIndicator(),
-                                            )
-                                            : SingleChildScrollView(
-                                              padding: const EdgeInsets.all(16),
-                                              child: _buildWarehouseTree(),
-                                            ),
-                                  ),
-                                ],
-                              )
-                              : Column(
-                                children: [
-                                  // Header mostrando zona seleccionada
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: AppColors.primary.withOpacity(
-                                          0.3,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.check_circle,
-                                          size: 20,
-                                          color: AppColors.primary,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Zona seleccionada: ${_selectedSourceLocation?.name ?? ""}',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.primary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 2,
-                                    child:
-                                        _selectedSourceLocation == null
-                                            ? Container(
-                                              padding: const EdgeInsets.all(16),
-                                              child: Column(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(
-                                                    Icons.info_outline,
-                                                    size: 48,
-                                                    color:
-                                                        AppColors.grey.shade600,
-                                                  ),
-                                                  const SizedBox(height: 12),
-                                                  Text(
-                                                    'Seleccione una zona de origen',
-                                                    style: TextStyle(
-                                                      fontSize: 16,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                      color:
-                                                          AppColors
-                                                              .grey
-                                                              .shade700,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 8),
-                                                  Text(
-                                                    'Debe seleccionar una zona para ver productos disponibles',
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(
-                                                      fontSize: 14,
-                                                      color:
-                                                          AppColors
-                                                              .grey
-                                                              .shade600,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            )
-                                            : ProductSelectorWidget(
-                                              onProductSelected:
-                                                  _addProductToExtraction,
-                                              searchType:
-                                                  ProductSearchType.withStock,
-                                              requireInventory: true,
-                                              locationId:
-                                                  _selectedSourceLocation !=
-                                                          null
-                                                      ? int.tryParse(
-                                                        _selectedSourceLocation!
-                                                            .id,
-                                                      )
-                                                      : null,
-                                              searchHint:
-                                                  _selectedSourceLocation !=
-                                                          null
-                                                      ? 'Buscar productos en ${_selectedSourceLocation!.name}...'
-                                                      : 'Buscar productos para extraer...',
-                                            ),
-                                  ),
-                                ],
-                              ),
                     ),
                   ],
                 ),
@@ -1229,15 +981,13 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
 
 class _ProductQuantityDialog extends StatefulWidget {
   final Map<String, dynamic> product; // Cambiar tipo
-  final int? sourceLayoutId;
-  final String? warehouseName;
-  final Function(Map<String, dynamic>) onAdd;
+  final WarehouseZone? sourceLocation;
+  final Function(Map<String, dynamic>) onProductAdded;
 
   const _ProductQuantityDialog({
     required this.product,
-    required this.sourceLayoutId,
-    required this.onAdd,
-    this.warehouseName,
+    required this.onProductAdded, // Cambiar nombre de onProductAdded
+    this.sourceLocation, // Cambiar de warehouseName
   });
 
   @override
@@ -1267,14 +1017,17 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   }
 
   Future<void> _loadLocationSpecificVariants() async {
-    if (widget.sourceLayoutId == null) return;
+    if (widget.sourceLocation == null) return;
+
+    final sourceLayoutId = int.tryParse(widget.sourceLocation!.id);
+    if (sourceLayoutId == null) return;
 
     setState(() => _isLoadingVariants = true);
 
     try {
       final variants = await InventoryService.getProductVariantsInLocation(
         idProducto: widget.product['id'] as int,
-        idLayout: widget.sourceLayoutId!,
+        idLayout: sourceLayoutId,
       );
 
       setState(() {
@@ -1317,7 +1070,10 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   }
 
   Future<void> _loadAvailablePresentations() async {
-    if (widget.sourceLayoutId == null) return;
+    if (widget.sourceLocation == null) return;
+
+    final sourceLayoutId = int.tryParse(widget.sourceLocation!.id);
+    if (sourceLayoutId == null) return;
 
     setState(() => _isLoadingPresentations = true);
 
@@ -1329,18 +1085,29 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       final presentations =
           await InventoryService.getProductPresentationsInZone(
             idProducto: widget.product['id'] as int,
-            idLayout: widget.sourceLayoutId!,
+            idLayout: sourceLayoutId,
           );
 
       setState(() {
         _availablePresentations = presentations;
-
-        // Seleccionar la primera presentación disponible
         if (presentations.isNotEmpty) {
           _selectedPresentation = presentations.first;
           print('🔍 DEBUG: Presentación seleccionada: $_selectedPresentation');
+        } else {
+          // Si no hay presentaciones, usar fallback con presentación base
+          print('⚠️ No hay presentaciones disponibles, usando fallback');
+          _availablePresentations = [
+            {
+              'id':
+                  widget.product['id_presentacion'] ??
+                  1, // Fallback a ID 1 (Unidad)
+              'denominacion': widget.product['presentacion'] ?? 'Unidad',
+              'cantidad': 1.0,
+              'stock_disponible': _maxAvailableStock,
+            },
+          ];
+          _selectedPresentation = _availablePresentations.first;
         }
-
         _isLoadingPresentations = false;
       });
 
@@ -1899,7 +1666,12 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                         widget.product['id_variante'],
                                     'id_opcion_variante':
                                         widget.product['id_opcion_variante'],
-                                    'id_ubicacion': widget.sourceLayoutId,
+                                    'id_ubicacion':
+                                        widget.sourceLocation != null
+                                            ? int.tryParse(
+                                              widget.sourceLocation!.id,
+                                            )
+                                            : null,
                                     'precio_unitario':
                                         (widget.product['precio_venta'] as num?)
                                             ?.toDouble() ??
@@ -1907,7 +1679,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                     'sku_producto': widget.product['sku'] ?? '',
                                     'sku_ubicacion':
                                         widget.product['ubicacion'] ?? '',
-                                    'nombreProducto':
+                                    'denominacion':
                                         widget.product['denominacion'] ??
                                         widget.product['nombre_producto'] ??
                                         '',
@@ -1915,10 +1687,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                         widget.product['variante'] ?? '',
                                     'opcionVariante':
                                         widget.product['opcion_variante'] ?? '',
-                                    'nombreZona':
-                                        widget.product['ubicacion'] ?? '',
-                                    'nombreAlmacen':
-                                        widget.warehouseName ?? 'Almacén',
+                                    'zona_nombre':
+                                        widget.sourceLocation?.name ??
+                                        'Sin zona',
                                   };
 
                                   // Usar PresentationConverter para procesar el producto
@@ -1936,7 +1707,8 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                                     '✅ Producto procesado para extracción: $processedProductData',
                                   );
 
-                                  widget.onAdd(processedProductData);
+                                  widget.onProductAdded(processedProductData);
+                                  Navigator.of(context).pop();
                                 } catch (e) {
                                   print(
                                     '❌ Error procesando producto para extracción: $e',

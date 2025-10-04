@@ -75,7 +75,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
 
       _loadUsdRate();
 
-      final hasValidStore = await _dashboardService.validateSupervisorStore();
+      final hasValidStore = await DashboardService.validateSupervisorStore();
 
       if (!hasValidStore) {
         print('❌ Supervisor no tiene id_tienda válido');
@@ -84,7 +84,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       }
 
       print('🔄 Loading dashboard data for period: $_selectedTimeFilter');
-      final realData = await _dashboardService.getStoreAnalysis(
+      final realData = await DashboardService.getStoreAnalysis(
         periodo: _selectedTimeFilter,
       );
 

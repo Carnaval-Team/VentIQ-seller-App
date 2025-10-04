@@ -404,6 +404,45 @@ class InventoryService {
     }
   }
 
+  /// Obtiene el último precio de compra de un producto
+  /// Obtiene el último precio de compra de un producto
+  static Future<double> _getLastPurchasePrice(int idProducto) async {
+    try {
+      final response = await _supabase
+          .from('app_dat_recepcion_productos')
+          .select('''
+          precio_unitario,
+          created_at,
+          app_dat_operaciones!inner(
+            id,
+            app_dat_operacion_recepcion!inner(motivo)
+          )
+        ''')
+          .eq('id_producto', idProducto)
+          .eq(
+            'app_dat_operaciones.app_dat_operacion_recepcion.motivo',
+            1,
+          ) // Solo compras reales (motivo 1)
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      if (response.isNotEmpty) {
+        final precioUnitario = response.first['precio_unitario'];
+        if (precioUnitario != null) {
+          return (precioUnitario as num).toDouble();
+        }
+      }
+
+      print(
+        '⚠️ No se encontró precio de compra previo para producto $idProducto, usando 0',
+      );
+      return 0.0;
+    } catch (e) {
+      print('❌ Error obteniendo último precio de compra: $e');
+      return 0.0;
+    }
+  }
+
   /// Unified transfer function between layouts
   /// Creates extraction and reception operations to handle inventory movements
   static Future<Map<String, dynamic>> transferBetweenLayouts({
@@ -473,24 +512,31 @@ class InventoryService {
       // Step 2: Create reception operation (ID 8 - entrada por transferencia)
       print('📋 Paso 2: Creando operación de recepción (Tipo 8)...');
 
-      final receptionProducts =
-          productos
-              .map(
-                (p) => {
-                  'id_producto': p['id_producto'],
-                  'id_variante': p['id_variante'],
-                  'id_opcion_variante': p['id_opcion_variante'],
-                  'id_presentacion':
-                      p['id_presentacion'], // Add missing presentation ID
-                  'cantidad': p['cantidad'],
-                  'precio_unitario': p['precio_unitario'] ?? 0.0,
-                  'id_ubicacion':
-                      idLayoutDestino, // Fix: use id_ubicacion instead of id_layout
-                  'id_motivo_operacion':
-                      2, // ID correcto para entrada por transferencia
-                },
-              )
-              .toList();
+      final receptionProducts = <Map<String, dynamic>>[];
+
+      for (final p in productos) {
+        // Obtener último precio de compra para este producto
+        final idProducto = p['id_producto'] as int;
+        final lastPurchasePrice = await _getLastPurchasePrice(idProducto);
+
+        print(
+          '💰 Producto $idProducto - Último precio de compra: $lastPurchasePrice',
+        );
+
+        receptionProducts.add({
+          'id_producto': p['id_producto'],
+          'id_variante': p['id_variante'],
+          'id_opcion_variante': p['id_opcion_variante'],
+          'id_presentacion': p['id_presentacion'],
+          'cantidad': p['cantidad'],
+          'precio_unitario': lastPurchasePrice, // Usar último precio de compra
+          'id_ubicacion': idLayoutDestino,
+          'id_motivo_operacion':
+              2, // ID correcto para entrada por transferencia
+        });
+      }
+
+      print('✅ Productos preparados para recepción con precios de compra');
 
       final processedReceptionProducts = await processProductsForReception(
         receptionProducts,
@@ -775,6 +821,7 @@ class InventoryService {
     required List<Map<String, dynamic>> productos,
     required String recibidoPor,
     required String uuid,
+    int? idProveedor, // ← AGREGAR ESTE PARÁMETRO
   }) async {
     try {
       print('🔍 Insertando recepción de inventario...');
@@ -801,6 +848,14 @@ class InventoryService {
       );
 
       print('📦 Respuesta RPC: $response');
+
+      // Si hay un proveedor seleccionado, registrar la relación
+      if (idProveedor != null && response['id_operacion'] != null) {
+        await _registrarProveedorRecepcion(
+          idOperacion: response['id_operacion'],
+          idProveedor: idProveedor,
+        );
+      }
 
       if (response == null) {
         throw Exception('Respuesta nula de la función RPC');
@@ -1578,6 +1633,28 @@ class InventoryService {
     }
   }
 
+  /// Registra el proveedor asociado a una recepción de inventario
+  static Future<void> _registrarProveedorRecepcion({
+    required int idOperacion,
+    required int idProveedor,
+  }) async {
+    try {
+      print('🏢 Registrando proveedor para recepción...');
+      print('📋 ID Operación: $idOperacion, ID Proveedor: $idProveedor');
+
+      // Actualizar todos los productos de la recepción con el ID del proveedor
+      await _supabase
+          .from('app_dat_recepcion_productos')
+          .update({'id_proveedor': idProveedor})
+          .eq('id_operacion', idOperacion);
+
+      print('✅ Proveedor registrado exitosamente en la recepción');
+    } catch (e) {
+      print('❌ Error al registrar proveedor en recepción: $e');
+      // No lanzamos excepción para no afectar la recepción principal
+    }
+  }
+
   /// Descompone productos elaborados en sus ingredientes base
   /// Retorna una lista de productos (ingredientes) con sus cantidades consolidadas
   static Future<List<Map<String, dynamic>>> decomposeElaboratedProducts(
@@ -1668,8 +1745,7 @@ class InventoryService {
 
   /// Get inventory summary by user using fn_inventario_resumen_por_usuario RPC
   /// Returns aggregated inventory data with product names, variants, and location/presentation counts
-  static Future<List<InventorySummaryByUser>>
-  getInventorySummaryByUser(
+  static Future<List<InventorySummaryByUser>> getInventorySummaryByUser(
     int? idAlmacen,
     String? busqueda,
   ) async {
@@ -1695,7 +1771,7 @@ class InventoryService {
           'p_busqueda': busqueda,
           'p_mostrar_sin_stock': true,
           'p_limite': 9999,
-          'p_pagina':   1,
+          'p_pagina': 1,
         },
       );
 
@@ -1726,8 +1802,6 @@ class InventoryService {
         if (item is Map<String, dynamic>) {
           /*    print('🔍 Item keys: ${item.keys.toList()}');
           print('🔍 Item values: ${item.values.toList()}');*/
-
-         
 
           try {
             final summary = InventorySummaryByUser.fromJson(item);
@@ -2124,20 +2198,24 @@ class InventoryService {
       print('   - uuid: $uuid');
 
       // Insert record in app_dat_estado_operacion with estado = 3 (cancelado)
-      final response = await _supabase
-          .from('app_dat_estado_operacion')
-          .insert({
-            'id_operacion': idOperacion,
-            'estado': 3, // 3 = Cancelado
-            'uuid': uuid,
-            'comentario': comentario.isEmpty ? 'Operación cancelada desde la app' : comentario,
-          })
-          .select()
-          .single();
+      final response =
+          await _supabase
+              .from('app_dat_estado_operacion')
+              .insert({
+                'id_operacion': idOperacion,
+                'estado': 3, // 3 = Cancelado
+                'uuid': uuid,
+                'comentario':
+                    comentario.isEmpty
+                        ? 'Operación cancelada desde la app'
+                        : comentario,
+              })
+              .select()
+              .single();
 
       print('✅ Operación $idOperacion cancelada exitosamente');
       print('📦 Respuesta insert: $response');
-      
+
       return {
         'status': 'success',
         'mensaje': 'Operación cancelada exitosamente',
