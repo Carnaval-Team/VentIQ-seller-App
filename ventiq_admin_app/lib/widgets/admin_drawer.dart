@@ -223,12 +223,12 @@ class _AdminDrawerState extends State<AdminDrawer> {
 
                 _buildDrawerItem(
                   context,
-                  icon: Icons.people,
-                  title: 'Clientes',
-                  subtitle: 'CRM y fidelización',
+                  icon: Icons.business_center,
+                  title: 'CRM Empresarial',
+                  subtitle: 'Clientes y proveedores',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, '/customers');
+                    Navigator.pushNamed(context, '/crm-dashboard');
                   },
                 ),
                 const Divider(height: 1),

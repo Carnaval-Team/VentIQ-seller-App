@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'config/app_colors.dart';
 import 'models/product.dart';
+import 'models/supplier.dart';
 import 'screens/splash_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/dashboard_web_screen.dart';
@@ -33,6 +34,11 @@ import 'screens/settings_screen.dart';
 import 'screens/warehouse_screen.dart';
 import 'screens/add_warehouse_screen.dart';
 import 'services/auth_service.dart';
+// Imports para CRM
+import 'screens/crm_dashboard_screen.dart';
+import 'screens/suppliers/suppliers_list_screen.dart';
+import 'screens/suppliers/supplier_detail_screen.dart';
+import 'screens/suppliers/add_edit_supplier_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -117,6 +123,7 @@ class MyApp extends StatelessWidget {
         '/financial-expenses': (context) => const FinancialExpensesScreen(),
         '/restaurant-costs': (context) => const ProductionCostsScreen(),
         '/customers': (context) => const CustomersScreen(),
+        '/crm-dashboard': (context) => const CRMDashboardScreen(),
         '/workers': (context) => const WorkersScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/warehouse': (context) => const WarehouseScreen(),

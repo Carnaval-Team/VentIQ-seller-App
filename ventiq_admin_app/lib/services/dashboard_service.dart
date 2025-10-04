@@ -1,6 +1,7 @@
 import 'user_preferences_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/analytics/inventory_metrics.dart';
+import '../models/crm/crm_metrics.dart';
 import 'analytics_service.dart';
 import 'supplier_service.dart';
 import 'auth_service.dart';
@@ -349,6 +350,63 @@ class DashboardService {
       print('❌ Error en RPC proveedores: $e');
       return await _getSupplierMetrics();
     }
+  }
+
+  /// Obtener métricas CRM integradas (clientes + proveedores)
+  static Future<CRMMetrics> getCRMMetrics({int? storeId}) async {
+    try {
+      // Obtener métricas de proveedores existentes
+      final supplierMetrics = await _getSupplierMetrics();
+
+      // Datos de clientes (actualmente mock, se puede integrar con CustomerService)
+      final totalCustomers = 150;
+      final activeCustomers = 120;
+      final vipCustomers = 25;
+
+      // Calcular score de relaciones
+      final relationshipScore = _calculateRelationshipScore(
+        supplierMetrics,
+        totalCustomers,
+        activeCustomers,
+      );
+
+      return CRMMetrics(
+        // Datos de clientes
+        totalCustomers: totalCustomers,
+        activeCustomers: activeCustomers,
+        vipCustomers: vipCustomers,
+        averageCustomerValue: 2500.0,
+        loyaltyPoints: 1250,
+
+        // Datos de proveedores (del método existente)
+        totalSuppliers: supplierMetrics['total_proveedores'] ?? 0,
+        activeSuppliers: supplierMetrics['proveedores_activos'] ?? 0,
+        averageLeadTime: supplierMetrics['lead_time_promedio'] ?? 0.0,
+        totalPurchaseValue: supplierMetrics['valor_compras_mes'] ?? 0.0,
+        uniqueProducts: 0, // Se puede calcular desde inventario
+        // Métricas integradas
+        relationshipScore: relationshipScore,
+        totalContacts:0,
+            //totalCustomers + (supplierMetrics['total_proveedores'] ?? 0),
+        recentInteractions: 45,
+      );
+    } catch (e) {
+      print('❌ Error obteniendo métricas CRM: $e');
+      return const CRMMetrics(); // Retorna métricas vacías como fallback
+    }
+  }
+
+  /// Calcular score de relaciones comerciales
+  static double _calculateRelationshipScore(
+    Map<String, dynamic> supplierMetrics,
+    int totalCustomers,
+    int activeCustomers,
+  ) {
+    final supplierScore = supplierMetrics['performance_score'] ?? 0.0;
+    final customerScore =
+        totalCustomers > 0 ? (activeCustomers / totalCustomers) * 100 : 0.0;
+
+    return ((supplierScore + customerScore) / 2).clamp(0.0, 100.0);
   }
 
   /// Obtener top proveedores por período
