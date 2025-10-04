@@ -130,7 +130,7 @@ class ReauthenticationService {
         await _userPreferencesService.saveOfflineUser(
           email: email,
           password: password,
-          userId: response.user!.id,
+          userId: response.user!.id
         );
 
         print('✅ Reautenticación completa exitosa');
@@ -296,3 +296,4 @@ class AuthenticationStatus {
         ')';
   }
 }
+
