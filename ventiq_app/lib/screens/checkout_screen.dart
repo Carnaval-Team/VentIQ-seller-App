@@ -701,8 +701,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       Map<String, Map<String, dynamic>> paymentBreakdown = {};
       
       for (final item in widget.order.items) {
-        final itemTotal = item.precioUnitario * item.cantidad;
+        // ✅ CORREGIDO: Usar item.subtotal que ya tiene el precio correcto según método de pago
+        final itemTotal = item.subtotal;
         subtotal += itemTotal;
+        
+        print('🔌 OFFLINE - Producto: ${item.producto.denominacion}');
+        print('  - Precio unitario base: \$${item.precioUnitario}');
+        print('  - Subtotal con método de pago: \$${item.subtotal}');
+        print('  - Método de pago: ${item.paymentMethod?.denominacion ?? "Sin método"}');
         
         // Agrupar por método de pago
         final paymentMethodId = item.paymentMethod?.id.toString() ?? 'sin_metodo';
@@ -742,12 +748,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'promo_code': _promoApplied ? _promoCodeController.text.trim() : null,
         'promo_discount': _promoDiscount,
         'items': widget.order.items.map((item) {
+          // ✅ CORREGIDO: Usar el precio unitario correcto calculado desde el subtotal
+          final precioUnitarioCorrect = item.cantidad > 0 ? (item.subtotal / item.cantidad) : item.precioUnitario;
+          
+          print('💾 GUARDANDO OFFLINE - Producto: ${item.producto.denominacion}');
+          print('  - Precio unitario base: \$${item.precioUnitario}');
+          print('  - Subtotal con método de pago: \$${item.subtotal}');
+          print('  - Precio unitario correcto guardado: \$${precioUnitarioCorrect}');
+          print('  - Método de pago: ${item.paymentMethod?.denominacion ?? "Sin método"}');
+          
           return {
             'id_producto': item.producto.id,
             'denominacion': item.producto.denominacion,
             'cantidad': item.cantidad,
-            'precio_unitario': item.precioUnitario,
-            'subtotal': item.precioUnitario * item.cantidad,
+            'precio_unitario': precioUnitarioCorrect, // ✅ Precio correcto según método de pago
+            'subtotal': item.subtotal, // ✅ Subtotal con precio correcto
             'id_medio_pago': item.paymentMethod?.id,
             'metodo_pago': item.paymentMethod?.denominacion,
             'inventory_metadata': item.inventoryData,
@@ -779,6 +794,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       
       print('✅ Orden offline creada con datos del cliente: $offlineOrderId');
       print('👤 Cliente: $buyerName${buyerPhone.isNotEmpty ? " - $buyerPhone" : ""}');
+      print('💰 Resumen de orden offline:');
+      print('  - Subtotal: \$${subtotal.toStringAsFixed(2)}');
+      print('  - Descuentos: \$${totalDescuentos.toStringAsFixed(2)}');
+      print('  - Total final: \$${total.toStringAsFixed(2)}');
+      print('💳 Desglose de pagos offline:');
+      paymentBreakdown.forEach((key, value) {
+        print('  - ${value['denominacion']}: \$${value['monto'].toStringAsFixed(2)}');
+      });
       print('📦 Inventario actualizado en cache');
       
       // Navegar a órdenes

@@ -46,6 +46,28 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
   Future<void> _checkTurnoAbierto() async {
     try {
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline activado - Cargando turno desde cache...');
+        
+        // Obtener turno offline
+        final turnoOffline = await _userPrefs.getOfflineTurno();
+        
+        setState(() {
+          _isLoadingTurno = false;
+          if (turnoOffline != null) {
+            _turnoAbierto = turnoOffline;
+            print('✅ Turno offline cargado: ID ${turnoOffline['id']}');
+          } else {
+            _errorMessage = 'No hay turno abierto offline para realizar egreso';
+          }
+        });
+        return;
+      }
+
+      print('🌐 Modo online - Verificando turno desde servidor...');
       final turno = await TurnoService.getTurnoAbierto();
 
       setState(() {
@@ -68,6 +90,35 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
   Future<void> _loadPaymentMethods() async {
     try {
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline activado - Cargando métodos de pago desde cache...');
+        
+        // Obtener datos offline
+        final offlineData = await _userPrefs.getOfflineData();
+        final paymentMethodsData = offlineData?['payment_methods'] as List<dynamic>? ?? [];
+        
+        // Convertir a objetos PaymentMethod
+        final paymentMethods = paymentMethodsData.map((data) => 
+          PaymentMethod.fromJson(data as Map<String, dynamic>)
+        ).toList();
+
+        setState(() {
+          _paymentMethods = paymentMethods;
+          _isLoadingPaymentMethods = false;
+          // Set default payment method (first one, usually "Efectivo")
+          if (paymentMethods.isNotEmpty) {
+            _selectedPaymentMethod = paymentMethods.first;
+          }
+        });
+        
+        print('✅ Métodos de pago cargados desde cache offline: ${paymentMethods.length}');
+        return;
+      }
+
+      print('🌐 Modo online - Cargando métodos de pago desde servidor...');
       final paymentMethods =
           await PaymentMethodService.getActivePaymentMethods();
 
@@ -554,22 +605,37 @@ class _EgresoScreenState extends State<EgresoScreen> {
       final nombreRecibe = _nombreRecibeController.text.trim();
       final idTurno = _turnoAbierto!['id'] as int;
 
-      // Llamar a la función RPC
-      final result = await TurnoService.registrarEgresoParcial(
-        idTurno: idTurno,
-        montoEntrega: monto,
-        motivoEntrega: motivo,
-        nombreAutoriza: nombreAutoriza,
-        nombreRecibe: nombreRecibe,
-        idMedioPago: _selectedPaymentMethod?.id,
-      );
-
-      if (result['success'] == true) {
-        // Mostrar confirmación de éxito
-        _showSuccessDialog(result);
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline - Creando egreso offline...');
+        await _createOfflineEgreso(
+          idTurno: idTurno,
+          monto: monto,
+          motivo: motivo,
+          nombreAutoriza: nombreAutoriza,
+          nombreRecibe: nombreRecibe,
+        );
       } else {
-        // Mostrar error del servidor
-        _showErrorMessage(result['message'] ?? 'Error desconocido');
+        print('🌐 Modo online - Registrando egreso en servidor...');
+        // Llamar a la función RPC
+        final result = await TurnoService.registrarEgresoParcial(
+          idTurno: idTurno,
+          montoEntrega: monto,
+          motivoEntrega: motivo,
+          nombreAutoriza: nombreAutoriza,
+          nombreRecibe: nombreRecibe,
+          idMedioPago: _selectedPaymentMethod?.id,
+        );
+
+        if (result['success'] == true) {
+          // Mostrar confirmación de éxito
+          _showSuccessDialog(result);
+        } else {
+          // Mostrar error del servidor
+          _showErrorMessage(result['message'] ?? 'Error desconocido');
+        }
       }
     } catch (e) {
       _showErrorMessage('Error al registrar el egreso: $e');
@@ -626,6 +692,153 @@ class _EgresoScreenState extends State<EgresoScreen> {
               ),
             ],
           ),
+    );
+  }
+
+  /// Crear egreso offline
+  Future<void> _createOfflineEgreso({
+    required int idTurno,
+    required double monto,
+    required String motivo,
+    required String nombreAutoriza,
+    required String nombreRecibe,
+  }) async {
+    try {
+      // Crear estructura de egreso offline
+      final egresoData = {
+        'id_turno': idTurno,
+        'monto_entrega': monto,
+        'motivo_entrega': motivo,
+        'nombre_autoriza': nombreAutoriza,
+        'nombre_recibe': nombreRecibe,
+        'id_medio_pago': _selectedPaymentMethod?.id,
+        'fecha_entrega': DateTime.now().toIso8601String(),
+        'es_digital': _selectedPaymentMethod?.esDigital ?? false,
+        'medio_pago': _selectedPaymentMethod?.denominacion ?? 'Efectivo',
+      };
+      
+      // Guardar egreso offline
+      await _userPrefs.saveOfflineEgreso(egresoData);
+      
+      // Guardar como operación pendiente para sincronización
+      await _userPrefs.savePendingOperation({
+        'type': 'egreso',
+        'data': egresoData,
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Egreso creado offline. Se sincronizará cuando tengas conexión.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        
+        // Mostrar diálogo de éxito offline
+        _showOfflineSuccessDialog(monto);
+      }
+      
+      print('✅ Egreso offline creado exitosamente');
+      
+    } catch (e, stackTrace) {
+      print('❌ Error creando egreso offline: $e');
+      print('Stack trace: $stackTrace');
+      
+      if (mounted) {
+        _showErrorMessage('Error creando egreso offline: $e');
+      }
+    }
+  }
+
+  void _showOfflineSuccessDialog(double monto) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.cloud_off, color: Colors.orange[700], size: 28),
+            const SizedBox(width: 8),
+            const Text(
+              'Egreso Offline Creado',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'El egreso se ha guardado localmente y se sincronizará automáticamente cuando tengas conexión a internet.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Column(
+                children: [
+                  _buildDialogInfoRow('Monto:', '\$${monto.toStringAsFixed(2)}'),
+                  _buildDialogInfoRow('Motivo:', _motivoController.text),
+                  _buildDialogInfoRow('Autoriza:', _nombreAutorizaController.text),
+                  _buildDialogInfoRow('Recibe:', _nombreRecibeController.text),
+                  _buildDialogInfoRow('Método de pago:', _selectedPaymentMethod?.denominacion ?? 'N/A'),
+                  _buildDialogInfoRow('Estado:', 'Pendiente de sincronización'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context); // Cerrar diálogo
+              Navigator.pop(context); // Volver a pantalla anterior
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[700],
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDialogInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[700],
+              fontWeight: FontWeight.normal,
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+              textAlign: TextAlign.end,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

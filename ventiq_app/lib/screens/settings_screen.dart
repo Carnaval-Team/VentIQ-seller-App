@@ -1476,6 +1476,7 @@ class _SyncDialogState extends State<_SyncDialog> {
     {'name': 'Sincronizando órdenes pendientes', 'key': 'pending_orders'},
     {'name': 'Guardando credenciales', 'key': 'credentials'},
     {'name': 'Sincronizando turno abierto', 'key': 'turno'},
+    {'name': 'Sincronizando egresos', 'key': 'egresos'},
     {'name': 'Sincronizando promociones globales', 'key': 'promotions'},
     {'name': 'Sincronizando métodos de pago', 'key': 'payment_methods'},
     {'name': 'Descargando categorías', 'key': 'categories'},
@@ -1523,6 +1524,9 @@ class _SyncDialogState extends State<_SyncDialog> {
             await _syncTurnoResumen();
             // Sincronizar resumen de cierre diario para CierreScreen y VentaTotalScreen
             await _syncResumenCierre();
+            break;
+          case 'egresos':
+            await _syncEgresos();
             break;
           case 'promotions':
             offlineData['promotions'] = await _syncPromotions();
@@ -1677,6 +1681,42 @@ class _SyncDialogState extends State<_SyncDialog> {
     } catch (e) {
       print('❌ Error sincronizando turno: $e');
       return null;
+    }
+  }
+
+  Future<void> _syncEgresos() async {
+    try {
+      print('🔄 Sincronizando egresos...');
+      
+      // Obtener egresos del turno actual usando TurnoService
+      final egresos = await TurnoService.getEgresosEnriquecidos();
+      
+      if (egresos.isNotEmpty) {
+        // Convertir egresos a formato Map para cache
+        final egresosData = egresos.map((egreso) => {
+          'id_egreso': egreso.idEgreso,
+          'monto_entrega': egreso.montoEntrega,
+          'motivo_entrega': egreso.motivoEntrega,
+          'nombre_autoriza': egreso.nombreAutoriza,
+          'nombre_recibe': egreso.nombreRecibe,
+          'es_digital': egreso.esDigital,
+          'fecha_entrega': egreso.fechaEntrega.toIso8601String(),
+          'id_medio_pago': egreso.idMedioPago,
+          'turno_estado': egreso.turnoEstado,
+          'medio_pago': egreso.medioPago,
+        }).toList();
+        
+        // Guardar en cache para uso offline
+        await widget.userPreferencesService.saveEgresosCache(egresosData);
+        print('✅ Egresos sincronizados: ${egresos.length} egresos guardados en cache');
+      } else {
+        print('ℹ️ No hay egresos para sincronizar');
+        // Limpiar cache si no hay egresos
+        await widget.userPreferencesService.clearEgresosCache();
+      }
+    } catch (e) {
+      print('❌ Error sincronizando egresos: $e');
+      // En caso de error, mantener cache existente
     }
   }
 
@@ -2027,6 +2067,9 @@ class _SyncDialogState extends State<_SyncDialog> {
           case 'cierre_turno':
             await _processCierreTurno(operation['data']);
             break;
+          case 'egreso':
+            await _processEgresoOffline(operation['data']);
+            break;
           case 'order_status_change':
             await _processOrderStatusChange(operation);
             break;
@@ -2100,11 +2143,30 @@ class _SyncDialogState extends State<_SyncDialog> {
   /// Procesar cierre de turno pendiente
   Future<void> _processCierreTurno(Map<String, dynamic> cierreData) async {
     try {
-      // TODO: Implementar método de cierre de turno en TurnoService
-      // Por ahora simulamos el éxito
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      print('✅ Cierre de turno sincronizado (simulado)');
+      print('🔄 Sincronizando cierre de turno...');
+      print('📊 Datos del cierre: $cierreData');
+      
+      // Extraer datos del cierre offline
+      final efectivoReal = (cierreData['efectivo_final'] ?? 0.0).toDouble();
+      final observaciones = cierreData['observaciones'] as String?;
+      final productos = cierreData['productos'] as List<Map<String, dynamic>>? ?? [];
+      
+      print('💰 Efectivo real: $efectivoReal');
+      print('📝 Observaciones: $observaciones');
+      print('📦 Productos: ${productos.length}');
+      
+      // Llamar al método real de TurnoService para cerrar turno
+      final success = await TurnoService.cerrarTurno(
+        efectivoReal: efectivoReal,
+        productos: productos,
+        observaciones: observaciones,
+      );
+      
+      if (success) {
+        print('✅ Cierre de turno sincronizado exitosamente');
+      } else {
+        throw Exception('Error en el servicio de cierre de turno');
+      }
     } catch (e) {
       print('❌ Error sincronizando cierre: $e');
       throw e;
@@ -2121,6 +2183,47 @@ class _SyncDialogState extends State<_SyncDialog> {
       print('✅ Estado de orden actualizado: $orderId -> $newStatus');
     } catch (e) {
       print('❌ Error actualizando estado de orden: $e');
+      throw e;
+    }
+  }
+
+  /// Procesar egreso offline
+  Future<void> _processEgresoOffline(Map<String, dynamic> egresoData) async {
+    try {
+      print('🔄 Sincronizando egreso offline...');
+      print('📊 Datos del egreso: $egresoData');
+      
+      // Extraer datos del egreso offline
+      final idTurno = egresoData['id_turno'] as int;
+      final montoEntrega = (egresoData['monto_entrega'] ?? 0.0).toDouble();
+      final motivoEntrega = egresoData['motivo_entrega'] as String;
+      final nombreAutoriza = egresoData['nombre_autoriza'] as String;
+      final nombreRecibe = egresoData['nombre_recibe'] as String;
+      final idMedioPago = egresoData['id_medio_pago'] as int?;
+      
+      print('💰 Monto: $montoEntrega');
+      print('📝 Motivo: $motivoEntrega');
+      print('👤 Autoriza: $nombreAutoriza');
+      print('👤 Recibe: $nombreRecibe');
+      print('💳 Medio de pago ID: $idMedioPago');
+      
+      // Llamar al método real de TurnoService para registrar egreso
+      final result = await TurnoService.registrarEgresoParcial(
+        idTurno: idTurno,
+        montoEntrega: montoEntrega,
+        motivoEntrega: motivoEntrega,
+        nombreAutoriza: nombreAutoriza,
+        nombreRecibe: nombreRecibe,
+        idMedioPago: idMedioPago,
+      );
+      
+      if (result['success'] == true) {
+        print('✅ Egreso offline sincronizado exitosamente: ${result['egreso_id']}');
+      } else {
+        throw Exception('Error en el servicio de egreso: ${result['message']}');
+      }
+    } catch (e) {
+      print('❌ Error sincronizando egreso offline: $e');
       throw e;
     }
   }
@@ -2711,10 +2814,39 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
     for (var operation in operations) {
       if (operation['type'] == 'apertura_turno') {
         print('🔄 Creando turno desde datos offline...');
-        // Aquí iría la lógica para crear el turno usando TurnoService
-        // Por ahora simulamos el éxito
-        await Future.delayed(const Duration(milliseconds: 500));
-        print('✅ Turno creado desde datos offline');
+        
+        final aperturaData = operation['data'] as Map<String, dynamic>;
+        print('📊 Datos de apertura: $aperturaData');
+        
+        // Extraer datos de la apertura offline
+        final efectivoInicial = (aperturaData['efectivo_inicial'] ?? 0.0).toDouble();
+        final idTpv = aperturaData['id_tpv'] as int;
+        final idVendedor = aperturaData['id_vendedor'] as int;
+        final usuario = aperturaData['usuario'] as String;
+        final manejaInventario = aperturaData['maneja_inventario'] as bool? ?? false;
+        final productos = aperturaData['productos'] as List<Map<String, dynamic>>? ?? [];
+        
+        print('💰 Efectivo inicial: $efectivoInicial');
+        print('🏪 TPV ID: $idTpv');
+        print('👤 Vendedor ID: $idVendedor');
+        print('📦 Maneja inventario: $manejaInventario');
+        print('📋 Productos: ${productos.length}');
+        
+        // Llamar al método real de TurnoService para registrar apertura
+        final result = await TurnoService.registrarAperturaTurno(
+          efectivoInicial: efectivoInicial,
+          idTpv: idTpv,
+          idVendedor: idVendedor,
+          usuario: usuario,
+          manejaInventario: manejaInventario,
+          productos: productos.isEmpty ? null : productos,
+        );
+        
+        if (result['success'] == true) {
+          print('✅ Turno creado desde datos offline: ${result['message']}');
+        } else {
+          throw Exception('Error creando turno: ${result['message']}');
+        }
         break;
       }
     }

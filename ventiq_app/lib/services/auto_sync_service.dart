@@ -203,7 +203,28 @@ class AutoSyncService {
         print('  ❌ Error sincronizando turno: $e');
       }
 
-      // 7. Sincronizar ventas offline pendientes (NUEVO)
+      // 7. Sincronizar egresos
+      try {
+        await _syncEgresos();
+        syncedItems.add('egresos');
+        print('  ✅ Egresos sincronizados');
+      } catch (e) {
+        print('  ❌ Error sincronizando egresos: $e');
+      }
+
+      // 8. Sincronizar egresos offline pendientes
+      try {
+        final syncedEgresos = await _syncOfflineEgresos();
+        if (syncedEgresos > 0) {
+          syncedData['offline_egresos'] = syncedEgresos;
+          syncedItems.add('egresos offline ($syncedEgresos)');
+          print('  ✅ $syncedEgresos egresos offline sincronizados');
+        }
+      } catch (e) {
+        print('  ❌ Error sincronizando egresos offline: $e');
+      }
+
+      // 9. Sincronizar ventas offline pendientes
       try {
         final syncedSales = await _syncOfflineSales();
         if (syncedSales > 0) {
@@ -215,7 +236,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando ventas offline: $e');
       }
 
-      // 8. Sincronizar órdenes (solo cada 2 sincronizaciones)
+      // 10. Sincronizar órdenes (solo cada 2 sincronizaciones)
       if (_syncCount % 2 == 0) {
         try {
           syncedData['orders'] = await _syncOrders();
@@ -455,6 +476,96 @@ class AutoSyncService {
     }
   }
 
+  /// Sincronizar egresos del turno actual
+  Future<void> _syncEgresos() async {
+    try {
+      // Obtener egresos del turno actual usando TurnoService
+      final egresos = await TurnoService.getEgresosEnriquecidos();
+      
+      if (egresos.isNotEmpty) {
+        // Convertir egresos a formato Map para cache
+        final egresosData = egresos.map((egreso) => {
+          'id_egreso': egreso.idEgreso,
+          'monto_entrega': egreso.montoEntrega,
+          'motivo_entrega': egreso.motivoEntrega,
+          'nombre_autoriza': egreso.nombreAutoriza,
+          'nombre_recibe': egreso.nombreRecibe,
+          'es_digital': egreso.esDigital,
+          'fecha_entrega': egreso.fechaEntrega.toIso8601String(),
+          'id_medio_pago': egreso.idMedioPago,
+          'turno_estado': egreso.turnoEstado,
+          'medio_pago': egreso.medioPago,
+        }).toList();
+        
+        // Guardar en cache para uso offline
+        await _userPreferencesService.saveEgresosCache(egresosData);
+        print('  📊 ${egresos.length} egresos sincronizados automáticamente');
+      } else {
+        // Limpiar cache si no hay egresos
+        await _userPreferencesService.clearEgresosCache();
+        print('  📊 No hay egresos para sincronizar');
+      }
+    } catch (e) {
+      print('  ❌ Error en sincronización automática de egresos: $e');
+    }
+  }
+
+  /// Sincronizar egresos offline pendientes
+  Future<int> _syncOfflineEgresos() async {
+    final egresosOffline = await _userPreferencesService.getEgresosOffline();
+    
+    if (egresosOffline.isEmpty) {
+      print('  📝 No hay egresos offline pendientes');
+      return 0;
+    }
+
+    print('  🔄 Sincronizando ${egresosOffline.length} egresos offline...');
+    int syncedCount = 0;
+
+    for (var egresoData in egresosOffline) {
+      try {
+        print('    - Procesando egreso offline: ${egresoData['offline_id']}');
+
+        // Extraer datos del egreso offline
+        final idTurno = egresoData['id_turno'] as int;
+        final montoEntrega = (egresoData['monto_entrega'] ?? 0.0).toDouble();
+        final motivoEntrega = egresoData['motivo_entrega'] as String;
+        final nombreAutoriza = egresoData['nombre_autoriza'] as String;
+        final nombreRecibe = egresoData['nombre_recibe'] as String;
+        final idMedioPago = egresoData['id_medio_pago'] as int?;
+
+        // Llamar al método real de TurnoService para registrar egreso
+        final result = await TurnoService.registrarEgresoParcial(
+          idTurno: idTurno,
+          montoEntrega: montoEntrega,
+          motivoEntrega: motivoEntrega,
+          nombreAutoriza: nombreAutoriza,
+          nombreRecibe: nombreRecibe,
+          idMedioPago: idMedioPago,
+        );
+
+        if (result['success'] == true) {
+          syncedCount++;
+          print('    ✅ Egreso offline sincronizado: ${result['egreso_id']}');
+        } else {
+          print('    ❌ Error en servicio de egreso: ${result['message']}');
+        }
+
+      } catch (e) {
+        print('    ❌ Error sincronizando egreso offline ${egresoData['offline_id']}: $e');
+        // Continúa con el siguiente egreso sin interrumpir el proceso
+      }
+    }
+
+    if (syncedCount > 0) {
+      // Limpiar los egresos sincronizados exitosamente
+      await _userPreferencesService.clearEgresosOffline();
+      print('  🧹 Limpiados $syncedCount egresos offline sincronizados');
+    }
+
+    return syncedCount;
+  }
+
   /// Sincronizar órdenes recientes
   Future<List<Map<String, dynamic>>> _syncOrders() async {
     final userData = await _userPreferencesService.getUserData();
@@ -592,6 +703,18 @@ class AutoSyncService {
 
     for (final itemData in itemsData) {
       final inventoryMetadata = itemData['inventory_metadata'] ?? {};
+      print('    🔄 AUTO SYNC - Inventory Metadata: $inventoryMetadata');
+      
+      // ✅ CORREGIDO: Calcular precio unitario correcto desde subtotal
+      final subtotal = itemData['subtotal'] ?? (itemData['precio_unitario'] * itemData['cantidad']);
+      final cantidad = itemData['cantidad'] as num;
+      final precioUnitarioCorrect = cantidad > 0 ? (subtotal / cantidad) : itemData['precio_unitario'];
+      
+      print('    🔄 AUTO SYNC - Producto: ${itemData['denominacion'] ?? itemData['id_producto']}');
+      print('      - Precio unitario base: \$${itemData['precio_unitario']}');
+      print('      - Subtotal con método de pago: \$${subtotal}');
+      print('      - Precio unitario correcto: \$${precioUnitarioCorrect}');
+      
       productos.add({
         'id_producto': itemData['id_producto'],
         'id_variante': inventoryMetadata['id_variante'],
@@ -599,7 +722,7 @@ class AutoSyncService {
         'id_ubicacion': inventoryMetadata['id_ubicacion'],
         'id_presentacion': inventoryMetadata['id_presentacion'],
         'cantidad': itemData['cantidad'],
-        'precio_unitario': itemData['precio_unitario'],
+        'precio_unitario': precioUnitarioCorrect, // ✅ Precio correcto según método de pago
         'sku_producto': inventoryMetadata['sku_producto'] ?? itemData['id_producto'].toString(),
         'sku_ubicacion': inventoryMetadata['sku_ubicacion'],
         'es_producto_venta': true,

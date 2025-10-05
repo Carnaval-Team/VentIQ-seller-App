@@ -47,6 +47,8 @@ class UserPreferencesService {
   static const String _offlineTurnoKey = 'offline_turno'; // Turno abierto offline
   static const String _turnoResumenKey = 'turno_resumen_cache'; // Cache del resumen de turno anterior
   static const String _resumenCierreKey = 'resumen_cierre_cache'; // Cache del resumen de cierre diario
+  static const String _egresosOfflineKey = 'egresos_offline'; // Egresos creados offline
+  static const String _egresosCacheKey = 'egresos_cache'; // Cache de egresos para modo offline
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -1112,6 +1114,109 @@ class UserPreferencesService {
     } catch (e) {
       print('❌ Error actualizando resumen con órdenes offline: $e');
       return await getResumenCierreCache(); // Fallback al resumen base
+    }
+  }
+
+  // ============= MÉTODOS PARA EGRESOS OFFLINE =============
+
+  /// Guardar egreso offline
+  Future<void> saveOfflineEgreso(Map<String, dynamic> egresoData) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final egresosOffline = await getEgresosOffline();
+      
+      // Agregar timestamp de creación offline
+      egresoData['created_offline_at'] = DateTime.now().toIso8601String();
+      egresoData['offline_id'] = '${DateTime.now().millisecondsSinceEpoch}';
+      
+      egresosOffline.add(egresoData);
+      
+      await prefs.setString(_egresosOfflineKey, jsonEncode(egresosOffline));
+      print('💾 Egreso guardado offline: ${egresoData['offline_id']}');
+    } catch (e) {
+      print('❌ Error guardando egreso offline: $e');
+      throw e;
+    }
+  }
+
+  /// Obtener egresos offline
+  Future<List<Map<String, dynamic>>> getEgresosOffline() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final egresosJson = prefs.getString(_egresosOfflineKey);
+      
+      if (egresosJson != null) {
+        final List<dynamic> egresosData = jsonDecode(egresosJson);
+        return egresosData.cast<Map<String, dynamic>>();
+      }
+      
+      return [];
+    } catch (e) {
+      print('❌ Error obteniendo egresos offline: $e');
+      return [];
+    }
+  }
+
+  /// Limpiar egresos offline después de sincronización exitosa
+  Future<void> clearEgresosOffline() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_egresosOfflineKey);
+      print('🧹 Egresos offline limpiados');
+    } catch (e) {
+      print('❌ Error limpiando egresos offline: $e');
+    }
+  }
+
+  /// Guardar cache de egresos para modo offline
+  Future<void> saveEgresosCache(List<Map<String, dynamic>> egresos) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_egresosCacheKey, jsonEncode(egresos));
+      print('💾 Cache de egresos guardado: ${egresos.length} egresos');
+    } catch (e) {
+      print('❌ Error guardando cache de egresos: $e');
+    }
+  }
+
+  /// Obtener cache de egresos
+  Future<List<Map<String, dynamic>>> getEgresosCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final egresosJson = prefs.getString(_egresosCacheKey);
+      
+      if (egresosJson != null) {
+        final List<dynamic> egresosData = jsonDecode(egresosJson);
+        return egresosData.cast<Map<String, dynamic>>();
+      }
+      
+      return [];
+    } catch (e) {
+      print('❌ Error obteniendo cache de egresos: $e');
+      return [];
+    }
+  }
+
+  /// Verificar si hay egresos offline pendientes
+  Future<bool> hasEgresosOffline() async {
+    final egresos = await getEgresosOffline();
+    return egresos.isNotEmpty;
+  }
+
+  /// Obtener conteo de egresos offline
+  Future<int> getEgresosOfflineCount() async {
+    final egresos = await getEgresosOffline();
+    return egresos.length;
+  }
+
+  /// Limpiar cache de egresos
+  Future<void> clearEgresosCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_egresosCacheKey);
+      print('🧹 Cache de egresos limpiado');
+    } catch (e) {
+      print('❌ Error limpiando cache de egresos: $e');
     }
   }
 }
