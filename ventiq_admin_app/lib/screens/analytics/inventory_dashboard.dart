@@ -32,7 +32,7 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
     });
 
     try {
-      final data = await DashboardService.getStoreAnalysis(periodo: 'mes');
+      final data = await DashboardService.getCompleteStoreAnalysis(periodo: 'mes');
 
       // ✅ Usar microtask para evitar bloquear UI
       await Future.microtask(() {});

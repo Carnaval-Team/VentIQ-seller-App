@@ -7,7 +7,7 @@ import 'supplier_detail_screen.dart';
 
 class SuppliersListScreen extends StatefulWidget {
   const SuppliersListScreen({super.key});
-  
+
   @override
   State<SuppliersListScreen> createState() => _SuppliersListScreenState();
 }
@@ -18,21 +18,23 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
   bool _isLoading = true;
   String _searchQuery = '';
   String _errorMessage = '';
-  
+
   @override
   void initState() {
     super.initState();
     _loadSuppliers();
   }
-  
+
   Future<void> _loadSuppliers() async {
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
-    
+
     try {
-      final suppliers = await SupplierService.getAllSuppliers(includeMetrics: true);
+      final suppliers = await SupplierService.getAllSuppliers(
+        includeMetrics: true,
+      );
       setState(() {
         _suppliers = suppliers;
         _filteredSuppliers = suppliers;
@@ -45,35 +47,41 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
       });
     }
   }
-  
+
   void _filterSuppliers(String query) {
     setState(() {
       _searchQuery = query;
       if (query.isEmpty) {
         _filteredSuppliers = _suppliers;
       } else {
-        _filteredSuppliers = _suppliers.where((supplier) {
-          return supplier.denominacion.toLowerCase().contains(query.toLowerCase()) ||
-                 supplier.skuCodigo.toLowerCase().contains(query.toLowerCase()) ||
-                 (supplier.ubicacion?.toLowerCase().contains(query.toLowerCase()) ?? false);
-        }).toList();
+        _filteredSuppliers =
+            _suppliers.where((supplier) {
+              return supplier.denominacion.toLowerCase().contains(
+                    query.toLowerCase(),
+                  ) ||
+                  supplier.skuCodigo.toLowerCase().contains(
+                    query.toLowerCase(),
+                  ) ||
+                  (supplier.ubicacion?.toLowerCase().contains(
+                        query.toLowerCase(),
+                      ) ??
+                      false);
+            }).toList();
       }
     });
   }
-  
+
   Future<void> _navigateToAddSupplier() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const AddEditSupplierScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const AddEditSupplierScreen()),
     );
-    
+
     if (result == true) {
       _loadSuppliers();
     }
   }
-  
+
   Future<void> _navigateToEditSupplier(Supplier supplier) async {
     final result = await Navigator.push(
       context,
@@ -81,12 +89,12 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
         builder: (context) => AddEditSupplierScreen(supplier: supplier),
       ),
     );
-    
+
     if (result == true) {
       _loadSuppliers();
     }
   }
-  
+
   Future<void> _navigateToSupplierDetail(Supplier supplier) async {
     final result = await Navigator.push(
       context,
@@ -94,28 +102,26 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
         builder: (context) => SupplierDetailScreen(supplier: supplier),
       ),
     );
-    
+
     if (result == true) {
       _loadSuppliers();
     }
   }
-  
+
   Future<void> _deleteSupplier(Supplier supplier) async {
     try {
       // Mostrar indicador de carga
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
-      
+
       final result = await SupplierService.deleteSupplier(supplier.id);
-      
+
       // Cerrar indicador de carga
       if (mounted) Navigator.of(context).pop();
-      
+
       if (result['success']) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -135,7 +141,7 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
     } catch (e) {
       // Cerrar indicador de carga si hay error
       if (mounted) Navigator.of(context).pop();
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error al eliminar proveedor: $e'),
@@ -144,13 +150,18 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
       );
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Proveedores'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.analytics),
+            onPressed: () => Navigator.pushNamed(context, '/supplier-reports'),
+            tooltip: 'Reportes',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadSuppliers,
@@ -162,11 +173,9 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
         children: [
           // Barra de búsqueda y estadísticas
           _buildHeader(),
-          
+
           // Lista de proveedores
-          Expanded(
-            child: _buildContent(),
-          ),
+          Expanded(child: _buildContent()),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -176,7 +185,7 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
       ),
     );
   }
-  
+
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -196,26 +205,26 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
             ),
             onChanged: _filterSuppliers,
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Estadísticas rápidas
-          if (!_isLoading && _suppliers.isNotEmpty)
-            _buildQuickStats(),
+          if (!_isLoading && _suppliers.isNotEmpty) _buildQuickStats(),
         ],
       ),
     );
   }
-  
+
   Widget _buildQuickStats() {
     final totalSuppliers = _suppliers.length;
     final suppliersWithMetrics = _suppliers.where((s) => s.hasMetrics).length;
-    final averageLeadTime = _suppliers
-        .where((s) => s.leadTime != null)
-        .map((s) => s.leadTime!)
-        .fold<double>(0, (sum, leadTime) => sum + leadTime) / 
+    final averageLeadTime =
+        _suppliers
+            .where((s) => s.leadTime != null)
+            .map((s) => s.leadTime!)
+            .fold<double>(0, (sum, leadTime) => sum + leadTime) /
         _suppliers.where((s) => s.leadTime != null).length;
-    
+
     return Row(
       children: [
         Expanded(
@@ -247,8 +256,13 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
       ],
     );
   }
-  
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+
+  Widget _buildStatCard(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -262,38 +276,25 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
-            ),
-          ),
+          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
         ],
       ),
     );
   }
-  
+
   Widget _buildContent() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     if (_errorMessage.isNotEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red[300],
-            ),
+            Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
             const SizedBox(height: 16),
             Text(
               _errorMessage,
@@ -309,11 +310,11 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
         ),
       );
     }
-    
+
     if (_filteredSuppliers.isEmpty) {
       return _buildEmptyState();
     }
-    
+
     return RefreshIndicator(
       onRefresh: _loadSuppliers,
       child: ListView.builder(
@@ -333,36 +334,26 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
       ),
     );
   }
-  
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.business,
-            size: 64,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.business, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            _searchQuery.isEmpty 
+            _searchQuery.isEmpty
                 ? 'No hay proveedores registrados'
                 : 'No se encontraron proveedores',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
-            ),
+            style: TextStyle(fontSize: 18, color: Colors.grey[600]),
           ),
           const SizedBox(height: 8),
           Text(
             _searchQuery.isEmpty
                 ? 'Agrega tu primer proveedor para comenzar'
                 : 'Intenta con otros términos de búsqueda',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
           if (_searchQuery.isEmpty) ...[
             const SizedBox(height: 24),

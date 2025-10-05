@@ -5,7 +5,7 @@ class CRMMetrics {
   final int activeCustomers;
   final int vipCustomers;
   final double averageCustomerValue;
-  final int loyaltyPoints;
+  final double loyaltyPoints;
 
   // Métricas de Proveedores
   final int totalSuppliers;
@@ -111,7 +111,7 @@ class CRMMetrics {
     int? activeCustomers,
     int? vipCustomers,
     double? averageCustomerValue,
-    int? loyaltyPoints,
+    double? loyaltyPoints,
     int? totalSuppliers,
     int? activeSuppliers,
     double? averageLeadTime,

@@ -5,9 +5,9 @@ import '../../services/supplier_service.dart';
 
 class AddEditSupplierScreen extends StatefulWidget {
   final Supplier? supplier;
-  
+
   const AddEditSupplierScreen({super.key, this.supplier});
-  
+
   @override
   State<AddEditSupplierScreen> createState() => _AddEditSupplierScreenState();
 }
@@ -19,16 +19,16 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
   final _ubicacionController = TextEditingController();
   final _skuCodigoController = TextEditingController();
   final _leadTimeController = TextEditingController();
-  
+
   bool _isLoading = false;
   bool get _isEditing => widget.supplier != null;
-  
+
   @override
   void initState() {
     super.initState();
     _initializeForm();
   }
-  
+
   @override
   void dispose() {
     _denominacionController.dispose();
@@ -38,7 +38,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
     _leadTimeController.dispose();
     super.dispose();
   }
-  
+
   void _initializeForm() {
     if (_isEditing) {
       final supplier = widget.supplier!;
@@ -49,41 +49,44 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
       _leadTimeController.text = supplier.leadTime?.toString() ?? '';
     }
   }
-  
+
   Future<void> _saveSupplier() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       final supplier = Supplier(
         id: _isEditing ? widget.supplier!.id : 0,
         denominacion: _denominacionController.text.trim(),
-        direccion: _direccionController.text.trim().isEmpty 
-            ? null 
-            : _direccionController.text.trim(),
-        ubicacion: _ubicacionController.text.trim().isEmpty 
-            ? null 
-            : _ubicacionController.text.trim(),
+        direccion:
+            _direccionController.text.trim().isEmpty
+                ? null
+                : _direccionController.text.trim(),
+        ubicacion:
+            _ubicacionController.text.trim().isEmpty
+                ? null
+                : _ubicacionController.text.trim(),
         skuCodigo: _skuCodigoController.text.trim(),
-        leadTime: _leadTimeController.text.trim().isEmpty 
-            ? null 
-            : int.tryParse(_leadTimeController.text.trim()),
+        leadTime:
+            _leadTimeController.text.trim().isEmpty
+                ? null
+                : int.tryParse(_leadTimeController.text.trim()),
         createdAt: _isEditing ? widget.supplier!.createdAt : DateTime.now(),
       );
-      
+
       Map<String, dynamic> result;
       if (_isEditing) {
         result = await SupplierService.updateSupplier(supplier);
       } else {
         result = await SupplierService.createSupplier(supplier);
       }
-      
+
       if (mounted) {
         setState(() => _isLoading = false);
-        
+
         if (result['success']) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -113,7 +116,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -136,9 +139,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
               onPressed: _saveSupplier,
               child: Text(
                 _isEditing ? 'Guardar' : 'Crear',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
         ],
@@ -153,7 +154,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
               // Información básica
               _buildSectionHeader('Información Básica', Icons.business),
               const SizedBox(height: 16),
-              
+
               _buildTextField(
                 controller: _denominacionController,
                 label: 'Nombre del Proveedor',
@@ -170,9 +171,9 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
                   return null;
                 },
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               _buildTextField(
                 controller: _skuCodigoController,
                 label: 'Código SKU',
@@ -194,13 +195,13 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
                   return null;
                 },
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Información de contacto
               _buildSectionHeader('Información de Contacto', Icons.location_on),
               const SizedBox(height: 16),
-              
+
               _buildTextField(
                 controller: _direccionController,
                 label: 'Dirección',
@@ -208,22 +209,22 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
                 icon: Icons.home,
                 maxLines: 2,
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               _buildTextField(
                 controller: _ubicacionController,
                 label: 'Ciudad/Ubicación',
                 hint: 'Ej: La Habana, Cuba',
                 icon: Icons.location_city,
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Información operativa
               _buildSectionHeader('Información Operativa', Icons.settings),
               const SizedBox(height: 16),
-              
+
               _buildTextField(
                 controller: _leadTimeController,
                 label: 'Tiempo de Entrega (días)',
@@ -244,18 +245,15 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
                   return null;
                 },
               ),
-              
+
               const SizedBox(height: 32),
-              
+
               // Información adicional
-              if (_isEditing) ...[
-                _buildInfoCard(),
-                const SizedBox(height: 32),
-              ],
-              
+              if (_isEditing) ...[_buildInfoCard(), const SizedBox(height: 32)],
+
               // Botones de acción
               _buildActionButtons(),
-              
+
               const SizedBox(height: 32),
             ],
           ),
@@ -263,7 +261,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
       ),
     );
   }
-  
+
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(
       children: [
@@ -280,7 +278,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
       ],
     );
   }
-  
+
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
@@ -299,9 +297,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
         labelText: label + (isRequired ? ' *' : ''),
         hintText: hint,
         prefixIcon: icon != null ? Icon(icon) : null,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
         filled: true,
         fillColor: Colors.grey.shade50,
       ),
@@ -312,7 +308,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
       validator: validator,
     );
   }
-  
+
   Widget _buildInfoCard() {
     final supplier = widget.supplier!;
     return Card(
@@ -330,10 +326,10 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            
+
             _buildInfoRow('ID', supplier.id.toString()),
             _buildInfoRow('Creado', _formatDate(supplier.createdAt)),
-            
+
             if (supplier.hasMetrics) ...[
               const Divider(height: 24),
               Text(
@@ -345,8 +341,14 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              _buildInfoRow('Total de Órdenes', supplier.totalOrders.toString()),
-              _buildInfoRow('Valor Promedio', '\$${supplier.averageOrderValue?.toStringAsFixed(2) ?? '0.00'}'),
+              _buildInfoRow(
+                'Total de Órdenes',
+                supplier.totalOrders.toString(),
+              ),
+              _buildInfoRow(
+                'Valor Promedio',
+                '\$${supplier.averageOrderValue?.toStringAsFixed(2) ?? '0.00'}',
+              ),
               _buildInfoRow('Performance', supplier.performanceLevel),
             ],
           ],
@@ -354,7 +356,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
       ),
     );
   }
-  
+
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -364,24 +366,18 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
             width: 120,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
           ),
           Text(
             value,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildActionButtons() {
     return Row(
       children: [
@@ -395,19 +391,20 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
         Expanded(
           child: ElevatedButton(
             onPressed: _isLoading ? null : _saveSupplier,
-            child: _isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(_isEditing ? 'Guardar Cambios' : 'Crear Proveedor'),
+            child:
+                _isLoading
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : Text(_isEditing ? 'Guardar Cambios' : 'Crear Proveedor'),
           ),
         ),
       ],
     );
   }
-  
+
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }

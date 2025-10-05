@@ -1,5 +1,8 @@
+import 'sales_service.dart';
+
 import 'user_preferences_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../models/analytics/inventory_metrics.dart';
 import '../models/crm/crm_metrics.dart';
 import 'analytics_service.dart';
@@ -54,6 +57,27 @@ class DashboardService {
   }
 
   static Future<Map<String, dynamic>> getStoreAnalysis({
+    required String periodo,
+    int? storeId,
+  }) async {
+    try {
+      final userStoreId = storeId ?? await _prefsService.getIdTienda();
+
+      // Usar la función RPC original que ya tenía todo implementado
+      final response = await Supabase.instance.client.rpc(
+        'fn_dashboard_analisis_tienda',
+        params: {'p_id_tienda': userStoreId, 'p_periodo': periodo},
+      );
+
+      return _transformRpcResponseToDashboard(response, periodo);
+    } catch (e) {
+      print('❌ Error: $e');
+      return _getEmptyStoreAnalysis();
+    }
+  }
+
+  /// Análisis completo para dashboards especializados
+  static Future<Map<String, dynamic>> getCompleteStoreAnalysis({
     required String periodo,
     int? storeId,
   }) async {
@@ -118,8 +142,6 @@ class DashboardService {
       };
 
       print('✅ Análisis completo de tienda generado exitosamente');
-      print(results);
-
       return storeAnalysis;
     } catch (e) {
       print('❌ Error al obtener análisis de tienda: $e');
@@ -386,8 +408,8 @@ class DashboardService {
         uniqueProducts: 0, // Se puede calcular desde inventario
         // Métricas integradas
         relationshipScore: relationshipScore,
-        totalContacts:0,
-            //totalCustomers + (supplierMetrics['total_proveedores'] ?? 0),
+        totalContacts: 0,
+        //totalCustomers + (supplierMetrics['total_proveedores'] ?? 0),
         recentInteractions: 45,
       );
     } catch (e) {
@@ -549,6 +571,197 @@ class DashboardService {
         'año': DateTime.now().year,
         'recepciones': [],
       };
+    }
+  }
+
+  /// Transforma la respuesta RPC al formato esperado por el dashboard
+  static Map<String, dynamic> _transformRpcResponseToDashboard(
+    Map<String, dynamic> rpcResponse,
+    String periodo,
+  ) {
+    try {
+      final ventasTotales = rpcResponse['ventas_totales'] ?? 0;
+      final ventasTotalesAnterior = rpcResponse['ventas_totales_anterior'] ?? 0;
+      final totalProductos = rpcResponse['total_de_productos'] ?? 0;
+      final totalOrdenes = rpcResponse['total_ordenes'] ?? 0;
+      final totalGastos = rpcResponse['total_gastos'] ?? 0;
+      final tendenciasVenta =
+          rpcResponse['tendencias_de_venta'] as List<dynamic>? ?? [];
+      final totalProdCategoria =
+          rpcResponse['total_prod_categoria'] as List<dynamic>? ?? [];
+      final estadoInventario =
+          rpcResponse['estado_inventario'] as Map<String, dynamic>? ?? {};
+
+      // Transformar datos
+      final salesChartData = _transformTendenciasToChartData(
+        tendenciasVenta,
+        periodo,
+      );
+      final categoryData = _transformCategoriesToChartData(totalProdCategoria);
+
+      // Calcular cambio en ventas
+      double salesChangePercentage = 0.0;
+      if (ventasTotalesAnterior > 0) {
+        salesChangePercentage =
+            ((ventasTotales - ventasTotalesAnterior) / ventasTotalesAnterior) *
+            100;
+      }
+
+      return {
+        'totalSales': ventasTotales.toDouble(),
+        'totalOrders': totalOrdenes,
+        'totalProducts': totalProductos,
+        'totalExpenses': totalGastos.toDouble(),
+        'salesChange': salesChangePercentage,
+        'outOfStock': estadoInventario['productos_sin_stock'] ?? 0,
+        'lowStock': estadoInventario['stock_bajo'] ?? 0,
+        'okStock': estadoInventario['stock_ok'] ?? 0,
+        'salesData': salesChartData['spots'],
+        'salesLabels': salesChartData['labels'],
+        'categoryData': categoryData,
+        'period': periodo,
+        'lastUpdated': DateTime.now().toIso8601String(),
+      };
+    } catch (e) {
+      return _getEmptyStoreAnalysis();
+    }
+  }
+
+  /// Transforma las tendencias de venta a formato FlSpot
+  static Map<String, dynamic> _transformTendenciasToChartData(
+    List<dynamic> tendencias,
+    String periodo,
+  ) {
+    if (tendencias.isEmpty) {
+      return {'spots': <FlSpot>[], 'labels': <String>[], 'dates': <String>[]};
+    }
+
+    final spots = <FlSpot>[];
+    final labels = <String>[];
+    final dates = <String>[];
+
+    for (int i = 0; i < tendencias.length; i++) {
+      final item = tendencias[i] as Map<String, dynamic>;
+      final value = (item['value'] ?? 0).toDouble();
+      final xAxis = item['x_axis'] ?? '';
+
+      spots.add(FlSpot(i.toDouble(), value));
+      dates.add(xAxis.toString());
+      labels.add(_formatDateLabel(xAxis.toString(), periodo));
+    }
+
+    return {'spots': spots, 'labels': labels, 'dates': dates};
+  }
+
+  /// Transforma categorías para el gráfico de dona
+  static List<Map<String, dynamic>> _transformCategoriesToChartData(
+    List<dynamic> categorias,
+  ) {
+    if (categorias.isEmpty) {
+      return [
+        {'name': 'Sin datos', 'value': 1.0, 'color': 0xFF9E9E9E},
+      ];
+    }
+
+    final colors = [
+      0xFF4A90E2,
+      0xFF10B981,
+      0xFFFF6B35,
+      0xFFE74C3C,
+      0xFF9B59B6,
+      0xFFF39C12,
+      0xFF1ABC9C,
+      0xFF34495E,
+    ];
+
+    return categorias.asMap().entries.map((entry) {
+      final categoria = entry.value as Map<String, dynamic>;
+      return {
+        'name': categoria['name'] ?? 'Sin nombre',
+        'value': (categoria['total_product'] ?? 0).toDouble(),
+        'color': colors[entry.key % colors.length],
+      };
+    }).toList();
+  }
+
+  /// Formatea las etiquetas de fecha según el período
+  static String _formatDateLabel(String xAxis, String periodo) {
+    try {
+      switch (periodo) {
+        case 'Día':
+          if (xAxis.contains(' ')) {
+            final hour = xAxis.split(' ')[1];
+            return '${hour}:00';
+          }
+          return xAxis;
+
+        case 'Semana':
+          final date = DateTime.parse(xAxis);
+          final dayNames = ['D', 'L', 'M', 'Mi', 'J', 'V', 'S'];
+          return '${dayNames[date.weekday % 7]}${date.day}';
+
+        case '1 mes':
+          final date = DateTime.parse(xAxis);
+          return '${date.day}';
+
+        case '3 meses':
+        case '6 meses':
+          if (xAxis.length >= 7) {
+            final parts = xAxis.split('-');
+            if (parts.length >= 2) {
+              final year = parts[0].substring(2);
+              final month = int.parse(parts[1]);
+              final monthNames = [
+                'Ene',
+                'Feb',
+                'Mar',
+                'Abr',
+                'May',
+                'Jun',
+                'Jul',
+                'Ago',
+                'Sep',
+                'Oct',
+                'Nov',
+                'Dic',
+              ];
+              return '${monthNames[month - 1]} $year';
+            }
+          }
+          return xAxis;
+
+        case '1 año':
+        case '3 años':
+        case '5 años':
+          if (xAxis.length >= 7) {
+            final parts = xAxis.split('-');
+            if (parts.length >= 2) {
+              final year = parts[0];
+              final month = int.parse(parts[1]);
+              final monthNames = [
+                'Ene',
+                'Feb',
+                'Mar',
+                'Abr',
+                'May',
+                'Jun',
+                'Jul',
+                'Ago',
+                'Sep',
+                'Oct',
+                'Nov',
+                'Dic',
+              ];
+              return '${monthNames[month - 1]} $year';
+            }
+          }
+          return xAxis;
+
+        default:
+          return xAxis;
+      }
+    } catch (e) {
+      return xAxis;
     }
   }
 }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ventiq_admin_app/screens/suppliers/supplier_reports_screen.dart';
+import 'package:ventiq_admin_app/widgets/supplier/supplier_alerts_widget.dart';
 import 'config/app_colors.dart';
 import 'models/product.dart';
 import 'models/supplier.dart';
@@ -34,8 +36,9 @@ import 'screens/settings_screen.dart';
 import 'screens/warehouse_screen.dart';
 import 'screens/add_warehouse_screen.dart';
 import 'services/auth_service.dart';
-// Imports para CRM
 import 'screens/crm_dashboard_screen.dart';
+import 'screens/crm_analytics_screen.dart';
+import 'screens/crm_relationships_screen.dart';
 import 'screens/suppliers/suppliers_list_screen.dart';
 import 'screens/suppliers/supplier_detail_screen.dart';
 import 'screens/suppliers/add_edit_supplier_screen.dart';
@@ -101,6 +104,30 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(
               builder: (context) => const ProductsScreen(),
             );
+          case '/supplier-detail':
+            final supplier = settings.arguments as Supplier?;
+            if (supplier != null) {
+              return MaterialPageRoute(
+                builder: (context) => SupplierDetailScreen(supplier: supplier),
+              );
+            }
+            return MaterialPageRoute(
+              builder: (context) => const SuppliersListScreen(),
+            );
+          case '/edit-supplier':
+            final supplier = settings.arguments as Supplier?;
+            if (supplier != null) {
+              return MaterialPageRoute(
+                builder:
+                    (context) => AddEditSupplierScreen(
+                      supplier: supplier,
+                    ),
+              );
+            }
+            return MaterialPageRoute(
+              builder:
+                  (context) => const AddEditSupplierScreen(),
+            );
           default:
             return null;
         }
@@ -124,6 +151,14 @@ class MyApp extends StatelessWidget {
         '/restaurant-costs': (context) => const ProductionCostsScreen(),
         '/customers': (context) => const CustomersScreen(),
         '/crm-dashboard': (context) => const CRMDashboardScreen(),
+        '/crm-analytics': (context) => const CRMAnalyticsScreen(),
+        '/relationships': (context) => const CRMRelationshipsScreen(),
+        '/suppliers': (context) => const SuppliersListScreen(),
+        '/supplier-alerts': (context) => const SupplierAlertsWidget(alerts: [], isLoading: false ),
+        '/supplier-reports': (context) => const SupplierReportsScreen(),
+        '/add-supplier': (context) => const AddEditSupplierScreen(),
+        '/edit-supplier':
+            (context) => const AddEditSupplierScreen(),
         '/workers': (context) => const WorkersScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/warehouse': (context) => const WarehouseScreen(),

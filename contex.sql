@@ -45,7 +45,7 @@ CREATE TABLE public.app_cont_gasto_asignacion (
   id_asignacion bigint NOT NULL,
   monto_asignado numeric NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT app_cont_gasto_asignacion_pkey PRIMARY KEY (id_gasto, id_asignacion),
+  CONSTRAINT app_cont_gasto_asignacion_pkey PRIMARY KEY (id_asignacion, id_gasto),
   CONSTRAINT app_cont_gasto_asignacion_id_gasto_fkey FOREIGN KEY (id_gasto) REFERENCES public.app_cont_gastos(id),
   CONSTRAINT app_cont_gasto_asignacion_id_asignacion_fkey FOREIGN KEY (id_asignacion) REFERENCES public.app_cont_asignacion_costos(id)
 );
@@ -253,7 +253,7 @@ CREATE TABLE public.app_dat_caja_turno (
 );
 CREATE TABLE public.app_dat_categoria (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  denominacion character varying NOT NULL UNIQUE,
+  denominacion character varying NOT NULL,
   descripcion character varying,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   sku_codigo text NOT NULL UNIQUE,
@@ -532,6 +532,8 @@ CREATE TABLE public.app_dat_operacion_recepcion (
   moneda_factura character DEFAULT 'USD'::bpchar,
   pdf_factura text,
   observaciones_compra text,
+  tasa_cambio_aplicada numeric,
+  fecha_tasa_aplicada timestamp without time zone,
   CONSTRAINT app_dat_operacion_recepcion_pkey PRIMARY KEY (id_operacion),
   CONSTRAINT app_dat_operacion_recepcion_id_operacion_fkey FOREIGN KEY (id_operacion) REFERENCES public.app_dat_operaciones(id)
 );
@@ -707,7 +709,7 @@ CREATE TABLE public.app_dat_producto_ingredientes (
   id_producto_elaborado bigint NOT NULL,
   id_ingrediente bigint NOT NULL,
   cantidad_necesaria numeric NOT NULL,
-  unidad_medida character varying DEFAULT 'und'::character varying,
+  unidad_medida character varying DEFAULT '''g''::character varying'::character varying,
   costo_unitario numeric,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_producto_ingredientes_pkey PRIMARY KEY (id),
@@ -802,6 +804,21 @@ CREATE TABLE public.app_dat_subcategorias (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_subcategorias_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_subcategorias_idcategoria_fkey FOREIGN KEY (idcategoria) REFERENCES public.app_dat_categoria(id)
+);
+CREATE TABLE public.app_dat_superadmin (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  uuid uuid NOT NULL UNIQUE,
+  nombre character varying NOT NULL,
+  apellidos character varying NOT NULL,
+  email character varying NOT NULL UNIQUE,
+  telefono character varying,
+  activo boolean NOT NULL DEFAULT true,
+  nivel_acceso smallint NOT NULL DEFAULT 1,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  ultimo_acceso timestamp with time zone,
+  CONSTRAINT app_dat_superadmin_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_superadmin_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
 );
 CREATE TABLE public.app_dat_supervisor (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -1174,179 +1191,6 @@ CREATE TABLE public.app_nom_unidades_medida (
   descripcion text,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_nom_unidades_medida_pkey PRIMARY KEY (id)
-);
-CREATE TABLE public.app_rest_categorias_platos (
-  id bigint NOT NULL DEFAULT nextval('app_rest_categorias_platos_id_seq'::regclass),
-  nombre character varying NOT NULL,
-  descripcion text,
-  orden_menu integer DEFAULT 1,
-  es_activo boolean DEFAULT true,
-  imagen text,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT app_rest_categorias_platos_pkey PRIMARY KEY (id)
-);
-CREATE TABLE public.app_rest_costos_produccion (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  id_plato bigint NOT NULL,
-  fecha_calculo date NOT NULL,
-  costo_ingredientes numeric NOT NULL DEFAULT 0,
-  costo_mano_obra numeric NOT NULL DEFAULT 0,
-  costo_indirecto numeric NOT NULL DEFAULT 0,
-  costo_total numeric DEFAULT ((costo_ingredientes + costo_mano_obra) + costo_indirecto),
-  margen_deseado numeric NOT NULL DEFAULT 30.0,
-  precio_sugerido numeric DEFAULT (((costo_ingredientes + costo_mano_obra) + costo_indirecto) * ((1)::numeric + (margen_deseado / (100)::numeric))),
-  calculado_por uuid NOT NULL,
-  observaciones text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT app_rest_costos_produccion_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_costos_produccion_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id),
-  CONSTRAINT app_rest_costos_produccion_usuario_fkey FOREIGN KEY (calculado_por) REFERENCES auth.users(id)
-);
-CREATE TABLE public.app_rest_descuentos_inventario (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  id_venta_plato bigint NOT NULL,
-  id_producto_inventario bigint NOT NULL,
-  cantidad_descontada numeric NOT NULL,
-  id_unidad_medida bigint NOT NULL,
-  id_ubicacion bigint NOT NULL,
-  precio_costo numeric,
-  fecha_descuento timestamp with time zone NOT NULL DEFAULT now(),
-  procesado_por uuid NOT NULL,
-  observaciones text,
-  CONSTRAINT app_rest_descuentos_inventario_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_descuentos_inventario_venta_plato_fkey FOREIGN KEY (id_venta_plato) REFERENCES public.app_rest_venta_platos(id),
-  CONSTRAINT app_rest_descuentos_inventario_producto_fkey FOREIGN KEY (id_producto_inventario) REFERENCES public.app_dat_producto(id),
-  CONSTRAINT app_rest_descuentos_inventario_unidad_fkey FOREIGN KEY (id_unidad_medida) REFERENCES public.app_nom_unidades_medida(id),
-  CONSTRAINT app_rest_descuentos_inventario_ubicacion_fkey FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id),
-  CONSTRAINT app_rest_descuentos_inventario_usuario_fkey FOREIGN KEY (procesado_por) REFERENCES auth.users(id)
-);
-CREATE TABLE public.app_rest_desperdicios (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  id_producto_inventario bigint NOT NULL,
-  id_plato bigint,
-  cantidad_desperdiciada numeric NOT NULL,
-  id_unidad_medida bigint NOT NULL,
-  motivo_desperdicio text NOT NULL,
-  costo_desperdicio numeric,
-  fecha_desperdicio timestamp with time zone NOT NULL DEFAULT now(),
-  registrado_por uuid NOT NULL,
-  observaciones text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT app_rest_desperdicios_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_desperdicios_producto_fkey FOREIGN KEY (id_producto_inventario) REFERENCES public.app_dat_producto(id),
-  CONSTRAINT app_rest_desperdicios_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id),
-  CONSTRAINT app_rest_desperdicios_unidad_fkey FOREIGN KEY (id_unidad_medida) REFERENCES public.app_nom_unidades_medida(id),
-  CONSTRAINT app_rest_desperdicios_usuario_fkey FOREIGN KEY (registrado_por) REFERENCES auth.users(id)
-);
-CREATE TABLE public.app_rest_disponibilidad_platos (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  id_plato bigint NOT NULL,
-  id_tienda bigint NOT NULL,
-  fecha_revision date NOT NULL DEFAULT CURRENT_DATE,
-  stock_disponible integer NOT NULL DEFAULT 0,
-  ingredientes_suficientes boolean NOT NULL DEFAULT true,
-  motivo_no_disponible text,
-  revisado_por uuid NOT NULL,
-  proxima_revision timestamp with time zone,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT app_rest_disponibilidad_platos_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_disponibilidad_platos_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
-  CONSTRAINT app_rest_disponibilidad_platos_usuario_fkey FOREIGN KEY (revisado_por) REFERENCES auth.users(id),
-  CONSTRAINT app_rest_disponibilidad_platos_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id)
-);
-CREATE TABLE public.app_rest_estados_preparacion (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  id_venta_plato bigint NOT NULL,
-  estado smallint NOT NULL DEFAULT 1,
-  tiempo_estimado integer,
-  tiempo_real integer,
-  asignado_a uuid,
-  observaciones_cocina text,
-  fecha_cambio_estado timestamp with time zone NOT NULL DEFAULT now(),
-  cambiado_por uuid NOT NULL,
-  CONSTRAINT app_rest_estados_preparacion_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_estados_preparacion_venta_plato_fkey FOREIGN KEY (id_venta_plato) REFERENCES public.app_rest_venta_platos(id),
-  CONSTRAINT app_rest_estados_preparacion_asignado_fkey FOREIGN KEY (asignado_a) REFERENCES auth.users(id),
-  CONSTRAINT app_rest_estados_preparacion_cambiado_fkey FOREIGN KEY (cambiado_por) REFERENCES auth.users(id)
-);
-CREATE TABLE public.app_rest_modificaciones (
-  id bigint NOT NULL DEFAULT nextval('app_rest_modificaciones_id_seq'::regclass),
-  nombre character varying NOT NULL,
-  descripcion text,
-  tipo_modificacion character varying CHECK (tipo_modificacion::text = ANY (ARRAY['AGREGAR'::character varying, 'QUITAR'::character varying, 'SUSTITUIR'::character varying]::text[])),
-  costo_adicional numeric DEFAULT 0,
-  id_producto_inventario bigint,
-  es_activo boolean DEFAULT true,
-  tiempo_adicional integer DEFAULT 0,
-  maximo_por_plato integer DEFAULT 1,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT app_rest_modificaciones_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_modificaciones_id_producto_inventario_fkey FOREIGN KEY (id_producto_inventario) REFERENCES public.app_dat_producto(id)
-);
-CREATE TABLE public.app_rest_modificaciones_platos (
-  id bigint NOT NULL DEFAULT nextval('app_rest_modificaciones_platos_id_seq'::regclass),
-  id_modificacion bigint NOT NULL,
-  id_plato bigint,
-  id_categoria bigint,
-  costo_especifico numeric,
-  es_activo boolean DEFAULT true,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT app_rest_modificaciones_platos_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_modificaciones_platos_id_modificacion_fkey FOREIGN KEY (id_modificacion) REFERENCES public.app_rest_modificaciones(id),
-  CONSTRAINT app_rest_modificaciones_platos_id_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id),
-  CONSTRAINT app_rest_modificaciones_platos_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_rest_categorias_platos(id)
-);
-CREATE TABLE public.app_rest_platos_elaborados (
-  id bigint NOT NULL DEFAULT nextval('app_rest_platos_elaborados_id_seq'::regclass),
-  nombre character varying NOT NULL,
-  descripcion text,
-  id_categoria bigint,
-  precio_venta numeric NOT NULL,
-  tiempo_preparacion integer,
-  es_activo boolean DEFAULT true,
-  imagen text,
-  instrucciones_preparacion text,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT app_rest_platos_elaborados_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_platos_elaborados_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_rest_categorias_platos(id)
-);
-CREATE TABLE public.app_rest_recetas (
-  id bigint NOT NULL DEFAULT nextval('app_rest_recetas_id_seq'::regclass),
-  id_plato bigint NOT NULL,
-  id_producto_inventario bigint NOT NULL,
-  cantidad_requerida numeric NOT NULL,
-  um character varying,
-  observaciones text,
-  orden integer DEFAULT 1,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT app_rest_recetas_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_recetas_id_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id),
-  CONSTRAINT app_rest_recetas_id_producto_inventario_fkey FOREIGN KEY (id_producto_inventario) REFERENCES public.app_dat_producto(id)
-);
-CREATE TABLE public.app_rest_venta_modificaciones (
-  id bigint NOT NULL DEFAULT nextval('app_rest_venta_modificaciones_id_seq'::regclass),
-  id_venta_plato bigint NOT NULL,
-  id_modificacion bigint NOT NULL,
-  cantidad integer DEFAULT 1,
-  costo_adicional numeric NOT NULL,
-  observaciones text,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT app_rest_venta_modificaciones_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_venta_modificaciones_id_venta_plato_fkey FOREIGN KEY (id_venta_plato) REFERENCES public.app_rest_venta_platos(id),
-  CONSTRAINT app_rest_venta_modificaciones_id_modificacion_fkey FOREIGN KEY (id_modificacion) REFERENCES public.app_rest_modificaciones(id)
-);
-CREATE TABLE public.app_rest_venta_platos (
-  id bigint NOT NULL DEFAULT nextval('app_rest_venta_platos_id_seq'::regclass),
-  id_operacion_venta bigint,
-  id_plato bigint NOT NULL,
-  cantidad integer NOT NULL DEFAULT 1,
-  precio_unitario numeric NOT NULL,
-  total_linea numeric DEFAULT ((cantidad)::numeric * precio_unitario),
-  created_at timestamp with time zone DEFAULT now(),
-  precio_final numeric,
-  CONSTRAINT app_rest_venta_platos_pkey PRIMARY KEY (id),
-  CONSTRAINT app_rest_venta_platos_id_operacion_venta_fkey FOREIGN KEY (id_operacion_venta) REFERENCES public.app_dat_operaciones(id),
-  CONSTRAINT app_rest_venta_platos_id_plato_fkey FOREIGN KEY (id_plato) REFERENCES public.app_rest_platos_elaborados(id)
 );
 CREATE TABLE public.app_suscripciones (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,

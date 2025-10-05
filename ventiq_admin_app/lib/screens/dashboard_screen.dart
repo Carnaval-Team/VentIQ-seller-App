@@ -19,22 +19,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic> _dashboardData = {};
   String _selectedTimeFilter = '1 mes';
   final DashboardService _dashboardService = DashboardService();
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
-  
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+
   String _currentStoreName = 'Cargando...';
   List<Map<String, dynamic>> _userStores = [];
   double _usdRate = 0.0;
   bool _isLoadingUsdRate = false;
-  
+
   final List<String> _timeFilterOptions = [
     '5 años',
-    '3 años', 
+    '3 años',
     '1 año',
     '6 meses',
     '3 meses',
     '1 mes',
     'Semana',
-    'Día'
+    'Día',
   ];
 
   @override
@@ -47,11 +48,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadStoreInfo() async {
     try {
       final stores = await _userPreferencesService.getUserStores();
-      final currentStoreInfo = await _userPreferencesService.getCurrentStoreInfo();
-      
+      final currentStoreInfo =
+          await _userPreferencesService.getCurrentStoreInfo();
+
       setState(() {
         _userStores = stores;
-        _currentStoreName = currentStoreInfo?['denominacion'] ?? 'Tienda Principal';
+        _currentStoreName =
+            currentStoreInfo?['denominacion'] ?? 'Tienda Principal';
       });
     } catch (e) {
       print('❌ Error loading store info: $e');
@@ -65,49 +68,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       // Fetch and update exchange rates first
       print('💱 Fetching exchange rates...');
       await CurrencyService.fetchAndUpdateExchangeRates();
-      
+
       // Load USD rate after updating exchange rates
       _loadUsdRate();
-      
+
       // Validar que el supervisor tenga id_tienda
       print('🔍 Validating supervisor store access...');
       final hasValidStore = await DashboardService.validateSupervisorStore();
-      
+
       if (!hasValidStore) {
         print('❌ Supervisor no tiene id_tienda válido - usando datos mock');
         _loadMockData();
         return;
       }
-      
+
       print('✅ Supervisor validation passed - loading real data');
-      
-      // Llamar a la función RPC con el período seleccionado
+
+      // Llamar a ambas funciones en paralelo
       print('🔄 Loading dashboard data for period: $_selectedTimeFilter');
-      final realData = await DashboardService.getStoreAnalysis(
-        periodo: _selectedTimeFilter,
-      );
-      
+      final results = await Future.wait([
+        DashboardService.getStoreAnalysis(periodo: _selectedTimeFilter)
+      ]);
+
+      final realData = results[0];
+
       if (realData != null && realData.isNotEmpty) {
         print('✅ Real data loaded successfully');
         print('📊 Data keys: ${realData.keys.toList()}');
-        
+
         // Verificar que los datos no estén vacíos
         final totalSales = realData['totalSales'] ?? 0.0;
         final totalProducts = realData['totalProducts'] ?? 0;
         final period = realData['period'] ?? 'unknown';
         final lastUpdated = realData['lastUpdated'] ?? 'unknown';
-        
+
         print('📊 Key metrics loaded:');
         print('  - totalSales: $totalSales');
         print('  - totalProducts: $totalProducts');
         print('  - period: $period (String)');
         print('  - lastUpdated: $lastUpdated (String)');
-        
+
         setState(() {
           _dashboardData = realData;
           _isLoading = false;
@@ -122,22 +127,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _loadMockData();
     }
   }
-  
+
   Future<void> _loadUsdRate() async {
     setState(() {
       _isLoadingUsdRate = true;
     });
-    
+
     try {
       print('💱 Loading USD rate from database...');
       final rates = await CurrencyService.getCurrentRatesFromDatabase();
-      
+
       // Find USD rate where moneda_origen = 'USD'
       final usdRateData = rates.firstWhere(
         (rate) => rate['moneda_origen'] == 'USD',
         orElse: () => <String, dynamic>{},
       );
-      
+
       if (usdRateData.isNotEmpty) {
         setState(() {
           _usdRate = (usdRateData['tasa'] as num?)?.toDouble() ?? 0.0;
@@ -163,7 +168,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _loadMockData() {
     print('⚠️ Loading mock data as fallback');
     print('⚠️ Reason: Either validation failed or RPC returned no data');
-    
+
     // Fallback con datos básicos cuando no hay datos reales
     Future.delayed(const Duration(milliseconds: 500), () {
       setState(() {
@@ -181,14 +186,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           'okStock': 0,
           'salesData': <FlSpot>[],
           'categoryData': [
-            {'name': 'Sin datos', 'value': 1, 'color': 0xFF9E9E9E}
+            {'name': 'Sin datos', 'value': 1, 'color': 0xFF9E9E9E},
           ],
           'period': _selectedTimeFilter,
           'lastUpdated': DateTime.now().toIso8601String(),
         };
         _isLoading = false;
       });
-      
+
       print('📊 Mock data loaded:');
       print('  - totalSales: 0.0');
       print('  - totalProducts: 0');
@@ -227,13 +232,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
               itemCount: _userStores.length,
               itemBuilder: (context, index) {
                 final store = _userStores[index];
-                final isCurrentStore = store['denominacion'] == _currentStoreName;
-                
+                final isCurrentStore =
+                    store['denominacion'] == _currentStoreName;
+
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: isCurrentStore 
-                        ? AppColors.primary 
-                        : AppColors.primary.withOpacity(0.1),
+                    backgroundColor:
+                        isCurrentStore
+                            ? AppColors.primary
+                            : AppColors.primary.withOpacity(0.1),
                     child: Icon(
                       Icons.store,
                       color: isCurrentStore ? Colors.white : AppColors.primary,
@@ -243,14 +250,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   title: Text(
                     store['denominacion'] ?? 'Tienda ${store['id_tienda']}',
                     style: TextStyle(
-                      fontWeight: isCurrentStore ? FontWeight.bold : FontWeight.normal,
+                      fontWeight:
+                          isCurrentStore ? FontWeight.bold : FontWeight.normal,
                       color: isCurrentStore ? AppColors.primary : null,
                     ),
                   ),
                   subtitle: Text('ID: ${store['id_tienda']}'),
-                  trailing: isCurrentStore 
-                      ? const Icon(Icons.check_circle, color: AppColors.primary)
-                      : null,
+                  trailing:
+                      isCurrentStore
+                          ? const Icon(
+                            Icons.check_circle,
+                            color: AppColors.primary,
+                          )
+                          : null,
                   onTap: () {
                     Navigator.of(context).pop(store);
                   },
@@ -268,7 +280,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       },
     );
 
-    if (selectedStore != null && selectedStore['denominacion'] != _currentStoreName) {
+    if (selectedStore != null &&
+        selectedStore['denominacion'] != _currentStoreName) {
       await _switchStore(selectedStore);
     }
   }
@@ -279,23 +292,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Cambiando tienda...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 16),
+                  Text('Cambiando tienda...'),
+                ],
+              ),
+            ),
       );
 
       // Update selected store in preferences
       await _userPreferencesService.updateSelectedStore(store['id_tienda']);
-      
+
       // Update current store name
       setState(() {
-        _currentStoreName = store['denominacion'] ?? 'Tienda ${store['id_tienda']}';
+        _currentStoreName =
+            store['denominacion'] ?? 'Tienda ${store['id_tienda']}';
       });
 
       // Reload dashboard data for new store
@@ -304,7 +319,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Close loading dialog
       if (mounted) {
         Navigator.of(context).pop();
-        
+
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -316,11 +331,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     } catch (e) {
       print('❌ Error switching store: $e');
-      
+
       // Close loading dialog if still open
       if (mounted) {
         Navigator.of(context).pop();
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Error al cambiar tienda'),
@@ -330,8 +345,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     }
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -359,11 +372,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               tooltip: 'Seleccionar Tienda: $_currentStoreName',
             ),
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
       ),
@@ -371,11 +385,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           _isLoading ? _buildLoadingState() : _buildDashboard(),
           // USD Rate Chip positioned at bottom left
-          Positioned(
-            bottom: 16,
-            left: 16,
-            child: _buildUsdRateChip(),
-          ),
+          Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
         ],
       ),
       endDrawer: const AdminDrawer(),
@@ -395,10 +405,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           SizedBox(height: 16),
           Text(
             'Cargando dashboard...',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -414,23 +421,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
           // Filtro de tiempo
           _buildTimeFilterSection(),
           const SizedBox(height: 24),
-          
+
           // KPIs principales
           _buildKPISection(),
           const SizedBox(height: 24),
-          
+
           // Métricas de ventas
           _buildSalesSection(),
           const SizedBox(height: 24),
-          
+
           // Distribución por categorías
           _buildCategorySection(),
           const SizedBox(height: 24),
-          
+
           // Estado del inventario
           _buildInventorySection(),
           const SizedBox(height: 24),
-          
+
           // Accesos rápidos
           _buildQuickActionsSection(),
         ],
@@ -455,11 +462,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.filter_list,
-            color: AppColors.primary,
-            size: 24,
-          ),
+          const Icon(Icons.filter_list, color: AppColors.primary, size: 24),
           const SizedBox(width: 12),
           const Text(
             'Período:',
@@ -482,18 +485,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: DropdownButton<String>(
                   value: _selectedTimeFilter,
                   isExpanded: true,
-                  icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.primary),
+                  icon: const Icon(
+                    Icons.keyboard_arrow_down,
+                    color: AppColors.primary,
+                  ),
                   style: const TextStyle(
                     fontSize: 14,
                     color: AppColors.textPrimary,
                     fontWeight: FontWeight.w500,
                   ),
-                  items: _timeFilterOptions.map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
+                  items:
+                      _timeFilterOptions.map((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
                   onChanged: (String? newValue) {
                     if (newValue != null && newValue != _selectedTimeFilter) {
                       setState(() {
@@ -539,8 +546,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: _buildKPICard(
                 title: 'Ventas Total',
-                value: '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}',
-                subtitle: '${(_dashboardData['salesChange'] ?? 0.0) >= 0 ? '+' : '-'} ${(_dashboardData['salesChange'] ?? 0.0).toStringAsFixed(2)}% ${_getPreviousPeriodLabel()}',
+                value:
+                    '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}',
+                subtitle:
+                    '${(_dashboardData['salesChange'] ?? 0.0) >= 0 ? '+' : '-'} ${(_dashboardData['salesChange'] ?? 0.0).toStringAsFixed(2)}% ${_getPreviousPeriodLabel()}',
                 icon: Icons.trending_up,
                 color: AppColors.success,
                 onTap: () => Navigator.pushNamed(context, '/sales'),
@@ -574,7 +583,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: _buildKPICard(
                 title: 'Gastos',
-                value: '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
+                value:
+                    '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
                 subtitle: _getPeriodLabel(),
                 icon: Icons.money_off,
                 color: AppColors.error,
@@ -622,11 +632,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              Icon(
-                icon,
-                size: 20,
-                color: color,
-              ),
+              Icon(icon, size: 20, color: color),
             ],
           ),
           const SizedBox(height: 8),
@@ -677,7 +683,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 12),
         Container(
           height: 230,
-          padding: const EdgeInsets.fromLTRB(0,12,12,0),
+          padding: const EdgeInsets.fromLTRB(0, 12, 12, 0),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
@@ -691,16 +697,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   drawVerticalLine: false,
                   horizontalInterval: _getYAxisInterval(),
                   getDrawingHorizontalLine: (value) {
-                    return FlLine(
-                      color: AppColors.border,
-                      strokeWidth: 1,
-                    );
+                    return FlLine(color: AppColors.border, strokeWidth: 1);
                   },
                 ),
                 titlesData: FlTitlesData(
                   show: true,
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
@@ -709,7 +716,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       getTitlesWidget: (double value, TitleMeta meta) {
                         final label = _getChartLabel(value.toInt());
                         if (label.isEmpty) return const SizedBox.shrink();
-                        
+
                         return SideTitleWidget(
                           axisSide: meta.axisSide,
                           child: Container(
@@ -768,13 +775,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     spots: _dashboardData['salesData'] ?? [],
                     isCurved: true,
                     gradient: LinearGradient(
-                      colors: [AppColors.primary, AppColors.primary.withOpacity(0.3)],
+                      colors: [
+                        AppColors.primary,
+                        AppColors.primary.withOpacity(0.3),
+                      ],
                     ),
                     barWidth: 3,
                     isStrokeCapRound: true,
-                    dotData: const FlDotData(
-                      show: true,
-                    ),
+                    dotData: const FlDotData(show: true),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
@@ -797,8 +805,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildCategorySection() {
-    final categoryData = _dashboardData['categoryData'] as List<Map<String, dynamic>>? ?? [];
-    
+    final categoryData =
+        _dashboardData['categoryData'] as List<Map<String, dynamic>>? ?? [];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -843,35 +852,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
-                  children: categoryData.map((item) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: Color(item['color'] ?? 0xFF9E9E9E),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              item['name'] ?? 'Sin nombre',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                                fontWeight: FontWeight.w500,
+                  children:
+                      categoryData.map((item) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: Color(item['color'] ?? 0xFF9E9E9E),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
                               ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  item['name'] ?? 'Sin nombre',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+                        );
+                      }).toList(),
                 ),
               ),
             ],
@@ -881,7 +891,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  List<PieChartSectionData> _buildPieSections(List<Map<String, dynamic>> categoryData) {
+  List<PieChartSectionData> _buildPieSections(
+    List<Map<String, dynamic>> categoryData,
+  ) {
     return categoryData.map((item) {
       return PieChartSectionData(
         color: Color(item['color'] ?? 0xFF9E9E9E),
@@ -922,11 +934,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   AppColors.error,
                 ),
               ),
-              Container(
-                width: 1,
-                height: 40,
-                color: AppColors.border,
-              ),
+              Container(width: 1, height: 40, color: AppColors.border),
               Expanded(
                 child: _buildInventoryItem(
                   'Stock Bajo',
@@ -935,11 +943,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   AppColors.warning,
                 ),
               ),
-              Container(
-                width: 1,
-                height: 40,
-                color: AppColors.border,
-              ),
+              Container(width: 1, height: 40, color: AppColors.border),
               Expanded(
                 child: _buildInventoryItem(
                   'Stock OK',
@@ -955,14 +959,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildInventoryItem(String title, String value, IconData icon, Color color) {
+  Widget _buildInventoryItem(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Column(
       children: [
-        Icon(
-          icon,
-          size: 24,
-          color: color,
-        ),
+        Icon(icon, size: 24, color: color),
         const SizedBox(height: 8),
         Text(
           value,
@@ -975,10 +980,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 4),
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
           textAlign: TextAlign.center,
         ),
       ],
@@ -1036,7 +1038,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildQuickActionCard(String title, IconData icon, Color color, VoidCallback onTap) {
+  Widget _buildQuickActionCard(
+    String title,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1067,11 +1074,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             const SizedBox(width: 16),
-            Icon(
-              icon,
-              size: 24,
-              color: color,
-            ),
+            Icon(icon, size: 24, color: color),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -1091,13 +1094,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _getChartLabel(int index) {
     // Usar las etiquetas reales del servicio si están disponibles
-    if (_dashboardData != null && 
-        _dashboardData['salesLabels'] != null && 
+    if (_dashboardData != null &&
+        _dashboardData['salesLabels'] != null &&
         _dashboardData['salesLabels'] is List<String>) {
       final labels = _dashboardData['salesLabels'] as List<String>;
       return index < labels.length ? labels[index] : '';
     }
-    
+
     // Fallback a etiquetas estáticas si no hay datos del servicio
     switch (_selectedTimeFilter) {
       case 'Día':
@@ -1132,7 +1135,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// Obtiene el intervalo para mostrar etiquetas en el eje X
   double _getXAxisInterval() {
     final maxX = _getMaxX();
-    
+
     // Para evitar sobreposición de etiquetas según el período
     switch (_selectedTimeFilter) {
       case 'Día':
@@ -1169,7 +1172,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return salesData.length.toDouble() - 1;
       }
     }
-    
+
     // Fallback a valores por defecto
     switch (_selectedTimeFilter) {
       case 'Día':
@@ -1199,20 +1202,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (salesData.isEmpty) {
       return 1000; // Valor por defecto
     }
-    
-    double maxValue = salesData.map((spot) => spot.y).reduce((a, b) => a > b ? a : b);
-    
+
+    double maxValue = salesData
+        .map((spot) => spot.y)
+        .reduce((a, b) => a > b ? a : b);
+
     // Agregar un 20% de margen superior para que el gráfico se vea mejor
     return maxValue * 1.2;
   }
 
   double _getYAxisInterval() {
     final maxY = _getMaxY();
-    
+
     // Calcular intervalo dinámico para mostrar máximo 10 etiquetas
     // Dividir maxY entre 8-10 para obtener un intervalo apropiado
     double targetInterval = maxY / 8;
-    
+
     // Redondear a números "bonitos"
     if (targetInterval <= 1) {
       return 1;
@@ -1263,7 +1268,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _formatYAxisLabel(double value) {
     if (value == 0) return '0';
-    
+
     if (value >= 1000000) {
       // Para millones, mostrar con 1 decimal si es necesario
       double millions = value / 1000000;
@@ -1283,7 +1288,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// Formatea valores de moneda para mostrar K y M para números grandes
   String _formatCurrency(double value) {
     if (value == 0) return '0.00';
-    
+
     if (value >= 1000000) {
       // Para millones, mostrar con 1 decimal
       double millions = value / 1000000;
@@ -1383,29 +1388,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.attach_money,
-            size: 16,
-            color: AppColors.primary,
-          ),
+          Icon(Icons.attach_money, size: 16, color: AppColors.primary),
           const SizedBox(width: 4),
           _isLoadingUsdRate
               ? SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
-                  ),
-                )
-              : Text(
-                  'USD: \$${_usdRate.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
                 ),
+              )
+              : Text(
+                'USD: \$${_usdRate.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
         ],
       ),
     );
