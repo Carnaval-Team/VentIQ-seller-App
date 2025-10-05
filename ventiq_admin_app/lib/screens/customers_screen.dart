@@ -3,7 +3,7 @@ import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../models/customer.dart';
-import '../services/mock_sales_service.dart';
+import '../services/customer_service.dart';
 
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
@@ -12,7 +12,8 @@ class CustomersScreen extends StatefulWidget {
   State<CustomersScreen> createState() => _CustomersScreenState();
 }
 
-class _CustomersScreenState extends State<CustomersScreen> with TickerProviderStateMixin {
+class _CustomersScreenState extends State<CustomersScreen>
+    with TickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -20,10 +21,17 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
   bool _isLoading = true;
   String _selectedSegment = 'Todos';
   String _sortBy = 'Nombre';
-
+  List<Customer> _filteredCustomers = [];
+  String _errorMessage = '';
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text;
+        _applyFilters();
+      });
+    });
     _tabController = TabController(length: 3, vsync: this);
     _loadCustomersData();
   }
@@ -35,14 +43,71 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
     super.dispose();
   }
 
-  void _loadCustomersData() {
-    setState(() => _isLoading = true);
-    
-    Future.delayed(const Duration(milliseconds: 800), () {
+  Future<void> _loadCustomersData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final customers = await CustomerService.getAllCustomers(
+        activeOnly: true,
+        includeMetrics: true,
+      );
+
       setState(() {
-        _customers = MockSalesService.getMockCustomers();
+        _customers = customers;
+        _filteredCustomers = customers;
         _isLoading = false;
       });
+      _applyFilters();
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Error al cargar clientes: $e';
+      });
+    }
+  }
+
+  void _applyFilters() {
+    List<Customer> filtered = List.from(_customers);
+
+    // Filtrar por búsqueda
+    if (_searchQuery.isNotEmpty) {
+      filtered =
+          filtered.where((customer) {
+            return customer.nombreCompleto.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                customer.codigoCliente.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                (customer.email?.toLowerCase().contains(
+                      _searchQuery.toLowerCase(),
+                    ) ??
+                    false);
+          }).toList();
+    }
+
+    // Filtrar por segmento
+    if (_selectedSegment != 'Todos') {
+      filtered =
+          filtered.where((customer) {
+            switch (_selectedSegment) {
+              case 'VIP':
+                return customer.isVIP;
+              case 'Corporativo':
+                return customer.isCorporativo;
+              case 'Regular':
+                return customer.tipoCliente == 1;
+              default:
+                return true;
+            }
+          }).toList();
+    }
+
+    setState(() {
+      _filteredCustomers = filtered;
     });
   }
 
@@ -75,11 +140,12 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
             tooltip: 'Actualizar',
           ),
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
         bottom: TabBar(
@@ -89,19 +155,25 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
           indicatorColor: Colors.white,
           tabs: const [
             Tab(text: 'Clientes', icon: Icon(Icons.people, size: 18)),
-            Tab(text: 'Fidelización', icon: Icon(Icons.card_giftcard, size: 18)),
+            Tab(
+              text: 'Fidelización',
+              icon: Icon(Icons.card_giftcard, size: 18),
+            ),
             Tab(text: 'Segmentación', icon: Icon(Icons.analytics, size: 18)),
           ],
         ),
       ),
-      body: _isLoading ? _buildLoadingState() : TabBarView(
-        controller: _tabController,
-        children: [
-          _buildCustomersTab(),
-          _buildLoyaltyTab(),
-          _buildSegmentationTab(),
-        ],
-      ),
+      body:
+          _isLoading
+              ? _buildLoadingState()
+              : TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildCustomersTab(),
+                  _buildLoyaltyTab(),
+                  _buildSegmentationTab(),
+                ],
+              ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 3,
@@ -117,35 +189,39 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
         children: [
           CircularProgressIndicator(color: AppColors.primary),
           SizedBox(height: 16),
-          Text('Cargando clientes...', style: TextStyle(color: AppColors.textSecondary)),
+          Text(
+            'Cargando clientes...',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildCustomersTab() {
-    final filteredCustomers = _customers.where((customer) {
-      final matchesSearch = _searchQuery.isEmpty ||
-          customer.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          customer.email.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          customer.phone.contains(_searchQuery);
-      return matchesSearch;
-    }).toList();
+    // Usar _filteredCustomers que ya se calcula en _applyFilters()
+    if (_filteredCustomers.isEmpty &&
+        _searchQuery.isEmpty &&
+        _selectedSegment == 'Todos') {
+      _applyFilters(); // Aplicar filtros iniciales si no se han aplicado
+    }
+    final filteredCustomers = _filteredCustomers;
 
     return Column(
       children: [
         _buildSearchAndFilters(),
         Expanded(
-          child: filteredCustomers.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: filteredCustomers.length,
-                  itemBuilder: (context, index) {
-                    final customer = filteredCustomers[index];
-                    return _buildCustomerCard(customer);
-                  },
-                ),
+          child:
+              filteredCustomers.isEmpty
+                  ? _buildEmptyState()
+                  : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: filteredCustomers.length,
+                    itemBuilder: (context, index) {
+                      final customer = filteredCustomers[index];
+                      return _buildCustomerCard(customer);
+                    },
+                  ),
         ),
       ],
     );
@@ -165,15 +241,16 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
             decoration: InputDecoration(
               hintText: 'Buscar por nombre, email o teléfono...',
               prefixIcon: const Icon(Icons.search, color: AppColors.primary),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
-                      },
-                    )
-                  : null,
+              suffixIcon:
+                  _searchQuery.isNotEmpty
+                      ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                      : null,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: AppColors.border),
@@ -193,12 +270,21 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
                   value: _selectedSegment,
                   decoration: InputDecoration(
                     labelText: 'Segmento',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  items: ['Todos', 'VIP', 'Premium', 'Regular', 'Nuevo'].map((segment) {
-                    return DropdownMenuItem(value: segment, child: Text(segment));
-                  }).toList(),
-                  onChanged: (value) => setState(() => _selectedSegment = value!),
+                  items:
+                      ['Todos', 'VIP', 'Premium', 'Regular', 'Nuevo'].map((
+                        segment,
+                      ) {
+                        return DropdownMenuItem(
+                          value: segment,
+                          child: Text(segment),
+                        );
+                      }).toList(),
+                  onChanged:
+                      (value) => setState(() => _selectedSegment = value!),
                 ),
               ),
               const SizedBox(width: 12),
@@ -207,11 +293,16 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
                   value: _sortBy,
                   decoration: InputDecoration(
                     labelText: 'Ordenar por',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  items: ['Nombre', 'Fecha registro', 'Compras', 'Puntos'].map((sort) {
-                    return DropdownMenuItem(value: sort, child: Text(sort));
-                  }).toList(),
+                  items:
+                      ['Nombre', 'Fecha registro', 'Compras', 'Puntos'].map((
+                        sort,
+                      ) {
+                        return DropdownMenuItem(value: sort, child: Text(sort));
+                      }).toList(),
                   onChanged: (value) => setState(() => _sortBy = value!),
                 ),
               ),
@@ -228,17 +319,19 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: () => _showCustomerDetails(customer),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
               CircleAvatar(
-                radius: 25,
+                radius: 24,
                 backgroundColor: AppColors.primary.withOpacity(0.1),
                 child: Text(
-                  customer.name.substring(0, 1).toUpperCase(),
+                  customer.nombreCompleto.isNotEmpty
+                      ? customer.nombreCompleto.substring(0, 1).toUpperCase()
+                      : '?',
                   style: const TextStyle(
                     color: AppColors.primary,
                     fontWeight: FontWeight.bold,
@@ -252,29 +345,53 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      customer.name,
+                      customer.nombreCompleto,
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 16,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      customer.email,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 14,
+                    if (customer.email != null && customer.email!.isNotEmpty)
+                      Text(
+                        customer.email!,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 4),
                     Row(
                       children: [
                         Icon(Icons.phone, size: 14, color: Colors.grey[600]),
                         const SizedBox(width: 4),
                         Text(
-                          customer.phone,
+                          customer.telefono ?? 'Sin teléfono',
                           style: TextStyle(
                             color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.star, size: 14, color: Colors.orange[600]),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${customer.puntosAcumulados} puntos',
+                          style: TextStyle(
+                            color: Colors.orange[600],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '\$${customer.totalCompras.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
                             fontSize: 14,
                           ),
                         ),
@@ -283,19 +400,25 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
                   ],
                 ),
               ),
+              const SizedBox(width: 12),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: _getSegmentColor(customer.segment).withOpacity(0.1),
+                      color: _getSegmentColor(
+                        customer.tipoClienteDisplay,
+                      ).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      customer.segment,
+                      customer.tipoClienteDisplay,
                       style: TextStyle(
-                        color: _getSegmentColor(customer.segment),
+                        color: _getSegmentColor(customer.tipoClienteDisplay),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -303,10 +426,10 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${customer.loyaltyPoints} pts',
+                    customer.nivelFidelidadDisplay,
                     style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
                     ),
                   ),
                 ],
@@ -325,9 +448,15 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
         children: [
           Icon(Icons.people_outline, size: 64, color: AppColors.textSecondary),
           SizedBox(height: 16),
-          Text('No se encontraron clientes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+          Text(
+            'No se encontraron clientes',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+          ),
           SizedBox(height: 8),
-          Text('Intenta ajustar los filtros de búsqueda', style: TextStyle(color: AppColors.textSecondary)),
+          Text(
+            'Intenta ajustar los filtros de búsqueda',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
         ],
       ),
     );
@@ -335,97 +464,183 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
 
   Color _getSegmentColor(String segment) {
     switch (segment) {
-      case 'VIP': return Colors.purple;
-      case 'Premium': return Colors.orange;
-      case 'Regular': return AppColors.primary;
-      case 'Nuevo': return Colors.green;
-      default: return Colors.grey;
+      case 'VIP':
+      case 'Corporativo':
+        return Colors.purple;
+      case 'Premium':
+        return Colors.orange;
+      case 'Regular':
+        return AppColors.primary;
+      case 'Nuevo':
+        return Colors.green;
+      default:
+        return Colors.grey;
     }
   }
 
   void _showCustomerDetails(Customer customer) {
     showDialog(
       context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
+      builder:
+          (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.9,
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: AppColors.primary.withOpacity(0.1),
-                    child: Text(
-                      customer.name.substring(0, 1).toUpperCase(),
-                      style: const TextStyle(color: AppColors.primary, fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: AppColors.primary.withOpacity(0.1),
+                        child: Text(
+                          customer.nombreCompleto.isNotEmpty
+                              ? customer.nombreCompleto
+                                  .substring(0, 1)
+                                  .toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              customer.nombreCompleto,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (customer.email != null &&
+                                customer.email!.isNotEmpty)
+                              Text(
+                                customer.email!,
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            if (customer.telefono != null &&
+                                customer.telefono!.isNotEmpty)
+                              Text(
+                                customer.telefono!,
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(customer.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-                        Text(customer.email, style: const TextStyle(color: AppColors.textSecondary)),
-                        Text(customer.phone, style: const TextStyle(color: AppColors.textSecondary)),
-                      ],
-                    ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildInfoCard(
+                          'Puntos',
+                          '${customer.puntosAcumulados}',
+                          Icons.stars,
+                          Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildInfoCard(
+                          'Compras',
+                          '\$${customer.totalCompras.toStringAsFixed(2)}',
+                          Icons.shopping_bag,
+                          AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildInfoCard(
+                          'Tipo',
+                          customer.tipoClienteDisplay,
+                          Icons.category,
+                          _getSegmentColor(customer.tipoClienteDisplay),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildInfoCard(
+                          'Registro',
+                          '${customer.fechaRegistro.day}/${customer.fechaRegistro.month}/${customer.fechaRegistro.year}',
+                          Icons.calendar_today,
+                          Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildInfoCard(
+                          'Nivel',
+                          customer.nivelFidelidadDisplay,
+                          Icons.star,
+                          Colors.amber,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildInfoCard(
+                          'Código',
+                          customer.codigoCliente,
+                          Icons.qr_code,
+                          Colors.blue,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Editar'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                        label: const Text('Cerrar'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildInfoCard('Puntos', '${customer.loyaltyPoints}', Icons.stars, Colors.orange),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildInfoCard('Compras', '${customer.totalPurchases}', Icons.shopping_bag, AppColors.primary),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildInfoCard('Segmento', customer.segment, Icons.category, _getSegmentColor(customer.segment)),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildInfoCard('Registro', customer.registrationDate.day.toString() + '/' + customer.registrationDate.month.toString(), Icons.calendar_today, Colors.grey),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.edit),
-                    label: const Text('Editar'),
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                    label: const Text('Cerrar'),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
     );
   }
 
-  Widget _buildInfoCard(String title, String value, IconData icon, Color color) {
+  Widget _buildInfoCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -436,8 +651,18 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
         children: [
           Icon(icon, color: color, size: 20),
           const SizedBox(height: 4),
-          Text(title, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500)),
-          Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          Text(
+            title,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );
@@ -447,47 +672,63 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
     final nameController = TextEditingController();
     final emailController = TextEditingController();
     final phoneController = TextEditingController();
-    
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Agregar Cliente'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Nombre completo', prefixIcon: Icon(Icons.person)),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Agregar Cliente'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre completo',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.email),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneController,
+                  decoration: const InputDecoration(
+                    labelText: 'Teléfono',
+                    prefixIcon: Icon(Icons.phone),
+                  ),
+                  keyboardType: TextInputType.phone,
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: emailController,
-              decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email)),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: phoneController,
-              decoration: const InputDecoration(labelText: 'Teléfono', prefixIcon: Icon(Icons.phone)),
-              keyboardType: TextInputType.phone,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-          ElevatedButton(
-            onPressed: () {
-              if (nameController.text.isNotEmpty && emailController.text.isNotEmpty) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Cliente agregado exitosamente')),
-                );
-              }
-            },
-            child: const Text('Agregar'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (nameController.text.isNotEmpty &&
+                      emailController.text.isNotEmpty) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Cliente agregado exitosamente'),
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Agregar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -497,21 +738,52 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Programa de Fidelización', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const Text(
+            'Programa de Fidelización',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildLoyaltyCard('Clientes VIP', '24', Icons.star, Colors.purple)),
+              Expanded(
+                child: _buildLoyaltyCard(
+                  'Clientes VIP',
+                  '${_customers.where((c) => c.isVIP).length}',
+                  Icons.star,
+                  Colors.purple,
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _buildLoyaltyCard('Puntos Totales', '15,420', Icons.stars, Colors.orange)),
+              Expanded(
+                child: _buildLoyaltyCard(
+                  'Puntos Totales',
+                  '${_customers.fold<int>(0, (sum, c) => sum + c.puntosAcumulados)}',
+                  Icons.stars,
+                  Colors.orange,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildLoyaltyCard('Canjes Mes', '89', Icons.redeem, AppColors.primary)),
+              Expanded(
+                child: _buildLoyaltyCard(
+                  'Canjes Mes',
+                  '89', // Esto podría calcularse desde las ventas
+                  Icons.redeem,
+                  AppColors.primary,
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _buildLoyaltyCard('Nuevos Miembros', '12', Icons.person_add, Colors.green)),
+              Expanded(
+                child: _buildLoyaltyCard(
+                  'Nuevos Miembros',
+                  '${_customers.where((c) => DateTime.now().difference(c.fechaRegistro).inDays <= 30).length}',
+                  Icons.person_add,
+                  Colors.green,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -521,19 +793,40 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Top Clientes por Puntos', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const Text(
+                    'Top Clientes por Puntos',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 12),
-                  ...List.generate(5, (index) {
-                    final customer = _customers.isNotEmpty ? _customers[index % _customers.length] : null;
-                    return customer != null ? ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: AppColors.primary.withOpacity(0.1),
-                        child: Text(customer.name.substring(0, 1), style: const TextStyle(color: AppColors.primary)),
-                      ),
-                      title: Text(customer.name),
-                      trailing: Text('${customer.loyaltyPoints} pts', style: const TextStyle(fontWeight: FontWeight.w600)),
-                    ) : const SizedBox();
-                  }),
+                  ...(_customers.isNotEmpty
+                      ? _customers
+                          .take(5)
+                          .map(
+                            (customer) => ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: AppColors.primary.withOpacity(
+                                  0.1,
+                                ),
+                                child: Text(
+                                  customer.nombreCompleto.isNotEmpty
+                                      ? customer.nombreCompleto.substring(0, 1)
+                                      : '?',
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                              title: Text(customer.nombreCompleto),
+                              trailing: Text(
+                                '${customer.puntosAcumulados} pts',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList()
+                      : [const Text('No hay clientes disponibles')]),
                 ],
               ),
             ),
@@ -543,7 +836,12 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildLoyaltyCard(String title, String value, IconData icon, Color color) {
+  Widget _buildLoyaltyCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -551,8 +849,15 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
           children: [
             Icon(icon, color: color, size: 32),
             const SizedBox(height: 8),
-            Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            Text(title, style: const TextStyle(color: AppColors.textSecondary), textAlign: TextAlign.center),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              title,
+              style: const TextStyle(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),
@@ -565,21 +870,37 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Segmentación de Clientes', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const Text(
+            'Segmentación de Clientes',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildSegmentCard('VIP', '24', Colors.purple, '15%')),
+              Expanded(
+                child: _buildSegmentCard('VIP', '24', Colors.purple, '15%'),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _buildSegmentCard('Premium', '45', Colors.orange, '28%')),
+              Expanded(
+                child: _buildSegmentCard('Premium', '45', Colors.orange, '28%'),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildSegmentCard('Regular', '78', AppColors.primary, '49%')),
+              Expanded(
+                child: _buildSegmentCard(
+                  'Regular',
+                  '78',
+                  AppColors.primary,
+                  '49%',
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _buildSegmentCard('Nuevo', '12', Colors.green, '8%')),
+              Expanded(
+                child: _buildSegmentCard('Nuevo', '12', Colors.green, '8%'),
+              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -589,12 +910,27 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Análisis de Comportamiento', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const Text(
+                    'Análisis de Comportamiento',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 16),
-                  _buildBehaviorItem('Frecuencia de Compra', 'Semanal: 32% | Mensual: 45% | Ocasional: 23%'),
-                  _buildBehaviorItem('Ticket Promedio', '\$45.50 (↑12% vs mes anterior)'),
-                  _buildBehaviorItem('Productos Favoritos', 'Electrónicos: 35% | Ropa: 28% | Hogar: 22%'),
-                  _buildBehaviorItem('Canal Preferido', 'Tienda física: 65% | Online: 35%'),
+                  _buildBehaviorItem(
+                    'Frecuencia de Compra',
+                    'Semanal: 32% | Mensual: 45% | Ocasional: 23%',
+                  ),
+                  _buildBehaviorItem(
+                    'Ticket Promedio',
+                    '\$45.50 (↑12% vs mes anterior)',
+                  ),
+                  _buildBehaviorItem(
+                    'Productos Favoritos',
+                    'Electrónicos: 35% | Ropa: 28% | Hogar: 22%',
+                  ),
+                  _buildBehaviorItem(
+                    'Canal Preferido',
+                    'Tienda física: 65% | Online: 35%',
+                  ),
                 ],
               ),
             ),
@@ -604,7 +940,12 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildSegmentCard(String segment, String count, Color color, String percentage) {
+  Widget _buildSegmentCard(
+    String segment,
+    String count,
+    Color color,
+    String percentage,
+  ) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -620,7 +961,10 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
               child: Icon(Icons.people, color: color),
             ),
             const SizedBox(height: 8),
-            Text(count, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            Text(
+              count,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
             Text(segment, style: const TextStyle(fontWeight: FontWeight.w500)),
             Text(percentage, style: TextStyle(color: color, fontSize: 12)),
           ],
@@ -641,8 +985,17 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
-                Text(value, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
               ],
             ),
           ),
@@ -654,7 +1007,11 @@ class _CustomersScreenState extends State<CustomersScreen> with TickerProviderSt
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Dashboard
-        Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/dashboard',
+          (route) => false,
+        );
         break;
       case 1: // Productos
         Navigator.pushNamed(context, '/products-dashboard');

@@ -4,9 +4,7 @@ import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../models/sales.dart';
-import '../services/mock_sales_service.dart';
 import '../services/sales_service.dart';
-
 
 class SalesScreen extends StatefulWidget {
   const SalesScreen({super.key});
@@ -39,7 +37,6 @@ class _SalesScreenState extends State<SalesScreen>
     _tabController = TabController(length: 3, vsync: this);
     _initializeDateRange();
     _loadSalesData();
-    _loadProductAnalysis();
   }
 
   void _initializeDateRange() {
@@ -56,14 +53,6 @@ class _SalesScreenState extends State<SalesScreen>
 
   void _loadSalesData() {
     setState(() => _isLoading = true);
-
-    Future.delayed(const Duration(milliseconds: 800), () {
-      setState(() {
-        _sales = MockSalesService.getMockSales();
-        _isLoading = false;
-      });
-    });
-
     _loadProductSalesData();
     _loadVendorReports();
   }
@@ -87,9 +76,15 @@ class _SalesScreenState extends State<SalesScreen>
       setState(() {
         _productSalesReports = productSales;
         // Calculate total sales from product sales reports
-        _totalSales = productSales.fold<double>(0.0, (sum, report) => sum + report.ingresosTotales);
+        _totalSales = productSales.fold<double>(
+          0.0,
+          (sum, report) => sum + report.ingresosTotales,
+        );
         // Calculate total products sold from product sales reports
-        _totalProductsSold = productSales.fold<int>(0, (sum, report) => sum + report.totalVendido.toInt());
+        _totalProductsSold = productSales.fold<int>(
+          0,
+          (sum, report) => sum + report.totalVendido.toInt(),
+        );
         _isLoadingProducts = false;
         _isLoadingMetrics = false;
       });
@@ -121,15 +116,20 @@ class _SalesScreenState extends State<SalesScreen>
           fechaFin: _endDate,
           uuidUsuario: report.uuidUsuario,
         );
-        
+
         final updatedReport = report.copyWith(totalEgresos: totalEgresos);
         reportsWithEgresos.add(updatedReport);
       }
 
       // Filtrar vendedores que tengan ventas reales (productos > 0 o dinero > 0)
-      final filteredReports = reportsWithEgresos.where((report) => 
-        report.totalProductosVendidos > 0 || report.totalDineroGeneral > 0
-      ).toList();
+      final filteredReports =
+          reportsWithEgresos
+              .where(
+                (report) =>
+                    report.totalProductosVendidos > 0 ||
+                    report.totalDineroGeneral > 0,
+              )
+              .toList();
 
       setState(() {
         _vendorReports = filteredReports;
@@ -165,7 +165,6 @@ class _SalesScreenState extends State<SalesScreen>
       print('Error loading product analysis: $e');
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -212,7 +211,7 @@ class _SalesScreenState extends State<SalesScreen>
         ),
       ),
       body:
-          _isLoading
+          (_isLoadingProducts || _isLoadingVendors || _isLoadingAnalysis)
               ? _buildLoadingState()
               : TabBarView(
                 controller: _tabController,
@@ -308,10 +307,14 @@ class _SalesScreenState extends State<SalesScreen>
   }
 
   String _formatDateRangeLabel() {
-    final startFormatted = '${_startDate.day.toString().padLeft(2, '0')}/${_startDate.month.toString().padLeft(2, '0')}/${_startDate.year}';
-    final endFormatted = '${_endDate.day.toString().padLeft(2, '0')}/${_endDate.month.toString().padLeft(2, '0')}/${_endDate.year}';
-    
-    if (_startDate.day == _endDate.day && _startDate.month == _endDate.month && _startDate.year == _endDate.year) {
+    final startFormatted =
+        '${_startDate.day.toString().padLeft(2, '0')}/${_startDate.month.toString().padLeft(2, '0')}/${_startDate.year}';
+    final endFormatted =
+        '${_endDate.day.toString().padLeft(2, '0')}/${_endDate.month.toString().padLeft(2, '0')}/${_endDate.year}';
+
+    if (_startDate.day == _endDate.day &&
+        _startDate.month == _endDate.month &&
+        _startDate.year == _endDate.year) {
       return startFormatted;
     } else {
       return '$startFormatted - $endFormatted';
@@ -970,7 +973,11 @@ class _SalesScreenState extends State<SalesScreen>
     final localDateTime = dateTime.toLocal();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final dateToCheck = DateTime(localDateTime.year, localDateTime.month, localDateTime.day);
+    final dateToCheck = DateTime(
+      localDateTime.year,
+      localDateTime.month,
+      localDateTime.day,
+    );
 
     if (dateToCheck == today) {
       return 'Hoy ${localDateTime.hour.toString().padLeft(2, '0')}:${localDateTime.minute.toString().padLeft(2, '0')}';
@@ -1082,15 +1089,15 @@ class _SalesScreenState extends State<SalesScreen>
         children: [
           const Icon(Icons.date_range, color: AppColors.primary),
           const SizedBox(width: 12),
-          const Text(
-            'Fecha: ',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
+          const Text('Fecha: ', style: TextStyle(fontWeight: FontWeight.w600)),
           Expanded(
             child: GestureDetector(
               onTap: _showDateRangePicker,
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 8,
+                  horizontal: 12,
+                ),
                 decoration: BoxDecoration(
                   border: Border.all(color: AppColors.border),
                   borderRadius: BorderRadius.circular(8),
@@ -1122,9 +1129,9 @@ class _SalesScreenState extends State<SalesScreen>
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-              primary: AppColors.primary,
-            ),
+            colorScheme: Theme.of(
+              context,
+            ).colorScheme.copyWith(primary: AppColors.primary),
           ),
           child: child!,
         );
@@ -1152,7 +1159,7 @@ class _SalesScreenState extends State<SalesScreen>
           59,
         );
       });
-      
+
       // Reload data with new date range
       _loadProductSalesData();
       _loadVendorReports();
@@ -1172,88 +1179,92 @@ class _SalesScreenState extends State<SalesScreen>
 
       showDialog(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(
-            'Egresos de ${vendor.nombreCompleto}',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 400,
-            child: deliveries.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No hay egresos registrados para este vendedor en el período seleccionado',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textSecondary),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: deliveries.length,
-                    itemBuilder: (context, index) {
-                      final delivery = deliveries[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: AppColors.error.withOpacity(0.1),
-                            child: const Icon(
-                              Icons.money_off,
-                              color: AppColors.error,
-                              size: 20,
-                            ),
+        builder:
+            (context) => AlertDialog(
+              title: Text(
+                'Egresos de ${vendor.nombreCompleto}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+                child:
+                    deliveries.isEmpty
+                        ? const Center(
+                          child: Text(
+                            'No hay egresos registrados para este vendedor en el período seleccionado',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppColors.textSecondary),
                           ),
-                          title: Text(
-                            '\$${delivery.montoEntrega.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.error,
-                            ),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                delivery.motivoEntrega,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
+                        )
+                        : ListView.builder(
+                          itemCount: deliveries.length,
+                          itemBuilder: (context, index) {
+                            final delivery = deliveries[index];
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: AppColors.error.withOpacity(
+                                    0.1,
+                                  ),
+                                  child: const Icon(
+                                    Icons.money_off,
+                                    color: AppColors.error,
+                                    size: 20,
+                                  ),
+                                ),
+                                title: Text(
+                                  '\$${delivery.montoEntrega.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.error,
+                                  ),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      delivery.motivoEntrega,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Recibe: ${delivery.nombreRecibe}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Autoriza: ${delivery.nombreAutoriza}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                trailing: Text(
+                                  _formatDateTime(delivery.fechaEntrega),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
                                 ),
                               ),
-                              Text(
-                                'Recibe: ${delivery.nombreRecibe}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              Text(
-                                'Autoriza: ${delivery.nombreAutoriza}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          trailing: Text(
-                            _formatDateTime(delivery.fechaEntrega),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cerrar'),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cerrar'),
+                ),
+              ],
             ),
-          ],
-        ),
       );
     } catch (e) {
       print('Error loading vendor egresos detail: $e');
@@ -1283,435 +1294,665 @@ class _SalesScreenState extends State<SalesScreen>
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (context) => DraggableScrollableSheet(
-          initialChildSize: 0.8,
-          maxChildSize: 0.95,
-          minChildSize: 0.5,
-          builder: (context, scrollController) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(20),
-              ),
-            ),
-            child: Column(
-              children: [
-                // Handle
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Órdenes de ${vendor.nombreCompleto}',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
-                              ),
-                            ),
-                            Text(
-                              '${orders.length} órdenes encontradas',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
+        builder:
+            (context) => DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              maxChildSize: 0.95,
+              minChildSize: 0.5,
+              builder:
+                  (context, scrollController) => Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        // Handle
+                        Container(
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                // Content
-                Expanded(
-                  child: orders.isEmpty
-                      ? const Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                        // Header
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Icon(
-                                Icons.shopping_cart_outlined,
-                                size: 64,
-                                color: Colors.grey,
-                              ),
-                              SizedBox(height: 16),
-                              Text(
-                                'No hay órdenes',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.grey,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Órdenes de ${vendor.nombreCompleto}',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1F2937),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${orders.length} órdenes encontradas',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              SizedBox(height: 8),
-                              Text(
-                                'No se encontraron órdenes para este vendedor\nen el período seleccionado',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey),
+                              IconButton(
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(Icons.close),
                               ),
                             ],
                           ),
-                        )
-                      : ListView.builder(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(16),
-                          itemCount: orders.length,
-                          itemBuilder: (context, index) {
-                            final order = orders[index];
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.grey[200]!),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: ExpansionTile(
-                                tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                title: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        'Orden #${order.idOperacion}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 16,
+                        ),
+                        const Divider(height: 1),
+                        // Content
+                        Expanded(
+                          child:
+                              orders.isEmpty
+                                  ? const Center(
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.shopping_cart_outlined,
+                                          size: 64,
+                                          color: Colors.grey,
                                         ),
-                                      ),
+                                        SizedBox(height: 16),
+                                        Text(
+                                          'No hay órdenes',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                        SizedBox(height: 8),
+                                        Text(
+                                          'No se encontraron órdenes para este vendedor\nen el período seleccionado',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(color: Colors.grey),
+                                        ),
+                                      ],
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: _getStatusColor(order.estadoNombre),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        order.estadoNombre,
-                                        style: const TextStyle(
+                                  )
+                                  : ListView.builder(
+                                    controller: scrollController,
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: orders.length,
+                                    itemBuilder: (context, index) {
+                                      final order = orders[index];
+                                      return Container(
+                                        margin: const EdgeInsets.only(
+                                          bottom: 12,
+                                        ),
+                                        decoration: BoxDecoration(
                                           color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.grey[200]!,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(
+                                                0.05,
+                                              ),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
                                         ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                subtitle: Padding(
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.attach_money, size: 16, color: AppColors.success),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                        child: ExpansionTile(
+                                          tilePadding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: 16,
+                                                vertical: 8,
+                                              ),
+                                          childrenPadding:
+                                              const EdgeInsets.fromLTRB(
+                                                16,
+                                                0,
+                                                16,
+                                                16,
+                                              ),
+                                          title: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  'Orden #${order.idOperacion}',
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.w600,
-                                                    fontSize: 15,
+                                                    fontSize: 16,
                                                   ),
                                                 ),
-                                                const SizedBox(width: 16),
-                                                Icon(Icons.shopping_bag, size: 16, color: AppColors.info),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  '${order.cantidadItems} prod.',
-                                                  style: const TextStyle(fontSize: 14),
+                                              ),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: _getStatusColor(
+                                                    order.estadoNombre,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
                                                 ),
+                                                child: Text(
+                                                  order.estadoNombre,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          subtitle: Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 8,
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.attach_money,
+                                                            size: 16,
+                                                            color:
+                                                                AppColors
+                                                                    .success,
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 4,
+                                                          ),
+                                                          Text(
+                                                            '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600,
+                                                                  fontSize: 15,
+                                                                ),
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 16,
+                                                          ),
+                                                          Icon(
+                                                            Icons.shopping_bag,
+                                                            size: 16,
+                                                            color:
+                                                                AppColors.info,
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 4,
+                                                          ),
+                                                          Text(
+                                                            '${order.cantidadItems} prod.',
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 14,
+                                                                ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      _formatOrderDate(
+                                                        order.fechaOperacion,
+                                                      ),
+                                                      style: TextStyle(
+                                                        color: Colors.grey[600],
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                // Medios de pago
+                                                if (order.detalles['pagos'] !=
+                                                        null &&
+                                                    (order.detalles['pagos']
+                                                            as List)
+                                                        .isNotEmpty) ...[
+                                                  const SizedBox(height: 8),
+                                                  Wrap(
+                                                    spacing: 6,
+                                                    runSpacing: 4,
+                                                    children:
+                                                        _buildPaymentMethodChips(
+                                                          order.detalles['pagos']
+                                                              as List,
+                                                        ),
+                                                  ),
+                                                ],
                                               ],
                                             ),
                                           ),
-                                          Text(
-                                            _formatOrderDate(order.fechaOperacion),
-                                            style: TextStyle(
-                                              color: Colors.grey[600],
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      // Medios de pago
-                                      if (order.detalles['pagos'] != null && (order.detalles['pagos'] as List).isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        Wrap(
-                                          spacing: 6,
-                                          runSpacing: 4,
-                                          children: _buildPaymentMethodChips(order.detalles['pagos'] as List),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                children: [
-                                  const Divider(),
-                                  const SizedBox(height: 8),
-                                  
-                                  // Cliente
-                                  if (order.detalles['cliente'] != null) ...[
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Icon(Icons.person, size: 20, color: AppColors.primary),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                'Cliente:',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                order.detalles['cliente']['nombre_completo'] ?? 'N/A',
-                                                style: const TextStyle(fontSize: 14),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 16),
-                                  ],
-                                  
-                                  // Productos
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Icon(Icons.inventory_2, size: 20, color: AppColors.primary),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            const Text(
-                                              'Productos:',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 14,
-                                              ),
-                                            ),
+                                            const Divider(),
                                             const SizedBox(height: 8),
-                                            if (order.detalles['items'] != null)
-                                              ...List.generate(
-                                                (order.detalles['items'] as List).length,
-                                                (itemIndex) {
-                                                  final item = order.detalles['items'][itemIndex];
-                                                  // Filtrar productos con precio_unitario = 0.0 o 0
-                                                  final precioUnitario = (item['precio_unitario'] ?? 0.0).toDouble();
-                                                  if (precioUnitario == 0.0) {
-                                                    return const SizedBox.shrink(); // No mostrar el producto
-                                                  }
-                                                  
-                                                  return Container(
-                                                    margin: const EdgeInsets.only(bottom: 6),
-                                                    padding: const EdgeInsets.all(12),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.grey[50],
-                                                      borderRadius: BorderRadius.circular(8),
-                                                      border: Border.all(color: Colors.grey[200]!),
-                                                    ),
-                                                    child: Row(
+
+                                            // Cliente
+                                            if (order.detalles['cliente'] !=
+                                                null) ...[
+                                              Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Icon(
+                                                    Icons.person,
+                                                    size: 20,
+                                                    color: AppColors.primary,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
                                                       children: [
-                                                        Expanded(
-                                                          flex: 3,
-                                                          child: Text(
-                                                            item['producto_nombre'] ?? item['nombre'] ?? 'Producto',
-                                                            style: const TextStyle(
-                                                              fontSize: 13,
-                                                              fontWeight: FontWeight.w500,
-                                                            ),
+                                                        const Text(
+                                                          'Cliente:',
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            fontSize: 14,
                                                           ),
                                                         ),
-                                                        Expanded(
-                                                          flex: 1,
-                                                          child: Text(
-                                                            'x${item['cantidad']}',
-                                                            textAlign: TextAlign.center,
-                                                            style: TextStyle(
-                                                              fontSize: 13,
-                                                              color: Colors.grey[600],
-                                                            ),
-                                                          ),
-                                                        ),
-                                                        Expanded(
-                                                          flex: 1,
-                                                          child: Text(
-                                                            '\$${(item['importe'] ?? 0.0).toStringAsFixed(2)}',
-                                                            textAlign: TextAlign.right,
-                                                            style: const TextStyle(
-                                                              fontWeight: FontWeight.w600,
-                                                              fontSize: 13,
-                                                              color: Color(0xFF4A90E2),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  );
-                                                },
-                                              ).where((widget) => widget is! SizedBox).toList(),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  
-                                  // Desglose de Pagos
-                                  if (order.detalles['pagos'] != null && (order.detalles['pagos'] as List).isNotEmpty) ...[
-                                    const SizedBox(height: 16),
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Icon(Icons.payment, size: 20, color: AppColors.primary),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                'Desglose de Pagos:',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 8),
-                                              ...List.generate(
-                                                (order.detalles['pagos'] as List).length,
-                                                (paymentIndex) {
-                                                  final payment = order.detalles['pagos'][paymentIndex];
-                                                  return Container(
-                                                    margin: const EdgeInsets.only(bottom: 6),
-                                                    padding: const EdgeInsets.all(12),
-                                                    decoration: BoxDecoration(
-                                                      color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false).withOpacity(0.1),
-                                                      borderRadius: BorderRadius.circular(8),
-                                                      border: Border.all(
-                                                        color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false).withOpacity(0.3),
-                                                      ),
-                                                    ),
-                                                    child: Row(
-                                                      children: [
-                                                        Icon(
-                                                          _getPaymentIconByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false),
-                                                          size: 16,
-                                                          color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false),
-                                                        ),
-                                                        const SizedBox(width: 8),
-                                                        Expanded(
-                                                          child: Text(
-                                                            payment['medio_pago'] ?? 'N/A',
-                                                            style: TextStyle(
-                                                              fontSize: 13,
-                                                              fontWeight: FontWeight.w500,
-                                                              color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false),
-                                                            ),
-                                                          ),
+                                                        const SizedBox(
+                                                          height: 2,
                                                         ),
                                                         Text(
-                                                          '\$${(payment['total'] ?? 0.0).toStringAsFixed(2)}',
+                                                          order.detalles['cliente']['nombre_completo'] ??
+                                                              'N/A',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 14,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 16),
+                                            ],
+
+                                            // Productos
+                                            Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Icon(
+                                                  Icons.inventory_2,
+                                                  size: 20,
+                                                  color: AppColors.primary,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      const Text(
+                                                        'Productos:',
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 14,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 8),
+                                                      if (order
+                                                              .detalles['items'] !=
+                                                          null)
+                                                        ...List.generate(
+                                                              (order.detalles['items']
+                                                                      as List)
+                                                                  .length,
+                                                              (itemIndex) {
+                                                                final item =
+                                                                    order
+                                                                        .detalles['items'][itemIndex];
+                                                                // Filtrar productos con precio_unitario = 0.0 o 0
+                                                                final precioUnitario =
+                                                                    (item['precio_unitario'] ??
+                                                                            0.0)
+                                                                        .toDouble();
+                                                                if (precioUnitario ==
+                                                                    0.0) {
+                                                                  return const SizedBox.shrink(); // No mostrar el producto
+                                                                }
+
+                                                                return Container(
+                                                                  margin:
+                                                                      const EdgeInsets.only(
+                                                                        bottom:
+                                                                            6,
+                                                                      ),
+                                                                  padding:
+                                                                      const EdgeInsets.all(
+                                                                        12,
+                                                                      ),
+                                                                  decoration: BoxDecoration(
+                                                                    color:
+                                                                        Colors
+                                                                            .grey[50],
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          8,
+                                                                        ),
+                                                                    border: Border.all(
+                                                                      color:
+                                                                          Colors
+                                                                              .grey[200]!,
+                                                                    ),
+                                                                  ),
+                                                                  child: Row(
+                                                                    children: [
+                                                                      Expanded(
+                                                                        flex: 3,
+                                                                        child: Text(
+                                                                          item['producto_nombre'] ??
+                                                                              item['nombre'] ??
+                                                                              'Producto',
+                                                                          style: const TextStyle(
+                                                                            fontSize:
+                                                                                13,
+                                                                            fontWeight:
+                                                                                FontWeight.w500,
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                      Expanded(
+                                                                        flex: 1,
+                                                                        child: Text(
+                                                                          'x${item['cantidad']}',
+                                                                          textAlign:
+                                                                              TextAlign.center,
+                                                                          style: TextStyle(
+                                                                            fontSize:
+                                                                                13,
+                                                                            color:
+                                                                                Colors.grey[600],
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                      Expanded(
+                                                                        flex: 1,
+                                                                        child: Text(
+                                                                          '\$${(item['importe'] ?? 0.0).toStringAsFixed(2)}',
+                                                                          textAlign:
+                                                                              TextAlign.right,
+                                                                          style: const TextStyle(
+                                                                            fontWeight:
+                                                                                FontWeight.w600,
+                                                                            fontSize:
+                                                                                13,
+                                                                            color: Color(
+                                                                              0xFF4A90E2,
+                                                                            ),
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                );
+                                                              },
+                                                            )
+                                                            .where(
+                                                              (widget) =>
+                                                                  widget
+                                                                      is! SizedBox,
+                                                            )
+                                                            .toList(),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+
+                                            // Desglose de Pagos
+                                            if (order.detalles['pagos'] !=
+                                                    null &&
+                                                (order.detalles['pagos']
+                                                        as List)
+                                                    .isNotEmpty) ...[
+                                              const SizedBox(height: 16),
+                                              Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Icon(
+                                                    Icons.payment,
+                                                    size: 20,
+                                                    color: AppColors.primary,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        const Text(
+                                                          'Desglose de Pagos:',
                                                           style: TextStyle(
-                                                            fontWeight: FontWeight.w600,
-                                                            fontSize: 13,
-                                                            color: _getPaymentColorByType(payment['es_efectivo'] ?? false, payment['es_digital'] ?? false),
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            fontSize: 14,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 8,
+                                                        ),
+                                                        ...List.generate(
+                                                          (order.detalles['pagos']
+                                                                  as List)
+                                                              .length,
+                                                          (paymentIndex) {
+                                                            final payment =
+                                                                order
+                                                                    .detalles['pagos'][paymentIndex];
+                                                            return Container(
+                                                              margin:
+                                                                  const EdgeInsets.only(
+                                                                    bottom: 6,
+                                                                  ),
+                                                              padding:
+                                                                  const EdgeInsets.all(
+                                                                    12,
+                                                                  ),
+                                                              decoration: BoxDecoration(
+                                                                color: _getPaymentColorByType(
+                                                                  payment['es_efectivo'] ??
+                                                                      false,
+                                                                  payment['es_digital'] ??
+                                                                      false,
+                                                                ).withOpacity(
+                                                                  0.1,
+                                                                ),
+                                                                borderRadius:
+                                                                    BorderRadius.circular(
+                                                                      8,
+                                                                    ),
+                                                                border: Border.all(
+                                                                  color: _getPaymentColorByType(
+                                                                    payment['es_efectivo'] ??
+                                                                        false,
+                                                                    payment['es_digital'] ??
+                                                                        false,
+                                                                  ).withOpacity(
+                                                                    0.3,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              child: Row(
+                                                                children: [
+                                                                  Icon(
+                                                                    _getPaymentIconByType(
+                                                                      payment['es_efectivo'] ??
+                                                                          false,
+                                                                      payment['es_digital'] ??
+                                                                          false,
+                                                                    ),
+                                                                    size: 16,
+                                                                    color: _getPaymentColorByType(
+                                                                      payment['es_efectivo'] ??
+                                                                          false,
+                                                                      payment['es_digital'] ??
+                                                                          false,
+                                                                    ),
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    width: 8,
+                                                                  ),
+                                                                  Expanded(
+                                                                    child: Text(
+                                                                      payment['medio_pago'] ??
+                                                                          'N/A',
+                                                                      style: TextStyle(
+                                                                        fontSize:
+                                                                            13,
+                                                                        fontWeight:
+                                                                            FontWeight.w500,
+                                                                        color: _getPaymentColorByType(
+                                                                          payment['es_efectivo'] ??
+                                                                              false,
+                                                                          payment['es_digital'] ??
+                                                                              false,
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                  Text(
+                                                                    '\$${(payment['total'] ?? 0.0).toStringAsFixed(2)}',
+                                                                    style: TextStyle(
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w600,
+                                                                      fontSize:
+                                                                          13,
+                                                                      color: _getPaymentColorByType(
+                                                                        payment['es_efectivo'] ??
+                                                                            false,
+                                                                        payment['es_digital'] ??
+                                                                            false,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            );
+                                                          },
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+
+                                            // Observaciones
+                                            if (order.observaciones != null &&
+                                                order
+                                                    .observaciones!
+                                                    .isNotEmpty) ...[
+                                              const SizedBox(height: 16),
+                                              Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Icon(
+                                                    Icons.note,
+                                                    size: 20,
+                                                    color: AppColors.primary,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        const Text(
+                                                          'Observaciones:',
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            fontSize: 14,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 4,
+                                                        ),
+                                                        Container(
+                                                          width:
+                                                              double.infinity,
+                                                          padding:
+                                                              const EdgeInsets.all(
+                                                                12,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color:
+                                                                Colors.blue[50],
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  8,
+                                                                ),
+                                                            border: Border.all(
+                                                              color:
+                                                                  Colors
+                                                                      .blue[200]!,
+                                                            ),
+                                                          ),
+                                                          child: Text(
+                                                            order.observaciones ??
+                                                                '',
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 13,
+                                                                ),
                                                           ),
                                                         ),
                                                       ],
                                                     ),
-                                                  );
-                                                },
+                                                  ),
+                                                ],
                                               ),
                                             ],
-                                          ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
-                                  ],
-                                  
-                                  // Observaciones
-                                  if (order.observaciones != null && order.observaciones!.isNotEmpty) ...[
-                                    const SizedBox(height: 16),
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Icon(Icons.note, size: 20, color: AppColors.primary),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                'Observaciones:',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Container(
-                                                width: double.infinity,
-                                                padding: const EdgeInsets.all(12),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.blue[50],
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  border: Border.all(color: Colors.blue[200]!),
-                                                ),
-                                                child: Text(
-                                                  order.observaciones ?? '',
-                                                  style: const TextStyle(fontSize: 13),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            );
-                          },
+                                      );
+                                    },
+                                  ),
                         ),
-                ),
-              ],
+                      ],
+                    ),
+                  ),
             ),
-          ),
-        ),
       );
     } catch (e) {
       if (mounted) {
@@ -1755,7 +1996,7 @@ class _SalesScreenState extends State<SalesScreen>
       double monto = (pago['total'] ?? 0.0).toDouble();
       bool esEfectivo = pago['es_efectivo'] ?? false;
       bool esDigital = pago['es_digital'] ?? false;
-      
+
       String key = '$metodoPago-$esEfectivo-$esDigital';
       if (paymentSummary.containsKey(key)) {
         paymentSummary[key]!['total'] += monto;
@@ -1770,26 +2011,26 @@ class _SalesScreenState extends State<SalesScreen>
     }
 
     return paymentSummary.values.map((payment) {
-      Color color = _getPaymentColorByType(payment['es_efectivo'], payment['es_digital']);
-      IconData icon = _getPaymentIconByType(payment['es_efectivo'], payment['es_digital']);
-      
+      Color color = _getPaymentColorByType(
+        payment['es_efectivo'],
+        payment['es_digital'],
+      );
+      IconData icon = _getPaymentIconByType(
+        payment['es_efectivo'],
+        payment['es_digital'],
+      );
+
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: color.withOpacity(0.3),
-          ),
+          border: Border.all(color: color.withOpacity(0.3)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 12,
-              color: color,
-            ),
+            Icon(icon, size: 12, color: color),
             const SizedBox(width: 4),
             Text(
               payment['medio_pago'],

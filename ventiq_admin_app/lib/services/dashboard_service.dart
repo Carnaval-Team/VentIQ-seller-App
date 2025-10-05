@@ -1,10 +1,9 @@
-import 'sales_service.dart';
-
 import 'user_preferences_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../models/analytics/inventory_metrics.dart';
 import '../models/crm/crm_metrics.dart';
+import 'customer_service.dart';
 import 'analytics_service.dart';
 import 'supplier_service.dart';
 import 'auth_service.dart';
@@ -377,29 +376,56 @@ class DashboardService {
   /// Obtener métricas CRM integradas (clientes + proveedores)
   static Future<CRMMetrics> getCRMMetrics({int? storeId}) async {
     try {
-      // Obtener métricas de proveedores existentes
-      final supplierMetrics = await _getSupplierMetrics();
+      // Obtener storeId si no se proporciona
+      final currentStoreId = storeId ?? await _prefsService.getIdTienda();
+      if (currentStoreId == null) {
+        print('⚠️ No se pudo obtener storeId, usando métricas vacías');
+        return const CRMMetrics();
+      }
 
-      // Datos de clientes (actualmente mock, se puede integrar con CustomerService)
-      final totalCustomers = 150;
-      final activeCustomers = 120;
-      final vipCustomers = 25;
+      // Obtener métricas reales de clientes
+      final customerMetrics = await CustomerService.getCustomerMetrics();
+      final totalCustomers = customerMetrics['total_customers'] ?? 0;
+      final activeCustomers = customerMetrics['active_customers'] ?? 0;
+      final vipCustomers = customerMetrics['vip_customers'] ?? 0;
 
+      // Obtener métricas reales de proveedores
+      Map<String, dynamic> supplierMetrics;
+      try {
+        final suppliers = await SupplierService.getAllSuppliers();
+        supplierMetrics = {
+          'total_proveedores': suppliers.length,
+          'proveedores_activos': suppliers.where((s) => s.isActive).length,
+          'lead_time_promedio': 5.0,
+          'valor_compras_mes': 0.0,
+          'performance_promedio': 85.0,
+        };
+      } catch (e) {
+        print('❌ Error obteniendo proveedores: $e');
+        supplierMetrics = {
+          'total_proveedores': 0,
+          'proveedores_activos': 0,
+          'lead_time_promedio': 0.0,
+          'valor_compras_mes': 0.0,
+          'performance_promedio': 0.0,
+        };
+      }
       // Calcular score de relaciones
       final relationshipScore = _calculateRelationshipScore(
         supplierMetrics,
         totalCustomers,
         activeCustomers,
       );
-
+      final totalContacts =
+          totalCustomers + (supplierMetrics['total_proveedores'] ?? 0);
       return CRMMetrics(
         // Datos de clientes
+        // Datos reales de clientes
         totalCustomers: totalCustomers,
         activeCustomers: activeCustomers,
         vipCustomers: vipCustomers,
-        averageCustomerValue: 2500.0,
-        loyaltyPoints: 1250,
-
+        averageCustomerValue: customerMetrics['average_order_value'] ?? 0.0,
+        loyaltyPoints: (totalCustomers * 50).toDouble(),
         // Datos de proveedores (del método existente)
         totalSuppliers: supplierMetrics['total_proveedores'] ?? 0,
         activeSuppliers: supplierMetrics['proveedores_activos'] ?? 0,
@@ -408,13 +434,39 @@ class DashboardService {
         uniqueProducts: 0, // Se puede calcular desde inventario
         // Métricas integradas
         relationshipScore: relationshipScore,
-        totalContacts: 0,
-        //totalCustomers + (supplierMetrics['total_proveedores'] ?? 0),
+        totalContacts: totalContacts,
         recentInteractions: 45,
       );
     } catch (e) {
       print('❌ Error obteniendo métricas CRM: $e');
       return const CRMMetrics(); // Retorna métricas vacías como fallback
+    }
+  }
+
+  /// Obtener métricas de proveedores de la tienda
+  static Future<Map<String, dynamic>> _getSupplierMetricsForStore(
+    int storeId,
+  ) async {
+    try {
+      // Obtener todos los proveedores de la tienda
+      final suppliers = await SupplierService.getAllSuppliers();
+
+      return {
+        'total_proveedores': suppliers.length,
+        'proveedores_activos': suppliers.where((s) => s.isActive).length,
+        'lead_time_promedio': 5.0, // Valor por defecto
+        'valor_compras_mes': 0.0, // Se puede calcular desde compras
+        'performance_promedio': 85.0, // Valor por defecto
+      };
+    } catch (e) {
+      print('❌ Error obteniendo métricas de proveedores: $e');
+      return {
+        'total_proveedores': 0,
+        'proveedores_activos': 0,
+        'lead_time_promedio': 0.0,
+        'valor_compras_mes': 0.0,
+        'performance_promedio': 0.0,
+      };
     }
   }
 

@@ -22,17 +22,19 @@ class SupplierService {
       print('🔍 Obteniendo proveedores...');
       print('📊 Incluir métricas: $includeMetrics');
 
-      String selectQuery =
-          'id, denominacion, direccion, ubicacion, sku_codigo, lead_time, created_at';
-
-      // Eliminar las subconsultas complejas que causan el error
-      if (includeMetrics) {
-        // Usar la misma consulta básica - las métricas se obtendrán por separado si es necesario
-        selectQuery =
-            'id, denominacion, direccion, ubicacion, sku_codigo, lead_time, created_at';
+      // Obtener ID de tienda del usuario actual
+      final storeId = await _prefsService.getIdTienda();
+      if (storeId == null) {
+        throw Exception('No se pudo obtener el ID de tienda del usuario');
       }
 
-      var query = _supabase.from('app_dat_proveedor').select(selectQuery);
+      String selectQuery =
+          'id, denominacion, direccion, ubicacion, sku_codigo, lead_time, created_at, idtienda';
+
+      var query = _supabase
+          .from('app_dat_proveedor')
+          .select(selectQuery)
+          .eq('idtienda', storeId); // Filtro por tienda
 
       final response = await query.order('denominacion');
 
@@ -52,6 +54,11 @@ class SupplierService {
   }) async {
     try {
       print('🔍 Obteniendo proveedor ID: $id');
+      // Obtener ID de tienda del usuario actual
+      final storeId = await _prefsService.getIdTienda();
+      if (storeId == null) {
+        throw Exception('No se pudo obtener el ID de tienda del usuario');
+      }
 
       String selectQuery = '''
         id, denominacion, direccion, ubicacion, sku_codigo, 
@@ -86,6 +93,7 @@ class SupplierService {
               .from('app_dat_proveedor')
               .select(selectQuery)
               .eq('id', id)
+              .eq('idtienda', storeId) // Agregar filtro por tienda
               .single();
 
       print('✅ Proveedor obtenido: ${response['denominacion']}');
@@ -100,13 +108,18 @@ class SupplierService {
   static Future<Map<String, dynamic>> createSupplier(Supplier supplier) async {
     try {
       print('🔄 Creando proveedor: ${supplier.denominacion}');
-
+      // Obtener ID de tienda del usuario actual
+      final storeId = await _prefsService.getIdTienda();
+      if (storeId == null) {
+        throw Exception('No se pudo obtener el ID de tienda del usuario');
+      }
       // Validar que el SKU no exista
       final existingSupplier =
           await _supabase
               .from('app_dat_proveedor')
               .select('id')
               .eq('sku_codigo', supplier.skuCodigo)
+              .eq('idtienda', storeId) // Agregar filtro por tienda
               .maybeSingle();
 
       if (existingSupplier != null) {
@@ -117,15 +130,21 @@ class SupplierService {
         };
       }
 
+      // Crear proveedor con idtienda
+      final supplierWithStore = supplier.copyWith(idtienda: storeId);
+      print('🔧 Supplier con tienda: idtienda = ${supplierWithStore.idtienda}');
+
+      final insertData = supplierWithStore.toInsertJson();
+      print('📤 Datos a insertar: $insertData');
       final response =
           await _supabase
               .from('app_dat_proveedor')
-              .insert(supplier.toInsertJson())
+              .insert(supplierWithStore.toInsertJson())
               .select()
               .single();
 
       print('✅ Proveedor creado con ID: ${response['id']}');
-
+      print('🏪 Proveedor creado con idtienda: ${response['idtienda']}');
       return {
         'success': true,
         'message': 'Proveedor creado exitosamente',
@@ -141,7 +160,11 @@ class SupplierService {
   static Future<Map<String, dynamic>> updateSupplier(Supplier supplier) async {
     try {
       print('🔄 Actualizando proveedor ID: ${supplier.id}');
-
+      // Obtener ID de tienda del usuario actual
+      final storeId = await _prefsService.getIdTienda();
+      if (storeId == null) {
+        throw Exception('No se pudo obtener el ID de tienda del usuario');
+      }
       // Validar que el SKU no exista en otro proveedor
       final existingSupplier =
           await _supabase
@@ -164,6 +187,7 @@ class SupplierService {
               .from('app_dat_proveedor')
               .update(supplier.toInsertJson())
               .eq('id', supplier.id)
+              .eq('idtienda', storeId) // Agregar filtro por tienda
               .select()
               .single();
 
@@ -184,12 +208,18 @@ class SupplierService {
   static Future<Map<String, dynamic>> deleteSupplier(int id) async {
     try {
       print('🔄 Eliminando proveedor ID: $id');
+      // Obtener ID de tienda del usuario actual
+      final storeId = await _prefsService.getIdTienda();
+      if (storeId == null) {
+        throw Exception('No se pudo obtener el ID de tienda del usuario');
+      }
 
       // Verificar si el proveedor tiene recepciones asociadas
       final hasReceptions = await _supabase
           .from('app_dat_recepcion_productos')
-          .select('id')
-          .eq('id_proveedor', id)
+          .select('rp.id, o.id_tienda')
+          .eq('rp.id_proveedor', id)
+          .eq('o.id_tienda', storeId) // ✅ CORRECTO - JOIN con operaciones
           .limit(1);
 
       if (hasReceptions.isNotEmpty) {
@@ -200,7 +230,11 @@ class SupplierService {
         };
       }
 
-      await _supabase.from('app_dat_proveedor').delete().eq('id', id);
+      await _supabase
+          .from('app_dat_proveedor')
+          .delete()
+          .eq('id', id)
+          .eq('idtienda', storeId); // Agregar filtro por tienda
 
       print('✅ Proveedor eliminado');
 
@@ -217,11 +251,17 @@ class SupplierService {
   static Future<Map<String, dynamic>> getSupplierMetrics(int supplierId) async {
     try {
       print('📊 Obteniendo métricas del proveedor ID: $supplierId');
+      // Obtener ID de tienda del usuario actual
+      final storeId = await _prefsService.getIdTienda();
+      if (storeId == null) {
+        throw Exception('No se pudo obtener el ID de tienda del usuario');
+      }
 
       final response = await _supabase.rpc(
         'fn_metricas_proveedor_completas',
         params: {
           'p_id_proveedor': supplierId,
+          'p_id_tienda': storeId,
           'p_fecha_desde':
               DateTime.now()
                   .subtract(const Duration(days: 90))
@@ -245,11 +285,14 @@ class SupplierService {
 
   /// Obtener dashboard de proveedores con métricas integradas
   static Future<Map<String, dynamic>> getSuppliersDashboard({
-    int? storeId,
     int periodo = 30,
   }) async {
+    final storeId = await _prefsService.getIdTienda();
     try {
       print('📊 Obteniendo dashboard de proveedores...');
+      if (storeId == null) {
+        throw Exception('No se pudo obtener el ID de tienda del usuario');
+      }
 
       final response = await _supabase.rpc(
         'fn_dashboard_proveedores',
@@ -457,15 +500,19 @@ class SupplierService {
       if (query.trim().isEmpty) {
         return getAllSuppliers();
       }
-
+      // Obtener ID de tienda del usuario actual
+      final storeId = await _prefsService.getIdTienda();
+      if (storeId == null) {
+        throw Exception('No se pudo obtener el ID de tienda del usuario');
+      }
       print('🔍 Buscando proveedores: "$query"');
 
       final response = await _supabase
           .from('app_dat_proveedor')
-          .select('''
-            id, denominacion, direccion, ubicacion, sku_codigo, 
-            lead_time, created_at
-          ''')
+          .select(
+            'id, denominacion, direccion, ubicacion, sku_codigo, lead_time, created_at, idtienda',
+          )
+          .eq('idtienda', storeId) // Agregar filtro por tienda
           .or(
             'denominacion.ilike.%$query%,sku_codigo.ilike.%$query%,ubicacion.ilike.%$query%',
           )
