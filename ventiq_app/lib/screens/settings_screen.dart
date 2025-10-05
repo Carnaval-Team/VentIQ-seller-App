@@ -26,14 +26,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final OrderService _orderService = OrderService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
-  final SettingsIntegrationService _integrationService = SettingsIntegrationService();
-  
+  final SettingsIntegrationService _integrationService =
+      SettingsIntegrationService();
+
   bool _isPrintEnabled = true; // Valor por defecto
   bool _isLimitDataUsageEnabled = false; // Valor por defecto
   bool _isOfflineModeEnabled = false; // Valor por defecto
   bool _hasOfflineTurno = false; // Turno abierto offline
   Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
-  
+
   // Nuevas variables para servicios inteligentes
   StreamSubscription<SettingsIntegrationEvent>? _integrationSubscription;
   bool _isSmartServicesInitialized = false;
@@ -54,11 +55,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final printEnabled = await _userPreferencesService.isPrintEnabled();
-    final limitDataEnabled = await _userPreferencesService.isLimitDataUsageEnabled();
-    final offlineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-    final hasOfflineTurno = await _userPreferencesService.hasOfflineTurnoAbierto();
-    final offlineTurnoInfo = await _userPreferencesService.getOfflineTurnoInfo();
-    
+    final limitDataEnabled =
+        await _userPreferencesService.isLimitDataUsageEnabled();
+    final offlineModeEnabled =
+        await _userPreferencesService.isOfflineModeEnabled();
+    final hasOfflineTurno =
+        await _userPreferencesService.hasOfflineTurnoAbierto();
+    final offlineTurnoInfo =
+        await _userPreferencesService.getOfflineTurnoInfo();
+
     setState(() {
       _isPrintEnabled = printEnabled;
       _isLimitDataUsageEnabled = limitDataEnabled;
@@ -72,9 +77,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _initializeSmartServices() async {
     try {
       print('🚀 Inicializando servicios inteligentes en Settings...');
-      
+
       await _integrationService.initialize();
-      
+
       // Configurar listener para eventos
       _integrationSubscription = _integrationService.eventStream.listen(
         _onSmartServiceEvent,
@@ -82,16 +87,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           print('❌ Error en stream de integración: $error');
         },
       );
-      
+
       setState(() {
         _isSmartServicesInitialized = true;
       });
-      
+
       print('✅ Servicios inteligentes inicializados en Settings');
-      
     } catch (e) {
       print('❌ Error inicializando servicios inteligentes: $e');
-      
+
       // Mostrar error al usuario
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -108,18 +112,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Manejar eventos de servicios inteligentes
   void _onSmartServiceEvent(SettingsIntegrationEvent event) {
     print('📡 Evento de integración: ${event.type} - ${event.message}');
-    
+
     setState(() {
       _lastSmartEvent = event.message;
     });
-    
+
     // Mostrar notificaciones importantes al usuario
     if (mounted) {
       switch (event.type) {
         case SettingsIntegrationEventType.offlineModeAutoActivated:
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('🔌 Modo offline activado automáticamente por pérdida de conexión'),
+              content: Text(
+                '🔌 Modo offline activado automáticamente por pérdida de conexión',
+              ),
               backgroundColor: Colors.orange,
               duration: Duration(seconds: 5),
             ),
@@ -127,17 +133,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Recargar configuraciones para reflejar el cambio
           _loadSettings();
           break;
-          
+
         case SettingsIntegrationEventType.connectionRestored:
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('📶 Conexión restaurada - Datos sincronizándose automáticamente'),
+              content: Text(
+                '📶 Conexión restaurada - Datos sincronizándose automáticamente',
+              ),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 3),
             ),
           );
           break;
-          
+
         case SettingsIntegrationEventType.autoSyncStarted:
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -147,7 +155,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           );
           break;
-          
+
         case SettingsIntegrationEventType.reauthenticationStarted:
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -157,7 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           );
           break;
-          
+
         case SettingsIntegrationEventType.reauthenticationSuccess:
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -167,17 +175,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           );
           break;
-          
+
         case SettingsIntegrationEventType.reauthenticationFailed:
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('⚠️ Error en reautenticación - Puede requerir login manual'),
+              content: Text(
+                '⚠️ Error en reautenticación - Puede requerir login manual',
+              ),
               backgroundColor: Colors.orange,
               duration: Duration(seconds: 5),
             ),
           );
           break;
-          
+
         case SettingsIntegrationEventType.error:
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -187,7 +197,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           );
           break;
-          
+
         default:
           // No mostrar notificación para otros eventos
           break;
@@ -248,15 +258,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _isOfflineModeEnabled = false;
         });
         await _userPreferencesService.setOfflineMode(false);
-        
+
         // Notificar al servicio de integración sobre el cambio manual
         if (_isSmartServicesInitialized) {
           await _integrationService.handleOfflineModeChanged(false);
         }
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🌐 Modo offline desactivado - Sincronización automática iniciada'),
+            content: Text(
+              '🌐 Modo offline desactivado - Sincronización automática iniciada',
+            ),
             backgroundColor: Colors.blue,
             duration: Duration(seconds: 3),
           ),
@@ -264,12 +276,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } catch (e) {
       print('❌ Error cambiando modo offline: $e');
-      
+
       // Revertir el estado en caso de error
       setState(() {
         _isOfflineModeEnabled = !value;
       });
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('❌ Error cambiando modo offline: $e'),
@@ -302,10 +314,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: Center(
-                child: ConnectionStatusWidget(
-                  showDetails: true,
-                  compact: true,
-                ),
+                child: ConnectionStatusWidget(showDetails: true, compact: true),
               ),
             ),
           Builder(
@@ -387,9 +396,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Sección de turno offline (solo si hay turno abierto offline)
           if (_hasOfflineTurno) ...[
             _buildSectionHeader('Turno Offline'),
-            _buildSettingsCard([
-              _buildOfflineTurnoTile(),
-            ]),
+            _buildSettingsCard([_buildOfflineTurnoTile()]),
             const SizedBox(height: 16),
           ],
 
@@ -410,8 +417,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: 'Sincronizar datos inmediatamente',
                 onTap: () => _forceSyncNow(),
               ),
-            if (_isSmartServicesInitialized)
-              _buildDivider(),
+            if (_isSmartServicesInitialized) _buildDivider(),
             _buildSettingsTile(
               icon: Icons.storage_outlined,
               title: 'Almacenamiento',
@@ -576,11 +582,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: Colors.orange.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(
-          Icons.data_saver_on,
-          color: Colors.orange,
-          size: 20,
-        ),
+        child: const Icon(Icons.data_saver_on, color: Colors.orange, size: 20),
       ),
       title: const Text(
         'Limitar uso de datos',
@@ -613,11 +615,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: Colors.blue.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(
-          Icons.cloud_off,
-          color: Colors.blue,
-          size: 20,
-        ),
+        child: const Icon(Icons.cloud_off, color: Colors.blue, size: 20),
       ),
       title: const Text(
         'Modo Offline',
@@ -645,20 +643,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildOfflineTurnoTile() {
     final turnoInfo = _offlineTurnoInfo;
     if (turnoInfo == null) return const SizedBox.shrink();
-    
+
     final fechaApertura = turnoInfo['fecha_apertura'] as String?;
     final efectivoInicial = turnoInfo['efectivo_inicial'] as double?;
-    
+
     String fechaFormateada = 'Fecha no disponible';
     if (fechaApertura != null) {
       try {
         final fecha = DateTime.parse(fechaApertura);
-        fechaFormateada = '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year} ${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
+        fechaFormateada =
+            '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year} ${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
       } catch (e) {
         fechaFormateada = 'Fecha inválida';
       }
     }
-    
+
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
@@ -666,11 +665,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: Colors.orange.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(
-          Icons.access_time,
-          color: Colors.orange,
-          size: 20,
-        ),
+        child: const Icon(Icons.access_time, color: Colors.orange, size: 20),
       ),
       title: const Text(
         'Turno Abierto Offline',
@@ -752,16 +747,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _showSyncDialog() async {
     // Verificar si hay datos offline para sincronizar
     final syncSummary = await _userPreferencesService.getOfflineSyncSummary();
-    final hasPendingData = syncSummary['pending_orders_count'] > 0 || 
-                          syncSummary['pending_operations_count'] > 0 || 
-                          syncSummary['has_open_turno'] == true;
-    
+    final hasPendingData =
+        syncSummary['pending_orders_count'] > 0 ||
+        syncSummary['pending_operations_count'] > 0 ||
+        syncSummary['has_open_turno'] == true;
+
     if (!hasPendingData) {
       // No hay datos pendientes - mostrar diálogo de descarga para offline
       _showOfflineDownloadDialog();
       return;
     }
-    
+
     // Mostrar diálogo de confirmación con resumen
     final shouldSync = await _showSyncConfirmationDialog(syncSummary);
     if (shouldSync == true) {
@@ -784,7 +780,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               setState(() {
                 _isOfflineModeEnabled = true;
               });
-              
+
               // Notificar al servicio de integración sobre la activación manual
               if (_isSmartServicesInitialized) {
                 try {
@@ -793,10 +789,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   print('❌ Error notificando activación de modo offline: $e');
                 }
               }
-              
+
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('✅ Datos sincronizados correctamente - Modo offline activado'),
+                  content: Text(
+                    '✅ Datos sincronizados correctamente - Modo offline activado',
+                  ),
                   backgroundColor: Colors.green,
                   duration: Duration(seconds: 3),
                 ),
@@ -906,84 +904,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-
   /// Mostrar diálogo de confirmación con resumen de datos
   Future<bool?> _showSyncConfirmationDialog(Map<String, dynamic> syncSummary) {
     return showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.sync, color: Colors.orange[700]),
-            const SizedBox(width: 8),
-            const Text('Sincronizar Datos'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Se encontraron los siguientes datos offline pendientes:',
-              style: TextStyle(fontWeight: FontWeight.w500),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.sync, color: Colors.orange[700]),
+                const SizedBox(width: 8),
+                const Text('Sincronizar Datos'),
+              ],
             ),
-            const SizedBox(height: 12),
-            if (syncSummary['has_open_turno'] == true)
-              _buildSyncItem(
-                Icons.access_time, 
-                'Turno abierto offline',
-                'Se creará el turno en el servidor',
-              ),
-            if (syncSummary['pending_orders_count'] > 0)
-              _buildSyncItem(
-                Icons.shopping_cart, 
-                '${syncSummary['pending_orders_count']} órdenes pendientes',
-                'Se registrarán las ventas y estados',
-              ),
-            if (syncSummary['pending_operations_count'] > 0)
-              _buildSyncItem(
-                Icons.pending_actions, 
-                '${syncSummary['pending_operations_count']} operaciones pendientes',
-                'Se procesarán aperturas, cierres y cambios',
-              ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange[200]!),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.wifi, color: Colors.orange[700], size: 20),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Asegúrate de tener conexión a internet estable',
-                      style: TextStyle(fontSize: 12),
-                    ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Se encontraron los siguientes datos offline pendientes:',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 12),
+                if (syncSummary['has_open_turno'] == true)
+                  _buildSyncItem(
+                    Icons.access_time,
+                    'Turno abierto offline',
+                    'Se creará el turno en el servidor',
                   ),
-                ],
+                if (syncSummary['pending_orders_count'] > 0)
+                  _buildSyncItem(
+                    Icons.shopping_cart,
+                    '${syncSummary['pending_orders_count']} órdenes pendientes',
+                    'Se registrarán las ventas y estados',
+                  ),
+                if (syncSummary['pending_operations_count'] > 0)
+                  _buildSyncItem(
+                    Icons.pending_actions,
+                    '${syncSummary['pending_operations_count']} operaciones pendientes',
+                    'Se procesarán aperturas, cierres y cambios',
+                  ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.wifi, color: Colors.orange[700], size: 20),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Asegúrate de tener conexión a internet estable',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange[700],
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Sincronizar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange[700],
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Sincronizar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1008,10 +1006,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
             ),
@@ -1026,29 +1021,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => _ManualSyncDialog(
-        userPreferencesService: _userPreferencesService,
-        onSyncComplete: (success) {
-          Navigator.pop(context);
-          if (success) {
-            // Recargar configuraciones después de sincronización exitosa
-            _loadSettings();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('✅ Sincronización completada exitosamente'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('❌ Error en la sincronización'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        },
-      ),
+      builder:
+          (context) => _ManualSyncDialog(
+            userPreferencesService: _userPreferencesService,
+            onSyncComplete: (success) {
+              Navigator.pop(context);
+              if (success) {
+                // Recargar configuraciones después de sincronización exitosa
+                _loadSettings();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✅ Sincronización completada exitosamente'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('❌ Error en la sincronización'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+          ),
     );
   }
 
@@ -1120,7 +1116,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // En una implementación real, aquí navegarías a la pantalla de login
     Navigator.pushNamedAndRemoveUntil(context, '/categories', (route) => false);
   }
-  
+
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Home
@@ -1172,13 +1168,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Cargando estado...',
               style: TextStyle(fontSize: 13, color: Colors.grey),
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
           );
         }
 
         final status = snapshot.data!;
         final smartStatus = status.smartOfflineStatus;
-        
+
         IconData icon;
         Color iconColor;
         String title;
@@ -1233,7 +1232,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: () => _showSmartSyncDetails(status),
             tooltip: 'Ver detalles',
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 4,
+          ),
         );
       },
     );
@@ -1243,98 +1245,123 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showSmartSyncDetails(SettingsIntegrationStatus status) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.info_outline, color: Colors.blue),
-            SizedBox(width: 8),
-            Text('Estado de Sincronización'),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildDetailRow('Servicios Inicializados', status.isInitialized ? 'Sí' : 'No'),
-              _buildDetailRow('Conexión', status.smartOfflineStatus.isConnected ? 'Conectado' : 'Desconectado'),
-              _buildDetailRow('Modo Offline', status.isOfflineModeEnabled ? 'Activado' : 'Desactivado'),
-              _buildDetailRow('Sincronización Auto', status.smartOfflineStatus.isAutoSyncRunning ? 'Ejecutándose' : 'Detenida'),
-              
-              if (status.smartOfflineStatus.syncStats['lastSyncTime'] != null) ...[
-                const SizedBox(height: 8),
-                const Text(
-                  'Última Sincronización:',
-                  style: TextStyle(fontWeight: FontWeight.w500),
-                ),
-                Text(
-                  _formatDateTime(DateTime.parse(status.smartOfflineStatus.syncStats['lastSyncTime'])),
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue),
+                SizedBox(width: 8),
+                Text('Estado de Sincronización'),
               ],
-              
-              if (status.smartOfflineStatus.lastAutoActivation != null) ...[
-                const SizedBox(height: 8),
-                const Text(
-                  'Última Activación Automática:',
-                  style: TextStyle(fontWeight: FontWeight.w500),
-                ),
-                Text(
-                  _formatDateTime(status.smartOfflineStatus.lastAutoActivation!),
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-              ],
-              
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'ℹ️ Información:',
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDetailRow(
+                    'Servicios Inicializados',
+                    status.isInitialized ? 'Sí' : 'No',
+                  ),
+                  _buildDetailRow(
+                    'Conexión',
+                    status.smartOfflineStatus.isConnected
+                        ? 'Conectado'
+                        : 'Desconectado',
+                  ),
+                  _buildDetailRow(
+                    'Modo Offline',
+                    status.isOfflineModeEnabled ? 'Activado' : 'Desactivado',
+                  ),
+                  _buildDetailRow(
+                    'Sincronización Auto',
+                    status.smartOfflineStatus.isAutoSyncRunning
+                        ? 'Ejecutándose'
+                        : 'Detenida',
+                  ),
+
+                  if (status.smartOfflineStatus.syncStats['lastSyncTime'] !=
+                      null) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Última Sincronización:',
                       style: TextStyle(fontWeight: FontWeight.w500),
                     ),
-                    SizedBox(height: 4),
                     Text(
-                      '• La sincronización automática se ejecuta cada minuto cuando el modo offline está desactivado',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    Text(
-                      '• El modo offline se activa automáticamente si se pierde la conexión',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    Text(
-                      '• Los datos se mantienen sincronizados para uso offline',
-                      style: TextStyle(fontSize: 12),
+                      _formatDateTime(
+                        DateTime.parse(
+                          status.smartOfflineStatus.syncStats['lastSyncTime'],
+                        ),
+                      ),
+                      style: TextStyle(color: Colors.grey[600]),
                     ),
                   ],
-                ),
+
+                  if (status.smartOfflineStatus.lastAutoActivation != null) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Última Activación Automática:',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    Text(
+                      _formatDateTime(
+                        status.smartOfflineStatus.lastAutoActivation!,
+                      ),
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue[200]!),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'ℹ️ Información:',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '• La sincronización automática se ejecuta cada minuto cuando el modo offline está desactivado',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        Text(
+                          '• El modo offline se activa automáticamente si se pierde la conexión',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        Text(
+                          '• Los datos se mantienen sincronizados para uso offline',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+              if (!status.smartOfflineStatus.isAutoSyncRunning &&
+                  status.smartOfflineStatus.isConnected)
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _forceSyncNow();
+                  },
+                  child: const Text('Sincronizar Ahora'),
+                ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-          if (!status.smartOfflineStatus.isAutoSyncRunning && status.smartOfflineStatus.isConnected)
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _forceSyncNow();
-              },
-              child: const Text('Sincronizar Ahora'),
-            ),
-        ],
-      ),
     );
   }
 
@@ -1393,10 +1420,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           duration: Duration(seconds: 2),
         ),
       );
-
     } catch (e) {
       print('❌ Error forzando sincronización: $e');
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('❌ Error en sincronización: $e'),
@@ -1411,7 +1437,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _formatDateTime(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    
+
     if (difference.inMinutes < 1) {
       return 'Hace unos segundos';
     } else if (difference.inMinutes < 60) {
@@ -1466,7 +1492,7 @@ class _SyncDialogState extends State<_SyncDialog> {
   Future<void> _startSync() async {
     try {
       final Map<String, dynamic> offlineData = {};
-      
+
       for (int i = 0; i < _tasks.length; i++) {
         final task = _tasks[i];
         setState(() {
@@ -1495,6 +1521,8 @@ class _SyncDialogState extends State<_SyncDialog> {
             offlineData['turno'] = await _syncTurno();
             // También sincronizar el resumen de turno anterior para apertura/cierre
             await _syncTurnoResumen();
+            // Sincronizar resumen de cierre diario para CierreScreen y VentaTotalScreen
+            await _syncResumenCierre();
             break;
           case 'promotions':
             offlineData['promotions'] = await _syncPromotions();
@@ -1517,20 +1545,30 @@ class _SyncDialogState extends State<_SyncDialog> {
       // Limpiar datos offline después de procesamiento exitoso
       await widget.userPreferencesService.clearAllOfflineData();
       print('🗑️ Datos offline anteriores limpiados');
-      
+
       // Guardar todos los datos offline actualizados
       await widget.userPreferencesService.saveOfflineData(offlineData);
       await widget.userPreferencesService.setOfflineMode(true);
-      
+
       // Logging de datos guardados
       print('💾 Datos offline guardados:');
-      print('  - Credenciales: ${offlineData['credentials'] != null ? 'Sí' : 'No'}');
+      print(
+        '  - Credenciales: ${offlineData['credentials'] != null ? 'Sí' : 'No'}',
+      );
       print('  - Turno: ${offlineData['turno'] != null ? 'Sí' : 'No'}');
-      print('  - Promociones: ${offlineData['promotions'] != null ? 'Sí' : 'No'}');
-      print('  - Métodos de pago: ${offlineData['payment_methods'] != null ? 'Sí' : 'No'}');
-      print('  - Categorías: ${offlineData['categories'] != null ? offlineData['categories'].length : 0}');
+      print(
+        '  - Promociones: ${offlineData['promotions'] != null ? 'Sí' : 'No'}',
+      );
+      print(
+        '  - Métodos de pago: ${offlineData['payment_methods'] != null ? 'Sí' : 'No'}',
+      );
+      print(
+        '  - Categorías: ${offlineData['categories'] != null ? offlineData['categories'].length : 0}',
+      );
       print('  - Productos: ${offlineData['products'] != null ? 'Sí' : 'No'}');
-      print('  - Órdenes: ${offlineData['orders'] != null ? offlineData['orders'].length : 0}');
+      print(
+        '  - Órdenes: ${offlineData['orders'] != null ? offlineData['orders'].length : 0}',
+      );
       print('✅ Modo offline activado');
 
       setState(() {
@@ -1554,48 +1592,48 @@ class _SyncDialogState extends State<_SyncDialog> {
 
   Future<Map<String, dynamic>> _syncCredentials() async {
     final userData = await widget.userPreferencesService.getUserData();
-    final credentials = await widget.userPreferencesService.getSavedCredentials();
-    
+    final credentials =
+        await widget.userPreferencesService.getSavedCredentials();
+
     // Verificar que tenemos email y password
     final email = userData['email'] ?? credentials['email'];
     final password = credentials['password'];
     final userId = userData['userId'];
-    
+
     if (email == null || password == null || userId == null) {
       throw Exception(
         'No se pueden sincronizar credenciales. '
-        'Asegúrate de marcar "Recordarme" en el login para habilitar modo offline.'
+        'Asegúrate de marcar "Recordarme" en el login para habilitar modo offline.',
       );
     }
-    
+
     print('✅ Credenciales encontradas:');
     print('  - Email: $email');
     print('  - Password: ${password.isNotEmpty ? "***" : "vacío"}');
     print('  - UserId: $userId');
-    
+
     // Guardar usuario en el array de usuarios offline
     await widget.userPreferencesService.saveOfflineUser(
       email: email,
       password: password,
       userId: userId,
     );
-    
-    return {
-      'email': email,
-      'password': password,
-      'userId': userId,
-    };
+
+    return {'email': email, 'password': password, 'userId': userId};
   }
 
   Future<Map<String, dynamic>> _syncPromotions() async {
-    final promotionData = await widget.userPreferencesService.getPromotionData();
+    final promotionData =
+        await widget.userPreferencesService.getPromotionData();
     return promotionData ?? {};
   }
 
   Future<List<Map<String, dynamic>>> _syncPaymentMethods() async {
     try {
-      final paymentMethods = await PaymentMethodService.getActivePaymentMethods();
-      final paymentMethodsList = paymentMethods.map((pm) => pm.toJson()).toList();
+      final paymentMethods =
+          await PaymentMethodService.getActivePaymentMethods();
+      final paymentMethodsList =
+          paymentMethods.map((pm) => pm.toJson()).toList();
       print('✅ Métodos de pago sincronizados: ${paymentMethodsList.length}');
       return paymentMethodsList;
     } catch (e) {
@@ -1607,18 +1645,18 @@ class _SyncDialogState extends State<_SyncDialog> {
   Future<Map<String, dynamic>?> _syncTurno() async {
     try {
       final hasOpenShift = await TurnoService.hasOpenShift();
-      
+
       if (hasOpenShift) {
         // Obtener datos del turno abierto desde Supabase
         final supabase = Supabase.instance.client;
         final userPrefs = UserPreferencesService();
         final idTpv = await userPrefs.getIdTpv();
-        
+
         if (idTpv == null) {
           print('⚠️ No se pudo obtener el ID del TPV');
           return null;
         }
-        
+
         final response = await supabase
             .from('app_dat_caja_turno')
             .select('*')
@@ -1626,14 +1664,14 @@ class _SyncDialogState extends State<_SyncDialog> {
             .eq('estado', 1)
             .order('fecha_apertura', ascending: false, nullsFirst: false)
             .limit(1);
-            
+
         if (response.isNotEmpty) {
           final turnoData = response.first;
           print('✅ Turno abierto sincronizado: ID ${turnoData['id']}');
           return turnoData;
         }
       }
-      
+
       print('ℹ️ No hay turno abierto');
       return null;
     } catch (e) {
@@ -1645,10 +1683,10 @@ class _SyncDialogState extends State<_SyncDialog> {
   Future<void> _syncTurnoResumen() async {
     try {
       print('🔄 Sincronizando resumen de turno anterior...');
-      
+
       // Obtener resumen del turno anterior usando TurnoService
       final resumenTurno = await TurnoService.getResumenTurnoKPI();
-      
+
       if (resumenTurno != null) {
         // Guardar en cache para uso offline
         await widget.userPreferencesService.saveTurnoResumenCache(resumenTurno);
@@ -1662,17 +1700,108 @@ class _SyncDialogState extends State<_SyncDialog> {
     }
   }
 
+  Future<void> _syncResumenCierre() async {
+    try {
+      print('🔄 Sincronizando resumen de cierre diario...');
+
+      // Obtener datos del usuario para llamar a fn_resumen_diario_cierre
+      final idTpv = await widget.userPreferencesService.getIdTpv();
+      final userID = await widget.userPreferencesService.getUserId();
+
+      if (idTpv != null && userID != null) {
+        print('📋 Llamando fn_resumen_diario_cierre - TPV: $idTpv, Usuario: $userID');
+
+        // Llamar a la función RPC fn_resumen_diario_cierre
+        final resumenCierreResponse = await Supabase.instance.client.rpc(
+          'fn_resumen_diario_cierre',
+          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
+        );
+
+        print('📋 Respuesta de fn_resumen_diario_cierre: $resumenCierreResponse');
+        print('📋 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
+
+        if (resumenCierreResponse != null) {
+          Map<String, dynamic> resumenCierre;
+          
+          // Manejar tanto List como Map de respuesta
+          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+            // Si es una lista, tomar el primer elemento
+            resumenCierre = resumenCierreResponse[0] as Map<String, dynamic>;
+            print('📋 Resumen extraído de lista: ${resumenCierre.keys.toList()}');
+          } else if (resumenCierreResponse is Map<String, dynamic>) {
+            // Si ya es un mapa, usarlo directamente
+            resumenCierre = resumenCierreResponse;
+            print('📋 Resumen recibido como mapa: ${resumenCierre.keys.toList()}');
+          } else {
+            print('⚠️ Formato de respuesta no reconocido: ${resumenCierreResponse.runtimeType}');
+            throw Exception('Formato de respuesta no válido');
+          }
+
+          // Guardar en cache para uso offline
+          await widget.userPreferencesService.saveResumenCierreCache(resumenCierre);
+          print('✅ Resumen de cierre sincronizado y guardado en cache');
+          print('📊 Datos sincronizados: ${resumenCierre.keys.toList()}');
+          
+          // Log de valores principales para debugging
+          print('💰 Valores principales del resumen:');
+          if (resumenCierre['total_ventas'] != null) {
+            print('  - Total ventas: \$${resumenCierre['total_ventas']}');
+          }
+          if (resumenCierre['total_efectivo'] != null) {
+            print('  - Total efectivo: \$${resumenCierre['total_efectivo']}');
+          }
+          if (resumenCierre['productos_vendidos'] != null) {
+            print('  - Productos vendidos: ${resumenCierre['productos_vendidos']}');
+          }
+          if (resumenCierre['ventas_totales'] != null) {
+            print('  - Ventas totales: \$${resumenCierre['ventas_totales']}');
+          }
+          if (resumenCierre['efectivo_real'] != null) {
+            print('  - Efectivo real: \$${resumenCierre['efectivo_real']}');
+          }
+        } else {
+          print('ℹ️ No hay resumen de cierre disponible');
+        }
+      } else {
+        print('⚠️ Faltan datos requeridos para sincronizar resumen de cierre');
+        print('  - ID TPV: $idTpv');
+        print('  - User ID: $userID');
+      }
+    } catch (e) {
+      print('❌ Error sincronizando resumen de cierre: $e');
+      // En caso de error, intentar guardar un resumen vacío para evitar errores offline
+      try {
+        await widget.userPreferencesService.saveResumenCierreCache({
+          'total_ventas': 0.0,
+          'total_efectivo': 0.0,
+          'total_transferencias': 0.0,
+          'productos_vendidos': 0,
+          'ticket_promedio': 0.0,
+          'sync_error': true,
+          'error_message': e.toString(),
+        });
+        print('💾 Resumen de cierre vacío guardado como fallback');
+      } catch (fallbackError) {
+        print('❌ Error guardando resumen de cierre fallback: $fallbackError');
+      }
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _syncCategories() async {
     // Aquí llamarías al CategoryService para obtener todas las categorías
     final categoryService = CategoryService();
     try {
       final categories = await categoryService.getCategories();
-      return categories.map((cat) => {
-        'id': cat.id,
-        'name': cat.name,
-        'imageUrl': cat.imageUrl,
-        'color': cat.color.value,
-      }).toList();
+      return categories
+          .map(
+            (cat) => {
+              'id': cat.id,
+              'name': cat.name,
+              'imageUrl': cat.imageUrl,
+              'color': cat.color.value,
+            },
+          )
+          .toList();
     } catch (e) {
       print('Error sincronizando categorías: $e');
       return [];
@@ -1683,31 +1812,35 @@ class _SyncDialogState extends State<_SyncDialog> {
     final productService = ProductService();
     final categoryService = CategoryService();
     final Map<String, List<Map<String, dynamic>>> productsByCategory = {};
-    
+
     try {
       final categories = await categoryService.getCategories();
       print('📦 Sincronizando productos de ${categories.length} categorías...');
-      
+
       for (var category in categories) {
-        final productsMap = await productService.getProductsByCategory(category.id);
-        
+        final productsMap = await productService.getProductsByCategory(
+          category.id,
+        );
+
         // Convertir el Map<String, List<Product>> a lista plana con detalles completos
         final List<Map<String, dynamic>> allProducts = [];
-        
+
         for (var entry in productsMap.entries) {
           final subcategory = entry.key;
           final products = entry.value;
-          
+
           for (var prod in products) {
             try {
               // Obtener detalles completos del producto usando el RPC get_detalle_producto
-              print('  🔍 Obteniendo detalles de: ${prod.denominacion} (ID: ${prod.id})');
-              
+              print(
+                '  🔍 Obteniendo detalles de: ${prod.denominacion} (ID: ${prod.id})',
+              );
+
               final detailResponse = await Supabase.instance.client.rpc(
                 'get_detalle_producto',
                 params: {'id_producto_param': prod.id},
               );
-              
+
               if (detailResponse != null) {
                 // Guardar la respuesta completa del RPC con todos los detalles
                 final productWithDetails = {
@@ -1722,7 +1855,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                   // Agregar detalles completos del RPC
                   'detalles_completos': detailResponse,
                 };
-                
+
                 allProducts.add(productWithDetails);
                 print('    ✅ Detalles obtenidos para: ${prod.denominacion}');
               } else {
@@ -1740,7 +1873,9 @@ class _SyncDialogState extends State<_SyncDialog> {
                 print('    ⚠️ Sin detalles para: ${prod.denominacion}');
               }
             } catch (e) {
-              print('    ❌ Error obteniendo detalles de ${prod.denominacion}: $e');
+              print(
+                '    ❌ Error obteniendo detalles de ${prod.denominacion}: $e',
+              );
               // En caso de error, guardar solo datos básicos
               allProducts.add({
                 'id': prod.id,
@@ -1755,12 +1890,16 @@ class _SyncDialogState extends State<_SyncDialog> {
             }
           }
         }
-        
+
         productsByCategory[category.id.toString()] = allProducts;
-        print('✅ Categoría "${category.name}": ${allProducts.length} productos sincronizados');
+        print(
+          '✅ Categoría "${category.name}": ${allProducts.length} productos sincronizados',
+        );
       }
-      
-      print('🎉 Total de productos sincronizados: ${productsByCategory.values.fold(0, (sum, list) => sum + list.length)}');
+
+      print(
+        '🎉 Total de productos sincronizados: ${productsByCategory.values.fold(0, (sum, list) => sum + list.length)}',
+      );
       return productsByCategory;
     } catch (e) {
       print('❌ Error sincronizando productos: $e');
@@ -1799,42 +1938,51 @@ class _SyncDialogState extends State<_SyncDialog> {
           'id_usuario_param': userId,
           'limite_param': 100, // Limitar a las últimas 100 órdenes
           'pagina_param': null,
-          'solo_pendientes_param': false, // Incluir órdenes completadas/canceladas
+          'solo_pendientes_param':
+              false, // Incluir órdenes completadas/canceladas
         },
       );
 
       if (response is List && response.isNotEmpty) {
         print('✅ Órdenes sincronizadas: ${response.length}');
-        
+
         // Agrupar órdenes por estado para logging detallado
         final ordenesPorEstado = <String, int>{};
         for (var orden in response) {
           final estado = orden['estado_nombre'] ?? 'Sin estado';
           ordenesPorEstado[estado] = (ordenesPorEstado[estado] ?? 0) + 1;
         }
-        
+
         print('📊 Distribución por estado:');
         ordenesPorEstado.forEach((estado, cantidad) {
           print('  - $estado: $cantidad órdenes');
         });
-        
+
         // Verificar órdenes con cambios de estado
-        final ordenesConCambios = response.where((orden) {
-          final fechaCreacion = orden['fecha_creacion'];
-          final fechaActualizacion = orden['fecha_actualizacion'];
-          return fechaCreacion != fechaActualizacion;
-        }).toList();
-        
+        final ordenesConCambios =
+            response.where((orden) {
+              final fechaCreacion = orden['fecha_creacion'];
+              final fechaActualizacion = orden['fecha_actualizacion'];
+              return fechaCreacion != fechaActualizacion;
+            }).toList();
+
         if (ordenesConCambios.isNotEmpty) {
-          print('🔄 Órdenes con cambios de estado: ${ordenesConCambios.length}');
-          for (var orden in ordenesConCambios.take(5)) { // Mostrar solo las primeras 5
-            print('  - ID: ${orden['id']}, Estado: ${orden['estado_nombre']}, Creada: ${orden['fecha_creacion']}, Actualizada: ${orden['fecha_actualizacion']}');
+          print(
+            '🔄 Órdenes con cambios de estado: ${ordenesConCambios.length}',
+          );
+          for (var orden in ordenesConCambios.take(5)) {
+            // Mostrar solo las primeras 5
+            print(
+              '  - ID: ${orden['id']}, Estado: ${orden['estado_nombre']}, Creada: ${orden['fecha_creacion']}, Actualizada: ${orden['fecha_actualizacion']}',
+            );
           }
         }
-        
+
         // Retornar la respuesta completa del RPC
         final ordenes = response.cast<Map<String, dynamic>>();
-        print('✅ Sincronización de órdenes completada: ${ordenes.length} órdenes descargadas');
+        print(
+          '✅ Sincronización de órdenes completada: ${ordenes.length} órdenes descargadas',
+        );
         return ordenes;
       }
 
@@ -1849,7 +1997,8 @@ class _SyncDialogState extends State<_SyncDialog> {
   /// Reautenticar usuario con credenciales guardadas
   Future<void> _reauth() async {
     try {
-      final result = await widget.userPreferencesService.reloginWithSavedCredentials();
+      final result =
+          await widget.userPreferencesService.reloginWithSavedCredentials();
       if (!result['success']) {
         throw Exception(result['error']);
       }
@@ -1863,13 +2012,14 @@ class _SyncDialogState extends State<_SyncDialog> {
   /// Procesar operaciones pendientes (apertura/cierre de turno)
   Future<void> _processPendingOperations() async {
     try {
-      final operations = await widget.userPreferencesService.getPendingOperations();
+      final operations =
+          await widget.userPreferencesService.getPendingOperations();
       print('🔄 Procesando ${operations.length} operaciones pendientes...');
-      
+
       for (var operation in operations) {
         final type = operation['type'];
         print('  - Procesando operación: $type');
-        
+
         switch (type) {
           case 'apertura_turno':
             await _processAperturaTurno(operation['data']);
@@ -1884,7 +2034,7 @@ class _SyncDialogState extends State<_SyncDialog> {
             print('⚠️ Tipo de operación desconocido: $type');
         }
       }
-      
+
       print('✅ Operaciones pendientes procesadas');
     } catch (e) {
       print('❌ Error procesando operaciones pendientes: $e');
@@ -1895,22 +2045,27 @@ class _SyncDialogState extends State<_SyncDialog> {
   /// Procesar órdenes pendientes de sincronización
   Future<void> _processPendingOrders() async {
     try {
-      final pendingOrders = await widget.userPreferencesService.getPendingOrders();
+      final pendingOrders =
+          await widget.userPreferencesService.getPendingOrders();
       print('🔄 Procesando ${pendingOrders.length} órdenes pendientes...');
-      
+
       for (var orderData in pendingOrders) {
         print('  - Sincronizando orden: ${orderData['id']}');
-        
+
         // 1. Registrar la venta en Supabase
         await _registerSaleInSupabase(orderData);
-        
+
         // 2. Si hay cambios de estado posteriores, aplicarlos
         final estado = orderData['estado'];
         if (estado != null && estado != 'enviada') {
-          await _updateOrderStatusInSupabase(orderData['id'], estado, orderData);
+          await _updateOrderStatusInSupabase(
+            orderData['id'],
+            estado,
+            orderData,
+          );
         }
       }
-      
+
       print('✅ Órdenes pendientes procesadas');
     } catch (e) {
       print('❌ Error procesando órdenes pendientes: $e');
@@ -1930,11 +2085,11 @@ class _SyncDialogState extends State<_SyncDialog> {
         manejaInventario: aperturaData['maneja_inventario'] ?? false,
         productos: aperturaData['productos'],
       );
-      
+
       if (result['success'] != true) {
         throw Exception(result['message'] ?? 'Error registrando apertura');
       }
-      
+
       print('✅ Apertura de turno sincronizada');
     } catch (e) {
       print('❌ Error sincronizando apertura: $e');
@@ -1948,7 +2103,7 @@ class _SyncDialogState extends State<_SyncDialog> {
       // TODO: Implementar método de cierre de turno en TurnoService
       // Por ahora simulamos el éxito
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       print('✅ Cierre de turno sincronizado (simulado)');
     } catch (e) {
       print('❌ Error sincronizando cierre: $e');
@@ -1961,7 +2116,7 @@ class _SyncDialogState extends State<_SyncDialog> {
     try {
       final orderId = operation['order_id'];
       final newStatus = operation['new_status'];
-      
+
       await _updateOrderStatusInSupabase(orderId, newStatus);
       print('✅ Estado de orden actualizado: $orderId -> $newStatus');
     } catch (e) {
@@ -1974,13 +2129,13 @@ class _SyncDialogState extends State<_SyncDialog> {
   Future<void> _registerSaleInSupabase(Map<String, dynamic> orderData) async {
     try {
       print('🔄 Registrando venta en Supabase: ${orderData['id']}');
-      
+
       // Obtener datos del usuario
       final userPrefs = UserPreferencesService();
       final userData = await userPrefs.getUserData();
       final idTpv = await userPrefs.getIdTpv();
       final userId = userData['userId'];
-      
+
       if (idTpv == null || userId == null) {
         throw Exception('Datos de usuario incompletos para sincronización');
       }
@@ -1989,7 +2144,7 @@ class _SyncDialogState extends State<_SyncDialog> {
       int? idCliente = orderData['idCliente'];
       final buyerName = orderData['buyerName'];
       final buyerPhone = orderData['buyerPhone'];
-      
+
       if (idCliente == null && buyerName != null && buyerName.isNotEmpty) {
         print('👤 Registrando cliente desde datos offline...');
         idCliente = await _registerClientFromOfflineData(buyerName, buyerPhone);
@@ -1999,11 +2154,11 @@ class _SyncDialogState extends State<_SyncDialog> {
           orderData['idCliente'] = idCliente;
         }
       }
-      
+
       // Preparar productos desde los datos offline
       final productos = <Map<String, dynamic>>[];
       final itemsData = orderData['items'] as List<dynamic>? ?? [];
-      
+
       for (final itemData in itemsData) {
         final inventoryMetadata = itemData['inventory_metadata'] ?? {};
         productos.add({
@@ -2014,12 +2169,14 @@ class _SyncDialogState extends State<_SyncDialog> {
           'id_presentacion': inventoryMetadata['id_presentacion'],
           'cantidad': itemData['cantidad'],
           'precio_unitario': itemData['precio_unitario'],
-          'sku_producto': inventoryMetadata['sku_producto'] ?? itemData['id_producto'].toString(),
+          'sku_producto':
+              inventoryMetadata['sku_producto'] ??
+              itemData['id_producto'].toString(),
           'sku_ubicacion': inventoryMetadata['sku_ubicacion'],
           'es_producto_venta': true,
         });
       }
-      
+
       // Llamar directamente al RPC fn_registrar_venta
       final response = await Supabase.instance.client.rpc(
         'fn_registrar_venta',
@@ -2028,34 +2185,41 @@ class _SyncDialogState extends State<_SyncDialog> {
           'p_denominacion': 'Venta Offline Sync - ${orderData['id']}',
           'p_estado_inicial': 1, // Estado enviada
           'p_id_tpv': idTpv,
-          'p_observaciones': orderData['notas'] ?? 'Sincronización de venta offline',
+          'p_observaciones':
+              orderData['notas'] ?? 'Sincronización de venta offline',
           'p_productos': productos,
           'p_uuid': userId,
           'p_id_cliente': orderData['idCliente'],
         },
       );
-      
+
       print('📡 Respuesta fn_registrar_venta: $response');
-      
+
       if (response != null && response['status'] == 'success') {
         print('✅ Venta registrada en Supabase: ${orderData['id']}');
-        
+
         // Obtener el ID de operación de la respuesta
         final operationId = response['id_operacion'] as int?;
         if (operationId != null) {
           // Guardar el ID de operación para usarlo en la actualización de estado
           orderData['_operation_id'] = operationId;
           print('📝 ID de operación guardado: $operationId');
-          
+
           // 2. SEGUNDO: Registrar desgloses de pago si existen
-          final paymentBreakdown = orderData['paymentBreakdown'] as Map<String, dynamic>?;
+          final paymentBreakdown =
+              orderData['paymentBreakdown'] as Map<String, dynamic>?;
           if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
             print('💳 Registrando desgloses de pago...');
-            await _registerPaymentBreakdownFromOfflineData(operationId, paymentBreakdown);
+            await _registerPaymentBreakdownFromOfflineData(
+              operationId,
+              paymentBreakdown,
+            );
           }
         }
       } else {
-        throw Exception(response?['message'] ?? 'Error en el registro de venta');
+        throw Exception(
+          response?['message'] ?? 'Error en el registro de venta',
+        );
       }
     } catch (e) {
       print('❌ Error registrando venta: $e');
@@ -2064,25 +2228,31 @@ class _SyncDialogState extends State<_SyncDialog> {
   }
 
   /// Actualizar estado de orden en Supabase usando el ID de operación guardado
-  Future<void> _updateOrderStatusInSupabase(String orderId, String newStatus, [Map<String, dynamic>? orderData]) async {
+  Future<void> _updateOrderStatusInSupabase(
+    String orderId,
+    String newStatus, [
+    Map<String, dynamic>? orderData,
+  ]) async {
     try {
       print('🔄 Actualizando estado en Supabase: $orderId -> $newStatus');
-      
+
       // Intentar obtener el ID de operación del orderData si está disponible
       int? operationId = orderData?['_operation_id'];
-      
+
       // Si no tenemos el ID guardado, intentar extraerlo del orderId
       if (operationId == null) {
         if (orderId.startsWith('ORD-')) {
           operationId = int.tryParse(orderId.replaceAll('ORD-', ''));
         }
       }
-      
+
       if (operationId == null) {
-        print('⚠️ No se pudo obtener ID de operación para $orderId - Omitiendo actualización de estado');
+        print(
+          '⚠️ No se pudo obtener ID de operación para $orderId - Omitiendo actualización de estado',
+        );
         return;
       }
-      
+
       // Mapear string de estado a número
       int statusNumber;
       switch (newStatus.toLowerCase()) {
@@ -2100,23 +2270,23 @@ class _SyncDialogState extends State<_SyncDialog> {
         default:
           statusNumber = 1; // Pendiente
       }
-      
+
       // Obtener userId
       final userPrefs = UserPreferencesService();
       final userData = await userPrefs.getUserData();
       final userId = userData['userId'];
-      
+
       if (userId == null) {
         throw Exception('Usuario no encontrado para actualización de estado');
       }
-      
+
       print('=== DEBUG CAMBIO ESTADO ORDEN OFFLINE ===');
       print('operationId: $operationId');
       print('newStatus: $newStatus');
       print('statusNumber: $statusNumber');
       print('userId: $userId');
       print('========================================');
-      
+
       // Llamar directamente al RPC fn_registrar_cambio_estado_operacion
       final response = await Supabase.instance.client.rpc(
         'fn_registrar_cambio_estado_operacion',
@@ -2126,7 +2296,7 @@ class _SyncDialogState extends State<_SyncDialog> {
           'p_uuid_usuario': userId,
         },
       );
-      
+
       print('📡 Respuesta fn_registrar_cambio_estado_operacion: $response');
       print('✅ Estado actualizado en Supabase: $orderId -> $newStatus');
     } catch (e) {
@@ -2136,15 +2306,20 @@ class _SyncDialogState extends State<_SyncDialog> {
   }
 
   /// Registrar cliente desde datos offline usando fn_insertar_cliente_con_contactos
-  Future<int?> _registerClientFromOfflineData(String buyerName, String? buyerPhone) async {
+  Future<int?> _registerClientFromOfflineData(
+    String buyerName,
+    String? buyerPhone,
+  ) async {
     try {
       print('🔄 Registrando cliente desde datos offline...');
       print('  - Nombre: $buyerName');
-      print('  - Teléfono: ${buyerPhone?.isNotEmpty == true ? buyerPhone : "No proporcionado"}');
-      
+      print(
+        '  - Teléfono: ${buyerPhone?.isNotEmpty == true ? buyerPhone : "No proporcionado"}',
+      );
+
       // Generar código de cliente encriptado (similar al checkout_screen.dart)
       final clientCode = _generateClientCode(buyerName);
-      
+
       final response = await Supabase.instance.client.rpc(
         'fn_insertar_cliente_con_contactos',
         params: {
@@ -2161,18 +2336,21 @@ class _SyncDialogState extends State<_SyncDialog> {
           'p_tipo_cliente': 1,
         },
       );
-      
+
       print('✅ Respuesta fn_insertar_cliente_con_contactos: $response');
-      
+
       if (response != null && response['status'] == 'success') {
         final idCliente = response['id_cliente'] as int;
-        print('✅ Cliente registrado exitosamente desde offline - ID: $idCliente');
+        print(
+          '✅ Cliente registrado exitosamente desde offline - ID: $idCliente',
+        );
         return idCliente;
       } else {
-        print('⚠️ Advertencia al registrar cliente offline: ${response?['message'] ?? "Respuesta vacía"}');
+        print(
+          '⚠️ Advertencia al registrar cliente offline: ${response?['message'] ?? "Respuesta vacía"}',
+        );
         return null;
       }
-      
     } catch (e) {
       print('❌ Error al registrar cliente desde offline: $e');
       return null;
@@ -2190,45 +2368,58 @@ class _SyncDialogState extends State<_SyncDialog> {
 
   /// Registrar desgloses de pago desde datos offline
   Future<void> _registerPaymentBreakdownFromOfflineData(
-    int operationId, 
-    Map<String, dynamic> paymentBreakdown
+    int operationId,
+    Map<String, dynamic> paymentBreakdown,
   ) async {
     try {
       print('💳 Registrando ${paymentBreakdown.length} métodos de pago...');
-      
+
+      // Preparar array de pagos para la función RPC
+      List<Map<String, dynamic>> pagos = [];
+
       for (final entry in paymentBreakdown.entries) {
         final methodName = entry.key;
         final amount = entry.value as double;
-        
+
         // Mapear nombre del método a ID (esto debería coincidir con los IDs reales)
         int? methodId = _getPaymentMethodIdByName(methodName);
-        
+
         if (methodId != null && amount > 0) {
-          print('  💰 Registrando: $methodName (ID: $methodId) - \$${amount.toStringAsFixed(2)}');
-          
-          final paymentResponse = await Supabase.instance.client.rpc(
-            'fn_registrar_pago_venta',
-            params: {
-              'p_id_operacion_venta': operationId,
-              'p_id_metodo_pago': methodId,
-              'p_monto': amount,
-              'p_observaciones': 'Pago sincronizado desde offline - $methodName',
-            },
+          print(
+            '  💰 Preparando: $methodName (ID: $methodId) - \$${amount.toStringAsFixed(2)}',
           );
-          
-          print('    📡 Respuesta pago $methodName: $paymentResponse');
-          
-          if (paymentResponse != null && paymentResponse['status'] == 'success') {
-            print('    ✅ Pago $methodName registrado exitosamente');
-          } else {
-            print('    ⚠️ Advertencia registrando pago $methodName: ${paymentResponse?['message']}');
-          }
+
+          pagos.add({
+            'id_medio_pago': methodId,
+            'monto': amount,
+            'referencia_pago': 'Pago Offline Sync - ${DateTime.now().millisecondsSinceEpoch}',
+          });
         } else {
-          print('  ⚠️ Método de pago no reconocido o monto inválido: $methodName (\$${amount.toStringAsFixed(2)})');
+          print(
+            '  ⚠️ Método de pago no reconocido o monto inválido: $methodName (\$${amount.toStringAsFixed(2)})',
+          );
         }
       }
-      
-      print('✅ Desgloses de pago procesados');
+
+      // Llamar a fn_registrar_pago_venta con el array de pagos
+      if (pagos.isNotEmpty) {
+        print('💳 Pagos array: $pagos');
+
+        final response = await Supabase.instance.client.rpc(
+          'fn_registrar_pago_venta',
+          params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+        );
+
+        print('📡 Respuesta fn_registrar_pago_venta: $response');
+
+        if (response == true) {
+          print('✅ Desgloses de pago registrados para operación: $operationId');
+        } else {
+          throw Exception('Error en el registro de pagos');
+        }
+      } else {
+        print('⚠️ No hay pagos válidos para registrar');
+      }
     } catch (e) {
       print('❌ Error registrando desgloses de pago: $e');
       // No lanzamos excepción para no interrumpir la sincronización
@@ -2270,9 +2461,7 @@ class _SyncDialogState extends State<_SyncDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -2282,9 +2471,10 @@ class _SyncDialogState extends State<_SyncDialog> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _hasError
-                    ? Colors.red.withOpacity(0.1)
-                    : _isCompleted
+                color:
+                    _hasError
+                        ? Colors.red.withOpacity(0.1)
+                        : _isCompleted
                         ? Colors.green.withOpacity(0.1)
                         : Colors.blue.withOpacity(0.1),
                 shape: BoxShape.circle,
@@ -2293,43 +2483,38 @@ class _SyncDialogState extends State<_SyncDialog> {
                 _hasError
                     ? Icons.error_outline
                     : _isCompleted
-                        ? Icons.check_circle_outline
-                        : Icons.cloud_download,
+                    ? Icons.check_circle_outline
+                    : Icons.cloud_download,
                 size: 48,
-                color: _hasError
-                    ? Colors.red
-                    : _isCompleted
+                color:
+                    _hasError
+                        ? Colors.red
+                        : _isCompleted
                         ? Colors.green
                         : Colors.blue,
               ),
             ),
             const SizedBox(height: 24),
-            
+
             // Título
             Text(
               _hasError
                   ? 'Error de Sincronización'
                   : _isCompleted
-                      ? '¡Completado!'
-                      : 'Sincronizando Datos',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+                  ? '¡Completado!'
+                  : 'Sincronizando Datos',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            
+
             // Tarea actual
             Text(
               _currentTask,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
             const SizedBox(height: 24),
-            
+
             // Barra de progreso
             if (!_isCompleted && !_hasError) ...[
               LinearProgressIndicator(
@@ -2349,7 +2534,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                 ),
               ),
             ],
-            
+
             // Lista de tareas
             const SizedBox(height: 16),
             Container(
@@ -2360,49 +2545,54 @@ class _SyncDialogState extends State<_SyncDialog> {
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: _tasks.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final task = entry.value;
-                  final isCompleted = _progress > (index / _tasks.length);
-                  final isCurrent = _progress > (index / _tasks.length) && 
-                                   _progress <= ((index + 1) / _tasks.length);
-                  
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          isCompleted
-                              ? Icons.check_circle
-                              : isCurrent
+                children:
+                    _tasks.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final task = entry.value;
+                      final isCompleted = _progress > (index / _tasks.length);
+                      final isCurrent =
+                          _progress > (index / _tasks.length) &&
+                          _progress <= ((index + 1) / _tasks.length);
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isCompleted
+                                  ? Icons.check_circle
+                                  : isCurrent
                                   ? Icons.sync
                                   : Icons.circle_outlined,
-                          size: 16,
-                          color: isCompleted
-                              ? Colors.green
-                              : isCurrent
-                                  ? Colors.blue
-                                  : Colors.grey,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            task['name']!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isCompleted || isCurrent
-                                  ? Colors.black87
-                                  : Colors.grey,
-                              fontWeight: isCurrent
-                                  ? FontWeight.w500
-                                  : FontWeight.normal,
+                              size: 16,
+                              color:
+                                  isCompleted
+                                      ? Colors.green
+                                      : isCurrent
+                                      ? Colors.blue
+                                      : Colors.grey,
                             ),
-                          ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                task['name']!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color:
+                                      isCompleted || isCurrent
+                                          ? Colors.black87
+                                          : Colors.grey,
+                                  fontWeight:
+                                      isCurrent
+                                          ? FontWeight.w500
+                                          : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  );
-                }).toList(),
+                      );
+                    }).toList(),
               ),
             ),
           ],
@@ -2451,7 +2641,7 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
     try {
       for (int i = 0; i < _tasks.length; i++) {
         final task = _tasks[i];
-        
+
         setState(() {
           _currentTask = task['name']!;
           _progress = (i + 1) / _tasks.length;
@@ -2491,14 +2681,13 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
       // Esperar un momento antes de cerrar
       await Future.delayed(const Duration(seconds: 1));
       widget.onSyncComplete(true);
-
     } catch (e) {
       print('❌ Error en sincronización manual: $e');
       setState(() {
         _hasError = true;
         _currentTask = 'Error: ${e.toString()}';
       });
-      
+
       await Future.delayed(const Duration(seconds: 2));
       widget.onSyncComplete(false);
     }
@@ -2506,7 +2695,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
 
   /// Reautenticar usuario
   Future<void> _reauth() async {
-    final result = await widget.userPreferencesService.reloginWithSavedCredentials();
+    final result =
+        await widget.userPreferencesService.reloginWithSavedCredentials();
     if (!result['success']) {
       throw Exception(result['error']);
     }
@@ -2515,8 +2705,9 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
 
   /// Crear turno desde datos offline
   Future<void> _createTurnoFromOffline() async {
-    final operations = await widget.userPreferencesService.getPendingOperations();
-    
+    final operations =
+        await widget.userPreferencesService.getPendingOperations();
+
     for (var operation in operations) {
       if (operation['type'] == 'apertura_turno') {
         print('🔄 Creando turno desde datos offline...');
@@ -2531,27 +2722,211 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
 
   /// Procesar órdenes offline
   Future<void> _processOfflineOrders() async {
-    final pendingOrders = await widget.userPreferencesService.getPendingOrders();
+    final pendingOrders =
+        await widget.userPreferencesService.getPendingOrders();
     print('🔄 Procesando ${pendingOrders.length} órdenes offline...');
-    
+
     for (var orderData in pendingOrders) {
       print('  - Procesando orden: ${orderData['id']}');
-      
+
       // 1. Registrar la venta (como en preorder_screen)
-      await _registerOrderSale(orderData);
-      
+      await _registerSaleInSupabase(orderData);
       // 2. Completar la orden según su estado (como en orders_screen)
       final estado = orderData['estado'] ?? 'completada';
       await _completeOrderWithStatus(orderData['id'], estado);
     }
-    
+
     print('✅ Órdenes offline procesadas');
+  }
+
+  /// Registrar venta en Supabase usando RPC directamente
+  Future<void> _registerSaleInSupabase(Map<String, dynamic> orderData) async {
+    try {
+      print('🔄 Registrando venta en Supabase: ${orderData['id']}');
+
+      // Obtener datos del usuario
+      final userPrefs = UserPreferencesService();
+      final userData = await userPrefs.getUserData();
+      final idTpv = await userPrefs.getIdTpv();
+      final userId = userData['userId'];
+
+      if (idTpv == null || userId == null) {
+        throw Exception('Datos de usuario incompletos para sincronización');
+      }
+
+      // 1. PRIMERO: Registrar cliente si hay datos de comprador
+      int? idCliente = orderData['idCliente'];
+      final buyerName = orderData['buyer_name'] ?? orderData['buyerName'];
+      final buyerPhone = orderData['buyer_phone'] ?? orderData['buyerPhone'];
+
+      if (idCliente == null && buyerName != null && buyerName.isNotEmpty) {
+        print('👤 Registrando cliente desde datos offline...');
+        idCliente = await _registerClientFromOfflineData(buyerName, buyerPhone);
+        if (idCliente != null) {
+          print('✅ Cliente registrado con ID: $idCliente');
+          // Actualizar orderData con el nuevo ID de cliente
+          orderData['idCliente'] = idCliente;
+        }
+      }
+
+      // Preparar productos desde los datos offline
+      final productos = <Map<String, dynamic>>[];
+      final itemsData = orderData['items'] as List<dynamic>? ?? [];
+
+      for (final itemData in itemsData) {
+        final inventoryMetadata = itemData['inventory_metadata'] ?? {};
+        productos.add({
+          'id_producto': itemData['id_producto'],
+          'id_variante': inventoryMetadata['id_variante'],
+          'id_opcion_variante': inventoryMetadata['id_opcion_variante'],
+          'id_ubicacion': inventoryMetadata['id_ubicacion'],
+          'id_presentacion': inventoryMetadata['id_presentacion'],
+          'cantidad': itemData['cantidad'],
+          'precio_unitario': itemData['precio_unitario'],
+          'sku_producto':
+              inventoryMetadata['sku_producto'] ??
+              itemData['id_producto'].toString(),
+          'sku_ubicacion': inventoryMetadata['sku_ubicacion'],
+          'es_producto_venta': true,
+        });
+      }
+
+      // Llamar directamente al RPC fn_registrar_venta
+      final response = await Supabase.instance.client.rpc(
+        'fn_registrar_venta',
+        params: {
+          'p_codigo_promocion': orderData['promo_code'] ?? orderData['promoCode'],
+          'p_denominacion': 'Venta Offline Sync - ${orderData['id']}',
+          'p_estado_inicial': 1, // Estado enviada
+          'p_id_tpv': idTpv,
+          'p_observaciones':
+              orderData['notas'] ?? 'Sincronización de venta offline',
+          'p_productos': productos,
+          'p_uuid': userId,
+          'p_id_cliente': idCliente,
+        },
+      );
+
+      print('📡 Respuesta fn_registrar_venta: $response');
+
+      if (response != null && response['status'] == 'success') {
+        print('✅ Venta registrada en Supabase: ${orderData['id']}');
+
+        // Obtener el ID de operación de la respuesta
+        final operationId = response['id_operacion'] as int?;
+        if (operationId != null) {
+          // Guardar el ID de operación para usarlo en la actualización de estado
+          orderData['_operation_id'] = operationId;
+          print('📝 ID de operación guardado: $operationId');
+
+          // 2. SEGUNDO: Registrar desgloses de pago si existen
+          final paymentBreakdown = orderData['desglose_pagos'] as List<dynamic>?;
+          if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
+            print('💳 Registrando desgloses de pago...');
+            await _registerPaymentBreakdownFromOfflineData(
+              operationId,
+              paymentBreakdown,
+            );
+          }
+        }
+      } else {
+        throw Exception(
+          response?['message'] ?? 'Error en el registro de venta',
+        );
+      }
+    } catch (e) {
+      print('❌ Error registrando venta: $e');
+      throw e;
+    }
+  }
+
+  /// Registrar cliente desde datos offline
+  Future<int?> _registerClientFromOfflineData(String buyerName, String? buyerPhone) async {
+    try {
+      print('👤 Registrando cliente: $buyerName${buyerPhone != null ? " - $buyerPhone" : ""}');
+
+      // Generar código de cliente único basado en el nombre
+      final clientCode = 'CLI-${buyerName.hashCode.abs()}';
+
+      // Usar RPC fn_insertar_cliente_con_contactos
+      final response = await Supabase.instance.client.rpc(
+        'fn_insertar_cliente_con_contactos',
+        params: {
+          'p_codigo_cliente': clientCode, // Código generado desde nombre encriptado
+          'p_contactos': null, // Sin contactos adicionales por ahora
+          'p_direccion': null, // No tenemos dirección
+          'p_documento_identidad': null, // No tenemos documento
+          'p_email': null, // No tenemos email
+          'p_fecha_nacimiento': null, // No tenemos fecha nacimiento
+          'p_genero': null, // No tenemos género
+          'p_limite_credito': 0, // Sin límite de crédito
+          'p_nombre_completo': buyerName,
+          'p_telefono': buyerPhone?.isNotEmpty == true ? buyerPhone : null,
+          'p_tipo_cliente': 1, // Tipo cliente por defecto
+        },
+      );
+
+      print('📡 Respuesta fn_insertar_cliente_con_contactos: $response');
+
+      if (response != null && response['status'] == 'success') {
+        final idCliente = response['id_cliente'] as int;
+        print('✅ Cliente registrado con ID: $idCliente');
+        return idCliente;
+      } else {
+        throw Exception('Error en el registro de cliente: ${response?['message']}');
+      }
+
+    } catch (e) {
+      print('❌ Error al registrar cliente: $e');
+      // No lanzamos excepción para no interrumpir el flujo de la venta
+      return null;
+    }
+  }
+
+  /// Registrar desgloses de pago desde datos offline
+  Future<void> _registerPaymentBreakdownFromOfflineData(
+    int operationId,
+    List<dynamic> paymentBreakdown,
+  ) async {
+    try {
+      // Preparar array de pagos para la función RPC
+      List<Map<String, dynamic>> pagos = [];
+
+      for (final payment in paymentBreakdown) {
+        final paymentData = payment as Map<String, dynamic>;
+        pagos.add({
+          'id_medio_pago': paymentData['id_medio_pago'],
+          'monto': paymentData['monto'],
+          'referencia_pago': 'Pago Offline Sync - ${DateTime.now().millisecondsSinceEpoch}',
+        });
+      }
+
+      print('💳 Pagos array: $pagos');
+
+      // Llamar a fn_registrar_pago_venta
+      final response = await Supabase.instance.client.rpc(
+        'fn_registrar_pago_venta',
+        params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+      );
+
+      print('📡 Respuesta fn_registrar_pago_venta: $response');
+
+      if (response == true) {
+        print('✅ Desgloses de pago registrados para operación: $operationId');
+      } else {
+        throw Exception('Error en el registro de pagos');
+      }
+    } catch (e) {
+      print('❌ Error registrando desgloses de pago: $e');
+      // No lanzamos excepción para no interrumpir el flujo principal
+    }
   }
 
   /// Cerrar turno desde datos offline
   Future<void> _closeTurnoFromOffline() async {
-    final operations = await widget.userPreferencesService.getPendingOperations();
-    
+    final operations =
+        await widget.userPreferencesService.getPendingOperations();
+
     for (var operation in operations) {
       if (operation['type'] == 'cierre_turno') {
         print('🔄 Cerrando turno desde datos offline...');
@@ -2568,7 +2943,7 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
   Future<void> _syncOrdersAfterManualSync() async {
     try {
       print('🔄 Descargando nuevas órdenes desde Supabase...');
-      
+
       // Obtener datos del usuario
       final userData = await widget.userPreferencesService.getUserData();
       final idTienda = await widget.userPreferencesService.getIdTienda();
@@ -2594,22 +2969,24 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           'id_usuario_param': userId,
           'limite_param': 100, // Limitar a las últimas 100 órdenes
           'pagina_param': null,
-          'solo_pendientes_param': false, // Incluir órdenes completadas/canceladas
+          'solo_pendientes_param':
+              false, // Incluir órdenes completadas/canceladas
         },
       );
 
       if (response is List && response.isNotEmpty) {
         print('✅ Nuevas órdenes descargadas: ${response.length}');
-        
+
         // Obtener datos offline actuales
-        final offlineData = await widget.userPreferencesService.getOfflineData() ?? {};
-        
+        final offlineData =
+            await widget.userPreferencesService.getOfflineData() ?? {};
+
         // Actualizar las órdenes en el cache offline
         offlineData['orders'] = response.cast<Map<String, dynamic>>();
-        
+
         // Guardar los datos actualizados
         await widget.userPreferencesService.saveOfflineData(offlineData);
-        
+
         print('💾 Cache de órdenes actualizado con ${response.length} órdenes');
       } else {
         print('ℹ️ No se encontraron nuevas órdenes para descargar');
@@ -2630,21 +3007,21 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
   Future<void> _registerOrderSale(Map<String, dynamic> orderData) async {
     try {
       print('🔄 Registrando venta offline: ${orderData['id']}');
-      
+
       // Obtener datos del usuario
       final userPrefs = UserPreferencesService();
       final userData = await userPrefs.getUserData();
       final idTpv = await userPrefs.getIdTpv();
       final userId = userData['userId'];
-      
+
       if (idTpv == null || userId == null) {
         throw Exception('Datos de usuario incompletos para sincronización');
       }
-      
+
       // Preparar productos desde los datos offline
       final productos = <Map<String, dynamic>>[];
       final itemsData = orderData['items'] as List<dynamic>? ?? [];
-      
+
       for (final itemData in itemsData) {
         final inventoryMetadata = itemData['inventory_metadata'] ?? {};
         productos.add({
@@ -2655,12 +3032,14 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           'id_presentacion': inventoryMetadata['id_presentacion'],
           'cantidad': itemData['cantidad'],
           'precio_unitario': itemData['precio_unitario'],
-          'sku_producto': inventoryMetadata['sku_producto'] ?? itemData['id_producto'].toString(),
+          'sku_producto':
+              inventoryMetadata['sku_producto'] ??
+              itemData['id_producto'].toString(),
           'sku_ubicacion': inventoryMetadata['sku_ubicacion'],
           'es_producto_venta': true,
         });
       }
-      
+
       // Llamar directamente al RPC fn_registrar_venta
       final response = await Supabase.instance.client.rpc(
         'fn_registrar_venta',
@@ -2669,17 +3048,20 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           'p_denominacion': 'Venta Manual Sync - ${orderData['id']}',
           'p_estado_inicial': 1, // Estado enviada
           'p_id_tpv': idTpv,
-          'p_observaciones': orderData['notas'] ?? 'Sincronización manual de venta offline',
+          'p_observaciones':
+              orderData['notas'] ?? 'Sincronización manual de venta offline',
           'p_productos': productos,
           'p_uuid': userId,
           'p_id_cliente': orderData['idCliente'],
         },
       );
-      
+
       if (response != null && response['status'] == 'success') {
         print('✅ Venta registrada: ${orderData['id']}');
       } else {
-        throw Exception(response?['message'] ?? 'Error en el registro de venta');
+        throw Exception(
+          response?['message'] ?? 'Error en el registro de venta',
+        );
       }
     } catch (e) {
       print('❌ Error registrando venta offline: $e');
@@ -2691,11 +3073,11 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
   Future<void> _completeOrderWithStatus(String orderId, String status) async {
     try {
       print('🔄 Completando orden offline: $orderId -> $status');
-      
+
       // Nota: En este contexto no tenemos acceso al orderData con el _operation_id
       // porque este método se llama desde el flujo de sincronización manual
       // El ID de operación debería haberse guardado durante _registerOrderSale
-      
+
       // Mapear string de estado a número directamente
       int statusNumber;
       switch (status.toLowerCase()) {
@@ -2713,7 +3095,7 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
         default:
           statusNumber = 1; // Pendiente
       }
-      
+
       // Buscar la operación recién creada por denominación
       final searchResponse = await Supabase.instance.client
           .from('app_dat_operacion_venta')
@@ -2721,30 +3103,32 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           .ilike('denominacion', '%$orderId%')
           .order('created_at', ascending: false)
           .limit(1);
-          
+
       if (searchResponse.isEmpty) {
-        print('⚠️ No se encontró operación para $orderId - Omitiendo actualización de estado');
+        print(
+          '⚠️ No se encontró operación para $orderId - Omitiendo actualización de estado',
+        );
         return;
       }
-      
+
       final operationId = searchResponse.first['id_operacion'];
-      
+
       // Obtener userId
       final userPrefs = UserPreferencesService();
       final userData = await userPrefs.getUserData();
       final userId = userData['userId'];
-      
+
       if (userId == null) {
         throw Exception('Usuario no encontrado para actualización de estado');
       }
-      
+
       print('=== DEBUG CAMBIO ESTADO ORDEN MANUAL ===');
       print('operationId: $operationId');
       print('status: $status');
       print('statusNumber: $statusNumber');
       print('userId: $userId');
       print('=======================================');
-      
+
       // Llamar directamente al RPC fn_registrar_cambio_estado_operacion
       final response = await Supabase.instance.client.rpc(
         'fn_registrar_cambio_estado_operacion',
@@ -2754,7 +3138,7 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           'p_uuid_usuario': userId,
         },
       );
-      
+
       print('📡 Respuesta fn_registrar_cambio_estado_operacion: $response');
       print('✅ Orden completada: $orderId -> $status');
     } catch (e) {
@@ -2766,9 +3150,7 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -2778,9 +3160,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _hasError
-                    ? Colors.red.withOpacity(0.1)
-                    : _isCompleted
+                color:
+                    _hasError
+                        ? Colors.red.withOpacity(0.1)
+                        : _isCompleted
                         ? Colors.green.withOpacity(0.1)
                         : Colors.orange.withOpacity(0.1),
                 shape: BoxShape.circle,
@@ -2789,26 +3172,27 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
                 _hasError
                     ? Icons.error_outline
                     : _isCompleted
-                        ? Icons.check_circle_outline
-                        : Icons.sync,
+                    ? Icons.check_circle_outline
+                    : Icons.sync,
                 size: 48,
-                color: _hasError
-                    ? Colors.red
-                    : _isCompleted
+                color:
+                    _hasError
+                        ? Colors.red
+                        : _isCompleted
                         ? Colors.green
                         : Colors.orange,
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Título
             Text(
               _hasError
                   ? 'Error de Sincronización'
                   : _isCompleted
-                      ? '¡Completado!'
-                      : 'Sincronizando Datos Offline',
+                  ? '¡Completado!'
+                  : 'Sincronizando Datos Offline',
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -2816,21 +3200,18 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
               ),
               textAlign: TextAlign.center,
             ),
-            
+
             const SizedBox(height: 8),
-            
+
             // Subtítulo/tarea actual
             Text(
               _currentTask,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             // Barra de progreso
             if (!_isCompleted && !_hasError) ...[
               LinearProgressIndicator(
@@ -2841,13 +3222,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
               const SizedBox(height: 8),
               Text(
                 '${(_progress * 100).toInt()}%',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
-            
+
             // Lista de tareas
             const SizedBox(height: 16),
             Container(
@@ -2858,8 +3236,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
                 itemBuilder: (context, index) {
                   final task = _tasks[index];
                   final isCompleted = index < (_progress * _tasks.length);
-                  final isCurrent = index == (_progress * _tasks.length).floor() && !_isCompleted;
-                  
+                  final isCurrent =
+                      index == (_progress * _tasks.length).floor() &&
+                      !_isCompleted;
+
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Row(
@@ -2868,12 +3248,13 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
                           isCompleted
                               ? Icons.check_circle
                               : isCurrent
-                                  ? Icons.sync
-                                  : Icons.circle_outlined,
+                              ? Icons.sync
+                              : Icons.circle_outlined,
                           size: 16,
-                          color: isCompleted
-                              ? Colors.green
-                              : isCurrent
+                          color:
+                              isCompleted
+                                  ? Colors.green
+                                  : isCurrent
                                   ? Colors.orange
                                   : Colors.grey,
                         ),
@@ -2883,12 +3264,14 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
                             task['name']!,
                             style: TextStyle(
                               fontSize: 12,
-                              color: isCompleted || isCurrent
-                                  ? Colors.black87
-                                  : Colors.grey,
-                              fontWeight: isCurrent
-                                  ? FontWeight.w500
-                                  : FontWeight.normal,
+                              color:
+                                  isCompleted || isCurrent
+                                      ? Colors.black87
+                                      : Colors.grey,
+                              fontWeight:
+                                  isCurrent
+                                      ? FontWeight.w500
+                                      : FontWeight.normal,
                             ),
                           ),
                         ),

@@ -41,14 +41,40 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
     
     try {
-      // Limpiar órdenes antes de cargar las nuevas para evitar mezclar usuarios
-      _orderService.clearAllOrders();
-
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
       
       if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Cargando órdenes desde cache y pendientes...');
+        print('🔌 Modo offline - Preservando cambios locales y recargando...');
+        
+        // Guardar cambios de estado locales antes de limpiar
+        final localStateChanges = <String, OrderStatus>{};
+        final pendingOperations = await _userPreferencesService.getPendingOperations();
+        
+        // Identificar órdenes que han sido modificadas offline
+        for (final order in _orderService.orders) {
+          // Capturar órdenes pendientes de sincronización
+          if (order.status == OrderStatus.pendienteDeSincronizacion) {
+            localStateChanges[order.id] = order.status;
+          }
+          
+          // Capturar órdenes que tienen operaciones pendientes de cambio de estado
+          for (final operation in pendingOperations) {
+            if (operation['type'] == 'order_status_change' && 
+                operation['order_id'] == order.id) {
+              final newStatusString = operation['new_status'] as String;
+              final newStatus = _stringToOrderStatus(newStatusString);
+              if (newStatus != null) {
+                localStateChanges[order.id] = newStatus;
+                print('📋 Cambio de estado offline detectado: ${order.id} -> $newStatusString');
+              }
+              break;
+            }
+          }
+        }
+        
+        // Limpiar órdenes antes de cargar las nuevas
+        _orderService.clearAllOrders();
         
         // Cargar órdenes sincronizadas desde cache
         final offlineData = await _userPreferencesService.getOfflineData();
@@ -64,8 +90,48 @@ class _OrdersScreenState extends State<OrdersScreen> {
           _orderService.addPendingOrdersToList(pendingOrders);
           print('⏳ Órdenes pendientes de sincronización: ${pendingOrders.length}');
         }
+        
+        // Aplicar cambios de estado offline después de cargar todas las órdenes
+        if (localStateChanges.isNotEmpty) {
+          print('🔄 Aplicando ${localStateChanges.length} cambios de estado offline...');
+          for (final entry in localStateChanges.entries) {
+            final orderId = entry.key;
+            final newStatus = entry.value;
+            
+            final orderIndex = _orderService.orders.indexWhere((order) => order.id == orderId);
+            if (orderIndex != -1) {
+              final currentOrder = _orderService.orders[orderIndex];
+              
+              // Solo actualizar si el estado actual es diferente al cambio offline
+              if (currentOrder.status != newStatus) {
+                final updatedOrder = currentOrder.copyWith(status: newStatus);
+                _orderService.orders[orderIndex] = updatedOrder;
+                print('🔄 Estado aplicado: $orderId -> ${currentOrder.status} → ${newStatus.toString()}');
+              } else {
+                print('ℹ️ Estado ya correcto: $orderId -> ${newStatus.toString()}');
+              }
+            } else {
+              print('⚠️ Orden no encontrada para restaurar estado: $orderId');
+            }
+          }
+          
+          // Verificar si hay operaciones pendientes que necesitan ser aplicadas
+          final hasChanges = await _applyPendingStatusChanges();
+          
+          // Actualizar UI después de aplicar todos los cambios
+          if (hasChanges) {
+            print('🔄 Forzando actualización de UI después de cambios de estado...');
+            setState(() {
+              _filteredOrders = List.from(_orderService.orders);
+              _filterOrders(); // Re-aplicar filtros si los hay
+            });
+          }
+        }
+        
       } else {
         print('🌐 Modo online - Cargando órdenes desde Supabase...');
+        // Limpiar órdenes antes de cargar las nuevas para evitar mezclar usuarios
+        _orderService.clearAllOrders();
         await _orderService.listOrdersFromSupabase();
         print('✅ Órdenes cargadas desde Supabase');
       }
@@ -1480,6 +1546,84 @@ class _OrdersScreenState extends State<OrdersScreen> {
       return 'Dinero en efectivo';
     } else {
       return 'Transferencia';
+    }
+  }
+
+  // Convertir string a OrderStatus
+  OrderStatus? _stringToOrderStatus(String statusString) {
+    switch (statusString.toLowerCase()) {
+      case 'borrador':
+        return OrderStatus.borrador;
+      case 'enviada':
+        return OrderStatus.enviada;
+      case 'pagoconfirmado':
+      case 'pago_confirmado':
+        return OrderStatus.pagoConfirmado;
+      case 'completada':
+        return OrderStatus.completada;
+      case 'cancelada':
+        return OrderStatus.cancelada;
+      case 'devuelta':
+        return OrderStatus.devuelta;
+      case 'pendientedesincronizacion':
+      case 'pendiente_de_sincronizacion':
+        return OrderStatus.pendienteDeSincronizacion;
+      default:
+        print('⚠️ Estado no reconocido: $statusString');
+        return null;
+    }
+  }
+
+  /// Aplicar cambios de estado pendientes que no se han sincronizado
+  Future<bool> _applyPendingStatusChanges() async {
+    try {
+      final pendingOperations = await _userPreferencesService.getPendingOperations();
+      
+      if (pendingOperations.isEmpty) {
+        print('ℹ️ No hay operaciones pendientes de cambio de estado');
+        return false;
+      }
+      
+      print('🔄 Aplicando ${pendingOperations.length} operaciones pendientes...');
+      bool hasChanges = false;
+      
+      for (final operation in pendingOperations) {
+        if (operation['type'] == 'order_status_change') {
+          final orderId = operation['order_id'] as String;
+          final newStatusString = operation['new_status'] as String;
+          final newStatus = _stringToOrderStatus(newStatusString);
+          
+          if (newStatus != null) {
+            final orderIndex = _orderService.orders.indexWhere((order) => order.id == orderId);
+            if (orderIndex != -1) {
+              final currentOrder = _orderService.orders[orderIndex];
+              
+              // Aplicar el cambio de estado pendiente
+              if (currentOrder.status != newStatus) {
+                final updatedOrder = currentOrder.copyWith(status: newStatus);
+                _orderService.orders[orderIndex] = updatedOrder;
+                hasChanges = true;
+                print('🔄 Operación pendiente aplicada: $orderId -> ${currentOrder.status} → ${newStatus.toString()}');
+                print('🎯 Estado final confirmado: ${_orderService.orders[orderIndex].status}');
+              } else {
+                print('ℹ️ Estado ya aplicado: $orderId -> ${newStatus.toString()}');
+              }
+            } else {
+              print('⚠️ Orden no encontrada para operación pendiente: $orderId');
+            }
+          }
+        }
+      }
+      
+      if (hasChanges) {
+        print('✅ Se aplicaron cambios de estado - UI será actualizada');
+      }
+      
+      return hasChanges;
+      
+    } catch (e) {
+      print('❌ Error aplicando cambios de estado pendientes: $e');
+      return false;
     }
   }
 }

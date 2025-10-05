@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
+import '../services/user_preferences_service.dart';
 import '../utils/price_utils.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
@@ -8,7 +9,6 @@ import 'package:crypto/crypto.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final Order order;
-
   const CheckoutScreen({Key? key, required this.order}) : super(key: key);
 
   @override
@@ -17,6 +17,7 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   final OrderService _orderService = OrderService();
+  final UserPreferencesService _userPreferencesService = UserPreferencesService();
   final _formKey = GlobalKey<FormState>();
   
   // Controllers for form fields
@@ -659,9 +660,140 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
-      // 1. Primero registrar el cliente en Supabase si tenemos datos
       final buyerName = _buyerNameController.text.trim();
       final buyerPhone = _buyerPhoneController.text.trim();
+      
+      // Detectar si es una orden offline
+      if (widget.order.isOfflineOrder) {
+        print('🔌 Procesando orden offline - Capturando datos del cliente y creando orden offline');
+        await _processOfflineOrder(buyerName, buyerPhone, breakdown);
+      } else {
+        print('🌐 Procesando orden online - Flujo normal');
+        await _processOnlineOrder(buyerName, buyerPhone, breakdown);
+      }
+
+    } catch (e) {
+      _showErrorMessage('Error al crear la orden: $e');
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
+  /// Procesar orden en modo offline
+  Future<void> _processOfflineOrder(String buyerName, String buyerPhone, Map<String, double> breakdown) async {
+    try {
+      // Obtener datos del usuario
+      final userData = await _userPreferencesService.getUserData();
+      final idTienda = await _userPreferencesService.getIdTienda();
+      final idTpv = await _userPreferencesService.getIdTpv();
+      final idSeller = await _userPreferencesService.getIdSeller();
+      
+      // Generar ID único para la orden offline
+      final offlineOrderId = '${DateTime.now().millisecondsSinceEpoch}';
+      
+      // Calcular totales
+      double subtotal = 0.0;
+      double totalDescuentos = _promoDiscount;
+      
+      // Preparar desglose de pagos por método
+      Map<String, Map<String, dynamic>> paymentBreakdown = {};
+      
+      for (final item in widget.order.items) {
+        final itemTotal = item.precioUnitario * item.cantidad;
+        subtotal += itemTotal;
+        
+        // Agrupar por método de pago
+        final paymentMethodId = item.paymentMethod?.id.toString() ?? 'sin_metodo';
+        if (!paymentBreakdown.containsKey(paymentMethodId)) {
+          paymentBreakdown[paymentMethodId] = {
+            'id_medio_pago': item.paymentMethod?.id,
+            'denominacion': item.paymentMethod?.denominacion ?? 'Sin método',
+            'monto': 0.0,
+            'es_digital': item.paymentMethod?.esDigital ?? false,
+            'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
+          };
+        }
+        paymentBreakdown[paymentMethodId]!['monto'] = 
+          (paymentBreakdown[paymentMethodId]!['monto'] as double) + itemTotal;
+      }
+      
+      final total = subtotal - totalDescuentos;
+      
+      // Crear estructura de orden virtual con datos del cliente
+      final orderData = {
+        'id': offlineOrderId,
+        'id_tienda': idTienda,
+        'id_tpv': idTpv,
+        'id_vendedor': idSeller,
+        'id_usuario': userData['userId'],
+        'fecha_creacion': DateTime.now().toIso8601String(),
+        'subtotal': subtotal,
+        'total_descuentos': totalDescuentos,
+        'total': total,
+        'estado': 'pendiente_sincronizacion',
+        'is_pending_sync': true,
+        'created_offline_at': DateTime.now().toIso8601String(),
+        // DATOS DEL CLIENTE CAPTURADOS
+        'buyer_name': buyerName,
+        'buyer_phone': buyerPhone,
+        'extra_contacts': _extraContactsController.text.trim(),
+        'promo_code': _promoApplied ? _promoCodeController.text.trim() : null,
+        'promo_discount': _promoDiscount,
+        'items': widget.order.items.map((item) {
+          return {
+            'id_producto': item.producto.id,
+            'denominacion': item.producto.denominacion,
+            'cantidad': item.cantidad,
+            'precio_unitario': item.precioUnitario,
+            'subtotal': item.precioUnitario * item.cantidad,
+            'id_medio_pago': item.paymentMethod?.id,
+            'metodo_pago': item.paymentMethod?.denominacion,
+            'inventory_metadata': item.inventoryData,
+          };
+        }).toList(),
+        'desglose_pagos': paymentBreakdown.values.toList(),
+      };
+      
+      // Guardar orden pendiente
+      await _userPreferencesService.savePendingOrder(orderData);
+      
+      // Actualizar inventario en cache
+      for (final item in widget.order.items) {
+        final inventoryMetadata = item.inventoryData;
+        if (inventoryMetadata != null && inventoryMetadata['id_variante'] != null) {
+          await _userPreferencesService.updateProductInventoryInCache(
+            item.producto.id,
+            inventoryMetadata['id_variante'] as int,
+            item.cantidad.toInt(),
+          );
+        }
+      }
+      
+      // Limpiar orden actual
+      _orderService.cancelCurrentOrder();
+      
+      // Mostrar mensaje de éxito
+      _showSuccessMessage('¡Orden offline creada exitosamente!\nSe sincronizará cuando tengas conexión.');
+      
+      print('✅ Orden offline creada con datos del cliente: $offlineOrderId');
+      print('👤 Cliente: $buyerName${buyerPhone.isNotEmpty ? " - $buyerPhone" : ""}');
+      print('📦 Inventario actualizado en cache');
+      
+      // Navegar a órdenes
+      Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
+      
+    } catch (e) {
+      print('❌ Error creando orden offline: $e');
+      _showErrorMessage('Error al crear la orden offline: $e');
+    }
+  }
+
+  /// Procesar orden en modo online (flujo original)
+  Future<void> _processOnlineOrder(String buyerName, String buyerPhone, Map<String, double> breakdown) async {
+    try {
+      // 1. Primero registrar el cliente en Supabase si tenemos datos
       int? idCliente;
       
       if (buyerName.isNotEmpty) {
@@ -709,13 +841,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       } else {
         _showErrorMessage('Error al registrar la venta: ${result['error']}');
       }
-
+      
     } catch (e) {
-      _showErrorMessage('Error al crear la orden: $e');
-    } finally {
-      setState(() {
-        _isProcessing = false;
-      });
+      print('❌ Error procesando orden online: $e');
+      _showErrorMessage('Error al procesar la orden: $e');
     }
   }
 

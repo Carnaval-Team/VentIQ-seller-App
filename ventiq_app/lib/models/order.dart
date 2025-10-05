@@ -14,6 +14,7 @@ class Order {
   final String? extraContacts;
   final String? paymentMethod;
   final int? operationId;
+  bool isOfflineOrder; // Campo para marcar órdenes offline
 
   Order({
     required this.id,
@@ -27,6 +28,7 @@ class Order {
     this.extraContacts,
     this.paymentMethod,
     this.operationId,
+    this.isOfflineOrder = false, // Por defecto false
   });
 
   double get subtotal {
@@ -49,6 +51,7 @@ class Order {
     String? extraContacts,
     String? paymentMethod,
     int? operationId,
+    bool? isOfflineOrder,
   }) {
     return Order(
       id: id ?? this.id,
@@ -62,6 +65,7 @@ class Order {
       extraContacts: extraContacts ?? this.extraContacts,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       operationId: operationId ?? this.operationId,
+      isOfflineOrder: isOfflineOrder ?? this.isOfflineOrder,
     );
   }
 }

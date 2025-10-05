@@ -46,6 +46,7 @@ class UserPreferencesService {
   static const String _pendingOperationsKey = 'pending_operations'; // Operaciones pendientes (apertura/cierre/cambio estado)
   static const String _offlineTurnoKey = 'offline_turno'; // Turno abierto offline
   static const String _turnoResumenKey = 'turno_resumen_cache'; // Cache del resumen de turno anterior
+  static const String _resumenCierreKey = 'resumen_cierre_cache'; // Cache del resumen de cierre diario
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -975,6 +976,142 @@ class UserPreferencesService {
       print('🗑️ Cache de resumen de turno eliminado');
     } catch (e) {
       print('❌ Error limpiando cache de resumen de turno: $e');
+    }
+  }
+
+  // ==================== RESUMEN DE CIERRE CACHE ====================
+
+  /// Guardar resumen de cierre en cache offline
+  Future<void> saveResumenCierreCache(Map<String, dynamic> resumenData) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final resumenJson = jsonEncode(resumenData);
+      await prefs.setString(_resumenCierreKey, resumenJson);
+      print('💾 Resumen de cierre guardado en cache offline');
+      print('📊 Datos guardados: ${resumenData.keys.toList()}');
+    } catch (e) {
+      print('❌ Error guardando resumen de cierre en cache: $e');
+    }
+  }
+
+  /// Obtener resumen de cierre desde cache offline
+  Future<Map<String, dynamic>?> getResumenCierreCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final resumenJson = prefs.getString(_resumenCierreKey);
+      
+      if (resumenJson != null) {
+        final resumenData = jsonDecode(resumenJson) as Map<String, dynamic>;
+        print('📱 Resumen de cierre cargado desde cache offline');
+        print('📊 Datos cargados: ${resumenData.keys.toList()}');
+        return resumenData;
+      }
+      
+      print('ℹ️ No hay resumen de cierre en cache offline');
+      return null;
+    } catch (e) {
+      print('❌ Error obteniendo resumen de cierre desde cache: $e');
+      return null;
+    }
+  }
+
+  /// Verificar si existe resumen de cierre en cache
+  Future<bool> hasResumenCierreCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.containsKey(_resumenCierreKey);
+    } catch (e) {
+      print('❌ Error verificando cache de resumen de cierre: $e');
+      return false;
+    }
+  }
+
+  /// Limpiar cache de resumen de cierre
+  Future<void> clearResumenCierreCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_resumenCierreKey);
+      print('🗑️ Cache de resumen de cierre eliminado');
+    } catch (e) {
+      print('❌ Error limpiando cache de resumen de cierre: $e');
+    }
+  }
+
+  /// Actualizar resumen de cierre con órdenes offline
+  /// Suma las nuevas órdenes offline al resumen existente
+  Future<Map<String, dynamic>?> getResumenCierreWithOfflineOrders() async {
+    try {
+      // Obtener resumen base desde cache
+      final resumenBase = await getResumenCierreCache();
+      if (resumenBase == null) {
+        print('ℹ️ No hay resumen de cierre base para actualizar');
+        return null;
+      }
+
+      // Obtener órdenes offline pendientes
+      final orderService = OrderService();
+      final ordenes = orderService.orders;
+      
+      // Filtrar órdenes offline (las que no han sido sincronizadas)
+      final ordenesOffline = ordenes.where((orden) => 
+        orden.status.name == 'pendienteDeSincronizacion' || orden.status.name == 'enviada'
+      ).toList();
+
+      if (ordenesOffline.isEmpty) {
+        print('ℹ️ No hay órdenes offline para agregar al resumen');
+        return resumenBase;
+      }
+
+      // Calcular totales de órdenes offline
+      double ventasOffline = 0.0;
+      double efectivoOffline = 0.0;
+      double transferenciasOffline = 0.0;
+      int productosVendidosOffline = 0;
+
+      for (final orden in ordenesOffline) {
+        ventasOffline += orden.total;
+        productosVendidosOffline += orden.items.fold<int>(0, (sum, item) => sum + item.cantidad);
+        
+        // Estimar método de pago (70% efectivo, 30% transferencias)
+        final efectivoOrden = orden.total * 0.7;
+        final transferenciasOrden = orden.total * 0.3;
+        efectivoOffline += efectivoOrden;
+        transferenciasOffline += transferenciasOrden;
+      }
+
+      // Crear resumen actualizado
+      final resumenActualizado = Map<String, dynamic>.from(resumenBase);
+      
+      // Sumar valores offline a los existentes usando los nombres correctos del cache
+      final ventasBase = (resumenBase['ventas_totales'] ?? resumenBase['total_ventas'] ?? 0.0) as double;
+      final efectivoBase = (resumenBase['efectivo_real'] ?? resumenBase['total_efectivo'] ?? 0.0) as double;
+      final transferenciasBase = (resumenBase['total_transferencias'] ?? 0.0) as double;
+      final productosBase = (resumenBase['productos_vendidos'] ?? 0) as int;
+      
+      // Actualizar con nombres consistentes (usar los del cache original)
+      resumenActualizado['ventas_totales'] = ventasBase + ventasOffline;
+      resumenActualizado['efectivo_real'] = efectivoBase + efectivoOffline;
+      resumenActualizado['total_transferencias'] = transferenciasBase + transferenciasOffline;
+      resumenActualizado['productos_vendidos'] = productosBase + productosVendidosOffline;
+      resumenActualizado['ordenes_offline'] = ordenesOffline.length;
+      resumenActualizado['ventas_offline'] = ventasOffline;
+      
+      // Recalcular totales
+      final totalVentas = resumenActualizado['ventas_totales'] as double;
+      final totalProductos = resumenActualizado['productos_vendidos'] as int;
+      resumenActualizado['ticket_promedio'] = totalProductos > 0 ? totalVentas / totalProductos : 0.0;
+
+      print('📊 Resumen de cierre actualizado con órdenes offline:');
+      print('  - Órdenes offline: ${ordenesOffline.length}');
+      print('  - Ventas offline: \$${ventasOffline.toStringAsFixed(2)}');
+      print('  - Total ventas: \$${totalVentas.toStringAsFixed(2)}');
+      print('  - Productos vendidos: $totalProductos');
+
+      return resumenActualizado;
+      
+    } catch (e) {
+      print('❌ Error actualizando resumen con órdenes offline: $e');
+      return await getResumenCierreCache(); // Fallback al resumen base
     }
   }
 }

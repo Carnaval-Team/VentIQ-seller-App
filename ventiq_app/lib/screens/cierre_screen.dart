@@ -132,17 +132,33 @@ class _CierreScreenState extends State<CierreScreen> {
           '🧪 Loading daily summary with fn_resumen_diario_cierre - TPV: $idTpv',
         );
 
-        final resumenCierre = await Supabase.instance.client.rpc(
+        final resumenCierreResponse = await Supabase.instance.client.rpc(
           'fn_resumen_diario_cierre',
           params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
 
-        print('📈 Resumen Cierre Response: $resumenCierre');
+        print('📈 Resumen Cierre Response: $resumenCierreResponse');
+        print('📈 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
 
-        if (resumenCierre != null &&
-            resumenCierre is List &&
-            resumenCierre.isNotEmpty) {
-          final data = resumenCierre[0];
+        if (resumenCierreResponse != null) {
+          Map<String, dynamic> data;
+          
+          // Manejar tanto List como Map de respuesta
+          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+            // Si es una lista, tomar el primer elemento
+            data = resumenCierreResponse[0] as Map<String, dynamic>;
+            print('📈 Datos extraídos de lista: ${data.keys.toList()}');
+          } else if (resumenCierreResponse is Map<String, dynamic>) {
+            // Si ya es un mapa, usarlo directamente
+            data = resumenCierreResponse;
+            print('📈 Datos recibidos como mapa: ${data.keys.toList()}');
+          } else {
+            print('⚠️ Formato de respuesta no reconocido en CierreScreen');
+            setState(() {
+              _isLoadingData = false;
+            });
+            return;
+          }
 
           setState(() {
             // Map fields according to your specifications
@@ -212,68 +228,108 @@ class _CierreScreenState extends State<CierreScreen> {
     try {
       print('📱 Cargando resumen de cierre desde cache offline...');
       
-      // Obtener resumen de turno desde cache
-      final resumenTurno = await _userPrefs.getTurnoResumenCache();
+      // Obtener resumen de cierre actualizado con órdenes offline
+      final resumenCierre = await _userPrefs.getResumenCierreWithOfflineOrders();
       
-      if (resumenTurno != null) {
-        print('✅ Resumen de turno cargado desde cache offline');
-        print('📊 Datos disponibles: ${resumenTurno.keys.toList()}');
+      if (resumenCierre != null) {
+        print('✅ Resumen de cierre cargado desde cache offline');
+        print('📊 Datos disponibles: ${resumenCierre.keys.toList()}');
         
         setState(() {
-          // Mapear campos desde el cache del resumen de turno
-          _montoInicialCaja = (resumenTurno['efectivo_inicial'] ?? 0.0).toDouble();
-          _ventasTotales = (resumenTurno['ventas_totales'] ?? 0.0).toDouble();
-          _productosVendidos = (resumenTurno['productos_vendidos'] ?? 0).toInt();
-          _ticketPromedio = (resumenTurno['ticket_promedio'] ?? 0.0).toDouble();
+          // Mapear campos desde el cache del resumen de cierre
+          _montoInicialCaja = (resumenCierre['efectivo_inicial'] ?? resumenCierre['monto_inicial_caja'] ?? 0.0).toDouble();
+          _ventasTotales = (resumenCierre['total_ventas'] ?? resumenCierre['ventas_totales'] ?? 0.0).toDouble();
+          _productosVendidos = (resumenCierre['productos_vendidos'] ?? 0).toInt();
+          _ticketPromedio = (resumenCierre['ticket_promedio'] ?? 0.0).toDouble();
           
-          // Valores por defecto para campos que no están en el resumen básico
-          _operacionesTotales = 0;
-          _operacionesPorHora = 0.0;
-          _totalEfectivo = _ventasTotales * 0.7; // Estimación 70% efectivo
-          _totalTransferencias = _ventasTotales * 0.3; // Estimación 30% transferencias
-          _porcentajeEfectivo = 70.0;
-          _porcentajeOtros = 30.0;
-          _efectivoEsperado = _montoInicialCaja + _totalEfectivo;
-          _conciliacionEstado = 'Pendiente';
-          _efectivoRealAjustado = _efectivoEsperado;
-          _diferenciaAjustada = 0.0;
-          _manejaInventario = false; // Por defecto false en modo offline
+          // Campos específicos del resumen de cierre
+          _operacionesTotales = (resumenCierre['operaciones_totales'] ?? 0).toInt();
+          _operacionesPorHora = (resumenCierre['operaciones_por_hora'] ?? 0.0).toDouble();
+          _totalEfectivo = (resumenCierre['total_efectivo'] ?? resumenCierre['efectivo_real'] ?? _ventasTotales * 0.7).toDouble();
+          _totalTransferencias = (resumenCierre['total_transferencias'] ?? _ventasTotales - _totalEfectivo).toDouble();
+          _porcentajeEfectivo = (resumenCierre['porcentaje_efectivo'] ?? 70.0).toDouble();
+          _porcentajeOtros = (resumenCierre['porcentaje_otros'] ?? 30.0).toDouble();
+          _efectivoEsperado = (resumenCierre['efectivo_esperado'] ?? _montoInicialCaja + _totalEfectivo).toDouble();
+          _conciliacionEstado = resumenCierre['conciliacion_estado'] ?? 'Pendiente';
+          _efectivoRealAjustado = (resumenCierre['efectivo_real_ajustado'] ?? _efectivoEsperado).toDouble();
+          _diferenciaAjustada = (resumenCierre['diferencia_ajustada'] ?? 0.0).toDouble();
+          _manejaInventario = resumenCierre['maneja_inventario'] ?? false;
           
           _isLoadingData = false;
         });
         
-        print('💰 Datos cargados desde cache offline:');
+        print('💰 Datos cargados desde cache offline (con órdenes offline):');
         print('  - Monto inicial: $_montoInicialCaja');
         print('  - Ventas totales: $_ventasTotales');
         print('  - Productos vendidos: $_productosVendidos');
         print('  - Ticket promedio: $_ticketPromedio');
+        print('  - Total efectivo: $_totalEfectivo');
+        print('  - Total transferencias: $_totalTransferencias');
+        
+        // Mostrar información de órdenes offline si las hay
+        if (resumenCierre['ordenes_offline'] != null && resumenCierre['ordenes_offline'] > 0) {
+          print('📱 Órdenes offline incluidas:');
+          print('  - Órdenes offline: ${resumenCierre['ordenes_offline']}');
+          print('  - Ventas offline: \$${resumenCierre['ventas_offline']}');
+        }
+        
       } else {
-        print('⚠️ No hay resumen de turno en cache - usando valores por defecto');
-        setState(() {
-          // Valores por defecto cuando no hay cache
-          _montoInicialCaja = 500.0;
-          _ventasTotales = 0.0;
-          _productosVendidos = 0;
-          _ticketPromedio = 0.0;
-          _operacionesTotales = 0;
-          _operacionesPorHora = 0.0;
-          _totalEfectivo = 0.0;
-          _totalTransferencias = 0.0;
-          _porcentajeEfectivo = 0.0;
-          _porcentajeOtros = 0.0;
-          _efectivoEsperado = 500.0;
-          _conciliacionEstado = 'Sin datos';
-          _efectivoRealAjustado = 500.0;
-          _diferenciaAjustada = 0.0;
-          _manejaInventario = false;
-          
-          _isLoadingData = false;
-        });
+        // Fallback: intentar cargar desde resumen de turno si no hay resumen de cierre
+        print('⚠️ No hay resumen de cierre - intentando resumen de turno...');
+        final resumenTurno = await _userPrefs.getTurnoResumenCache();
+        
+        if (resumenTurno != null) {
+          print('✅ Usando resumen de turno como fallback');
+          setState(() {
+            _montoInicialCaja = (resumenTurno['efectivo_inicial'] ?? 0.0).toDouble();
+            _ventasTotales = (resumenTurno['ventas_totales'] ?? 0.0).toDouble();
+            _productosVendidos = (resumenTurno['productos_vendidos'] ?? 0).toInt();
+            _ticketPromedio = (resumenTurno['ticket_promedio'] ?? 0.0).toDouble();
+            
+            // Estimaciones para campos faltantes
+            _operacionesTotales = 0;
+            _operacionesPorHora = 0.0;
+            _totalEfectivo = _ventasTotales * 0.7;
+            _totalTransferencias = _ventasTotales * 0.3;
+            _porcentajeEfectivo = 70.0;
+            _porcentajeOtros = 30.0;
+            _efectivoEsperado = _montoInicialCaja + _totalEfectivo;
+            _conciliacionEstado = 'Pendiente (Fallback)';
+            _efectivoRealAjustado = _efectivoEsperado;
+            _diferenciaAjustada = 0.0;
+            _manejaInventario = false;
+            
+            _isLoadingData = false;
+          });
+        } else {
+          print('⚠️ No hay cache disponible - usando valores por defecto');
+          setState(() {
+            // Valores por defecto cuando no hay cache
+            _montoInicialCaja = 500.0;
+            _ventasTotales = 0.0;
+            _productosVendidos = 0;
+            _ticketPromedio = 0.0;
+            _operacionesTotales = 0;
+            _operacionesPorHora = 0.0;
+            _totalEfectivo = 0.0;
+            _totalTransferencias = 0.0;
+            _porcentajeEfectivo = 0.0;
+            _porcentajeOtros = 0.0;
+            _efectivoEsperado = 500.0;
+            _conciliacionEstado = 'Sin datos';
+            _efectivoRealAjustado = 500.0;
+            _diferenciaAjustada = 0.0;
+            _manejaInventario = false;
+            
+            _isLoadingData = false;
+          });
+        }
       }
     } catch (e) {
       print('❌ Error cargando resumen offline: $e');
       setState(() {
         _montoInicialCaja = 500.0; // Fallback por defecto
+        _ventasTotales = 0.0;
         _isLoadingData = false;
       });
     }

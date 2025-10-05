@@ -78,6 +78,21 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     });
 
     try {
+      // Obtener preferencias del usuario
+      final userPrefs = UserPreferencesService();
+      
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline activado - Cargando datos desde cache...');
+        await _calcularVentaTotalOffline();
+        return;
+      }
+
+      // Modo online: cargar desde Supabase
+      print('🌐 Modo online - Cargando datos desde servidor...');
+      
       // Primero cargar las órdenes desde Supabase
       _orderService.clearAllOrders();
       await _orderService.listOrdersFromSupabase();
@@ -91,20 +106,38 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         return;
       }
 
-      // Obtener preferencias del usuario
-      final userPrefs = UserPreferencesService();
       final idTpv = await userPrefs.getIdTpv();
       final userID = await userPrefs.getUserId();
 
       if (idTpv != null) {
         // Llamar a la función de resumen diario
-        final resumenCierre = await Supabase.instance.client.rpc(
+        final resumenCierreResponse = await Supabase.instance.client.rpc(
           'fn_resumen_diario_cierre',
           params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
 
-        if (resumenCierre != null && resumenCierre is List && resumenCierre.isNotEmpty) {
-          final data = resumenCierre[0];
+        print('📈 VentaTotal Resumen Response: $resumenCierreResponse');
+        print('📈 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
+
+        if (resumenCierreResponse != null) {
+          Map<String, dynamic> data;
+          
+          // Manejar tanto List como Map de respuesta
+          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+            // Si es una lista, tomar el primer elemento
+            data = resumenCierreResponse[0] as Map<String, dynamic>;
+            print('📈 VentaTotal datos extraídos de lista: ${data.keys.toList()}');
+          } else if (resumenCierreResponse is Map<String, dynamic>) {
+            // Si ya es un mapa, usarlo directamente
+            data = resumenCierreResponse;
+            print('📈 VentaTotal datos recibidos como mapa: ${data.keys.toList()}');
+          } else {
+            print('⚠️ Formato de respuesta no reconocido en VentaTotalScreen');
+            setState(() {
+              _isLoading = false;
+            });
+            return;
+          }
 
           // Obtener órdenes locales para productos vendidos (ahora ya cargadas)
           final orders = _orderService.orders;
@@ -1329,5 +1362,145 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         ],
       ),
     );
+  }
+
+  /// Calcular venta total en modo offline usando cache
+  Future<void> _calcularVentaTotalOffline() async {
+    try {
+      print('📱 Calculando venta total desde cache offline...');
+      
+      final userPrefs = UserPreferencesService();
+      
+      // Obtener resumen de cierre actualizado con órdenes offline
+      final resumenCierre = await userPrefs.getResumenCierreWithOfflineOrders();
+      
+      if (resumenCierre != null) {
+        print('✅ Resumen de cierre cargado desde cache offline');
+        print('📊 Datos disponibles: ${resumenCierre.keys.toList()}');
+        
+        // Obtener órdenes locales (offline)
+        final orders = _orderService.orders;
+        final productosVendidos = <OrderItem>[];
+        final ordenesVendidas = <Order>[];
+        
+        // Filtrar órdenes completadas y offline
+        for (final order in orders) {
+          if (order.status == OrderStatus.completada || order.status == OrderStatus.pagoConfirmado || 
+              order.status.name == 'pendienteDeSincronizacion') {
+            ordenesVendidas.add(order);
+            for (final item in order.items) {
+              productosVendidos.add(item);
+            }
+          }
+        }
+        
+        setState(() {
+          _productosVendidos = productosVendidos;
+          _ordenesVendidas = ordenesVendidas;
+          
+          // Usar datos del resumen de cierre (ya incluye órdenes offline)
+          // Mapear correctamente los nombres de campos del cache
+          _totalVentas = (resumenCierre['ventas_totales'] ?? resumenCierre['total_ventas'] ?? 0.0).toDouble();
+          _totalProductos = (resumenCierre['productos_vendidos'] ?? 0).toInt();
+          
+          // Calcular valores estimados para campos específicos
+          final ventasTotales = _totalVentas;
+          final efectivoReal = (resumenCierre['efectivo_real'] ?? resumenCierre['total_efectivo'] ?? ventasTotales * 0.7).toDouble();
+          
+          // Egresado: ventas_totales - efectivo_real + egresos en efectivo
+          _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
+          
+          // Efectivo real: efectivo_esperado - egresos en efectivo
+          final efectivoEsperado = (resumenCierre['efectivo_esperado'] ?? 
+                                   (resumenCierre['efectivo_inicial'] ?? 500.0) + efectivoReal).toDouble();
+          _totalEfectivoReal = efectivoEsperado - _egresosEfectivo;
+          
+          _isLoading = false;
+        });
+        
+        print('💰 Datos calculados desde cache offline:');
+        print('  - Ventas Totales: $_totalVentas');
+        print('  - Productos Vendidos: $_totalProductos');
+        print('  - Órdenes locales: ${orders.length}');
+        print('  - Órdenes completadas/offline: ${ordenesVendidas.length}');
+        print('  - Items vendidos: ${productosVendidos.length}');
+        print('  - Total Egresado: $_totalEgresado (incluye egresos efectivo: $_egresosEfectivo)');
+        print('  - Efectivo Real: $_totalEfectivoReal (descontando egresos efectivo)');
+        
+        // Mostrar información de órdenes offline si las hay
+        if (resumenCierre['ordenes_offline'] != null && resumenCierre['ordenes_offline'] > 0) {
+          print('📱 Órdenes offline incluidas en el cálculo:');
+          print('  - Órdenes offline: ${resumenCierre['ordenes_offline']}');
+          print('  - Ventas offline: \$${resumenCierre['ventas_offline']}');
+        }
+        
+      } else {
+        print('⚠️ No hay resumen de cierre en cache - usando cálculo local');
+        await _calcularVentaTotalLocalFallback();
+      }
+      
+    } catch (e) {
+      print('❌ Error calculando venta total offline: $e');
+      await _calcularVentaTotalLocalFallback();
+    }
+  }
+
+  /// Fallback: calcular usando solo órdenes locales
+  Future<void> _calcularVentaTotalLocalFallback() async {
+    try {
+      print('🔄 Calculando venta total usando solo órdenes locales...');
+      
+      final orders = _orderService.orders;
+      final productosVendidos = <OrderItem>[];
+      final ordenesVendidas = <Order>[];
+      double totalVentas = 0.0;
+      int totalProductos = 0;
+      
+      for (final order in orders) {
+        if (order.status == OrderStatus.completada || 
+            order.status.name == 'pendienteDeSincronizacion' || order.status == OrderStatus.pagoConfirmado) {
+          ordenesVendidas.add(order);
+          totalVentas += order.total;
+          
+          for (final item in order.items) {
+            productosVendidos.add(item);
+            totalProductos += item.cantidad;
+          }
+        }
+      }
+      
+      setState(() {
+        _productosVendidos = productosVendidos;
+        _ordenesVendidas = ordenesVendidas;
+        _totalVentas = totalVentas;
+        _totalProductos = totalProductos;
+        
+        // Estimaciones básicas
+        final efectivoEstimado = totalVentas * 0.7; // 70% efectivo
+        _totalEgresado = totalVentas - efectivoEstimado + _egresosEfectivo;
+        _totalEfectivoReal = efectivoEstimado - _egresosEfectivo;
+        
+        _isLoading = false;
+      });
+      
+      print('💰 Datos calculados localmente (fallback):');
+      print('  - Ventas Totales: $_totalVentas');
+      print('  - Productos Vendidos: $_totalProductos');
+      print('  - Órdenes completadas: ${ordenesVendidas.length}');
+      print('  - Items vendidos: ${productosVendidos.length}');
+      
+    } catch (e) {
+      print('❌ Error en cálculo local fallback: $e');
+      setState(() {
+        _isLoading = false;
+        // Valores por defecto en caso de error total
+        _totalVentas = 0.0;
+        _totalProductos = 0;
+        _productosVendidos = [];
+        _ordenesVendidas = [];
+        _totalEgresado = 0.0;
+        _totalEfectivoReal = 0.0;
+      });
+    }
   }
 }

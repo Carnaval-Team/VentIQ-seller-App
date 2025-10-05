@@ -14,23 +14,27 @@ class AutoSyncService {
   factory AutoSyncService() => _instance;
   AutoSyncService._internal();
 
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
   final ReauthenticationService _reauthService = ReauthenticationService();
-  
+
   Timer? _syncTimer;
   bool _isRunning = false;
   bool _isSyncing = false;
   DateTime? _lastSyncTime;
   int _syncCount = 0;
-  
+
   // Configuración
   static const Duration _syncInterval = Duration(minutes: 1); // Cada 1 minuto
-  static const Duration _syncTimeout = Duration(minutes: 5); // Timeout de 5 minutos
-  
+  static const Duration _syncTimeout = Duration(
+    minutes: 5,
+  ); // Timeout de 5 minutos
+
   // Stream para notificar eventos de sincronización
-  final StreamController<AutoSyncEvent> _syncEventController = StreamController<AutoSyncEvent>.broadcast();
+  final StreamController<AutoSyncEvent> _syncEventController =
+      StreamController<AutoSyncEvent>.broadcast();
   Stream<AutoSyncEvent> get syncEventStream => _syncEventController.stream;
-  
+
   /// Estado actual del servicio
   bool get isRunning => _isRunning;
   bool get isSyncing => _isSyncing;
@@ -46,34 +50,37 @@ class AutoSyncService {
 
     print('🚀 Iniciando sincronización automática periódica...');
     print('⏰ Intervalo de sincronización: ${_syncInterval.inMinutes} minutos');
-    
+
     _isRunning = true;
-    
+
     // Ejecutar primera sincronización inmediatamente
     await _performSync();
-    
+
     // Programar sincronizaciones periódicas
     _syncTimer = Timer.periodic(_syncInterval, (_) async {
       if (!_isRunning) return;
-      
+
       // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-      
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline activado - Pausando sincronización automática');
         await stopAutoSync();
         return;
       }
-      
+
       await _performSync();
     });
-    
-    _syncEventController.add(AutoSyncEvent(
-      type: AutoSyncEventType.started,
-      timestamp: DateTime.now(),
-      message: 'Sincronización automática iniciada',
-    ));
-    
+
+    _syncEventController.add(
+      AutoSyncEvent(
+        type: AutoSyncEventType.started,
+        timestamp: DateTime.now(),
+        message: 'Sincronización automática iniciada',
+      ),
+    );
+
     print('✅ Sincronización automática iniciada');
   }
 
@@ -83,16 +90,18 @@ class AutoSyncService {
 
     print('🛑 Deteniendo sincronización automática...');
     _isRunning = false;
-    
+
     _syncTimer?.cancel();
     _syncTimer = null;
-    
-    _syncEventController.add(AutoSyncEvent(
-      type: AutoSyncEventType.stopped,
-      timestamp: DateTime.now(),
-      message: 'Sincronización automática detenida',
-    ));
-    
+
+    _syncEventController.add(
+      AutoSyncEvent(
+        type: AutoSyncEventType.stopped,
+        timestamp: DateTime.now(),
+        message: 'Sincronización automática detenida',
+      ),
+    );
+
     print('✅ Sincronización automática detenida');
   }
 
@@ -105,34 +114,36 @@ class AutoSyncService {
 
     _isSyncing = true;
     final startTime = DateTime.now();
-    
+
     try {
       print('🔄 Iniciando sincronización automática #${_syncCount + 1}...');
-      
-      _syncEventController.add(AutoSyncEvent(
-        type: AutoSyncEventType.syncStarted,
-        timestamp: startTime,
-        message: 'Sincronización iniciada',
-      ));
+
+      _syncEventController.add(
+        AutoSyncEvent(
+          type: AutoSyncEventType.syncStarted,
+          timestamp: startTime,
+          message: 'Sincronización iniciada',
+        ),
+      );
 
       // Verificar y asegurar autenticación
       print('🔐 Verificando autenticación antes de sincronizar...');
       final isAuthenticated = await _reauthService.ensureAuthenticated();
-      
+
       if (!isAuthenticated) {
         throw Exception('No se pudo autenticar al usuario para sincronización');
       }
-      
+
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) {
         throw Exception('Usuario no autenticado después de verificación');
       }
-      
+
       print('✅ Usuario autenticado correctamente para sincronización');
 
       final Map<String, dynamic> syncedData = {};
       final List<String> syncedItems = [];
-      
+
       // 1. Sincronizar credenciales y datos del usuario
       try {
         syncedData['credentials'] = await _syncCredentials();
@@ -184,13 +195,27 @@ class AutoSyncService {
       try {
         syncedData['turno'] = await _syncTurno();
         await _syncTurnoResumen();
+        // Sincronizar resumen de cierre diario para CierreScreen y VentaTotalScreen
+        await _syncResumenCierre();
         syncedItems.add('turno');
-        print('  ✅ Turno sincronizado');
+        print('  ✅ Turno y resúmenes sincronizados');
       } catch (e) {
         print('  ❌ Error sincronizando turno: $e');
       }
 
-      // 7. Sincronizar órdenes (solo cada 2 sincronizaciones)
+      // 7. Sincronizar ventas offline pendientes (NUEVO)
+      try {
+        final syncedSales = await _syncOfflineSales();
+        if (syncedSales > 0) {
+          syncedData['offline_sales'] = syncedSales;
+          syncedItems.add('ventas offline ($syncedSales)');
+          print('  ✅ $syncedSales ventas offline sincronizadas');
+        }
+      } catch (e) {
+        print('  ❌ Error sincronizando ventas offline: $e');
+      }
+
+      // 8. Sincronizar órdenes (solo cada 2 sincronizaciones)
       if (_syncCount % 2 == 0) {
         try {
           syncedData['orders'] = await _syncOrders();
@@ -209,29 +234,34 @@ class AutoSyncService {
 
       _lastSyncTime = DateTime.now();
       _syncCount++;
-      
+
       final duration = _lastSyncTime!.difference(startTime);
-      
-      _syncEventController.add(AutoSyncEvent(
-        type: AutoSyncEventType.syncCompleted,
-        timestamp: _lastSyncTime!,
-        message: 'Sincronización completada: ${syncedItems.join(", ")}',
-        duration: duration,
-        itemsSynced: syncedItems,
-      ));
-      
-      print('✅ Sincronización automática #$_syncCount completada en ${duration.inSeconds}s');
+
+      _syncEventController.add(
+        AutoSyncEvent(
+          type: AutoSyncEventType.syncCompleted,
+          timestamp: _lastSyncTime!,
+          message: 'Sincronización completada: ${syncedItems.join(", ")}',
+          duration: duration,
+          itemsSynced: syncedItems,
+        ),
+      );
+
+      print(
+        '✅ Sincronización automática #$_syncCount completada en ${duration.inSeconds}s',
+      );
       print('📊 Items sincronizados: ${syncedItems.join(", ")}');
-      
     } catch (e) {
       print('❌ Error en sincronización automática: $e');
-      
-      _syncEventController.add(AutoSyncEvent(
-        type: AutoSyncEventType.syncFailed,
-        timestamp: DateTime.now(),
-        message: 'Error en sincronización: $e',
-        error: e.toString(),
-      ));
+
+      _syncEventController.add(
+        AutoSyncEvent(
+          type: AutoSyncEventType.syncFailed,
+          timestamp: DateTime.now(),
+          message: 'Error en sincronización: $e',
+          error: e.toString(),
+        ),
+      );
     } finally {
       _isSyncing = false;
     }
@@ -241,11 +271,11 @@ class AutoSyncService {
   Future<Map<String, dynamic>> _syncCredentials() async {
     final userData = await _userPreferencesService.getUserData();
     final credentials = await _userPreferencesService.getSavedCredentials();
-    
+
     final email = userData['email'] ?? credentials['email'];
     final password = credentials['password'];
     final userId = userData['userId'];
-    
+
     if (email != null && password != null && userId != null) {
       // Actualizar usuario en el array de usuarios offline
       await _userPreferencesService.saveOfflineUser(
@@ -253,14 +283,10 @@ class AutoSyncService {
         password: password,
         userId: userId,
       );
-      
-      return {
-        'email': email,
-        'password': password,
-        'userId': userId,
-      };
+
+      return {'email': email, 'password': password, 'userId': userId};
     }
-    
+
     return {};
   }
 
@@ -280,12 +306,16 @@ class AutoSyncService {
   Future<List<Map<String, dynamic>>> _syncCategories() async {
     final categoryService = CategoryService();
     final categories = await categoryService.getCategories();
-    return categories.map((cat) => {
-      'id': cat.id,
-      'name': cat.name,
-      'imageUrl': cat.imageUrl,
-      'color': cat.color.value,
-    }).toList();
+    return categories
+        .map(
+          (cat) => {
+            'id': cat.id,
+            'name': cat.name,
+            'imageUrl': cat.imageUrl,
+            'color': cat.color.value,
+          },
+        )
+        .toList();
   }
 
   /// Sincronizar productos con detalles completos
@@ -293,25 +323,29 @@ class AutoSyncService {
     final productService = ProductService();
     final categoryService = CategoryService();
     final Map<String, List<Map<String, dynamic>>> productsByCategory = {};
-    
+
     final categories = await categoryService.getCategories();
-    
-    for (var category in categories.take(3)) { // Limitar a 3 categorías por sincronización
-      final productsMap = await productService.getProductsByCategory(category.id);
+
+    for (var category in categories.take(3)) {
+      // Limitar a 3 categorías por sincronización
+      final productsMap = await productService.getProductsByCategory(
+        category.id,
+      );
       final List<Map<String, dynamic>> allProducts = [];
-      
+
       for (var entry in productsMap.entries) {
         final subcategory = entry.key;
         final products = entry.value;
-        
-        for (var prod in products.take(10)) { // Limitar a 10 productos por subcategoría
+
+        for (var prod in products.take(10)) {
+          // Limitar a 10 productos por subcategoría
           try {
             // Obtener detalles completos usando RPC
             final detailResponse = await Supabase.instance.client.rpc(
               'get_detalle_producto',
               params: {'id_producto_param': prod.id},
             );
-            
+
             final productWithDetails = {
               'id': prod.id,
               'denominacion': prod.denominacion,
@@ -323,7 +357,7 @@ class AutoSyncService {
               'subcategoria': subcategory,
               'detalles_completos': detailResponse,
             };
-            
+
             allProducts.add(productWithDetails);
           } catch (e) {
             // En caso de error, guardar solo datos básicos
@@ -340,21 +374,21 @@ class AutoSyncService {
           }
         }
       }
-      
+
       productsByCategory[category.id.toString()] = allProducts;
     }
-    
+
     return productsByCategory;
   }
 
   /// Sincronizar turno actual
   Future<Map<String, dynamic>?> _syncTurno() async {
     final hasOpenShift = await TurnoService.hasOpenShift();
-    
+
     if (hasOpenShift) {
       final userPrefs = UserPreferencesService();
       final idTpv = await userPrefs.getIdTpv();
-      
+
       if (idTpv != null) {
         final response = await Supabase.instance.client
             .from('app_dat_caja_turno')
@@ -363,22 +397,61 @@ class AutoSyncService {
             .eq('estado', 1)
             .order('fecha_apertura', ascending: false, nullsFirst: false)
             .limit(1);
-            
+
         if (response.isNotEmpty) {
           return response.first;
         }
       }
     }
-    
+
     return null;
   }
 
   /// Sincronizar resumen de turno anterior
   Future<void> _syncTurnoResumen() async {
     final resumenTurno = await TurnoService.getResumenTurnoKPI();
-    
+
     if (resumenTurno != null) {
       await _userPreferencesService.saveTurnoResumenCache(resumenTurno);
+    }
+  }
+
+  /// Sincronizar resumen de cierre diario
+  Future<void> _syncResumenCierre() async {
+    try {
+      // Obtener datos del usuario para llamar a fn_resumen_diario_cierre
+      final idTpv = await _userPreferencesService.getIdTpv();
+      final userID = await _userPreferencesService.getUserId();
+
+      if (idTpv != null && userID != null) {
+        // Llamar a la función RPC fn_resumen_diario_cierre
+        final resumenCierreResponse = await Supabase.instance.client.rpc(
+          'fn_resumen_diario_cierre',
+          params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
+        );
+
+        if (resumenCierreResponse != null) {
+          Map<String, dynamic> resumenCierre;
+          
+          // Manejar tanto List como Map de respuesta
+          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+            // Si es una lista, tomar el primer elemento
+            resumenCierre = resumenCierreResponse[0] as Map<String, dynamic>;
+          } else if (resumenCierreResponse is Map<String, dynamic>) {
+            // Si ya es un mapa, usarlo directamente
+            resumenCierre = resumenCierreResponse;
+          } else {
+            print('⚠️ AutoSync: Formato de respuesta no reconocido para resumen de cierre');
+            return;
+          }
+
+          // Guardar en cache para uso offline
+          await _userPreferencesService.saveResumenCierreCache(resumenCierre);
+          print('  📊 Resumen de cierre sincronizado automáticamente');
+        }
+      }
+    } catch (e) {
+      print('  ❌ Error en sincronización automática de resumen de cierre: $e');
     }
   }
 
@@ -417,6 +490,220 @@ class AutoSyncService {
     return [];
   }
 
+  /// Sincronizar ventas offline pendientes
+  Future<int> _syncOfflineSales() async {
+    final pendingOrders = await _userPreferencesService.getPendingOrders();
+    
+    if (pendingOrders.isEmpty) {
+      print('  📝 No hay ventas offline pendientes');
+      return 0;
+    }
+
+    print('  🔄 Sincronizando ${pendingOrders.length} ventas offline...');
+    int syncedCount = 0;
+
+    for (var orderData in pendingOrders) {
+      try {
+        print('    - Procesando venta offline: ${orderData['id']}');
+
+        // 1. Registrar cliente si hay datos
+        await _registerClientFromOfflineData(orderData);
+
+        // 2. Registrar la venta
+        await _registerSaleInSupabase(orderData);
+
+        // 3. Completar la orden según su estado
+        final estado = orderData['estado'] ?? 'completada';
+        await _completeOrderWithStatus(orderData['id'], estado);
+
+        syncedCount++;
+        print('    ✅ Venta offline sincronizada: ${orderData['id']}');
+
+      } catch (e) {
+        print('    ❌ Error sincronizando venta offline ${orderData['id']}: $e');
+        // Continúa con la siguiente venta sin interrumpir el proceso
+      }
+    }
+
+    if (syncedCount > 0) {
+      // Limpiar las órdenes sincronizadas exitosamente
+      await _cleanupSyncedOrders(syncedCount);
+    }
+
+    return syncedCount;
+  }
+
+  /// Registrar cliente desde datos offline
+  Future<void> _registerClientFromOfflineData(Map<String, dynamic> orderData) async {
+    final buyerName = orderData['buyer_name'] ?? orderData['buyerName'];
+    final buyerPhone = orderData['buyer_phone'] ?? orderData['buyerPhone'];
+
+    if (buyerName != null && buyerName.isNotEmpty) {
+      try {
+        print('    👤 Registrando cliente desde datos offline: $buyerName');
+
+        // Generar código de cliente único basado en el nombre
+        final clientCode = 'CLI-${buyerName.hashCode.abs()}';
+
+        // Usar RPC fn_insertar_cliente_con_contactos
+        final response = await Supabase.instance.client.rpc(
+          'fn_insertar_cliente_con_contactos',
+          params: {
+            'p_codigo_cliente': clientCode,
+            'p_contactos': null,
+            'p_direccion': null,
+            'p_documento_identidad': null,
+            'p_email': null,
+            'p_fecha_nacimiento': null,
+            'p_genero': null,
+            'p_limite_credito': 0,
+            'p_nombre_completo': buyerName,
+            'p_telefono': buyerPhone?.isNotEmpty == true ? buyerPhone : null,
+            'p_tipo_cliente': 1,
+          },
+        );
+
+        if (response != null && response['status'] == 'success') {
+          final idCliente = response['id_cliente'] as int;
+          orderData['idCliente'] = idCliente;
+          print('    ✅ Cliente registrado con ID: $idCliente');
+        }
+      } catch (e) {
+        print('    ⚠️ Error registrando cliente: $e');
+        // No interrumpir el flujo por errores de cliente
+      }
+    }
+  }
+
+  /// Registrar venta en Supabase usando RPC directamente
+  Future<void> _registerSaleInSupabase(Map<String, dynamic> orderData) async {
+    // Obtener datos del usuario
+    final userData = await _userPreferencesService.getUserData();
+    final idTpv = await _userPreferencesService.getIdTpv();
+    final userId = userData['userId'];
+
+    if (idTpv == null || userId == null) {
+      throw Exception('Datos de usuario incompletos para sincronización');
+    }
+
+    // Preparar productos desde los datos offline
+    final productos = <Map<String, dynamic>>[];
+    final itemsData = orderData['items'] as List<dynamic>? ?? [];
+
+    for (final itemData in itemsData) {
+      final inventoryMetadata = itemData['inventory_metadata'] ?? {};
+      productos.add({
+        'id_producto': itemData['id_producto'],
+        'id_variante': inventoryMetadata['id_variante'],
+        'id_opcion_variante': inventoryMetadata['id_opcion_variante'],
+        'id_ubicacion': inventoryMetadata['id_ubicacion'],
+        'id_presentacion': inventoryMetadata['id_presentacion'],
+        'cantidad': itemData['cantidad'],
+        'precio_unitario': itemData['precio_unitario'],
+        'sku_producto': inventoryMetadata['sku_producto'] ?? itemData['id_producto'].toString(),
+        'sku_ubicacion': inventoryMetadata['sku_ubicacion'],
+        'es_producto_venta': true,
+      });
+    }
+
+    // Llamar directamente al RPC fn_registrar_venta
+    final response = await Supabase.instance.client.rpc(
+      'fn_registrar_venta',
+      params: {
+        'p_codigo_promocion': orderData['promo_code'] ?? orderData['promoCode'],
+        'p_denominacion': 'Venta Auto Sync - ${orderData['id']}',
+        'p_estado_inicial': 1, // Estado enviada
+        'p_id_tpv': idTpv,
+        'p_observaciones': orderData['notas'] ?? 'Sincronización automática de venta offline',
+        'p_productos': productos,
+        'p_uuid': userId,
+        'p_id_cliente': orderData['idCliente'],
+      },
+    );
+
+    if (response != null && response['status'] == 'success') {
+      // Obtener el ID de operación de la respuesta
+      final operationId = response['id_operacion'] as int?;
+      if (operationId != null) {
+        // Guardar el ID de operación para usarlo en la actualización de estado
+        orderData['_operation_id'] = operationId;
+
+        // Registrar desgloses de pago si existen
+        final paymentBreakdown = orderData['desglose_pagos'] as List<dynamic>?;
+        if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
+          await _registerPaymentBreakdownFromOfflineData(operationId, paymentBreakdown);
+        }
+      }
+    } else {
+      throw Exception(response?['message'] ?? 'Error en el registro de venta');
+    }
+  }
+
+  /// Registrar desgloses de pago desde datos offline
+  Future<void> _registerPaymentBreakdownFromOfflineData(
+    int operationId,
+    List<dynamic> paymentBreakdown,
+  ) async {
+    try {
+      // Preparar array de pagos para la función RPC
+      List<Map<String, dynamic>> pagos = [];
+
+      for (final payment in paymentBreakdown) {
+        final paymentData = payment as Map<String, dynamic>;
+        pagos.add({
+          'id_medio_pago': paymentData['id_medio_pago'],
+          'monto': paymentData['monto'],
+          'referencia_pago': 'Pago Auto Sync - ${DateTime.now().millisecondsSinceEpoch}',
+        });
+      }
+
+      // Llamar a fn_registrar_pago_venta
+      final response = await Supabase.instance.client.rpc(
+        'fn_registrar_pago_venta',
+        params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
+      );
+
+      if (response == true) {
+        print('    ✅ Desgloses de pago registrados para operación: $operationId');
+      } else {
+        throw Exception('Error en el registro de pagos');
+      }
+    } catch (e) {
+      print('    ❌ Error registrando desgloses de pago: $e');
+      // No lanzamos excepción para no interrumpir el flujo principal
+    }
+  }
+
+  /// Completar orden con estado específico
+  Future<void> _completeOrderWithStatus(String orderId, String estado) async {
+    // Implementación similar a la de OrdersScreen para cambiar estado
+    // Por ahora solo registramos que se completó
+    print('    📝 Orden $orderId marcada como $estado');
+  }
+
+  /// Limpiar órdenes sincronizadas exitosamente
+  Future<void> _cleanupSyncedOrders(int syncedCount) async {
+    try {
+      // Obtener órdenes actuales
+      final currentOrders = await _userPreferencesService.getPendingOrders();
+      
+      // Remover las primeras N órdenes que fueron sincronizadas
+      if (currentOrders.length >= syncedCount) {
+        final remainingOrders = currentOrders.skip(syncedCount).toList();
+        
+        // Guardar las órdenes restantes
+        await _userPreferencesService.clearPendingOrders();
+        for (final order in remainingOrders) {
+          await _userPreferencesService.savePendingOrder(order);
+        }
+        
+        print('  🧹 Limpiadas $syncedCount órdenes sincronizadas, ${remainingOrders.length} pendientes');
+      }
+    } catch (e) {
+      print('  ⚠️ Error limpiando órdenes sincronizadas: $e');
+    }
+  }
+  
   /// Forzar una sincronización inmediata
   Future<void> forceSyncNow() async {
     if (_isSyncing) {

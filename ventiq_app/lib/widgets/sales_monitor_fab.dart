@@ -67,23 +67,52 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
 
   Future<void> _loadSalesData() async {
     try {
-      // Use the same query as cierre_screen.dart
       final userPrefs = UserPreferencesService();
+      
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 SalesMonitor - Modo offline activado, cargando desde cache...');
+        await _loadSalesDataOffline();
+        return;
+      }
+
+      // Modo online: cargar desde servidor
+      print('🌐 SalesMonitor - Modo online, cargando desde servidor...');
+      
       final idTpv = await userPrefs.getIdTpv();
       final userID = await userPrefs.getUserId();
 
       if (idTpv != null) {
         print('🧪 Loading sales data with fn_resumen_diario_cierre - TPV: $idTpv');
         
-        final resumenCierre = await Supabase.instance.client.rpc(
+        final resumenCierreResponse = await Supabase.instance.client.rpc(
           'fn_resumen_diario_cierre',
           params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
         
-        print('📈 Sales Monitor Response: $resumenCierre');
+        print('📈 Sales Monitor Response: $resumenCierreResponse');
+        print('📈 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
         
-        if (resumenCierre != null && resumenCierre is List && resumenCierre.isNotEmpty) {
-          final data = resumenCierre[0];
+        if (resumenCierreResponse != null) {
+          Map<String, dynamic> data;
+          
+          // Manejar tanto List como Map de respuesta
+          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+            data = resumenCierreResponse[0] as Map<String, dynamic>;
+            print('📈 SalesMonitor datos extraídos de lista: ${data.keys.toList()}');
+          } else if (resumenCierreResponse is Map<String, dynamic>) {
+            data = resumenCierreResponse;
+            print('📈 SalesMonitor datos recibidos como mapa: ${data.keys.toList()}');
+          } else {
+            print('⚠️ Formato de respuesta no reconocido en SalesMonitor');
+            setState(() {
+              _currentSales = null;
+              _isLoading = false;
+            });
+            return;
+          }
           
           setState(() {
             _currentSales = data;
@@ -106,6 +135,53 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
         _isLoading = false;
       });
       print('Error loading sales data: $e');
+    }
+  }
+
+  /// Cargar datos de ventas en modo offline
+  Future<void> _loadSalesDataOffline() async {
+    try {
+      print('📱 SalesMonitor - Cargando datos desde cache offline...');
+      
+      final userPrefs = UserPreferencesService();
+      
+      // Obtener resumen de cierre actualizado con órdenes offline
+      final resumenCierre = await userPrefs.getResumenCierreWithOfflineOrders();
+      
+      if (resumenCierre != null) {
+        print('✅ SalesMonitor - Resumen de cierre cargado desde cache offline');
+        print('📊 Datos disponibles: ${resumenCierre.keys.toList()}');
+        
+        setState(() {
+          _currentSales = resumenCierre;
+          _isLoading = false;
+        });
+        
+        print('💰 SalesMonitor - Datos cargados desde cache offline:');
+        print('  - Ventas totales: \$${resumenCierre['ventas_totales']}');
+        print('  - Productos vendidos: ${resumenCierre['productos_vendidos']}');
+        
+        // Mostrar información de órdenes offline si las hay
+        if (resumenCierre['ordenes_offline'] != null && resumenCierre['ordenes_offline'] > 0) {
+          print('📱 SalesMonitor - Órdenes offline incluidas:');
+          print('  - Órdenes offline: ${resumenCierre['ordenes_offline']}');
+          print('  - Ventas offline: \$${resumenCierre['ventas_offline']}');
+        }
+        
+      } else {
+        print('⚠️ SalesMonitor - No hay resumen de cierre en cache');
+        setState(() {
+          _currentSales = null;
+          _isLoading = false;
+        });
+      }
+      
+    } catch (e) {
+      print('❌ SalesMonitor - Error cargando datos offline: $e');
+      setState(() {
+        _currentSales = null;
+        _isLoading = false;
+      });
     }
   }
 

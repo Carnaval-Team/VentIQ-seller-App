@@ -811,9 +811,22 @@ class _PreorderScreenState extends State<PreorderScreen> {
     final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
     
     if (isOfflineModeEnabled) {
-      // MODO OFFLINE: No elaborar productos, crear orden virtual
-      print('🔌 Modo offline - Creando orden virtual sin elaboración');
-      await _createOfflineOrder(currentOrder);
+      // MODO OFFLINE: No elaborar productos, pero SÍ ir al checkout para capturar datos del cliente
+      print('🔌 Modo offline - Saltando elaboración pero continuando al checkout para datos del cliente');
+      
+      // Marcar la orden como offline para que el checkout la maneje apropiadamente
+      currentOrder.isOfflineOrder = true;
+      
+      // Navigate to checkout screen (CRÍTICO: No saltarse el checkout en modo offline)
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CheckoutScreen(order: currentOrder),
+        ),
+      ).then((_) {
+        // Refresh the screen when returning from checkout
+        setState(() {});
+      });
     } else {
       // MODO ONLINE: Elaborar productos y continuar al checkout
       print('🌐 Modo online - Procesando elaboración y continuando al checkout');
@@ -1386,241 +1399,6 @@ class _PreorderScreenState extends State<PreorderScreen> {
     });
   }
 
-  /// Crear orden virtual en modo offline
-  Future<void> _createOfflineOrder(Order order) async {
-    try {
-      // Mostrar loading
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[600]!),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Creando orden offline...',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-      
-      // Obtener datos del usuario
-      final userData = await _userPreferencesService.getUserData();
-      final idTienda = await _userPreferencesService.getIdTienda();
-      final idTpv = await _userPreferencesService.getIdTpv();
-      final idSeller = await _userPreferencesService.getIdSeller();
-      
-      // Generar ID único para la orden offline
-      final offlineOrderId = '${DateTime.now().millisecondsSinceEpoch}';
-      
-      // Calcular totales
-      double subtotal = 0.0;
-      double totalDescuentos = 0.0;
-      
-      // Preparar desglose de pagos por método
-      Map<String, Map<String, dynamic>> paymentBreakdown = {};
-      
-      for (final item in order.items) {
-        final itemTotal = item.precioUnitario * item.cantidad;
-        subtotal += itemTotal;
-        
-        // Agrupar por método de pago
-        final paymentMethodId = item.paymentMethod?.id.toString() ?? 'sin_metodo';
-        if (!paymentBreakdown.containsKey(paymentMethodId)) {
-          paymentBreakdown[paymentMethodId] = {
-            'id_medio_pago': item.paymentMethod?.id,
-            'denominacion': item.paymentMethod?.denominacion ?? 'Sin método',
-            'monto': 0.0,
-            'es_digital': item.paymentMethod?.esDigital ?? false,
-            'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
-          };
-        }
-        paymentBreakdown[paymentMethodId]!['monto'] = 
-          (paymentBreakdown[paymentMethodId]!['monto'] as double) + itemTotal;
-      }
-      
-      final total = subtotal - totalDescuentos;
-      
-      // Crear estructura de orden virtual
-      final orderData = {
-        'id': offlineOrderId,
-        'id_tienda': idTienda,
-        'id_tpv': idTpv,
-        'id_vendedor': idSeller,
-        'id_usuario': userData['userId'],
-        'fecha_creacion': DateTime.now().toIso8601String(),
-        'subtotal': subtotal,
-        'total_descuentos': totalDescuentos,
-        'total': total,
-        'estado': 'pendiente_sincronizacion',
-        'is_pending_sync': true,
-        'created_offline_at': DateTime.now().toIso8601String(),
-        'items': order.items.map((item) {
-          return {
-            'id_producto': item.producto.id,
-            'denominacion': item.nombre,
-            'cantidad': item.cantidad,
-            'precio_unitario': item.precioUnitario,
-            'subtotal': item.precioUnitario * item.cantidad,
-            'id_medio_pago': item.paymentMethod?.id,
-            'metodo_pago': item.paymentMethod?.denominacion,
-            'inventory_metadata': item.inventoryData,
-          };
-        }).toList(),
-        'desglose_pagos': paymentBreakdown.values.toList(),
-      };
-      
-      // Guardar orden pendiente
-      await _userPreferencesService.savePendingOrder(orderData);
-      
-      // Actualizar inventario en cache
-      for (final item in order.items) {
-        final inventoryMetadata = item.inventoryData;
-        if (inventoryMetadata != null && inventoryMetadata['id_variante'] != null) {
-          await _userPreferencesService.updateProductInventoryInCache(
-            item.producto.id,
-            inventoryMetadata['id_variante'] as int,
-            item.cantidad.toInt(),
-          );
-        }
-      }
-      
-      // Cerrar loading
-      Navigator.of(context).pop();
-      
-      // Limpiar orden actual
-      _orderService.cancelCurrentOrder();
-      
-      // Mostrar mensaje de éxito
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green[600], size: 28),
-                const SizedBox(width: 12),
-                const Text('Orden Creada'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'La orden se ha guardado localmente y será sincronizada cuando tengas conexión.',
-                  style: TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue[200]!),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'ID: $offlineOrderId',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Total: \$${total.toStringAsFixed(2)}',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Productos: ${order.items.length}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.sync_problem, size: 16, color: Colors.orange[700]),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Pendiente de sincronización',
-                          style: TextStyle(fontSize: 12, color: Colors.orange[900]),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  // Regresar a categorías
-                  Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    '/categories',
-                    (route) => false,
-                  );
-                },
-                child: const Text('Aceptar'),
-              ),
-            ],
-          );
-        },
-      );
-      
-      print('✅ Orden offline creada: $offlineOrderId');
-      print('📦 Inventario actualizado en cache');
-      
-    } catch (e, stackTrace) {
-      // Cerrar loading si está abierto
-      Navigator.of(context).pop();
-      
-      print('❌ Error creando orden offline: $e');
-      print('Stack trace: $stackTrace');
-      
-      // Mostrar error
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.error, color: Colors.red[600], size: 28),
-                const SizedBox(width: 12),
-                const Text('Error'),
-              ],
-            ),
-            content: Text('No se pudo crear la orden offline: $e'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cerrar'),
-              ),
-            ],
-          );
-        },
-      );
-    }
-  }
 
   void _onBottomNavTap(int index) {
     switch (index) {
