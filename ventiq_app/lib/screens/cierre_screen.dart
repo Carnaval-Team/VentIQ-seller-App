@@ -404,7 +404,19 @@ class _CierreScreenState extends State<CierreScreen> {
         _isLoadingExpenses = true;
       });
 
-      final expenses = await TurnoService.getEgresosEnriquecidos();
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
+      
+      List<Expense> expenses = [];
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline activado - Cargando egresos desde cache...');
+        // Cargar egresos desde cache offline
+        expenses = await _loadExpensesOffline();
+      } else {
+        print('🌐 Modo online - Obteniendo egresos desde servidor...');
+        expenses = await TurnoService.getEgresosEnriquecidos();
+      }
 
       // Calculate total expenses and separate by payment type
       double total = 0.0;
@@ -434,6 +446,43 @@ class _CierreScreenState extends State<CierreScreen> {
       setState(() {
         _isLoadingExpenses = false;
       });
+    }
+  }
+
+  Future<List<Expense>> _loadExpensesOffline() async {
+    try {
+      print('📱 Cargando egresos desde cache offline...');
+      
+      // Obtener egresos desde cache específico (no desde offlineData general)
+      final egresosData = await _userPrefs.getEgresosCache();
+      
+      if (egresosData.isNotEmpty) {
+        final expenses = egresosData.map((expenseJson) {
+          return Expense(
+            idEgreso: expenseJson['id_egreso'] ?? 0,
+            montoEntrega: (expenseJson['monto_entrega'] ?? 0.0).toDouble(),
+            motivoEntrega: expenseJson['motivo_entrega'] ?? 'Sin motivo',
+            nombreRecibe: expenseJson['nombre_recibe'] ?? 'Sin nombre',
+            nombreAutoriza: expenseJson['nombre_autoriza'] ?? 'Sin autorización',
+            fechaEntrega: expenseJson['fecha_entrega'] != null 
+                ? DateTime.parse(expenseJson['fecha_entrega'])
+                : DateTime.now(),
+            idMedioPago: expenseJson['id_medio_pago'],
+            turnoEstado: expenseJson['turno_estado'] ?? 1,
+            medioPago: expenseJson['medio_pago'],
+            esDigital: expenseJson['es_digital'] ?? false,
+          );
+        }).toList();
+        
+        print('✅ Egresos cargados desde cache offline: ${expenses.length}');
+        return expenses;
+      } else {
+        print('ℹ️ No hay egresos en cache offline');
+        return [];
+      }
+    } catch (e) {
+      print('❌ Error cargando egresos offline: $e');
+      return [];
     }
   }
 

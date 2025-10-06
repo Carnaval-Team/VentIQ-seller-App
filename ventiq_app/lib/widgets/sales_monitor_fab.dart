@@ -187,7 +187,20 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
 
   Future<void> _loadExpenses() async {
     try {
-      final expenses = await TurnoService.getEgresosEnriquecidos();
+      final userPrefs = UserPreferencesService();
+      
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
+      
+      List<Expense> expenses = [];
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 SalesMonitor - Modo offline activado, cargando egresos desde cache...');
+        expenses = await _loadExpensesOffline();
+      } else {
+        print('🌐 SalesMonitor - Modo online, obteniendo egresos desde servidor...');
+        expenses = await TurnoService.getEgresosEnriquecidos();
+      }
 
       // Calculate expenses by payment type
       double efectivo = 0.0;
@@ -219,6 +232,45 @@ class _SalesMonitorFABState extends State<SalesMonitorFAB>
         _egresosEfectivo = 0.0;
         _egresosTransferencias = 0.0;
       });
+    }
+  }
+
+  Future<List<Expense>> _loadExpensesOffline() async {
+    try {
+      print('📱 SalesMonitor - Cargando egresos desde cache offline...');
+      
+      final userPrefs = UserPreferencesService();
+      
+      // Obtener egresos desde cache específico
+      final egresosData = await userPrefs.getEgresosCache();
+      
+      if (egresosData.isNotEmpty) {
+        final expenses = egresosData.map((expenseJson) {
+          return Expense(
+            idEgreso: expenseJson['id_egreso'] ?? 0,
+            montoEntrega: (expenseJson['monto_entrega'] ?? 0.0).toDouble(),
+            motivoEntrega: expenseJson['motivo_entrega'] ?? 'Sin motivo',
+            nombreRecibe: expenseJson['nombre_recibe'] ?? 'Sin nombre',
+            nombreAutoriza: expenseJson['nombre_autoriza'] ?? 'Sin autorización',
+            fechaEntrega: expenseJson['fecha_entrega'] != null 
+                ? DateTime.parse(expenseJson['fecha_entrega'])
+                : DateTime.now(),
+            idMedioPago: expenseJson['id_medio_pago'],
+            turnoEstado: expenseJson['turno_estado'] ?? 1,
+            medioPago: expenseJson['medio_pago'],
+            esDigital: expenseJson['es_digital'] ?? false,
+          );
+        }).toList();
+        
+        print('✅ SalesMonitor - Egresos cargados desde cache offline: ${expenses.length}');
+        return expenses;
+      } else {
+        print('ℹ️ SalesMonitor - No hay egresos en cache offline');
+        return [];
+      }
+    } catch (e) {
+      print('❌ SalesMonitor - Error cargando egresos offline: $e');
+      return [];
     }
   }
 
