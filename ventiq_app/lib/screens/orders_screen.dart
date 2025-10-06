@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
-import '../services/turno_service.dart';
-import '../services/bluetooth_printer_service.dart';
+import '../services/printer_manager.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/platform_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
@@ -17,7 +17,7 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   final OrderService _orderService = OrderService();
-  final BluetoothPrinterService _printerService = BluetoothPrinterService();
+  final PrinterManager _printerManager = PrinterManager();
   final UserPreferencesService _userPreferencesService = UserPreferencesService();
   final TextEditingController _searchController = TextEditingController();
   List<Order> _filteredOrders = [];
@@ -1283,119 +1283,59 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
-  /// Verificar configuración de impresión y mostrar diálogo si está habilitada
+  /// Verificar configuración de Impresión y mostrar diálogo si está habilitada
   Future<void> _checkAndShowPrintDialog(Order order) async {
-    print('DEBUG: Verificando configuración de impresión para orden ${order.id}');
+    print('DEBUG: Verificando configuración de Impresión para orden ${order.id}');
     
-    // Verificar si la impresión está habilitada
+    // Verificar si la Impresión está habilitada
     final isPrintEnabled = await _userPreferencesService.isPrintEnabled();
     print('DEBUG: Impresión habilitada: $isPrintEnabled');
     
     if (isPrintEnabled) {
-      print('DEBUG: Impresión habilitada - Mostrando diálogo de impresión');
-      // Agregar un pequeño delay para asegurar que el contexto esté disponible
+      print('DEBUG: Impresión habilitada - Usando PrinterManager');
+      print(' Plataforma detectada: ${PlatformUtils.isWeb ? "Web" : "Móvil"}');
+      
+      // Usar PrinterManager que decide automáticamente el tipo de Impresión
       Future.delayed(Duration(milliseconds: 500), () {
-        _showPrintDialog(order);
+        _printOrderWithManager(order);
       });
     } else {
-      print('DEBUG: Impresión deshabilitada - No se muestra diálogo de impresión');
+      print('DEBUG: Impresión deshabilitada - No se muestra diálogo de Impresión');
     }
   }
 
-  /// Mostrar diálogo de impresión después de confirmar pago
-  Future<void> _showPrintDialog(Order order) async {
-    print('DEBUG: Iniciando _showPrintDialog para orden ${order.id}');
-
-    // Mostrar diálogo de confirmación de impresión
-    print('DEBUG: Mostrando diálogo de confirmación de impresión');
-    bool shouldPrint = await _printerService.showPrintConfirmationDialog(
-      context,
-      order,
-    );
-    print('DEBUG: Resultado del diálogo de confirmación: $shouldPrint');
-
-    if (!shouldPrint) return;
-
-    // Mostrar diálogo de selección de impresora
-    var selectedDevice = await _printerService.showDeviceSelectionDialog(
-      context,
-    );
-
-    if (selectedDevice == null) return;
-
-    // Mostrar diálogo de progreso
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                SizedBox(height: 16),
-                Text('Conectando a impresora...'),
-              ],
-            ),
-          ),
-    );
-
+  /// Imprimir orden usando PrinterManager (detecta automáticamente la plataforma)
+  Future<void> _printOrderWithManager(Order order) async {
     try {
-      // Conectar a la impresora
-      bool connected = await _printerService.connectToDevice(selectedDevice);
-
-      if (!connected) {
-        Navigator.pop(context); // Cerrar diálogo de progreso
-        _showErrorDialog(
-          'Error de Conexión',
-          'No se pudo conectar a la impresora. Verifica que esté encendida y en rango.',
-        );
-        return;
-      }
-
-      // Actualizar mensaje de progreso
-      Navigator.pop(context); // Cerrar diálogo anterior
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder:
-            (context) => AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                  SizedBox(height: 16),
-                  Text('Imprimiendo factura...'),
-                ],
-              ),
-            ),
-      );
-
-      // Imprimir la factura
-      bool printed = await _printerService.printInvoice(order);
-
-      Navigator.pop(context); // Cerrar diálogo de progreso
-
-      if (printed) {
+      print('🖨️ Iniciando impresión con PrinterManager para orden ${order.id}');
+      
+      // Usar PrinterManager que maneja automáticamente web vs móvil
+      final result = await _printerManager.printInvoice(context, order);
+      
+      if (result.success) {
         _showSuccessDialog(
           '¡Factura Impresa!',
-          'La factura de la orden ${order.id} se ha impreso correctamente.',
+          result.message,
         );
+        print('✅ ${result.message} (${result.platform})');
       } else {
         _showErrorDialog(
           'Error de Impresión',
-          'No se pudo imprimir la factura. Verifica la conexión con la impresora.',
+          result.message,
         );
+        print('❌ ${result.message} (${result.platform})');
       }
-
-      // Desconectar de la impresora
-      await _printerService.disconnect();
+      
+      if (result.details != null) {
+        print('ℹ️ Detalles: ${result.details}');
+      }
+      
     } catch (e) {
-      Navigator.pop(context); // Cerrar diálogo de progreso si está abierto
       _showErrorDialog('Error', 'Ocurrió un error durante la impresión: $e');
-      await _printerService.disconnect();
+      print('❌ Error en _printOrderWithManager: $e');
     }
   }
+
 
   /// Mostrar diálogo de error
   void _showErrorDialog(String title, String message) {
@@ -1449,93 +1389,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  /// Imprimir orden individual
+  /// Imprimir orden individual (usa PrinterManager para detectar plataforma)
   Future<void> _printOrder(Order order) async {
-    try {
-      // Mostrar diálogo de confirmación de impresión
-      bool shouldPrint = await _printerService.showPrintConfirmationDialog(
-        context,
-        order,
-      );
-      if (!shouldPrint) return;
-
-      // Mostrar diálogo de selección de impresora
-      var selectedDevice = await _printerService.showDeviceSelectionDialog(
-        context,
-      );
-      if (selectedDevice == null) return;
-
-      // Mostrar diálogo de progreso
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder:
-            (context) => AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                  SizedBox(height: 16),
-                  Text('Conectando a impresora...'),
-                ],
-              ),
-            ),
-      );
-
-      // Conectar a la impresora
-      bool connected = await _printerService.connectToDevice(selectedDevice);
-
-      if (!connected) {
-        Navigator.pop(context); // Cerrar diálogo de progreso
-        _showErrorDialog(
-          'Error de Conexión',
-          'No se pudo conectar a la impresora. Verifica que esté encendida y en rango.',
-        );
-        return;
-      }
-
-      // Actualizar mensaje de progreso
-      Navigator.pop(context); // Cerrar diálogo anterior
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder:
-            (context) => AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                  SizedBox(height: 16),
-                  Text('Imprimiendo factura...'),
-                ],
-              ),
-            ),
-      );
-
-      // Imprimir la factura
-      bool printed = await _printerService.printInvoice(order);
-
-      Navigator.pop(context); // Cerrar diálogo de progreso
-
-      if (printed) {
-        _showSuccessDialog(
-          '¡Factura Impresa!',
-          'La factura de la orden ${order.id} se ha impreso correctamente.',
-        );
-      } else {
-        _showErrorDialog(
-          'Error de Impresión',
-          'No se pudo imprimir la factura. Verifica la conexión con la impresora.',
-        );
-      }
-
-      // Desconectar de la impresora
-      await _printerService.disconnect();
-    } catch (e) {
-      Navigator.pop(context); // Cerrar diálogo de progreso si está abierto
-      _showErrorDialog('Error', 'Ocurrió un error durante la impresión: $e');
-      await _printerService.disconnect();
-    }
+    // Usar el mismo método unificado para impresión manual
+    await _printOrderWithManager(order);
   }
 
   // Personalizar nombres de métodos de pago para el desglose
