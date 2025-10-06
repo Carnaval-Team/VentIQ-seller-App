@@ -2149,7 +2149,9 @@ class _SyncDialogState extends State<_SyncDialog> {
       // Extraer datos del cierre offline
       final efectivoReal = (cierreData['efectivo_final'] ?? 0.0).toDouble();
       final observaciones = cierreData['observaciones'] as String?;
-      final productos = cierreData['productos'] as List<Map<String, dynamic>>? ?? [];
+      // Manejar la conversión de productos de manera segura
+      final productosRaw = cierreData['productos'] as List<dynamic>? ?? [];
+      final productos = productosRaw.map((item) => item as Map<String, dynamic>).toList();
       
       print('💰 Efectivo real: $efectivoReal');
       print('📝 Observaciones: $observaciones');
@@ -2824,7 +2826,9 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
         final idVendedor = aperturaData['id_vendedor'] as int;
         final usuario = aperturaData['usuario'] as String;
         final manejaInventario = aperturaData['maneja_inventario'] as bool? ?? false;
-        final productos = aperturaData['productos'] as List<Map<String, dynamic>>? ?? [];
+        // Manejar la conversión de productos de manera segura
+        final productosRaw = aperturaData['productos'] as List<dynamic>? ?? [];
+        final productos = productosRaw.map((item) => item as Map<String, dynamic>).toList();
         
         print('💰 Efectivo inicial: $efectivoInicial');
         print('🏪 TPV ID: $idTpv');

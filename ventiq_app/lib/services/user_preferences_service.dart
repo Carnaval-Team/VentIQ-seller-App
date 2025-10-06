@@ -486,8 +486,8 @@ class UserPreferencesService {
     List<Map<String, dynamic>> offlineUsers = [];
     
     if (usersJson != null) {
-      final decoded = jsonDecode(usersJson);
-      offlineUsers = List<Map<String, dynamic>>.from(decoded);
+      final decoded = jsonDecode(usersJson) as List<dynamic>;
+      offlineUsers = decoded.map((item) => item as Map<String, dynamic>).toList();
     }
     
     // Verificar si el usuario ya existe (por email)
@@ -530,8 +530,8 @@ class UserPreferencesService {
     
     if (usersJson == null) return false;
     
-    final decoded = jsonDecode(usersJson);
-    final offlineUsers = List<Map<String, dynamic>>.from(decoded);
+    final decoded = jsonDecode(usersJson) as List<dynamic>;
+    final offlineUsers = decoded.map((item) => item as Map<String, dynamic>).toList();
     
     return offlineUsers.any((user) => user['email'] == email);
   }
@@ -550,8 +550,8 @@ class UserPreferencesService {
       return null;
     }
     
-    final decoded = jsonDecode(usersJson);
-    final offlineUsers = List<Map<String, dynamic>>.from(decoded);
+    final decoded = jsonDecode(usersJson) as List<dynamic>;
+    final offlineUsers = decoded.map((item) => item as Map<String, dynamic>).toList();
     
     // Buscar usuario por email
     final user = offlineUsers.firstWhere(
@@ -593,8 +593,8 @@ class UserPreferencesService {
     
     if (usersJson == null) return [];
     
-    final decoded = jsonDecode(usersJson);
-    return List<Map<String, dynamic>>.from(decoded);
+    final decoded = jsonDecode(usersJson) as List<dynamic>;
+    return decoded.map((item) => item as Map<String, dynamic>).toList();
   }
   
   /// Eliminar un usuario offline específico
@@ -604,8 +604,8 @@ class UserPreferencesService {
     
     if (usersJson == null) return;
     
-    final decoded = jsonDecode(usersJson);
-    final offlineUsers = List<Map<String, dynamic>>.from(decoded);
+    final decoded = jsonDecode(usersJson) as List<dynamic>;
+    final offlineUsers = decoded.map((item) => item as Map<String, dynamic>).toList();
     
     // Filtrar para remover el usuario
     offlineUsers.removeWhere((user) => user['email'] == email);
@@ -642,8 +642,8 @@ class UserPreferencesService {
     
     List<Map<String, dynamic>> pendingOrders = [];
     if (pendingOrdersJson != null) {
-      final decoded = jsonDecode(pendingOrdersJson);
-      pendingOrders = List<Map<String, dynamic>>.from(decoded);
+      final decoded = jsonDecode(pendingOrdersJson) as List<dynamic>;
+      pendingOrders = decoded.map((item) => item as Map<String, dynamic>).toList();
     }
     
     // Agregar nueva orden con timestamp y flag de pendiente
@@ -662,8 +662,8 @@ class UserPreferencesService {
     
     if (pendingOrdersJson == null) return [];
     
-    final decoded = jsonDecode(pendingOrdersJson);
-    return List<Map<String, dynamic>>.from(decoded);
+    final decoded = jsonDecode(pendingOrdersJson) as List<dynamic>;
+    return decoded.map((item) => item as Map<String, dynamic>).toList();
   }
   
   /// Eliminar una orden pendiente específica (después de sincronizar)
@@ -673,8 +673,8 @@ class UserPreferencesService {
     
     if (pendingOrdersJson == null) return;
     
-    final decoded = jsonDecode(pendingOrdersJson);
-    final pendingOrders = List<Map<String, dynamic>>.from(decoded);
+    final decoded = jsonDecode(pendingOrdersJson) as List<dynamic>;
+    final pendingOrders = decoded.map((item) => item as Map<String, dynamic>).toList();
     
     // Filtrar para remover la orden
     pendingOrders.removeWhere((order) => order['id'] == orderId);
@@ -765,8 +765,8 @@ class UserPreferencesService {
     
     List<Map<String, dynamic>> operations = [];
     if (operationsJson != null) {
-      final decoded = jsonDecode(operationsJson);
-      operations = List<Map<String, dynamic>>.from(decoded);
+      final decoded = jsonDecode(operationsJson) as List<dynamic>;
+      operations = decoded.map((item) => item as Map<String, dynamic>).toList();
     }
     
     // Agregar timestamp
@@ -784,8 +784,8 @@ class UserPreferencesService {
     
     if (operationsJson == null) return [];
     
-    final decoded = jsonDecode(operationsJson);
-    return List<Map<String, dynamic>>.from(decoded);
+    final decoded = jsonDecode(operationsJson) as List<dynamic>;
+    return decoded.map((item) => item as Map<String, dynamic>).toList();
   }
   
   /// Limpiar operaciones pendientes
