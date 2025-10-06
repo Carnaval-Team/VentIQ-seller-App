@@ -31,7 +31,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _isPrintEnabled = true; // Valor por defecto
   bool _isLimitDataUsageEnabled = false; // Valor por defecto
-  bool _isFluidModeEnabled = false; // Valor por defecto
+  bool _isFluidModeEnabled = false; // Deshabilitado - Disponible en próxima versión
   bool _isOfflineModeEnabled = false; // Valor por defecto
   bool _hasOfflineTurno = false; // Turno abierto offline
   Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
@@ -50,7 +50,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    // Cancelar suscripción de manera segura
     _integrationSubscription?.cancel();
+    _integrationSubscription = null;
     super.dispose();
   }
 
@@ -58,7 +60,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final printEnabled = await _userPreferencesService.isPrintEnabled();
     final limitDataEnabled =
         await _userPreferencesService.isLimitDataUsageEnabled();
-    final fluidModeEnabled = await _userPreferencesService.isFluidModeEnabled();
     final offlineModeEnabled =
         await _userPreferencesService.isOfflineModeEnabled();
     final hasOfflineTurno =
@@ -66,14 +67,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final offlineTurnoInfo =
         await _userPreferencesService.getOfflineTurnoInfo();
 
-    setState(() {
-      _isPrintEnabled = printEnabled;
-      _isLimitDataUsageEnabled = limitDataEnabled;
-      _isFluidModeEnabled = fluidModeEnabled;
-      _isOfflineModeEnabled = offlineModeEnabled;
-      _hasOfflineTurno = hasOfflineTurno;
-      _offlineTurnoInfo = offlineTurnoInfo;
-    });
+    // Verificar si el widget está montado antes de actualizar el estado
+    if (mounted) {
+      setState(() {
+        _isPrintEnabled = printEnabled;
+        _isLimitDataUsageEnabled = limitDataEnabled;
+        // _isFluidModeEnabled permanece false - deshabilitado
+        _isOfflineModeEnabled = offlineModeEnabled;
+        _hasOfflineTurno = hasOfflineTurno;
+        _offlineTurnoInfo = offlineTurnoInfo;
+      });
+    }
   }
 
   /// Inicializar servicios inteligentes
@@ -114,11 +118,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// Manejar eventos de servicios inteligentes
   void _onSmartServiceEvent(SettingsIntegrationEvent event) {
+    // Verificar si el widget y la suscripción siguen activos
+    if (!mounted || _integrationSubscription == null) {
+      print('⚠️ Widget no montado o suscripción cancelada, ignorando evento');
+      return;
+    }
+
     print('📡 Evento de integración: ${event.type} - ${event.message}');
 
-    setState(() {
-      _lastSmartEvent = event.message;
-    });
+    // Verificar si el widget está montado antes de llamar setState
+    if (mounted) {
+      setState(() {
+        _lastSmartEvent = event.message;
+      });
+    }
 
     // Mostrar notificaciones importantes al usuario
     if (mounted) {
@@ -134,7 +147,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           );
           // Recargar configuraciones para reflejar el cambio
-          _loadSettings();
+          if (mounted) {
+            _loadSettings();
+          }
           break;
 
         case SettingsIntegrationEventType.connectionRestored:
@@ -250,26 +265,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _onFluidModeChanged(bool value) async {
-    setState(() {
-      _isFluidModeEnabled = value;
-    });
-
-    await _userPreferencesService.setFluidModeEnabled(value);
-
-    // Mostrar confirmación al usuario
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          value
-              ? '🚀 Modo fluido activado - Experiencia de venta unificada'
-              : '📱 Modo fluido desactivado - Navegación tradicional por pantallas',
-        ),
-        backgroundColor: value ? Colors.purple : Colors.blue,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
 
   Future<void> _onOfflineModeChanged(bool value) async {
     try {
@@ -605,29 +600,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.purple.withOpacity(0.1),
+          color: Colors.grey.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(Icons.speed_outlined, color: Colors.purple, size: 20),
+        child: const Icon(Icons.speed_outlined, color: Colors.grey, size: 20),
       ),
       title: const Text(
         'Modo Fluido',
         style: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w500,
-          color: Color(0xFF1F2937),
+          color: Colors.grey,
         ),
       ),
-      subtitle: Text(
-        _isFluidModeEnabled
-            ? 'Experiencia de venta unificada en una pantalla'
-            : 'Navegación tradicional por pantallas separadas',
-        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Navegación tradicional por pantallas separadas',
+            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Estará disponible en una próxima versión',
+            style: TextStyle(
+              fontSize: 12, 
+              color: Colors.orange[700],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
       ),
       trailing: Switch(
-        value: _isFluidModeEnabled,
-        onChanged: _onFluidModeChanged,
-        activeColor: Colors.purple,
+        value: false,
+        onChanged: null, // Deshabilitado
+        activeColor: Colors.grey,
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
@@ -1087,7 +1094,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.pop(context);
               if (success) {
                 // Recargar configuraciones después de sincronización exitosa
-                _loadSettings();
+                if (mounted) {
+                  _loadSettings();
+                }
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('✅ Sincronización completada exitosamente'),

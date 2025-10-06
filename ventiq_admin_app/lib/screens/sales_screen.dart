@@ -55,6 +55,7 @@ class _SalesScreenState extends State<SalesScreen>
     setState(() => _isLoading = true);
     _loadProductSalesData();
     _loadVendorReports();
+    _loadProductAnalysis(); // Cargar análisis de productos automáticamente
   }
 
   void _loadProductSalesData() async {
@@ -301,7 +302,11 @@ class _SalesScreenState extends State<SalesScreen>
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [_buildProductAnalysisTable()],
+        children: [
+          _buildPeriodSelector(),
+          const SizedBox(height: 16),
+          _buildProductAnalysisTable(),
+        ],
       ),
     );
   }

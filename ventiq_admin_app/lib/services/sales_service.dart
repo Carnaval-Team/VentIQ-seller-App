@@ -391,12 +391,14 @@ class SalesService {
       // Prepare parameters
       final Map<String, dynamic> params = {'p_id_tienda': idTienda};
 
-      // if (fechaDesde != null) {
-      //   params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
-      // }
-      // if (fechaHasta != null) {
-      //   params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
-      // }
+      if (fechaDesde != null) {
+        params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
+      }
+      if (fechaHasta != null) {
+        params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
+      }
+
+      print('Final params: $params');
 
       // Call the RPC function
       final response = await _supabase.rpc(
