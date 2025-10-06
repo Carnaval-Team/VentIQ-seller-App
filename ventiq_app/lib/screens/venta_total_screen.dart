@@ -6,9 +6,12 @@ import '../models/order.dart';
 import '../models/expense.dart';
 import '../services/order_service.dart';
 import '../services/bluetooth_printer_service.dart';
+import '../services/printer_manager.dart';
+import '../services/web_summary_printer_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../services/currency_service.dart';
+import '../utils/platform_utils.dart';
 
 class VentaTotalScreen extends StatefulWidget {
   const VentaTotalScreen({Key? key}) : super(key: key);
@@ -20,6 +23,7 @@ class VentaTotalScreen extends StatefulWidget {
 class _VentaTotalScreenState extends State<VentaTotalScreen> {
   final OrderService _orderService = OrderService();
   final BluetoothPrinterService _printerService = BluetoothPrinterService();
+  final PrinterManager _printerManager = PrinterManager();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   List<OrderItem> _productosVendidos = [];
@@ -947,66 +951,34 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   // Método para imprimir ticket individual
   Future<void> _imprimirTicketIndividual(Order order) async {
     try {
-      // Mostrar diálogo de confirmación
-      bool shouldPrint = await _printerService.showPrintConfirmationDialog(
-        context,
-        order,
-      );
-      if (!shouldPrint) return;
-
-      // Mostrar diálogo de selección de dispositivo
-      final device = await _printerService.showDeviceSelectionDialog(context);
-      if (device == null) return;
-
-      // Mostrar indicador de carga
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder:
-            (context) => const AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Conectando e imprimiendo...'),
-                ],
-              ),
-            ),
-      );
-
-      // Conectar a la impresora
-      bool connected = await _printerService.connectToDevice(device);
-      if (!connected) {
-        Navigator.pop(context); // Cerrar diálogo de carga
-        _showErrorDialog(
-          'Error de Conexión',
-          'No se pudo conectar a la impresora.',
-        );
-        return;
-      }
-
-      // Imprimir el ticket
-      bool printed = await _printerService.printInvoice(order);
-      Navigator.pop(context); // Cerrar diálogo de carga
-
-      if (printed) {
+      print('🖨️ Iniciando impresión de ticket individual para orden ${order.id}');
+      
+      // Usar PrinterManager para manejar tanto web como Bluetooth
+      final result = await _printerManager.printInvoice(context, order);
+      
+      if (result.success) {
         _showSuccessDialog(
           '¡Ticket Impreso!',
-          'El ticket se ha impreso correctamente.',
+          result.message,
         );
+        print('✅ ${result.message}');
+        if (result.details != null) {
+          print('ℹ️ Detalles: ${result.details}');
+        }
       } else {
         _showErrorDialog(
           'Error de Impresión',
-          'No se pudo imprimir el ticket.',
+          result.message,
         );
+        print('❌ ${result.message}');
+        if (result.details != null) {
+          print('ℹ️ Detalles: ${result.details}');
+        }
       }
-
-      // Desconectar
-      await _printerService.disconnect();
+      
     } catch (e) {
-      Navigator.pop(context); // Cerrar diálogo de carga si está abierto
       _showErrorDialog('Error', 'Ocurrió un error al imprimir: $e');
+      print('❌ Error en _imprimirTicketIndividual: $e');
     }
   }
 
@@ -1062,6 +1034,67 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   // Método para imprimir resumen detallado de productos
   Future<void> _imprimirResumenDetallado() async {
+    try {
+      print('🖨️ Iniciando impresión de resumen detallado');
+      
+      // Verificar si estamos en web
+      if (PlatformUtils.isWeb) {
+        // Usar impresión web
+        await _imprimirResumenDetalladoWeb();
+      } else {
+        // Usar impresión Bluetooth
+        await _imprimirResumenDetalladoBluetooth();
+      }
+      
+    } catch (e) {
+      _showErrorDialog('Error', 'Ocurrió un error al imprimir: $e');
+      print('❌ Error en _imprimirResumenDetallado: $e');
+    }
+  }
+
+  // Método para imprimir resumen detallado en web
+  Future<void> _imprimirResumenDetalladoWeb() async {
+    try {
+      // Mostrar diálogo de confirmación
+      bool shouldPrint = await _showPrintSummaryConfirmationDialog();
+      if (!shouldPrint) return;
+
+      print('🌐 Imprimiendo resumen detallado en web...');
+      
+      // Importar el servicio web
+      final webSummaryService = WebSummaryPrinterService();
+      
+      // Imprimir usando el servicio web
+      bool printed = await webSummaryService.printDetailedSummary(
+        productosVendidos: _productosVendidos,
+        totalVentas: _totalVentas,
+        totalProductos: _totalProductos,
+        totalEgresado: _totalEgresado,
+        totalEfectivoReal: _totalEfectivoReal,
+      );
+
+      if (printed) {
+        _showSuccessDialog(
+          '¡Resumen Impreso!',
+          'El resumen detallado se ha enviado a impresión web correctamente.',
+        );
+        print('✅ Resumen detallado impreso en web exitosamente');
+      } else {
+        _showErrorDialog(
+          'Error de Impresión Web',
+          'No se pudo imprimir el resumen detallado en web.',
+        );
+        print('❌ Error imprimiendo resumen detallado en web');
+      }
+      
+    } catch (e) {
+      _showErrorDialog('Error Web', 'Ocurrió un error al imprimir en web: $e');
+      print('❌ Error en _imprimirResumenDetalladoWeb: $e');
+    }
+  }
+
+  // Método para imprimir resumen detallado en Bluetooth
+  Future<void> _imprimirResumenDetalladoBluetooth() async {
     try {
       // Mostrar diálogo de confirmación
       bool shouldPrint = await _showPrintSummaryConfirmationDialog();

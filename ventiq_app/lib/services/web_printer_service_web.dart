@@ -90,13 +90,49 @@ class WebPrinterServiceImpl {
   }
 
   /// Imprime la factura usando la API de impresión del navegador
+  /// Imprime tanto el ticket del cliente como la guía de picking para el almacenero
   Future<bool> printInvoice(Order order) async {
     try {
-      // Generar el HTML de la factura
-      final invoiceHtml = await _generateInvoiceHtml(order);
+      print('🖨️ Iniciando impresión web completa para orden ${order.id}');
+      
+      // ========== IMPRIMIR TICKET DEL CLIENTE PRIMERO ==========
+      print('📄 Imprimiendo ticket del cliente...');
+      final customerResult = await _printCustomerTicket(order);
+      
+      if (!customerResult) {
+        print('❌ Ticket del cliente falló al imprimir');
+        return false;
+      }
+      
+      // Esperar entre impresiones para evitar problemas
+      print('⏳ Esperando 3 segundos antes de la guía de almacén...');
+      await Future.delayed(const Duration(seconds: 3));
+      
+      // ========== IMPRIMIR GUÍA DE PICKING PARA ALMACENERO ==========
+      print('🏭 Imprimiendo guía de picking para almacenero...');
+      final warehouseResult = await _printWarehousePickingSlip(order);
+      
+      if (!warehouseResult) {
+        print('❌ Guía de picking falló al imprimir');
+        return false;
+      }
+      
+      print('✅ Ambos documentos enviados a impresión web exitosamente');
+      return true;
+    } catch (e) {
+      print('❌ Error imprimiendo factura web: $e');
+      return false;
+    }
+  }
+
+  /// Imprime el ticket del cliente
+  Future<bool> _printCustomerTicket(Order order) async {
+    try {
+      // Generar el HTML del ticket del cliente
+      final customerHtml = await _generateCustomerTicketHtml(order);
       
       // Crear un blob con el HTML
-      final blob = html.Blob([invoiceHtml], 'text/html');
+      final blob = html.Blob([customerHtml], 'text/html');
       final url = html.Url.createObjectUrlFromBlob(blob);
       
       // Abrir en nueva ventana
@@ -107,20 +143,50 @@ class WebPrinterServiceImpl {
         try {
           html.Url.revokeObjectUrl(url);
         } catch (e) {
-          print('❌ Error al limpiar URL: $e');
+          print('❌ Error al limpiar URL del ticket: $e');
         }
       });
 
-      print('✅ Factura enviada a impresión web');
+      print('✅ Ticket del cliente enviado a impresión web');
       return true;
     } catch (e) {
-      print('❌ Error imprimiendo factura web: $e');
+      print('❌ Error imprimiendo ticket del cliente: $e');
       return false;
     }
   }
 
-  /// Genera el HTML de la factura para impresión
-  Future<String> _generateInvoiceHtml(Order order) async {
+  /// Imprime la guía de picking para el almacenero
+  Future<bool> _printWarehousePickingSlip(Order order) async {
+    try {
+      // Generar el HTML de la guía de picking
+      final warehouseHtml = await _generateWarehousePickingSlipHtml(order);
+      
+      // Crear un blob con el HTML
+      final blob = html.Blob([warehouseHtml], 'text/html');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      
+      // Abrir en nueva ventana
+      html.window.open(url, '_blank');
+      
+      // Limpiar el URL inmediatamente después de abrir
+      Future.delayed(Duration(milliseconds: 100), () {
+        try {
+          html.Url.revokeObjectUrl(url);
+        } catch (e) {
+          print('❌ Error al limpiar URL de picking: $e');
+        }
+      });
+
+      print('✅ Guía de picking enviada a impresión web');
+      return true;
+    } catch (e) {
+      print('❌ Error imprimiendo guía de picking: $e');
+      return false;
+    }
+  }
+
+  /// Genera el HTML del ticket del cliente para impresión
+  Future<String> _generateCustomerTicketHtml(Order order) async {
     // Obtener datos del usuario y tienda (no necesarios para este formato simplificado)
     
     // Fecha y hora actual
@@ -263,6 +329,183 @@ class WebPrinterServiceImpl {
     </div>
 
     ${order.notas != null && order.notas!.isNotEmpty ? '<div class="notes">Notas: ${order.notas}</div>' : ''}
+
+    <script>
+        // Auto-imprimir cuando se carga la página
+        window.onload = function() {
+            setTimeout(function() {
+                window.print();
+                
+                // Cerrar la ventana después de imprimir
+                setTimeout(function() {
+                    window.close();
+                }, 1000);
+            }, 800);
+        };
+        
+        // También manejar el evento afterprint para cerrar
+        window.onafterprint = function() {
+            setTimeout(function() {
+                window.close();
+            }, 500);
+        };
+    </script>
+</body>
+</html>
+    ''';
+  }
+
+  /// Genera el HTML de la guía de picking para el almacenero
+  Future<String> _generateWarehousePickingSlipHtml(Order order) async {
+    // Fecha y hora actual
+    final now = DateTime.now();
+    final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    // Generar filas de productos con ubicaciones de almacén
+    final productRows = order.items
+        .where((item) => item.subtotal > 0)
+        .map((item) {
+          final ubicacion = item.ubicacionAlmacen ?? 'N/A';
+          String productName = item.nombre;
+          
+          // Truncar nombre si es muy largo
+          if (productName.length > 15) {
+            productName = productName.substring(0, 15) + '...';
+          }
+          
+          return '''
+        <div class="product-item">
+          <div class="product-line">${item.cantidad.toString().padLeft(3, ' ')} | $productName</div>
+          <div class="location-line">    | Ubic: $ubicacion</div>
+          <div class="price-line">    | \$${item.precioUnitario.toStringAsFixed(0)} c/u</div>
+        </div>
+          ''';
+        }).join('');
+
+    return '''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Guía de Picking - ${order.id}</title>
+    <style>
+        @media print {
+            body { margin: 0; }
+            .no-print { display: none; }
+        }
+        body {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.2;
+            margin: 20px auto;
+            color: #000;
+            max-width: 400px;
+            text-align: center;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .store-name {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .warehouse-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .picking-title {
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .separator {
+            text-align: center;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .info-section {
+            text-align: left;
+            margin: 15px 0;
+        }
+        .info-line {
+            margin: 3px 0;
+            font-weight: bold;
+        }
+        .products-header {
+            text-align: left;
+            font-weight: bold;
+            margin: 15px 0 5px 0;
+        }
+        .table-header {
+            text-align: left;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .product-item {
+            text-align: left;
+            margin: 8px 0;
+        }
+        .product-line {
+            margin: 2px 0;
+            font-weight: bold;
+        }
+        .location-line {
+            margin: 2px 0;
+        }
+        .price-line {
+            margin: 2px 0;
+        }
+        .totals-section {
+            margin: 15px 0;
+        }
+        .total-line {
+            text-align: left;
+            margin: 3px 0;
+            font-weight: bold;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+        }
+        @media print {
+            body { margin: 0; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="store-name">VENTIQ</div>
+        <div class="warehouse-title">COMPROBANTE DE ALMACEN</div>
+        <div class="picking-title">GUIA DE PICKING</div>
+        <div class="separator">================================</div>
+    </div>
+
+    <div class="info-section">
+        <div class="info-line">ORDEN: ${order.id}</div>
+        <div class="info-line">FECHA: $dateStr $timeStr</div>
+        ${order.buyerName != null && order.buyerName!.isNotEmpty ? '<div class="info-line">CLIENTE: ${order.buyerName}</div>' : ''}
+        <div class="info-line">ESTADO: ${order.status.displayName.toUpperCase()}</div>
+    </div>
+
+    <div class="products-header">PRODUCTOS A RECOGER:</div>
+    <div class="separator">--------------------------------</div>
+    <div class="table-header">CANT | PRODUCTO | UBICACION</div>
+    <div class="separator">--------------------------------</div>
+    
+    $productRows
+
+    <div class="totals-section">
+        <div class="separator">--------------------------------</div>
+        <div class="total-line">TOTAL PRODUCTOS: ${order.totalItems}</div>
+        <div class="total-line">VALOR TOTAL: \$${order.total.toStringAsFixed(0)}</div>
+    </div>
+
+    <div class="footer">
+        <div>VENTIQ - Sistema de Almacen</div>
+    </div>
 
     <script>
         // Auto-imprimir cuando se carga la página
