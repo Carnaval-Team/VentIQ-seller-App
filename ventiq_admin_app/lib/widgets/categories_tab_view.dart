@@ -276,22 +276,55 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
                             ),
                     ),
                   ),
-                  if (category.level > 1)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'Sub',
-                        style: TextStyle(
-                          color: Colors.orange,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
+                  Row(
+                    children: [
+                      if (category.level > 1)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Sub',
+                            style: TextStyle(
+                              color: Colors.orange,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
+                      if (category.level > 1 && !category.visibleVendedor)
+                        const SizedBox(width: 4),
+                      if (!category.visibleVendedor)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.visibility_off,
+                                size: 10,
+                                color: Colors.red,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                'OCULTA',
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -481,6 +514,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
   bool _isLoading = false;
+  bool _visibleVendedor = true; // Por defecto visible para vendedores
 
   @override
   void dispose() {
@@ -564,6 +598,7 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
         skuCodigo: _skuController.text.trim(),
         imageBytes: _selectedImageBytes,
         imageFileName: _selectedImageName,
+        visibleVendedor: _visibleVendedor,
       );
 
       if (success) {
@@ -642,6 +677,59 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
                 labelText: 'Código SKU *',
                 prefixIcon: Icon(Icons.qr_code),
                 border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Control de visibilidad para vendedores
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.visibility,
+                    color: Colors.blue,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Visible para vendedores',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          _visibleVendedor 
+                              ? 'Los vendedores pueden ver esta categoría'
+                              : 'Solo administradores pueden ver esta categoría',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _visibleVendedor,
+                    onChanged: (value) {
+                      setState(() {
+                        _visibleVendedor = value;
+                      });
+                    },
+                    activeColor: Colors.blue,
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
@@ -764,6 +852,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
   final CategoryService _categoryService = CategoryService();
   
   bool _isLoading = false;
+  bool _visibleVendedor = true;
 
   @override
   void initState() {
@@ -771,6 +860,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
     _nameController.text = widget.category.name;
     _descriptionController.text = widget.category.description;
     _skuController.text = widget.category.skuCodigo;
+    _visibleVendedor = widget.category.visibleVendedor;
   }
 
   @override
@@ -799,6 +889,7 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
         denominacion: _nameController.text.trim(),
         descripcion: _descriptionController.text.trim(),
         skuCodigo: _skuController.text.trim(),
+        visibleVendedor: _visibleVendedor,
       );
 
       if (success) {
@@ -877,6 +968,59 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
                 labelText: 'Código SKU *',
                 prefixIcon: Icon(Icons.qr_code),
                 border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Control de visibilidad para vendedores
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.visibility,
+                    color: Colors.blue,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Visible para vendedores',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          _visibleVendedor 
+                              ? 'Los vendedores pueden ver esta categoría'
+                              : 'Solo administradores pueden ver esta categoría',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _visibleVendedor,
+                    onChanged: (value) {
+                      setState(() {
+                        _visibleVendedor = value;
+                      });
+                    },
+                    activeColor: Colors.blue,
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -1050,6 +1194,34 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
                     color: AppColors.textSecondary,
                     fontSize: 14,
                   ),
+                ),
+                const SizedBox(height: 8),
+                // Indicador de visibilidad
+                Row(
+                  children: [
+                    Icon(
+                      widget.category.visibleVendedor 
+                          ? Icons.visibility 
+                          : Icons.visibility_off,
+                      size: 16,
+                      color: widget.category.visibleVendedor 
+                          ? Colors.green 
+                          : Colors.red,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      widget.category.visibleVendedor 
+                          ? 'Visible para vendedores'
+                          : 'Oculta para vendedores',
+                      style: TextStyle(
+                        color: widget.category.visibleVendedor 
+                            ? Colors.green 
+                            : Colors.red,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
                 if (widget.category.skuCodigo.isNotEmpty) ...[
                   const SizedBox(height: 4),

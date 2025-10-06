@@ -132,6 +132,7 @@ class CategoryService {
         skuCodigo: 'ALIM',
         createdAt: DateTime.now(),
         productCount: 45,
+        visibleVendedor: true,
       ),
       Category(
         id: 2,
@@ -142,6 +143,7 @@ class CategoryService {
         skuCodigo: 'BEB',
         createdAt: DateTime.now(),
         productCount: 23,
+        visibleVendedor: true,
       ),
       Category(
         id: 3,
@@ -152,6 +154,7 @@ class CategoryService {
         skuCodigo: 'ELEC',
         createdAt: DateTime.now(),
         productCount: 18,
+        visibleVendedor: false, // Ejemplo de categoría oculta
       ),
     ];
   }
@@ -236,6 +239,7 @@ class CategoryService {
     required String skuCodigo,
     Uint8List? imageBytes,
     String? imageFileName,
+    bool visibleVendedor = true,
   }) async {
     try {
       print('🆕 Creando nueva categoría: $denominacion');
@@ -265,6 +269,7 @@ class CategoryService {
             'descripcion': descripcion,
             'sku_codigo': skuCodigo,
             'image': imageUrl,
+            'visible_vendedor': visibleVendedor,
           })
           .select()
           .single();
@@ -295,6 +300,7 @@ class CategoryService {
     required String skuCodigo,
     Uint8List? imageBytes,
     String? imageFileName,
+    bool? visibleVendedor,
   }) async {
     try {
       print('✏️ Actualizando categoría ID: $categoryId');
@@ -310,7 +316,7 @@ class CategoryService {
       }
 
       // Preparar datos para actualizar
-      final updateData = {
+      final Map<String, dynamic> updateData = {
         'denominacion': denominacion,
         'descripcion': descripcion,
         'sku_codigo': skuCodigo,
@@ -319,6 +325,11 @@ class CategoryService {
       // Agregar URL de imagen solo si se subió una nueva
       if (imageUrl != null) {
         updateData['image'] = imageUrl;
+      }
+
+      // Agregar visibilidad si se especifica
+      if (visibleVendedor != null) {
+        updateData['visible_vendedor'] = visibleVendedor;
       }
 
       // Actualizar categoría

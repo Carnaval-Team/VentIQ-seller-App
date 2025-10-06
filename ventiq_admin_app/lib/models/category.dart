@@ -18,6 +18,7 @@ class Category {
   final int sortOrder;
   final int? categoriaTiendaId;
   final DateTime? categoriaTiendaCreatedAt;
+  final bool visibleVendedor; // Si la categoría es visible para los vendedores
 
   Category({
     required this.id,
@@ -39,6 +40,7 @@ class Category {
     this.sortOrder = 0,
     this.categoriaTiendaId,
     this.categoriaTiendaCreatedAt,
+    this.visibleVendedor = true,
   });
 
   factory Category.fromJson(Map<String, dynamic> json) {
@@ -64,6 +66,7 @@ class Category {
       categoriaTiendaCreatedAt: json['categoria_tienda_created_at'] != null 
           ? DateTime.parse(json['categoria_tienda_created_at']) 
           : null,
+      visibleVendedor: json['visible_vendedor'] ?? true,
     );
   }
 
@@ -88,6 +91,7 @@ class Category {
       'sortOrder': sortOrder,
       'categoria_tienda_id': categoriaTiendaId,
       'categoria_tienda_created_at': categoriaTiendaCreatedAt?.toIso8601String(),
+      'visible_vendedor': visibleVendedor,
     };
   }
 
@@ -111,6 +115,7 @@ class Category {
     int? sortOrder,
     int? categoriaTiendaId,
     DateTime? categoriaTiendaCreatedAt,
+    bool? visibleVendedor,
   }) {
     return Category(
       id: id ?? this.id,
@@ -132,6 +137,7 @@ class Category {
       sortOrder: sortOrder ?? this.sortOrder,
       categoriaTiendaId: categoriaTiendaId ?? this.categoriaTiendaId,
       categoriaTiendaCreatedAt: categoriaTiendaCreatedAt ?? this.categoriaTiendaCreatedAt,
+      visibleVendedor: visibleVendedor ?? this.visibleVendedor,
     );
   }
 }
