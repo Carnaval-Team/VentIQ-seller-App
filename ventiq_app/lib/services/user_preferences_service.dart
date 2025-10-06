@@ -38,6 +38,9 @@ class UserPreferencesService {
   // Data usage keys
   static const String _limitDataUsageKey = 'limit_data_usage';
   
+  // Fluid mode keys
+  static const String _fluidModeKey = 'fluid_mode_enabled';
+  
   // Offline mode keys
   static const String _offlineModeKey = 'offline_mode_enabled';
   static const String _offlineDataKey = 'offline_data';
@@ -385,13 +388,29 @@ class UserPreferencesService {
       'UserPreferencesService: Límite de datos actualizado: $enabled',
     );
   }
-
   Future<bool> isLimitDataUsageEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_limitDataUsageKey) ?? false; // Por defecto deshabilitado
   }
+
+  // ==================== MODO FLUIDO ====================
   
-  // Offline mode settings methods
+  /// Habilitar o deshabilitar el modo fluido
+  Future<void> setFluidModeEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_fluidModeKey, enabled);
+    print('UserPreferencesService: Modo fluido actualizado: $enabled');
+  }
+
+  /// Verificar si el modo fluido está habilitado
+  Future<bool> isFluidModeEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_fluidModeKey) ?? false; // Por defecto deshabilitado
+  }
+
+  // ==================== MODO OFFLINE ====================
+  
+  /// Habilitar o deshabilitar el modo offline
   Future<void> setOfflineMode(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_offlineModeKey, enabled);

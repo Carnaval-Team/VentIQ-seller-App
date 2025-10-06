@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'products_screen.dart';
 import 'barcode_scanner_screen.dart';
+import 'fluid_mode_screen.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../services/category_service.dart';
@@ -28,6 +29,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   bool _categoriesLoaded =
       false; // Flag para controlar si ya se cargaron las categorías
   bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
+  bool _isFluidModeEnabled = false; // Para el estado del modo fluido
   bool _isOfflineModeEnabled = false; // Para el estado del modo offline
 
   // USD rate data
@@ -42,6 +44,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     _loadCategories();
     _loadUsdRate();
     _loadDataUsageSettings();
+    _loadFluidModeSettings();
     _loadOfflineModeSettings();
   }
 
@@ -50,6 +53,15 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     if (mounted) {
       setState(() {
         _isLimitDataUsageEnabled = isEnabled;
+      });
+    }
+  }
+
+  Future<void> _loadFluidModeSettings() async {
+    final isEnabled = await _preferencesService.isFluidModeEnabled();
+    if (mounted) {
+      setState(() {
+        _isFluidModeEnabled = isEnabled;
       });
     }
   }
@@ -74,6 +86,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     if (state == AppLifecycleState.resumed) {
       // Refresh the screen when returning from other screens
       _loadDataUsageSettings();
+      _loadFluidModeSettings();
       _loadOfflineModeSettings();
       setState(() {});
     }
@@ -457,6 +470,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
               imageUrl: category.imageUrl,
               color: category.color,
               isLimitDataUsageEnabled: _isLimitDataUsageEnabled,
+              isFluidModeEnabled: _isFluidModeEnabled,
             );
           },
         ),
@@ -498,6 +512,7 @@ class _CategoryCard extends StatefulWidget {
   final String? imageUrl;
   final Color color;
   final bool isLimitDataUsageEnabled;
+  final bool isFluidModeEnabled;
 
   const _CategoryCard({
     required this.id,
@@ -505,6 +520,7 @@ class _CategoryCard extends StatefulWidget {
     this.imageUrl,
     required this.color,
     required this.isLimitDataUsageEnabled,
+    required this.isFluidModeEnabled,
   });
 
   @override
@@ -543,18 +559,31 @@ class _CategoryCardState extends State<_CategoryCard>
   void _onTapUp(TapUpDetails details) {
     setState(() => _isPressed = false);
     _animationController.reverse();
-    // Navigate to products list for this category
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => ProductsScreen(
-              categoryId: widget.id,
-              categoryName: widget.name,
-              categoryColor: widget.color,
-            ),
-      ),
-    );
+    
+    // Check if fluid mode is enabled
+    if (widget.isFluidModeEnabled) {
+      print('🚀 Modo fluido activado - Navegando a FluidModeScreen');
+      // Navigate to fluid mode screen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const FluidModeScreen(),
+        ),
+      );
+    } else {
+      print('📱 Modo tradicional - Navegando a ProductsScreen');
+      // Navigate to products list for this category (traditional mode)
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProductsScreen(
+            categoryId: widget.id,
+            categoryName: widget.name,
+            categoryColor: widget.color,
+          ),
+        ),
+      );
+    }
   }
 
   void _onTapCancel() {

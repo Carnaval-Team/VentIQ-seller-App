@@ -31,6 +31,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _isPrintEnabled = true; // Valor por defecto
   bool _isLimitDataUsageEnabled = false; // Valor por defecto
+  bool _isFluidModeEnabled = false; // Valor por defecto
   bool _isOfflineModeEnabled = false; // Valor por defecto
   bool _hasOfflineTurno = false; // Turno abierto offline
   Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
@@ -57,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final printEnabled = await _userPreferencesService.isPrintEnabled();
     final limitDataEnabled =
         await _userPreferencesService.isLimitDataUsageEnabled();
+    final fluidModeEnabled = await _userPreferencesService.isFluidModeEnabled();
     final offlineModeEnabled =
         await _userPreferencesService.isOfflineModeEnabled();
     final hasOfflineTurno =
@@ -67,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _isPrintEnabled = printEnabled;
       _isLimitDataUsageEnabled = limitDataEnabled;
+      _isFluidModeEnabled = fluidModeEnabled;
       _isOfflineModeEnabled = offlineModeEnabled;
       _hasOfflineTurno = hasOfflineTurno;
       _offlineTurnoInfo = offlineTurnoInfo;
@@ -247,6 +250,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _onFluidModeChanged(bool value) async {
+    setState(() {
+      _isFluidModeEnabled = value;
+    });
+
+    await _userPreferencesService.setFluidModeEnabled(value);
+
+    // Mostrar confirmación al usuario
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          value
+              ? '🚀 Modo fluido activado - Experiencia de venta unificada'
+              : '📱 Modo fluido desactivado - Navegación tradicional por pantallas',
+        ),
+        backgroundColor: value ? Colors.purple : Colors.blue,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   Future<void> _onOfflineModeChanged(bool value) async {
     try {
       if (value) {
@@ -361,6 +385,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _buildDivider(),
             _buildPrintSettingsTile(),
+            _buildDivider(),
+            _buildFluidModeSettingsTile(),
             _buildDivider(),
             _buildSettingsTile(
               icon: Icons.language_outlined,
@@ -569,6 +595,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
         value: _isPrintEnabled,
         onChanged: _onPrintSettingChanged,
         activeColor: const Color(0xFF4A90E2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+
+  Widget _buildFluidModeSettingsTile() {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.purple.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.speed_outlined, color: Colors.purple, size: 20),
+      ),
+      title: const Text(
+        'Modo Fluido',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        _isFluidModeEnabled
+            ? 'Experiencia de venta unificada en una pantalla'
+            : 'Navegación tradicional por pantallas separadas',
+        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+      ),
+      trailing: Switch(
+        value: _isFluidModeEnabled,
+        onChanged: _onFluidModeChanged,
+        activeColor: Colors.purple,
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
@@ -1687,28 +1746,35 @@ class _SyncDialogState extends State<_SyncDialog> {
   Future<void> _syncEgresos() async {
     try {
       print('🔄 Sincronizando egresos...');
-      
+
       // Obtener egresos del turno actual usando TurnoService
       final egresos = await TurnoService.getEgresosEnriquecidos();
-      
+
       if (egresos.isNotEmpty) {
         // Convertir egresos a formato Map para cache
-        final egresosData = egresos.map((egreso) => {
-          'id_egreso': egreso.idEgreso,
-          'monto_entrega': egreso.montoEntrega,
-          'motivo_entrega': egreso.motivoEntrega,
-          'nombre_autoriza': egreso.nombreAutoriza,
-          'nombre_recibe': egreso.nombreRecibe,
-          'es_digital': egreso.esDigital,
-          'fecha_entrega': egreso.fechaEntrega.toIso8601String(),
-          'id_medio_pago': egreso.idMedioPago,
-          'turno_estado': egreso.turnoEstado,
-          'medio_pago': egreso.medioPago,
-        }).toList();
-        
+        final egresosData =
+            egresos
+                .map(
+                  (egreso) => {
+                    'id_egreso': egreso.idEgreso,
+                    'monto_entrega': egreso.montoEntrega,
+                    'motivo_entrega': egreso.motivoEntrega,
+                    'nombre_autoriza': egreso.nombreAutoriza,
+                    'nombre_recibe': egreso.nombreRecibe,
+                    'es_digital': egreso.esDigital,
+                    'fecha_entrega': egreso.fechaEntrega.toIso8601String(),
+                    'id_medio_pago': egreso.idMedioPago,
+                    'turno_estado': egreso.turnoEstado,
+                    'medio_pago': egreso.medioPago,
+                  },
+                )
+                .toList();
+
         // Guardar en cache para uso offline
         await widget.userPreferencesService.saveEgresosCache(egresosData);
-        print('✅ Egresos sincronizados: ${egresos.length} egresos guardados en cache');
+        print(
+          '✅ Egresos sincronizados: ${egresos.length} egresos guardados en cache',
+        );
       } else {
         print('ℹ️ No hay egresos para sincronizar');
         // Limpiar cache si no hay egresos
@@ -1749,7 +1815,9 @@ class _SyncDialogState extends State<_SyncDialog> {
       final userID = await widget.userPreferencesService.getUserId();
 
       if (idTpv != null && userID != null) {
-        print('📋 Llamando fn_resumen_diario_cierre - TPV: $idTpv, Usuario: $userID');
+        print(
+          '📋 Llamando fn_resumen_diario_cierre - TPV: $idTpv, Usuario: $userID',
+        );
 
         // Llamar a la función RPC fn_resumen_diario_cierre
         final resumenCierreResponse = await Supabase.instance.client.rpc(
@@ -1757,31 +1825,42 @@ class _SyncDialogState extends State<_SyncDialog> {
           params: {'id_tpv_param': idTpv, 'id_usuario_param': userID},
         );
 
-        print('📋 Respuesta de fn_resumen_diario_cierre: $resumenCierreResponse');
+        print(
+          '📋 Respuesta de fn_resumen_diario_cierre: $resumenCierreResponse',
+        );
         print('📋 Tipo de respuesta: ${resumenCierreResponse.runtimeType}');
 
         if (resumenCierreResponse != null) {
           Map<String, dynamic> resumenCierre;
-          
+
           // Manejar tanto List como Map de respuesta
-          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+          if (resumenCierreResponse is List &&
+              resumenCierreResponse.isNotEmpty) {
             // Si es una lista, tomar el primer elemento
             resumenCierre = resumenCierreResponse[0] as Map<String, dynamic>;
-            print('📋 Resumen extraído de lista: ${resumenCierre.keys.toList()}');
+            print(
+              '📋 Resumen extraído de lista: ${resumenCierre.keys.toList()}',
+            );
           } else if (resumenCierreResponse is Map<String, dynamic>) {
             // Si ya es un mapa, usarlo directamente
             resumenCierre = resumenCierreResponse;
-            print('📋 Resumen recibido como mapa: ${resumenCierre.keys.toList()}');
+            print(
+              '📋 Resumen recibido como mapa: ${resumenCierre.keys.toList()}',
+            );
           } else {
-            print('⚠️ Formato de respuesta no reconocido: ${resumenCierreResponse.runtimeType}');
+            print(
+              '⚠️ Formato de respuesta no reconocido: ${resumenCierreResponse.runtimeType}',
+            );
             throw Exception('Formato de respuesta no válido');
           }
 
           // Guardar en cache para uso offline
-          await widget.userPreferencesService.saveResumenCierreCache(resumenCierre);
+          await widget.userPreferencesService.saveResumenCierreCache(
+            resumenCierre,
+          );
           print('✅ Resumen de cierre sincronizado y guardado en cache');
           print('📊 Datos sincronizados: ${resumenCierre.keys.toList()}');
-          
+
           // Log de valores principales para debugging
           print('💰 Valores principales del resumen:');
           if (resumenCierre['total_ventas'] != null) {
@@ -1791,7 +1870,9 @@ class _SyncDialogState extends State<_SyncDialog> {
             print('  - Total efectivo: \$${resumenCierre['total_efectivo']}');
           }
           if (resumenCierre['productos_vendidos'] != null) {
-            print('  - Productos vendidos: ${resumenCierre['productos_vendidos']}');
+            print(
+              '  - Productos vendidos: ${resumenCierre['productos_vendidos']}',
+            );
           }
           if (resumenCierre['ventas_totales'] != null) {
             print('  - Ventas totales: \$${resumenCierre['ventas_totales']}');
@@ -2145,25 +2226,26 @@ class _SyncDialogState extends State<_SyncDialog> {
     try {
       print('🔄 Sincronizando cierre de turno...');
       print('📊 Datos del cierre: $cierreData');
-      
+
       // Extraer datos del cierre offline
       final efectivoReal = (cierreData['efectivo_final'] ?? 0.0).toDouble();
       final observaciones = cierreData['observaciones'] as String?;
       // Manejar la conversión de productos de manera segura
       final productosRaw = cierreData['productos'] as List<dynamic>? ?? [];
-      final productos = productosRaw.map((item) => item as Map<String, dynamic>).toList();
-      
+      final productos =
+          productosRaw.map((item) => item as Map<String, dynamic>).toList();
+
       print('💰 Efectivo real: $efectivoReal');
       print('📝 Observaciones: $observaciones');
       print('📦 Productos: ${productos.length}');
-      
+
       // Llamar al método real de TurnoService para cerrar turno
       final success = await TurnoService.cerrarTurno(
         efectivoReal: efectivoReal,
         productos: productos,
         observaciones: observaciones,
       );
-      
+
       if (success) {
         print('✅ Cierre de turno sincronizado exitosamente');
       } else {
@@ -2194,7 +2276,7 @@ class _SyncDialogState extends State<_SyncDialog> {
     try {
       print('🔄 Sincronizando egreso offline...');
       print('📊 Datos del egreso: $egresoData');
-      
+
       // Extraer datos del egreso offline
       final idTurno = egresoData['id_turno'] as int;
       final montoEntrega = (egresoData['monto_entrega'] ?? 0.0).toDouble();
@@ -2202,13 +2284,13 @@ class _SyncDialogState extends State<_SyncDialog> {
       final nombreAutoriza = egresoData['nombre_autoriza'] as String;
       final nombreRecibe = egresoData['nombre_recibe'] as String;
       final idMedioPago = egresoData['id_medio_pago'] as int?;
-      
+
       print('💰 Monto: $montoEntrega');
       print('📝 Motivo: $motivoEntrega');
       print('👤 Autoriza: $nombreAutoriza');
       print('👤 Recibe: $nombreRecibe');
       print('💳 Medio de pago ID: $idMedioPago');
-      
+
       // Llamar al método real de TurnoService para registrar egreso
       final result = await TurnoService.registrarEgresoParcial(
         idTurno: idTurno,
@@ -2218,9 +2300,11 @@ class _SyncDialogState extends State<_SyncDialog> {
         nombreRecibe: nombreRecibe,
         idMedioPago: idMedioPago,
       );
-      
+
       if (result['success'] == true) {
-        print('✅ Egreso offline sincronizado exitosamente: ${result['egreso_id']}');
+        print(
+          '✅ Egreso offline sincronizado exitosamente: ${result['egreso_id']}',
+        );
       } else {
         throw Exception('Error en el servicio de egreso: ${result['message']}');
       }
@@ -2497,7 +2581,8 @@ class _SyncDialogState extends State<_SyncDialog> {
           pagos.add({
             'id_medio_pago': methodId,
             'monto': amount,
-            'referencia_pago': 'Pago Offline Sync - ${DateTime.now().millisecondsSinceEpoch}',
+            'referencia_pago':
+                'Pago Offline Sync - ${DateTime.now().millisecondsSinceEpoch}',
           });
         } else {
           print(
@@ -2816,26 +2901,29 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
     for (var operation in operations) {
       if (operation['type'] == 'apertura_turno') {
         print('🔄 Creando turno desde datos offline...');
-        
+
         final aperturaData = operation['data'] as Map<String, dynamic>;
         print('📊 Datos de apertura: $aperturaData');
-        
+
         // Extraer datos de la apertura offline
-        final efectivoInicial = (aperturaData['efectivo_inicial'] ?? 0.0).toDouble();
+        final efectivoInicial =
+            (aperturaData['efectivo_inicial'] ?? 0.0).toDouble();
         final idTpv = aperturaData['id_tpv'] as int;
         final idVendedor = aperturaData['id_vendedor'] as int;
         final usuario = aperturaData['usuario'] as String;
-        final manejaInventario = aperturaData['maneja_inventario'] as bool? ?? false;
+        final manejaInventario =
+            aperturaData['maneja_inventario'] as bool? ?? false;
         // Manejar la conversión de productos de manera segura
         final productosRaw = aperturaData['productos'] as List<dynamic>? ?? [];
-        final productos = productosRaw.map((item) => item as Map<String, dynamic>).toList();
-        
+        final productos =
+            productosRaw.map((item) => item as Map<String, dynamic>).toList();
+
         print('💰 Efectivo inicial: $efectivoInicial');
         print('🏪 TPV ID: $idTpv');
         print('👤 Vendedor ID: $idVendedor');
         print('📦 Maneja inventario: $manejaInventario');
         print('📋 Productos: ${productos.length}');
-        
+
         // Llamar al método real de TurnoService para registrar apertura
         final result = await TurnoService.registrarAperturaTurno(
           efectivoInicial: efectivoInicial,
@@ -2845,7 +2933,7 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           manejaInventario: manejaInventario,
           productos: productos.isEmpty ? null : productos,
         );
-        
+
         if (result['success'] == true) {
           print('✅ Turno creado desde datos offline: ${result['message']}');
         } else {
@@ -2931,7 +3019,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
       final response = await Supabase.instance.client.rpc(
         'fn_registrar_venta',
         params: {
-          'p_codigo_promocion': orderData['promo_code'] ?? orderData['promoCode'],
+          'p_codigo_promocion':
+              orderData['promo_code'] ?? orderData['promoCode'],
           'p_denominacion': 'Venta Offline Sync - ${orderData['id']}',
           'p_estado_inicial': 1, // Estado enviada
           'p_id_tpv': idTpv,
@@ -2956,7 +3045,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
           print('📝 ID de operación guardado: $operationId');
 
           // 2. SEGUNDO: Registrar desgloses de pago si existen
-          final paymentBreakdown = orderData['desglose_pagos'] as List<dynamic>?;
+          final paymentBreakdown =
+              orderData['desglose_pagos'] as List<dynamic>?;
           if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
             print('💳 Registrando desgloses de pago...');
             await _registerPaymentBreakdownFromOfflineData(
@@ -2977,9 +3067,14 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
   }
 
   /// Registrar cliente desde datos offline
-  Future<int?> _registerClientFromOfflineData(String buyerName, String? buyerPhone) async {
+  Future<int?> _registerClientFromOfflineData(
+    String buyerName,
+    String? buyerPhone,
+  ) async {
     try {
-      print('👤 Registrando cliente: $buyerName${buyerPhone != null ? " - $buyerPhone" : ""}');
+      print(
+        '👤 Registrando cliente: $buyerName${buyerPhone != null ? " - $buyerPhone" : ""}',
+      );
 
       // Generar código de cliente único basado en el nombre
       final clientCode = 'CLI-${buyerName.hashCode.abs()}';
@@ -2988,7 +3083,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
       final response = await Supabase.instance.client.rpc(
         'fn_insertar_cliente_con_contactos',
         params: {
-          'p_codigo_cliente': clientCode, // Código generado desde nombre encriptado
+          'p_codigo_cliente':
+              clientCode, // Código generado desde nombre encriptado
           'p_contactos': null, // Sin contactos adicionales por ahora
           'p_direccion': null, // No tenemos dirección
           'p_documento_identidad': null, // No tenemos documento
@@ -3009,9 +3105,10 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
         print('✅ Cliente registrado con ID: $idCliente');
         return idCliente;
       } else {
-        throw Exception('Error en el registro de cliente: ${response?['message']}');
+        throw Exception(
+          'Error en el registro de cliente: ${response?['message']}',
+        );
       }
-
     } catch (e) {
       print('❌ Error al registrar cliente: $e');
       // No lanzamos excepción para no interrumpir el flujo de la venta
@@ -3033,7 +3130,8 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
         pagos.add({
           'id_medio_pago': paymentData['id_medio_pago'],
           'monto': paymentData['monto'],
-          'referencia_pago': 'Pago Offline Sync - ${DateTime.now().millisecondsSinceEpoch}',
+          'referencia_pago':
+              'Pago Offline Sync - ${DateTime.now().millisecondsSinceEpoch}',
         });
       }
 
