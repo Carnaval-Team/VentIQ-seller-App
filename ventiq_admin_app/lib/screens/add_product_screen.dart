@@ -333,12 +333,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
             ingredientesExistentes.map((ingrediente) {
               return {
                 'id_producto': ingrediente['producto_id'],
+                'nombre': ingrediente['producto_nombre'],
                 'nombre_producto': ingrediente['producto_nombre'],
                 'sku': ingrediente['producto_sku'],
                 'imagen': ingrediente['producto_imagen'],
                 'cantidad': ingrediente['cantidad_necesaria'],
                 'unidad_medida': ingrediente['unidad_medida'],
-                'costo_unitario': 0.0, // Se calculará después
+                'unidad':
+                    ingrediente['unidad_medida'], // ✅ Agregar para compatibilidad
+                'costo_unitario': 0.0,
+                'stock_disponible': 0,
               };
             }).toList();
 
@@ -908,6 +912,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           );
                         }
 
+                        // DESPUÉS - Código corregido:
                         final unidades = snapshot.data ?? [];
                         if (unidades.isEmpty) {
                           return TextFormField(
@@ -923,17 +928,39 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           );
                         }
 
+                        // ✅ DEDUPLICAR POR 'abreviatura' PARA EVITAR DUPLICADOS
+                        final uniqueUnidades = <String, Map<String, dynamic>>{};
+                        for (final unidad in unidades) {
+                          final abreviatura =
+                              unidad['abreviatura']?.toString() ?? '';
+                          if (abreviatura.isNotEmpty) {
+                            uniqueUnidades[abreviatura] = unidad;
+                          }
+                        }
+                        final unidadesLimpias = uniqueUnidades.values.toList();
+
+                        // ✅ VALIDAR QUE EL VALOR ACTUAL EXISTE EN LA LISTA
+                        String? currentValue =
+                            _unidadMedidaController.text.isNotEmpty
+                                ? _unidadMedidaController.text
+                                : null;
+
+                        if (currentValue != null &&
+                            !unidadesLimpias.any(
+                              (u) => u['abreviatura'] == currentValue,
+                            )) {
+                          currentValue = null;
+                          _unidadMedidaController.text = '';
+                        }
+
                         return DropdownButtonFormField<String>(
-                          value:
-                              _unidadMedidaController.text.isNotEmpty
-                                  ? _unidadMedidaController.text
-                                  : null,
+                          value: currentValue,
                           decoration: const InputDecoration(
                             labelText: 'Unidad de Medida *',
                             border: OutlineInputBorder(),
                           ),
                           items:
-                              unidades.map((unidad) {
+                              unidadesLimpias.map((unidad) {
                                 return DropdownMenuItem<String>(
                                   value: unidad['abreviatura'],
                                   child: Text(
@@ -943,19 +970,19 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               }).toList(),
                           onChanged: (value) {
                             setState(() {
-                              _unidadMedidaController.text = value ?? 'und';
-                              // Buscar el ID de la unidad de medida seleccionada
-                              final unidadSeleccionada = unidades.firstWhere(
-                                (unidad) => unidad['abreviatura'] == value,
-                                orElse: () => {'id': 1}, // Default a 'unidad'
-                              );
+                              _unidadMedidaController.text = value ?? '';
+                              final unidadSeleccionada = unidadesLimpias
+                                  .firstWhere(
+                                    (unidad) => unidad['abreviatura'] == value,
+                                    orElse: () => {'id': 1},
+                                  );
                               _selectedUnidadMedidaId =
                                   unidadSeleccionada['id'];
                             });
                           },
                           validator:
                               (value) =>
-                                  value == null
+                                  value == null || value.isEmpty
                                       ? 'Seleccione una unidad'
                                       : null,
                         );
@@ -2768,16 +2795,14 @@ class _IngredientDialogState extends State<_IngredientDialog> {
       _cantidadController.text =
           widget.ingrediente!['cantidad']?.toString() ?? '';
 
-      // Si es edición, buscar el producto y unidad seleccionados
-      _productoSeleccionado = {
-        'id': widget.ingrediente!['id_producto'],
-        'denominacion': widget.ingrediente!['nombre'],
-        'precio_venta': widget.ingrediente!['costo_unitario'],
-        'stock_disponible': widget.ingrediente!['stock_disponible'],
-      };
+      // ✅ NO inicializar _productoSeleccionado aquí
+      // Se inicializará después de cargar la lista real
+      print(
+        '🔄 Modo edición - ID producto: ${widget.ingrediente!['id_producto']}',
+      );
 
       // Buscar la unidad seleccionada por abreviatura
-      final unidadAbrev = widget.ingrediente!['unidad'] ?? 'und';
+      final unidadAbrev = widget.ingrediente!['unidad_medida'] ?? 'und';
       _unidadSeleccionada = {
         'abreviatura': unidadAbrev,
         'denominacion': unidadAbrev,
@@ -2821,6 +2846,25 @@ class _IngredientDialogState extends State<_IngredientDialog> {
       setState(() {
         _productosDisponibles = productos;
         _isLoadingProducts = false;
+
+        // ✅ SINCRONIZAR PRODUCTO SELECCIONADO CON LA LISTA REAL
+        if (widget.ingrediente != null && _productoSeleccionado != null) {
+          final idProducto = widget.ingrediente!['id_producto'];
+
+          // Buscar el producto real en la lista cargada
+          final productoReal = productos.firstWhere(
+            (p) => p['id'] == idProducto,
+            orElse: () => <String, dynamic>{},
+          );
+
+          if (productoReal.isNotEmpty) {
+            _productoSeleccionado = productoReal;
+            print('✅ Producto sincronizado: ${productoReal['denominacion']}');
+          } else {
+            print('❌ No se encontró el producto con ID: $idProducto');
+            _productoSeleccionado = null;
+          }
+        }
       });
 
       print(
@@ -2839,13 +2883,32 @@ class _IngredientDialogState extends State<_IngredientDialog> {
 
       final unidades = await ProductService.getUnidadesMedida();
 
+      // ✅ DEDUPLICAR POR 'abreviatura' PARA EVITAR DUPLICADOS
+      final uniqueUnidades = <String, Map<String, dynamic>>{};
+      for (final unidad in unidades) {
+        final abreviatura = unidad['abreviatura']?.toString() ?? '';
+        if (abreviatura.isNotEmpty) {
+          uniqueUnidades[abreviatura] = unidad;
+        }
+      }
+      final unidadesLimpias = uniqueUnidades.values.toList();
+
       setState(() {
-        _unidadesMedida = unidades;
+        _unidadesMedida = unidadesLimpias;
         _isLoadingUnidades = false;
 
-        // Si no hay unidad seleccionada, usar la primera (generalmente "Unidad")
-        if (_unidadSeleccionada == null && unidades.isNotEmpty) {
-          _unidadSeleccionada = unidades.first;
+        // ✅ VALIDAR QUE LA UNIDAD SELECCIONADA EXISTE EN LA LISTA LIMPIA
+        if (_unidadSeleccionada != null) {
+          final abrevActual = _unidadSeleccionada!['abreviatura'];
+          final existeEnLista = unidadesLimpias.any(
+            (u) => u['abreviatura'] == abrevActual,
+          );
+          if (!existeEnLista) {
+            _unidadSeleccionada =
+                unidadesLimpias.isNotEmpty ? unidadesLimpias.first : null;
+          }
+        } else if (unidadesLimpias.isNotEmpty) {
+          _unidadSeleccionada = unidadesLimpias.first;
         }
       });
     } catch (e) {
@@ -2911,12 +2974,37 @@ class _IngredientDialogState extends State<_IngredientDialog> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Lista de productos
-                  if (_isLoadingProducts)
-                    const Center(child: CircularProgressIndicator())
-                  else if (_productosFiltrados.isEmpty)
-                    const Text('No se encontraron productos disponibles')
-                  else
+                  // Lista de productos con estado de carga mejorado
+                  if (_isLoadingProducts) ...[
+                    Container(
+                      height: 150,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(strokeWidth: 2),
+                            SizedBox(height: 8),
+                            Text('Cargando productos...'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ] else if (_productosFiltrados.isEmpty) ...[
+                    Container(
+                      height: 150,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Text('No se encontraron productos disponibles'),
+                      ),
+                    ),
+                  ] else ...[
                     Container(
                       height: 150,
                       decoration: BoxDecoration(
@@ -2932,6 +3020,7 @@ class _IngredientDialogState extends State<_IngredientDialog> {
                               _productoSeleccionado?['id'] == producto['id'];
 
                           return ListTile(
+                            selected: isSelected,
                             leading: Stack(
                               children: [
                                 CircleAvatar(
@@ -2946,7 +3035,6 @@ class _IngredientDialogState extends State<_IngredientDialog> {
                                           ? const Icon(Icons.inventory_2)
                                           : null,
                                 ),
-                                // Insignia para productos elaborados
                                 if (producto['es_elaborado'] == true)
                                   Positioned(
                                     top: -2,
@@ -2968,12 +3056,17 @@ class _IngredientDialogState extends State<_IngredientDialog> {
                             ),
                             title: Text(
                               producto['denominacion'] ?? 'Sin nombre',
+                              style: TextStyle(
+                                fontWeight:
+                                    isSelected
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                              ),
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text('SKU: ${producto['sku'] ?? 'N/A'}'),
-                                // Mostrar insignia de elaborado en el texto también
                                 if (producto['es_elaborado'] == true)
                                   const Text(
                                     '🍽️ Producto Elaborado',
@@ -2989,16 +3082,16 @@ class _IngredientDialogState extends State<_IngredientDialog> {
                               print(
                                 '🔍 Producto seleccionado: ${producto['denominacion']}',
                               );
-                              print('🔍 Datos del producto: $producto');
                               setState(() => _productoSeleccionado = producto);
                             },
                           );
                         },
                       ),
                     ),
+                  ],
                   const SizedBox(height: 16),
 
-                  // Información del producto seleccionado
+                  // Información del producto seleccionado (MANTENER SOLO UNA VERSIÓN)
                   if (_productoSeleccionado != null) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -3016,13 +3109,22 @@ class _IngredientDialogState extends State<_IngredientDialog> {
                               color: AppColors.primary,
                             ),
                           ),
-                          Text(_productoSeleccionado!['denominacion'] ?? ''),
+                          Text(
+                            _productoSeleccionado!['denominacion'] ??
+                                'Sin nombre',
+                          ),
+                          Text(
+                            'ID: ${_productoSeleccionado!['id']} | SKU: ${_productoSeleccionado!['sku'] ?? 'N/A'}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 16),
                   ],
-
                   // Campos de cantidad y unidad
                   const SizedBox(height: 12),
 
