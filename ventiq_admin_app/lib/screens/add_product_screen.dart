@@ -93,6 +93,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   // Campos para productos elaborados
   bool _esElaborado = false;
+  bool _esServicio = false;
   List<Map<String, dynamic>> _ingredientes = [];
   double _costoProduccionCalculado = 0.0;
 
@@ -149,6 +150,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _esInventariable = widget.product!.esInventariable ?? true;
       _esPorLotes = widget.product!.esPorLotes ?? false;
       _esElaborado = widget.product!.esElaborado ?? false;
+      _esServicio = widget.product!.esServicio ?? false;
 
       // Cargar listas
       _etiquetas = widget.product!.etiquetas ?? [];
@@ -439,6 +441,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _esComprable = true;
     _esInventariable = true;
     _esElaborado = false;
+    _esServicio = false;
     _esRefrigerado = false;
     _esFragil = false;
     _esPeligroso = false;
@@ -845,12 +848,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 children: [
                   // Dropdown de presentación
                   Expanded(
-                    flex: 2,
+                    flex: 3,
                     child: DropdownButtonFormField<int>(
                       value: _selectedBasePresentationId,
                       decoration: const InputDecoration(
                         labelText: 'Tipo de Presentación *',
                         border: OutlineInputBorder(),
+                        helperText: '',
                       ),
                       items:
                           _presentaciones.map((presentacion) {
@@ -872,7 +876,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   const SizedBox(width: 12),
                   // Campo de cantidad
                   Expanded(
-                    flex: 1,
+                    flex: 2,
                     child: TextFormField(
                       controller: _cantidadPresentacionController,
                       decoration: const InputDecoration(
@@ -920,7 +924,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                             decoration: const InputDecoration(
                               labelText: 'Unidad de Medida *',
                               border: OutlineInputBorder(),
-                              hintText: 'ej: kg, l, und',
+                              helperText: '',
                             ),
                             validator:
                                 (value) =>
@@ -957,6 +961,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           value: currentValue,
                           decoration: const InputDecoration(
                             labelText: 'Unidad de Medida *',
+                            helperText: '',
                             border: OutlineInputBorder(),
                           ),
                           items:
@@ -1259,8 +1264,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         }
                       }),
                 ),
+                CheckboxListTile(
+                  title: const Text('Es Servicio'),
+                  subtitle: const Text('Servicio brindado'),
+                  value: _esServicio,
+                  onChanged:
+                      (value) => setState(() {
+                        _esServicio = value ?? false;
+                    if (!_esServicio) {
+                      _ingredientes.clear();
+                      _costoProduccionCalculado = 0.0;
+                    }
+                  }),
+                ),
                 // Sección de ingredientes para productos elaborados
-                if (_esElaborado) ...[
+                if (_esElaborado || _esServicio) ...[
                   const SizedBox(height: 16),
                   Card(
                     child: Padding(
@@ -1614,6 +1632,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       'es_comprable': _esComprable,
       'es_inventariable': _esInventariable,
       'es_elaborado': _esElaborado,
+      'es_servicio': _esServicio,
       'es_por_lotes': _esPorLotes,
       'dias_alert_caducidad':
           _diasAlertController.text.isNotEmpty
@@ -1790,7 +1809,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
 
     // Insertar ingredientes si es elaborado
-    if (_esElaborado && _ingredientes.isNotEmpty) {
+    if ((_esElaborado || _esServicio) && _ingredientes.isNotEmpty) {
       print('🍽️ Insertando ingredientes...');
       final ingredientesData =
           _ingredientes
@@ -1870,6 +1889,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       'es_comprable': _esComprable,
       'es_inventariable': _esInventariable,
       'es_elaborado': _esElaborado,
+      'es_servicio': _esServicio,
       'es_por_lotes': _esPorLotes,
       'dias_alert_caducidad':
           _diasAlertController.text.isNotEmpty
@@ -1916,7 +1936,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       // Actualizar ingredientes si es producto elaborado
-      if (_esElaborado && _ingredientes.isNotEmpty) {
+      if ((_esElaborado || _esServicio) && _ingredientes.isNotEmpty) {
         print('🍽️ Actualizando ingredientes...');
 
         // Eliminar ingredientes existentes
@@ -1945,7 +1965,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
           print('✅ Ingredientes actualizados exitosamente');
         }
-      } else if (!_esElaborado) {
+      } else if (!(_esElaborado || _esServicio)) {
         // Si ya no es elaborado, eliminar todos los ingredientes
         await _supabase
             .from('app_dat_producto_ingredientes')
@@ -2256,93 +2276,173 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  Row(
-                    children: [
-                      // Selector de atributo
-                      Expanded(
-                        flex: 2,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                  // Usamos LayoutBuilder para adaptarnos al ancho disponible
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Para pantallas pequeñas (menos de 600px de ancho), cambiamos a columna
+                      if (constraints.maxWidth < 600) {
+                        return Column(
                           children: [
-                            const Text(
-                              'Atributo:',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                            const SizedBox(height: 4),
-                            DropdownButtonFormField<int>(
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                hintText: 'Selecciona un atributo',
-                                isDense: true,
-                              ),
-                              items:
-                                  _atributos.map((atributo) {
+                            // Selector de atributo
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Atributo:',
+                                  style: TextStyle(fontWeight: FontWeight.w500),
+                                ),
+                                const SizedBox(height: 4),
+                                DropdownButtonFormField<int>(
+                                  decoration: const InputDecoration(
+                                    border: OutlineInputBorder(),
+                                    hintText: 'Selecciona un atributo',
+                                    isDense: true,
+                                  ),
+                                  items: _atributos.map((atributo) {
                                     return DropdownMenuItem<int>(
                                       value: atributo['id'],
                                       child: Text(
-                                        atributo['denominacion'] ??
-                                            'Sin nombre',
+                                        atributo['denominacion'] ?? 'Sin nombre',
                                       ),
                                     );
                                   }).toList(),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedAtributoId = value;
-                                });
-                              },
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedAtributoId = value;
+                                    });
+                                  },
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
+                            const SizedBox(height: 12),
 
-                      // Campo de precio
-                      Expanded(
-                        flex: 1,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Precio:',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                            const SizedBox(height: 4),
-                            TextFormField(
-                              controller: _variantePrecioController,
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                prefixText: '\$ ',
-                                hintText: '0.00',
-                                isDense: true,
-                              ),
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
+                            // Campo de precio
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Precio:',
+                                  style: TextStyle(fontWeight: FontWeight.w500),
+                                ),
+                                const SizedBox(height: 4),
+                                TextFormField(
+                                  controller: _variantePrecioController,
+                                  decoration: const InputDecoration(
+                                    border: OutlineInputBorder(),
+                                    prefixText: '\$ ',
+                                    hintText: '0.00',
+                                    isDense: true,
+                                  ),
+                                  keyboardType: const TextInputType.numberWithOptions(
                                     decimal: true,
                                   ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Botón agregar
+                            SizedBox(
+                              width: double.infinity, // Ocupa todo el ancho
+                              child: ElevatedButton.icon(
+                                onPressed: _agregarVariante,
+                                icon: const Icon(Icons.add, size: 18),
+                                label: const Text('Agregar Variante'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
                             ),
                           ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-
-                      // Botón agregar
-                      Column(
-                        children: [
-                          const SizedBox(
-                            height: 20,
-                          ), // Espacio para alinear con los campos
-                          ElevatedButton.icon(
-                            onPressed: _agregarVariante,
-                            icon: const Icon(Icons.add, size: 18),
-                            label: const Text('Agregar'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
+                        );
+                      } else {
+                        // Para pantallas grandes, mantenemos el diseño en fila
+                        return Row(
+                          children: [
+                            // Selector de atributo
+                            Expanded(
+                              flex: 2,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Atributo:',
+                                    style: TextStyle(fontWeight: FontWeight.w500),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  DropdownButtonFormField<int>(
+                                    decoration: const InputDecoration(
+                                      border: OutlineInputBorder(),
+                                      hintText: 'Selecciona un atributo',
+                                      isDense: true,
+                                    ),
+                                    items: _atributos.map((atributo) {
+                                      return DropdownMenuItem<int>(
+                                        value: atributo['id'],
+                                        child: Text(
+                                          atributo['denominacion'] ?? 'Sin nombre',
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedAtributoId = value;
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                            const SizedBox(width: 16),
+
+                            // Campo de precio
+                            Expanded(
+                              flex: 1,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Precio:',
+                                    style: TextStyle(fontWeight: FontWeight.w500),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  TextFormField(
+                                    controller: _variantePrecioController,
+                                    decoration: const InputDecoration(
+                                      border: OutlineInputBorder(),
+                                      prefixText: '\$ ',
+                                      hintText: '0.00',
+                                      isDense: true,
+                                    ),
+                                    keyboardType: const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+
+                            // Botón agregar
+                            Column(
+                              children: [
+                                const SizedBox(height: 20),
+                                ElevatedButton.icon(
+                                  onPressed: _agregarVariante,
+                                  icon: const Icon(Icons.add, size: 18),
+                                  label: const Text('Agregar'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        );
+                      }
+                    },
                   ),
                 ],
               ),
@@ -2688,6 +2788,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   void _agregarIngrediente() {
     print('🔍 DEBUG: _agregarIngrediente llamado');
     print('🔍 DEBUG: _esElaborado: $_esElaborado');
+    print('🔍 DEBUG: _esServicio: $_esServicio');
     print('🔍 DEBUG: Lista actual de ingredientes: ${_ingredientes.length}');
 
     showDialog(

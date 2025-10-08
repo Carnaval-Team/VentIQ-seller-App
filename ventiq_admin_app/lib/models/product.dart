@@ -28,6 +28,7 @@ class Product {
   final bool esComprable;
   final bool esInventariable;
   final bool esPorLotes;
+  final bool esServicio;
   final double precioVenta;
   final int stockDisponible;
   final bool tieneStock;
@@ -82,6 +83,7 @@ class Product {
     this.esComprable = true,
     this.esInventariable = true,
     this.esPorLotes = false,
+    this.esServicio = false,
     this.precioVenta = 0.0,
     this.stockDisponible = 0,
     this.tieneStock = false,
