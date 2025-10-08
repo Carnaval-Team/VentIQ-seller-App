@@ -921,11 +921,15 @@ class ProductsAdditionalInfo extends StatelessWidget {
               children: [
                 Icon(Icons.info_outline, color: Colors.blue[600]),
                 const SizedBox(width: 8),
-                Text(
-                  'Información Adicional del Inventario',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue[600],
+                Expanded( // Esto hace que el texto se ajuste al espacio disponible
+                  child: Text(
+                    'Información Adicional del Inventario',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue[600],
+                    ),
+                    maxLines: 2, // Permite que se divida en 2 líneas si es necesario
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],

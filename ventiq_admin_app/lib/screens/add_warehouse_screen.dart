@@ -372,7 +372,7 @@ class _AddWarehouseScreenState extends State<AddWarehouseScreen> {
                 ElevatedButton.icon(
                   onPressed: _addStockLimit,
                   icon: const Icon(Icons.add),
-                  label: const Text('Agregar Límite'),
+                  label: const Text('Agregar'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
