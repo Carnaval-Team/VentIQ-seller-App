@@ -97,52 +97,70 @@ class ProductsKPICards extends StatelessWidget {
     return Card(
       elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+        padding: const EdgeInsets.all(12), // Reducir padding general
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isSmall = constraints.maxWidth < 200; // Ajusta este valor según necesites
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, color: color, size: 24),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                Row(
+                  children: [
+                    Icon(
+                      icon,
+                      color: color,
+                      size: isSmall ? 20 : 24, // Icono más pequeño en móviles
+                    ),
+                    SizedBox(width: isSmall ? 6 : 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey[600],
+                          fontSize: isSmall ? 12 : null, // Texto más pequeño
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            if (percentage != null) ...[
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${percentage.toStringAsFixed(1)}%',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: color,
+                SizedBox(height: isSmall ? 6 : 8),
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
+                    color: color,
+                    fontSize: isSmall ? 18 : null, // Valor más pequeño
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
-          ],
+                if (percentage != null) ...[
+                  SizedBox(height: isSmall ? 2 : 4),
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: isSmall ? 4 : 6,
+                        vertical: isSmall ? 1 : 2
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${percentage.toStringAsFixed(1)}%',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: isSmall ? 10 : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
         ),
       ),
     );

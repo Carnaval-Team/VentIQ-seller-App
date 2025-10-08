@@ -432,6 +432,27 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             ),
                           ),
                         ),
+                      // Insignia de servicio
+                      if (product.esServicio)
+                        Positioned(
+                          top: -2,
+                          right: -2,
+                          child: Container(
+                            width: 20,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: Colors.purple,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1),
+                            ),
+                            child: const Icon(
+                              Icons.build,
+                              color: Colors.white,
+                              size: 12,
+                            ),
+                          ),
+                        ),
+
                     ],
                   ),
                   const SizedBox(width: 16),
@@ -466,7 +487,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       ],
                     ),
                   ),
-                  Column(
+                    Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
@@ -480,6 +501,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       const SizedBox(height: 4),
                       Column(
                         children: [
+                          if (!product.esServicio)
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,

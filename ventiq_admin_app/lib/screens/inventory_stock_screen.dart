@@ -842,10 +842,10 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   }
 
   Widget _buildDetailSection(
-    String title,
-    IconData icon,
-    List<Widget> children,
-  ) {
+      String title,
+      IconData icon,
+      List<Widget> children,
+      ) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -861,12 +861,16 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
             children: [
               Icon(icon, color: AppColors.primary, size: 20),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+              Flexible(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
                 ),
               ),
             ],

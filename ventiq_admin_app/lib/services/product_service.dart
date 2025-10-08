@@ -293,6 +293,7 @@ class ProductService {
         esFragil: json['es_fragil'] ?? false,
         esPeligroso: json['es_peligroso'] ?? false,
         esVendible: json['es_vendible'] ?? true,
+        esServicio: json['es_servicio'] ?? false,
         stockDisponible: json['stock_disponible'] ?? 0,
         tieneStock: (json['stock_disponible'] ?? 0) > 0,
         subcategorias: subcategorias.cast<Map<String, dynamic>>(),
