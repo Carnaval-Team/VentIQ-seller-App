@@ -6,6 +6,7 @@ import 'product_service.dart';
 import 'payment_method_service.dart';
 import 'turno_service.dart';
 import 'reauthentication_service.dart';
+import 'store_config_service.dart';
 
 /// Servicio para sincronización automática periódica de datos
 /// Se ejecuta cuando el modo offline NO está activado para mantener datos actualizados
@@ -162,7 +163,16 @@ class AutoSyncService {
         print('  ❌ Error sincronizando promociones: $e');
       }
 
-      // 3. Sincronizar métodos de pago
+      // 3. Sincronizar configuración de tienda
+      try {
+        await _syncStoreConfig();
+        syncedItems.add('configuración de tienda');
+        print('  ✅ Configuración de tienda sincronizada');
+      } catch (e) {
+        print('  ❌ Error sincronizando configuración de tienda: $e');
+      }
+
+      // 4. Sincronizar métodos de pago
       try {
         syncedData['payment_methods'] = await _syncPaymentMethods();
         syncedItems.add('métodos de pago');
@@ -171,7 +181,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando métodos de pago: $e');
       }
 
-      // 4. Sincronizar categorías
+      // 5. Sincronizar categorías
       try {
         syncedData['categories'] = await _syncCategories();
         syncedItems.add('categorías');
@@ -180,7 +190,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando categorías: $e');
       }
 
-      // 5. Sincronizar productos (solo cada 3 sincronizaciones para no sobrecargar)
+      // 6. Sincronizar productos (solo cada 3 sincronizaciones para no sobrecargar)
       if (_syncCount % 3 == 0) {
         try {
           syncedData['products'] = await _syncProducts();
@@ -191,7 +201,7 @@ class AutoSyncService {
         }
       }
 
-      // 6. Sincronizar turno y resumen
+      // 7. Sincronizar turno y resumen
       try {
         syncedData['turno'] = await _syncTurno();
         await _syncTurnoResumen();
@@ -203,7 +213,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando turno: $e');
       }
 
-      // 7. Sincronizar egresos
+      // 8. Sincronizar egresos
       try {
         await _syncEgresos();
         syncedItems.add('egresos');
@@ -212,7 +222,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando egresos: $e');
       }
 
-      // 8. Sincronizar egresos offline pendientes
+      // 9. Sincronizar egresos offline pendientes
       try {
         final syncedEgresos = await _syncOfflineEgresos();
         if (syncedEgresos > 0) {
@@ -224,7 +234,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando egresos offline: $e');
       }
 
-      // 9. Sincronizar ventas offline pendientes
+      // 10. Sincronizar ventas offline pendientes
       try {
         final syncedSales = await _syncOfflineSales();
         if (syncedSales > 0) {
@@ -236,7 +246,7 @@ class AutoSyncService {
         print('  ❌ Error sincronizando ventas offline: $e');
       }
 
-      // 10. Sincronizar órdenes (solo cada 2 sincronizaciones)
+      // 11. Sincronizar órdenes (solo cada 2 sincronizaciones)
       if (_syncCount % 2 == 0) {
         try {
           syncedData['orders'] = await _syncOrders();
@@ -847,6 +857,32 @@ class AutoSyncService {
       'syncCount': _syncCount,
       'syncInterval': _syncInterval.inMinutes,
     };
+  }
+
+  /// Sincronizar configuración de tienda
+  Future<void> _syncStoreConfig() async {
+    try {
+      print('🔧 Sincronizando configuración de tienda...');
+      
+      // Obtener ID de tienda
+      final idTienda = await _userPreferencesService.getIdTienda();
+      
+      if (idTienda == null) {
+        print('❌ No se pudo obtener ID de tienda para sincronizar configuración');
+        return;
+      }
+      
+      // Sincronizar configuración usando StoreConfigService
+      final success = await StoreConfigService.syncStoreConfig(idTienda);
+      
+      if (success) {
+        print('✅ Configuración de tienda sincronizada exitosamente');
+      } else {
+        print('⚠️ No se pudo sincronizar configuración de tienda');
+      }
+    } catch (e) {
+      print('❌ Error sincronizando configuración de tienda: $e');
+    }
   }
 
   /// Limpiar recursos

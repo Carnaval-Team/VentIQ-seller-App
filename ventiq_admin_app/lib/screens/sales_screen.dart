@@ -894,30 +894,59 @@ class _SalesScreenState extends State<SalesScreen>
                   AppColors.error,
                 ),
                 const SizedBox(height: 8),
+                // Primera fila de botones
                 Row(
                   children: [
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: () => _showVendorEgresosDetail(vendor),
-                        icon: const Icon(Icons.receipt_long, size: 18),
-                        label: const Text('Ver Egresos'),
+                        icon: const Icon(Icons.receipt_long, size: 16),
+                        label: const Text(
+                          'Egresos',
+                          style: TextStyle(fontSize: 12),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 6),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: () => _showVendorOrdersDetail(vendor),
-                        icon: const Icon(Icons.shopping_cart, size: 18),
-                        label: const Text('Ver Órdenes'),
+                        icon: const Icon(Icons.shopping_cart, size: 16),
+                        label: const Text(
+                          'Órdenes',
+                          style: TextStyle(fontSize: 12),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.info,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                // Segunda fila - botón de transferencias centrado
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            () => _showVendorTransferenciasDetail(vendor),
+                        icon: const Icon(Icons.account_balance, size: 16),
+                        label: const Text(
+                          'Transferencias',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 6),
                         ),
                       ),
                     ),
@@ -2121,6 +2150,475 @@ class _SalesScreenState extends State<SalesScreen>
       default:
         return Icons.payment;
     }
+  }
+
+  void _showVendorTransferenciasDetail(SalesVendorReport vendor) async {
+    try {
+      final dateRange = _getDateRange();
+      final orders = await SalesService.getVendorOrders(
+        fechaDesde: dateRange['start']!,
+        fechaHasta: dateRange['end']!,
+        uuidUsuario: vendor.uuidUsuario,
+      );
+
+      if (!mounted) return;
+
+      // Filtrar solo órdenes que tengan transferencias como método de pago
+      final transferOrders =
+          orders.where((order) {
+            if (order.detalles['pagos'] == null) return false;
+            final pagos = order.detalles['pagos'] as List;
+            return pagos.any((pago) {
+              final metodoPago =
+                  pago['medio_pago']?.toString().toLowerCase() ?? '';
+              return metodoPago.contains('transferencia');
+            });
+          }).toList();
+
+      // Calcular total de transferencias
+      double totalTransferencias = 0.0;
+      for (final order in transferOrders) {
+        if (order.detalles['pagos'] != null) {
+          final pagos = order.detalles['pagos'] as List;
+          for (final pago in pagos) {
+            final metodoPago =
+                pago['medio_pago']?.toString().toLowerCase() ?? '';
+            if (metodoPago.contains('transferencia')) {
+              totalTransferencias += (pago['total'] ?? 0.0).toDouble();
+            }
+          }
+        }
+      }
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder:
+            (context) => DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              maxChildSize: 0.95,
+              minChildSize: 0.5,
+              builder:
+                  (context, scrollController) => Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        // Handle
+                        Container(
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        // Header
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Transferencias de ${vendor.nombreCompleto}',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1F2937),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${transferOrders.length} órdenes con transferencias',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.success.withOpacity(
+                                          0.1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppColors.success.withOpacity(
+                                            0.3,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.account_balance,
+                                            size: 16,
+                                            color: AppColors.success,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Total: \$${totalTransferencias.toStringAsFixed(2)}',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.success,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(Icons.close),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        // Content
+                        Expanded(
+                          child:
+                              transferOrders.isEmpty
+                                  ? const Center(
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.account_balance_outlined,
+                                          size: 64,
+                                          color: Colors.grey,
+                                        ),
+                                        SizedBox(height: 16),
+                                        Text(
+                                          'No hay transferencias',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                        SizedBox(height: 8),
+                                        Text(
+                                          'No se encontraron órdenes con transferencias\npara este vendedor en el período seleccionado',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(color: Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                  : ListView.builder(
+                                    controller: scrollController,
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: transferOrders.length,
+                                    itemBuilder: (context, index) {
+                                      final order = transferOrders[index];
+
+                                      // Calcular total de transferencias para esta orden
+                                      double orderTransferTotal = 0.0;
+                                      if (order.detalles['pagos'] != null) {
+                                        final pagos =
+                                            order.detalles['pagos'] as List;
+                                        for (final pago in pagos) {
+                                          final metodoPago =
+                                              pago['medio_pago']
+                                                  ?.toString()
+                                                  .toLowerCase() ??
+                                              '';
+                                          if (metodoPago.contains(
+                                            'transferencia',
+                                          )) {
+                                            orderTransferTotal +=
+                                                (pago['total'] ?? 0.0)
+                                                    .toDouble();
+                                          }
+                                        }
+                                      }
+
+                                      return Container(
+                                        margin: const EdgeInsets.only(
+                                          bottom: 12,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.grey[200]!,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(
+                                                0.05,
+                                              ),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ExpansionTile(
+                                          tilePadding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: 16,
+                                                vertical: 8,
+                                              ),
+                                          childrenPadding:
+                                              const EdgeInsets.fromLTRB(
+                                                16,
+                                                0,
+                                                16,
+                                                16,
+                                              ),
+                                          title: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  'Orden #${order.idOperacion}',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                              ),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.success,
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.account_balance,
+                                                      size: 12,
+                                                      color: Colors.white,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      '\$${orderTransferTotal.toStringAsFixed(2)}',
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          subtitle: Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 8,
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                // Primera fila: Total y productos
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.attach_money,
+                                                      size: 16,
+                                                      color: AppColors.textSecondary,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
+                                                      style: const TextStyle(
+                                                        fontWeight: FontWeight.w600,
+                                                        fontSize: 15,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 16),
+                                                    Icon(
+                                                      Icons.shopping_bag,
+                                                      size: 16,
+                                                      color: AppColors.info,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      '${order.cantidadItems} prod.',
+                                                      style: const TextStyle(fontSize: 14),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 6),
+                                                // Segunda fila: Fecha
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.access_time,
+                                                      size: 14,
+                                                      color: Colors.grey[600],
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      _formatOrderDate(order.fechaOperacion),
+                                                      style: TextStyle(
+                                                        color: Colors.grey[600],
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                // Solo mostrar chips de transferencias
+                                                if (order.detalles['pagos'] !=
+                                                    null) ...[
+                                                  const SizedBox(height: 8),
+                                                  Wrap(
+                                                    spacing: 6,
+                                                    runSpacing: 4,
+                                                    children:
+                                                        _buildTransferPaymentChips(
+                                                          order.detalles['pagos']
+                                                              as List,
+                                                        ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                          children: [
+                                            // Aquí se puede agregar más detalle de la orden si es necesario
+                                            Container(
+                                              width: double.infinity,
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.grey[50],
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    'Estado: ${order.estadoNombre}',
+                                                    style: const TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    'TPV: ${order.tpvNombre}',
+                                                    style: TextStyle(
+                                                      fontSize: 13,
+                                                      color: Colors.grey[600],
+                                                    ),
+                                                  ),
+                                                  if (order.observaciones !=
+                                                      null) ...[
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      'Observaciones: ${order.observaciones}',
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        color: Colors.grey[600],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
+            ),
+      );
+    } catch (e) {
+      print('Error loading vendor transferencias detail: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al cargar las transferencias del vendedor'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  // Método para construir chips solo de transferencias
+  List<Widget> _buildTransferPaymentChips(List pagos) {
+    final transferPayments =
+        pagos.where((pago) {
+          final metodoPago = pago['medio_pago']?.toString().toLowerCase() ?? '';
+          return metodoPago.contains('transferencia');
+        }).toList();
+
+    return transferPayments.map<Widget>((payment) {
+      final metodoPago = payment['medio_pago'] ?? 'N/A';
+      final total = (payment['total'] ?? 0.0).toDouble();
+
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.success.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.success.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.account_balance, size: 12, color: AppColors.success),
+            const SizedBox(width: 4),
+            Text(
+              metodoPago,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: AppColors.success,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '\$${total.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.success,
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
   }
 
   void _onBottomNavTap(int index) {

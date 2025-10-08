@@ -9,6 +9,7 @@ import '../services/product_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
 import '../services/settings_integration_service.dart';
+import '../services/store_config_service.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/connection_status_widget.dart';
@@ -1545,6 +1546,7 @@ class _SyncDialogState extends State<_SyncDialog> {
     {'name': 'Guardando credenciales', 'key': 'credentials'},
     {'name': 'Sincronizando turno abierto', 'key': 'turno'},
     {'name': 'Sincronizando egresos', 'key': 'egresos'},
+    {'name': 'Sincronizando configuración de tienda', 'key': 'store_config'},
     {'name': 'Sincronizando promociones globales', 'key': 'promotions'},
     {'name': 'Sincronizando métodos de pago', 'key': 'payment_methods'},
     {'name': 'Descargando categorías', 'key': 'categories'},
@@ -1595,6 +1597,9 @@ class _SyncDialogState extends State<_SyncDialog> {
             break;
           case 'egresos':
             await _syncEgresos();
+            break;
+          case 'store_config':
+            await _syncStoreConfig();
             break;
           case 'promotions':
             offlineData['promotions'] = await _syncPromotions();
@@ -1792,6 +1797,31 @@ class _SyncDialogState extends State<_SyncDialog> {
     } catch (e) {
       print('❌ Error sincronizando egresos: $e');
       // En caso de error, mantener cache existente
+    }
+  }
+
+  Future<void> _syncStoreConfig() async {
+    try {
+      print('🔧 Sincronizando configuración de tienda...');
+      
+      // Obtener ID de tienda
+      final idTienda = await widget.userPreferencesService.getIdTienda();
+      
+      if (idTienda == null) {
+        print('❌ No se pudo obtener ID de tienda para sincronizar configuración');
+        return;
+      }
+      
+      // Sincronizar configuración usando StoreConfigService
+      final success = await StoreConfigService.syncStoreConfig(idTienda);
+      
+      if (success) {
+        print('✅ Configuración de tienda sincronizada exitosamente');
+      } else {
+        print('⚠️ No se pudo sincronizar configuración de tienda');
+      }
+    } catch (e) {
+      print('❌ Error sincronizando configuración de tienda: $e');
     }
   }
 

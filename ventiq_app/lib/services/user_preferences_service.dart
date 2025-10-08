@@ -52,6 +52,7 @@ class UserPreferencesService {
   static const String _resumenCierreKey = 'resumen_cierre_cache'; // Cache del resumen de cierre diario
   static const String _egresosOfflineKey = 'egresos_offline'; // Egresos creados offline
   static const String _egresosCacheKey = 'egresos_cache'; // Cache de egresos para modo offline
+  static const String _storeConfigKey = 'store_config'; // Configuración de la tienda
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -174,6 +175,9 @@ class UserPreferencesService {
 
     // Limpiar promociones al cerrar sesión
     await clearPromotionData();
+
+    // Limpiar configuración de tienda al cerrar sesión
+    await clearStoreConfig();
 
     // Limpiar órdenes al cerrar sesión
     await _clearOrdersOnLogout();
@@ -1236,6 +1240,58 @@ class UserPreferencesService {
       print('🧹 Cache de egresos limpiado');
     } catch (e) {
       print('❌ Error limpiando cache de egresos: $e');
+    }
+  }
+
+  // ==================== CONFIGURACIÓN DE TIENDA ====================
+
+  /// Guardar configuración de tienda
+  Future<void> saveStoreConfig(Map<String, dynamic> config) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_storeConfigKey, jsonEncode(config));
+      print('💾 Configuración de tienda guardada en cache');
+    } catch (e) {
+      print('❌ Error guardando configuración de tienda: $e');
+    }
+  }
+
+  /// Obtener configuración de tienda
+  Future<Map<String, dynamic>?> getStoreConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final configJson = prefs.getString(_storeConfigKey);
+      
+      if (configJson != null) {
+        return jsonDecode(configJson) as Map<String, dynamic>;
+      }
+      
+      return null;
+    } catch (e) {
+      print('❌ Error obteniendo configuración de tienda: $e');
+      return null;
+    }
+  }
+
+  /// Verificar si hay configuración de tienda en cache
+  Future<bool> hasStoreConfig() async {
+    try {
+      final config = await getStoreConfig();
+      return config != null;
+    } catch (e) {
+      print('❌ Error verificando configuración de tienda: $e');
+      return false;
+    }
+  }
+
+  /// Limpiar configuración de tienda
+  Future<void> clearStoreConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_storeConfigKey);
+      print('🗑️ Configuración de tienda eliminada del cache');
+    } catch (e) {
+      print('❌ Error limpiando configuración de tienda: $e');
     }
   }
 }

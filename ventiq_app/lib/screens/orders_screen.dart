@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/printer_manager.dart';
@@ -933,7 +935,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               onPressed:
                   () => _showConfirmationDialog(
                     order,
-                    OrderStatus.pagoConfirmado,
+                    OrderStatus.completada,
                     'Confirmar Pago',
                     '¿Confirmas que el pago de esta orden ha sido recibido?',
                     const Color(0xFF10B981),
@@ -958,32 +960,46 @@ class _OrdersScreenState extends State<OrdersScreen> {
     String title,
     String message,
     Color color,
-  ) {
+  ) async {
+    // Verificar si es cancelación y si se requiere contraseña maestra
+    if (newStatus == OrderStatus.cancelada) {
+      try {
+        final storeConfig = await _userPreferencesService.getStoreConfig();
+        if (storeConfig != null && storeConfig['need_master_password_to_cancel'] == true) {
+          _showMasterPasswordDialog(order, newStatus, title, message, color);
+          return;
+        }
+      } catch (e) {
+        print('❌ Error al verificar configuración de contraseña maestra: $e');
+        // Continuar con el flujo normal si hay error en la configuración
+      }
+    }
+
+    // Flujo normal para otros estados o cuando no se requiere contraseña maestra
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(title),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  _updateOrderStatus(order, newStatus);
-                  Navigator.pop(context); // Cerrar diálogo
-                  Navigator.pop(context); // Cerrar modal de detalles
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: color,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Confirmar'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              _updateOrderStatus(order, newStatus);
+              Navigator.pop(context); // Cerrar diálogo
+              Navigator.pop(context); // Cerrar modal de detalles
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: color,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -992,17 +1008,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: Color(0xFF4A90E2)),
-                SizedBox(height: 16),
-                Text('Actualizando estado...'),
-              ],
-            ),
-          ),
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFF4A90E2)),
+            SizedBox(height: 16),
+            Text('Actualizando estado...'),
+          ],
+        ),
+      ),
     );
 
     try {
@@ -1482,5 +1497,142 @@ class _OrdersScreenState extends State<OrdersScreen> {
       print('❌ Error aplicando cambios de estado pendientes: $e');
       return false;
     }
+  }
+
+  void _showMasterPasswordDialog(
+    Order order,
+    OrderStatus newStatus,
+    String title,
+    String message,
+    Color color,
+  ) {
+    final TextEditingController passwordController = TextEditingController();
+    bool obscurePassword = true;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.vpn_key,
+                color: Colors.orange,
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Contraseña Maestra',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Ingresa la contraseña maestra para cancelar esta orden.',
+                style: TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: obscurePassword,
+                decoration: InputDecoration(
+                  labelText: 'Contraseña Maestra',
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscurePassword ? Icons.visibility : Icons.visibility_off,
+                    ),
+                    onPressed: () {
+                      setDialogState(() {
+                        obscurePassword = !obscurePassword;
+                      });
+                    },
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final enteredPassword = passwordController.text.trim();
+                if (enteredPassword.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Por favor ingresa la contraseña'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+
+                // Verificar la contraseña
+                try {
+                  final storeConfig = await _userPreferencesService.getStoreConfig();
+                  final storedPassword = storeConfig?['master_password'];
+                  
+                  if (storedPassword == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('No hay contraseña maestra configurada'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+
+                  // Encriptar la contraseña ingresada para compararla
+                  final bytes = utf8.encode(enteredPassword);
+                  final digest = sha256.convert(bytes);
+                  final encryptedEnteredPassword = digest.toString();
+
+                  if (encryptedEnteredPassword == storedPassword) {
+                    // Contraseña correcta - proceder con la cancelación
+                    Navigator.pop(context); // Cerrar diálogo de contraseña
+                    Navigator.pop(context); // Cerrar modal de detalles
+                    _updateOrderStatus(order, newStatus);
+                  } else {
+                    // Contraseña incorrecta
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Contraseña incorrecta'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  print('❌ Error al verificar contraseña maestra: $e');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error al verificar contraseña: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Confirmar'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

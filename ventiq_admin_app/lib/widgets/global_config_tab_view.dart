@@ -12,10 +12,14 @@ class GlobalConfigTabView extends StatefulWidget {
 
 class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final TextEditingController _masterPasswordController = TextEditingController();
   
   bool _isLoading = true;
   bool _needMasterPasswordToCancel = false;
   bool _needAllOrdersCompletedToContinue = false;
+  bool _hasMasterPassword = false;
+  bool _showMasterPasswordField = false;
+  bool _obscureMasterPassword = true;
   int? _storeId;
 
   @override
@@ -42,15 +46,21 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       // Obtener configuración de la tienda
       final config = await StoreConfigService.getStoreConfig(_storeId!);
       
+      // Verificar si existe master password
+      final hasMasterPassword = await StoreConfigService.hasMasterPassword(_storeId!);
+      
       setState(() {
         _needMasterPasswordToCancel = config['need_master_password_to_cancel'] ?? false;
         _needAllOrdersCompletedToContinue = config['need_all_orders_completed_to_continue'] ?? false;
+        _hasMasterPassword = hasMasterPassword;
+        _showMasterPasswordField = _needMasterPasswordToCancel;
         _isLoading = false;
       });
 
       print('✅ Configuración cargada:');
       print('  - Contraseña maestra para cancelar: $_needMasterPasswordToCancel');
       print('  - Completar todas las órdenes: $_needAllOrdersCompletedToContinue');
+      print('  - Tiene contraseña maestra: $_hasMasterPassword');
 
     } catch (e) {
       print('❌ Error al cargar configuración de tienda: $e');
@@ -79,6 +89,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       
       setState(() {
         _needMasterPasswordToCancel = value;
+        _showMasterPasswordField = value;
       });
 
       if (mounted) {
@@ -159,6 +170,62 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
   }
 
+  Future<void> _updateMasterPassword() async {
+    if (_storeId == null) return;
+
+    final password = _masterPasswordController.text.trim();
+    if (password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor ingresa una contraseña'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      print('🔧 Actualizando contraseña maestra...');
+      
+      await StoreConfigService.updateMasterPassword(_storeId!, password);
+      
+      setState(() {
+        _hasMasterPassword = true;
+      });
+
+      // Limpiar el campo
+      _masterPasswordController.clear();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Contraseña maestra actualizada exitosamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Contraseña maestra actualizada');
+    } catch (e) {
+      print('❌ Error al actualizar contraseña maestra: $e');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar contraseña: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _masterPasswordController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -201,6 +268,12 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             value: _needMasterPasswordToCancel,
             onChanged: _updateMasterPasswordSetting,
           ),
+
+          // Campo de Contraseña Maestra (solo visible si está activado)
+          if (_showMasterPasswordField) ...[
+            const SizedBox(height: 16),
+            _buildMasterPasswordField(),
+          ],
 
           const SizedBox(height: 16),
 
@@ -341,6 +414,172 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             activeColor: AppColors.primary,
             activeTrackColor: AppColors.primary.withOpacity(0.3),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMasterPasswordField() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header del campo
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.vpn_key,
+                  color: Colors.purple,
+                  size: 24,
+                ),
+              ),
+              
+              const SizedBox(width: 16),
+              
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Contraseña Maestra',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _hasMasterPassword 
+                          ? 'Contraseña configurada - Ingresa una nueva para cambiarla'
+                          : 'Establece la contraseña maestra para cancelar órdenes',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Campo de texto para la contraseña
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _masterPasswordController,
+                  obscureText: _obscureMasterPassword,
+                  decoration: InputDecoration(
+                    hintText: _hasMasterPassword 
+                        ? 'Nueva contraseña maestra'
+                        : 'Contraseña maestra',
+                    prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureMasterPassword 
+                            ? Icons.visibility 
+                            : Icons.visibility_off,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscureMasterPassword = !_obscureMasterPassword;
+                        });
+                      },
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: AppColors.primary,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              
+              const SizedBox(width: 12),
+              
+              // Botón para guardar
+              ElevatedButton(
+                onPressed: _updateMasterPassword,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text(
+                  _hasMasterPassword ? 'Cambiar' : 'Establecer',
+                ),
+              ),
+            ],
+          ),
+          
+          // Información adicional
+          if (_hasMasterPassword) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.green.withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    color: Colors.green,
+                    size: 16,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Contraseña maestra configurada correctamente',
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/seller_service.dart';
 import '../services/promotion_service.dart';
+import '../services/store_config_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -201,6 +202,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 valorDescuento: null,
                 tipoDescuento: null,
               );
+            }
+
+            // Cargar configuración de tienda
+            try {
+              print('🔧 Cargando configuración de tienda...');
+              final storeConfig = await StoreConfigService.getStoreConfig(idTienda);
+              if (storeConfig != null) {
+                print('✅ Configuración de tienda cargada exitosamente');
+                print('  - need_master_password_to_cancel: ${storeConfig['need_master_password_to_cancel']}');
+                print('  - need_all_orders_completed_to_continue: ${storeConfig['need_all_orders_completed_to_continue']}');
+              } else {
+                print('⚠️ No se pudo cargar configuración de tienda - usando valores por defecto');
+              }
+            } catch (e) {
+              print('❌ Error cargando configuración de tienda: $e');
             }
 
             // Login exitoso - ir al catálogo

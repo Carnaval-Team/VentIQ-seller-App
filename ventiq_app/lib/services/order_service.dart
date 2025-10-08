@@ -234,6 +234,7 @@ class OrderService {
         final orderIndex = _orders.indexWhere((order) => order.id == orderId);
         if (orderIndex != -1) {
           final updatedOrder = _orders[orderIndex].copyWith(status: newStatus);
+        print('updatedOrder: ${updatedOrder.status} $newStatus');
           _orders[orderIndex] = updatedOrder;
         }
 

@@ -6,6 +6,7 @@ CREATE TABLE public.app_dat_configuracion_tienda (
   id_tienda bigint NOT NULL,
   need_master_password_to_cancel boolean NOT NULL DEFAULT false,
   need_all_orders_completed_to_continue boolean NOT NULL DEFAULT false,
+  master_password text NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   
@@ -41,6 +42,7 @@ COMMENT ON COLUMN public.app_dat_configuracion_tienda.id IS 'Identificador únic
 COMMENT ON COLUMN public.app_dat_configuracion_tienda.id_tienda IS 'Referencia a la tienda (FK a app_dat_tienda)';
 COMMENT ON COLUMN public.app_dat_configuracion_tienda.need_master_password_to_cancel IS 'Indica si se requiere contraseña maestra para cancelar operaciones';
 COMMENT ON COLUMN public.app_dat_configuracion_tienda.need_all_orders_completed_to_continue IS 'Indica si se requiere completar todas las órdenes antes de continuar';
+COMMENT ON COLUMN public.app_dat_configuracion_tienda.master_password IS 'Contraseña maestra para cancelar operaciones (encriptada)';
 COMMENT ON COLUMN public.app_dat_configuracion_tienda.created_at IS 'Fecha y hora de creación del registro';
 COMMENT ON COLUMN public.app_dat_configuracion_tienda.updated_at IS 'Fecha y hora de última actualización del registro';
 

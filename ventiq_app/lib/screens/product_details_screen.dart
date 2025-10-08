@@ -1940,8 +1940,26 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     return inventoryData;
   }
 
-  void _addToCart() {
+  void _addToCart() async {
     final orderService = OrderService();
+    
+    // Verificar configuración de tienda antes de agregar productos
+    try {
+      final storeConfig = await _userPreferencesService.getStoreConfig();
+      if (storeConfig != null && storeConfig['need_all_orders_completed_to_continue'] == true) {
+        // Verificar si hay órdenes pendientes
+        final hasPendingOrders = orderService.orders.any((order) => order.status.index == 1); // estado: 1 = Pendiente
+        
+        if (hasPendingOrders) {
+          _showPendingOrdersDialog();
+          return;
+        }
+      }
+    } catch (e) {
+      print('❌ Error al verificar configuración de tienda: $e');
+      // Continuar con el flujo normal si hay error en la configuración
+    }
+
     int totalItemsAdded = 0;
     List<String> addedItems = [];
 
@@ -2129,6 +2147,53 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   color: Color(0xFF2C3E50),
                 ),
               ),
+        ],
+      ),
+    );
+  }
+
+  void _showPendingOrdersDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.orange,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Órdenes Pendientes',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Debes completar todas las órdenes pendientes antes de agregar una nueva orden.',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Entendido'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context); // Cerrar diálogo
+              Navigator.popUntil(context, (route) => route.isFirst); // Ir a home
+              Navigator.pushNamed(context, '/orders'); // Ir a órdenes
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.categoryColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Ver Órdenes'),
+          ),
         ],
       ),
     );

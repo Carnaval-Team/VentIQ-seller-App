@@ -1,4 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 
 class StoreConfigService {
   static final _supabase = Supabase.instance.client;
@@ -47,6 +49,7 @@ class StoreConfigService {
     int storeId, {
     bool? needMasterPasswordToCancel,
     bool? needAllOrdersCompletedToContinue,
+    String? masterPassword,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -61,6 +64,14 @@ class StoreConfigService {
       if (needAllOrdersCompletedToContinue != null) {
         updateData['need_all_orders_completed_to_continue'] = needAllOrdersCompletedToContinue;
         print('  - need_all_orders_completed_to_continue: $needAllOrdersCompletedToContinue');
+      }
+      
+      if (masterPassword != null) {
+        // Encriptar la contraseña usando SHA-256
+        final bytes = utf8.encode(masterPassword);
+        final digest = sha256.convert(bytes);
+        updateData['master_password'] = digest.toString();
+        print('  - master_password: [ENCRIPTADA]');
       }
 
       if (updateData.isEmpty) {
@@ -112,5 +123,32 @@ class StoreConfigService {
   /// Actualiza solo need_all_orders_completed_to_continue
   static Future<void> updateNeedAllOrdersCompletedToContinue(int storeId, bool value) async {
     await updateStoreConfig(storeId, needAllOrdersCompletedToContinue: value);
+  }
+
+  /// Actualiza solo master_password
+  static Future<void> updateMasterPassword(int storeId, String password) async {
+    await updateStoreConfig(storeId, masterPassword: password);
+  }
+
+  /// Obtiene el master_password (encriptado)
+  static Future<String?> getMasterPassword(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['master_password'];
+    } catch (e) {
+      print('❌ Error al obtener master_password: $e');
+      return null;
+    }
+  }
+
+  /// Verifica si existe un master_password configurado
+  static Future<bool> hasMasterPassword(int storeId) async {
+    try {
+      final masterPassword = await getMasterPassword(storeId);
+      return masterPassword != null && masterPassword.isNotEmpty;
+    } catch (e) {
+      print('❌ Error al verificar master_password: $e');
+      return false;
+    }
   }
 }
