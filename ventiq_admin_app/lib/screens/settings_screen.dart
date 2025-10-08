@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
+import '../widgets/global_config_tab_view.dart';
 import '../widgets/categories_tab_view.dart';
 import '../widgets/variants_tab_view.dart';
 import '../widgets/presentations_tab_view.dart';
@@ -17,6 +18,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final GlobalKey<State<GlobalConfigTabView>> _globalConfigTabKey = GlobalKey<State<GlobalConfigTabView>>();
   final GlobalKey<State<CategoriesTabView>> _categoriesTabKey = GlobalKey<State<CategoriesTabView>>();
   final GlobalKey<State<VariantsTabView>> _variantsTabKey = GlobalKey<State<VariantsTabView>>();
   final GlobalKey<State<PresentationsTabView>> _presentationsTabKey = GlobalKey<State<PresentationsTabView>>();
@@ -25,7 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -67,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           unselectedLabelColor: Colors.white70,
           isScrollable: true,
           tabs: const [
+            Tab(text: 'Global', icon: Icon(Icons.settings_applications)),
             Tab(text: 'Categorías', icon: Icon(Icons.category)),
             Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
             Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
@@ -77,6 +80,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       body: TabBarView(
         controller: _tabController,
         children: [
+          GlobalConfigTabView(key: _globalConfigTabKey),
           CategoriesTabView(key: _categoriesTabKey),
           VariantsTabView(key: _variantsTabKey),
           PresentationsTabView(key: _presentationsTabKey),
@@ -100,15 +104,24 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     final currentTab = _tabController.index;
     switch (currentTab) {
       case 0:
-        _showAddCategoryDialog();
+        // Tab Global - no tiene funcionalidad de agregar
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('La configuración global no permite agregar elementos'),
+            backgroundColor: Colors.orange,
+          ),
+        );
         break;
       case 1:
-        (_variantsTabKey.currentState as dynamic)?.showAddVariantDialog();
+        _showAddCategoryDialog();
         break;
       case 2:
-        (_presentationsTabKey.currentState as dynamic)?.showAddPresentationDialog();
+        (_variantsTabKey.currentState as dynamic)?.showAddVariantDialog();
         break;
       case 3:
+        (_presentationsTabKey.currentState as dynamic)?.showAddPresentationDialog();
+        break;
+      case 4:
         (_unitsTabKey.currentState as dynamic)?.showAddDialog();
         break;
     }
