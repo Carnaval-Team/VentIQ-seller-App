@@ -27,7 +27,7 @@ class ProductService {
 
       // Call the RPC function to get products by category
       final response = await _supabase.rpc(
-        'get_productos_by_categoria_tpv',
+        'get_productos_by_categoria_tpv_meta',
         params: {
           'id_categoria_param': categoryId,
           'id_tienda_param': idTienda,
@@ -99,7 +99,12 @@ class ProductService {
       esComprable: true, // Default value
       esInventariable: true, // Default value
       esPorLotes: false, // Default value
-      esElaborado: data['es_elaborado'] as bool? ?? false,
+      esElaborado: (data['metadata'] != null && data['metadata']['es_elaborado'] != null) 
+          ? data['metadata']['es_elaborado'] as bool 
+          : data['es_elaborado'] as bool? ?? false,
+      esServicio: (data['metadata'] != null && data['metadata']['es_servicio'] != null) 
+          ? data['metadata']['es_servicio'] as bool 
+          : data['es_servicio'] as bool? ?? false,
       categoria: data['categoria_nombre'] as String? ?? 'Sin categoría',
       variantes: [], // Empty variants for now
     );

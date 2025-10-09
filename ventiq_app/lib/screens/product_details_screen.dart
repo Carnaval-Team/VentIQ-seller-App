@@ -208,6 +208,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 esInventariable: true,
                 esPorLotes: false,
                 esElaborado: productoInfo['es_elaborado'] as bool? ?? false,
+                esServicio: productoInfo['es_servicio'] as bool? ?? false,
                 variantes: variantes,
               );
               
@@ -1055,24 +1056,26 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: locationColorSemi,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '$totalStock',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: locationColor,
+                // Solo mostrar stock si NO es un producto elaborado ni servicio
+                if (!currentProduct.esElaborado && !currentProduct.esServicio)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: locationColorSemi,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$totalStock',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: locationColor,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -1176,14 +1179,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          'Stock: ${variant.cantidad}',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
+                        // Solo mostrar stock si NO es un producto elaborado ni servicio
+                        if (!currentProduct.esElaborado && !currentProduct.esServicio)
+                          Text(
+                            'Stock: ${variant.cantidad}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ],
@@ -1440,14 +1445,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                       onTap: () {
                         setState(() {
                           if (currentProduct.variantes.isEmpty) {
-                            if (selectedQuantity < maxQuantityForProduct)
+                            // Si es elaborado o servicio, no limitar cantidad; si no, usar límite de stock
+                            if (currentProduct.esElaborado || currentProduct.esServicio || selectedQuantity < maxQuantityForProduct)
                               selectedQuantity++;
                           } else {
                             // Buscar la variante correspondiente
                             for (var variant in currentProduct.variantes) {
                               if (name.contains(variant.nombre)) {
-                                if (variantQuantities[variant]! <
-                                    variant.cantidad) {
+                                // Si es elaborado o servicio, no limitar cantidad; si no, usar límite de stock
+                                if (currentProduct.esElaborado || currentProduct.esServicio || variantQuantities[variant]! < variant.cantidad) {
                                   variantQuantities[variant] =
                                       variantQuantities[variant]! + 1;
                                 }

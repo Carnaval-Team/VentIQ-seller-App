@@ -71,7 +71,7 @@ class _ProductSearchWidgetState extends State<ProductSearchWidget> {
 
       // Realizar búsqueda usando el mismo RPC que las categorías pero sin filtro de categoría
       final response = await Supabase.instance.client.rpc(
-        'get_productos_by_categoria_tpv',
+        'get_productos_by_categoria_tpv_meta',
         params: {
           'id_categoria_param': null, // null para buscar en todas las categorías
           'id_tienda_param': idTienda,
@@ -84,21 +84,26 @@ class _ProductSearchWidgetState extends State<ProductSearchWidget> {
       if (response != null) {
         final products = (response as List).map((productData) {
           return Product(
-            id: productData['id'] ?? 0,
+            id: productData['id_producto'] ?? 0,
             denominacion: productData['denominacion'] ?? 'Sin nombre',
-            precio: (productData['precio'] ?? 0.0).toDouble(),
-            foto: productData['foto'],
-            categoria: productData['categoria'] ?? 'Sin categoría',
-            descripcion: productData['descripcion'] ?? '',
-            cantidad: productData['cantidad'] ?? 0,
+            precio: (productData['precio_venta'] ?? 0.0).toDouble(),
+            cantidad: productData['stock_disponible'] ?? 0,
+            categoria: productData['categoria_nombre'] ?? 'Sin categoría',
             esRefrigerado: productData['es_refrigerado'] ?? false,
             esFragil: productData['es_fragil'] ?? false,
-            esPeligroso: productData['es_peligroso'] ?? false,
+            esPeligroso: false, // Default value
             esVendible: productData['es_vendible'] ?? true,
-            esComprable: productData['es_comprable'] ?? true,
-            esInventariable: productData['es_inventariable'] ?? true,
-            esPorLotes: productData['es_por_lotes'] ?? false,
-            esElaborado: productData['es_elaborado'] ?? false,
+            esComprable: true, // Default value
+            esInventariable: true, // Default value
+            esPorLotes: false, // Default value
+            esElaborado: (productData['metadata'] != null && productData['metadata']['es_elaborado'] != null) 
+                ? productData['metadata']['es_elaborado'] as bool 
+                : false,
+            esServicio: (productData['metadata'] != null && productData['metadata']['es_servicio'] != null) 
+                ? productData['metadata']['es_servicio'] as bool 
+                : false,
+            descripcion: productData['descripcion'],
+            foto: productData['imagen'],
             variantes: [], // Se cargarán después al seleccionar
           );
         }).toList();
@@ -489,24 +494,39 @@ class _ProductSearchWidgetState extends State<ProductSearchWidget> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        if (product.cantidad > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'Stock: ${product.cantidad}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.blue,
-                              ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: product.esElaborado
+                                ? Colors.orange.withOpacity(0.1)
+                                : product.esServicio
+                                    ? Colors.blue.withOpacity(0.1)
+                                    : Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            product.esElaborado
+                                ? '(elaborado)'
+                                : product.esServicio
+                                    ? '(servicio)'
+                                    : product.cantidad > 0
+                                        ? 'Stock: ${product.cantidad}'
+                                        : 'Agotado',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: product.esElaborado
+                                  ? Colors.orange[700]
+                                  : product.esServicio
+                                      ? Colors.blue[700]
+                                      : product.cantidad > 0
+                                          ? Colors.green[700]
+                                          : Colors.red[700],
                             ),
                           ),
+                        ),
                       ],
                     ),
                   ],

@@ -82,6 +82,9 @@ class SettingsIntegrationService {
           case SmartOfflineEventType.offlineModeAutoActivated:
             eventType = SettingsIntegrationEventType.offlineModeAutoActivated;
             break;
+          case SmartOfflineEventType.offlineModeAutoDeactivated:
+            eventType = SettingsIntegrationEventType.offlineModeAutoDeactivated;
+            break;
           case SmartOfflineEventType.connectionRestoredWhileOffline:
             eventType = SettingsIntegrationEventType.connectionRestored;
             break;
@@ -282,6 +285,7 @@ enum SettingsIntegrationEventType {
   initialized,
   stopped,
   offlineModeAutoActivated,
+  offlineModeAutoDeactivated,
   offlineModeManuallyEnabled,
   offlineModeManuallyDisabled,
   connectionRestored,
