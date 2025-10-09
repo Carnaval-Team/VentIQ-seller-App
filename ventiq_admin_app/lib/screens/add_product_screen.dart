@@ -1289,8 +1289,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Ingredientes',
+                              Text(
+                                _esServicio ? 'Productos' : 'Ingredientes',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
