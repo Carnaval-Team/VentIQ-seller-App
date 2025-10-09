@@ -172,12 +172,18 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
                 ),
               ),
             Text(
-              product['es_elaborado'] == true ? 'Producto Elaborado' : 'Producto Simple',
+              product['es_elaborado'] == true
+                  ? 'Producto Elaborado'
+                  : product['es_servicio'] == true
+                  ? 'Es Servicio'
+                  : 'Producto Simple',
               style: TextStyle(
                 fontSize: 12,
-                color: product['es_elaborado'] == true 
-                    ? Colors.orange[600] 
-                    : Colors.blue[600],
+                color: product['es_elaborado'] == true
+                    ? Colors.orange[600]
+                    : product['es_servicio'] == true
+                    ? Colors.purple // Color purple para servicio
+                    : Colors.blue[600], // Color azul para producto simple
                 fontWeight: FontWeight.w500,
               ),
             ),

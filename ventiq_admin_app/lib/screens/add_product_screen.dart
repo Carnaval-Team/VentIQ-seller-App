@@ -1266,7 +1266,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 ),
                 CheckboxListTile(
                   title: const Text('Es Servicio'),
-                  subtitle: const Text('Servicio brindado'),
+                  subtitle: const Text('Servicio a clientes, puede necesitar productos'),
                   value: _esServicio,
                   onChanged:
                       (value) => setState(() {
@@ -1826,6 +1826,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         await ProductService.insertProductIngredients(
           productId: productId,
           ingredientes: ingredientesData,
+          esServicio: _esServicio,
         );
         print('✅ Ingredientes insertados exitosamente');
       } catch (e) {

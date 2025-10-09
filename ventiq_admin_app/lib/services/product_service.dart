@@ -1577,6 +1577,7 @@ class ProductService {
   static Future<bool> insertProductIngredients({
     required int productId,
     required List<Map<String, dynamic>> ingredientes,
+    required bool esServicio,
   }) async {
     try {
       print('🍽️ ===== INICIANDO INSERCIÓN DE INGREDIENTES =====');
@@ -1643,7 +1644,7 @@ class ProductService {
       print('📊 Resultado final: ${success ? "ÉXITO" : "FALLO"}');
 
       // Si se insertaron ingredientes exitosamente, actualizar el campo es_elaborado del producto
-      if (success) {
+      if (success && !esServicio) {
         try {
           print(
             '🔄 Actualizando campo es_elaborado = true para producto ID: $productId',

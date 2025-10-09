@@ -552,6 +552,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                         0.0,
                     esVendible: productData['es_vendible'] ?? true,
                     esElaborado: productData['es_elaborado'] ?? false,
+                    esServicio: productData['es_servicio'] ?? false,
                     presentaciones:
                         (productData['presentaciones'] as List?)
                             ?.cast<Map<String, dynamic>>() ??
