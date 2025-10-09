@@ -8,6 +8,7 @@ import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/sales_monitor_fab.dart';
+import '../utils/connection_error_handler.dart';
 
 class ProductsScreen extends StatefulWidget {
   final int categoryId;
@@ -34,6 +35,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
+  bool _isConnectionError = false; // Para detectar errores de conexión
+  bool _showRetryWidget = false; // Para mostrar el widget de reconexión
 
   // Search functionality
   bool _isSearchVisible = false;
@@ -283,17 +286,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
       _filterProducts();
     } catch (e, stackTrace) {
       print('❌ Error loading products: $e $stackTrace');
+      
+      final isConnectionError = ConnectionErrorHandler.isConnectionError(e);
+      
       setState(() {
-        // Extract just the message from the exception
-        String cleanMessage = e.toString();
-        if (cleanMessage.startsWith('Exception: ')) {
-          cleanMessage = cleanMessage.substring(
-            11,
-          ); // Remove "Exception: " prefix
-        }
-        errorMessage = cleanMessage;
+        _isConnectionError = isConnectionError;
+        errorMessage = isConnectionError 
+            ? ConnectionErrorHandler.getConnectionErrorMessage()
+            : ConnectionErrorHandler.getGenericErrorMessage(e);
         isLoading = false;
+        _showRetryWidget = isConnectionError;
       });
+      
+      debugPrint('🔍 Es error de conexión: $isConnectionError');
     }
   }
 
@@ -407,35 +412,40 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       ),
                     )
                     : errorMessage != null
-                    ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.error_outline,
-                            size: 80,
-                            color: Colors.red.withOpacity(0.3),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            errorMessage!,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.red,
+                    ? _showRetryWidget
+                        ? ConnectionRetryWidget(
+                            message: errorMessage!,
+                            onRetry: () => _loadProducts(forceRefresh: true),
+                          )
+                        : Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  size: 80,
+                                  color: Colors.red.withOpacity(0.3),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  errorMessage!,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.red,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton(
+                                  onPressed: () => _loadProducts(forceRefresh: true),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: widget.categoryColor,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: const Text('Reintentar'),
+                                ),
+                              ],
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () => _loadProducts(forceRefresh: true),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: widget.categoryColor,
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text('Reintentar'),
-                          ),
-                        ],
-                      ),
                     )
                     : filteredProductsBySubcategory.isEmpty
                     ? Center(

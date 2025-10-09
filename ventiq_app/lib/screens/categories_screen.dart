@@ -10,6 +10,7 @@ import '../services/changelog_service.dart';
 import '../services/currency_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
+import '../utils/connection_error_handler.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -31,6 +32,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
   bool _isFluidModeEnabled = false; // Para el estado del modo fluido
   bool _isOfflineModeEnabled = false; // Para el estado del modo offline
+  bool _isConnectionError = false; // Para detectar errores de conexión
+  bool _showRetryWidget = false; // Para mostrar el widget de reconexión
 
   // USD rate data
   double _usdRate = 0.0;
@@ -178,11 +181,19 @@ class _CategoriesScreenState extends State<CategoriesScreen>
 
       debugPrint('✅ Categorías cargadas: ${categories.length}');
     } catch (e) {
+      final isConnectionError = ConnectionErrorHandler.isConnectionError(e);
+      
       setState(() {
-        _errorMessage = 'Error al cargar categorías: $e';
+        _isConnectionError = isConnectionError;
+        _errorMessage = isConnectionError 
+            ? ConnectionErrorHandler.getConnectionErrorMessage()
+            : ConnectionErrorHandler.getGenericErrorMessage(e);
         _isLoading = false;
+        _showRetryWidget = isConnectionError;
       });
+      
       debugPrint('❌ Error cargando categorías: $e');
+      debugPrint('🔍 Es error de conexión: $isConnectionError');
     }
   }
 
@@ -408,6 +419,15 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     }
 
     if (_errorMessage != null) {
+      // Si es un error de conexión, mostrar el widget especial de reconexión
+      if (_showRetryWidget) {
+        return ConnectionRetryWidget(
+          message: _errorMessage!,
+          onRetry: () => _loadCategories(forceRefresh: true),
+        );
+      }
+      
+      // Para otros errores, mostrar el widget de error tradicional
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

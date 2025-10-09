@@ -190,8 +190,8 @@ class AutoSyncService {
         print('  ❌ Error sincronizando categorías: $e');
       }
 
-      // 6. Sincronizar productos (solo cada 3 sincronizaciones para no sobrecargar)
-      if (_syncCount % 3 == 0) {
+      // 6. Sincronizar productos (cada 5 sincronizaciones para mejor cobertura)
+      if (_syncCount % 5 == 0) {
         try {
           syncedData['products'] = await _syncProducts();
           syncedItems.add('productos');
@@ -356,9 +356,11 @@ class AutoSyncService {
     final Map<String, List<Map<String, dynamic>>> productsByCategory = {};
 
     final categories = await categoryService.getCategories();
+    print('🔄 AutoSync: Sincronizando productos de ${categories.length} categorías...');
 
-    for (var category in categories.take(3)) {
-      // Limitar a 3 categorías por sincronización
+    for (var category in categories) {
+      // Sincronizar todas las categorías para cobertura completa
+      print('  📂 Procesando categoría: ${category.name} (ID: ${category.id})');
       final productsMap = await productService.getProductsByCategory(
         category.id,
       );
@@ -368,8 +370,9 @@ class AutoSyncService {
         final subcategory = entry.key;
         final products = entry.value;
 
-        for (var prod in products.take(10)) {
-          // Limitar a 10 productos por subcategoría
+        print('    📦 Subcategoría "$subcategory": ${products.length} productos');
+        for (var prod in products) {
+          // Aumentar límite a 50 productos por subcategoría para mejor cobertura
           try {
             // Obtener detalles completos usando RPC
             final detailResponse = await Supabase.instance.client.rpc(
@@ -390,6 +393,7 @@ class AutoSyncService {
             };
 
             allProducts.add(productWithDetails);
+            print('      ✅ ${prod.denominacion} (ID: ${prod.id}) - Detalles obtenidos');
           } catch (e) {
             // En caso de error, guardar solo datos básicos
             allProducts.add({
@@ -402,13 +406,17 @@ class AutoSyncService {
               'cantidad': prod.cantidad,
               'subcategoria': subcategory,
             });
+            print('      ⚠️ ${prod.denominacion} (ID: ${prod.id}) - Solo datos básicos: $e');
           }
         }
       }
 
       productsByCategory[category.id.toString()] = allProducts;
+      print('  ✅ Categoría "${category.name}": ${allProducts.length} productos sincronizados');
     }
 
+    final totalProducts = productsByCategory.values.fold(0, (sum, list) => sum + list.length);
+    print('🎉 AutoSync: Total de productos sincronizados: $totalProducts');
     return productsByCategory;
   }
 
