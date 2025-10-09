@@ -240,6 +240,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 esInventariable: true,
                 esPorLotes: false,
                 esElaborado: false,
+                esServicio: false,
                 variantes: [],
               );
               
@@ -900,8 +901,8 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
 
     return GestureDetector(
       onTap: () {
-        // Verificar si el producto está agotado
-        if (widget.product.cantidad <= 0) {
+        // Verificar si el producto está agotado (solo para productos no elaborados ni servicios)
+        if (!widget.product.esElaborado && !widget.product.esServicio && widget.product.cantidad <= 0) {
           _showOutOfStockDialog(context);
           return;
         }
@@ -1098,18 +1099,25 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        // Estado de stock
+                        // Estado de stock, elaborado o servicio
                         Flexible(
                           child: Text(
-                            widget.product.cantidad > 0
-                                ? 'Stock: ${widget.product.cantidad}'
-                                : 'Agotado',
+                            widget.product.esElaborado
+                                ? '(elaborado)'
+                                : widget.product.esServicio
+                                    ? '(servicio)'
+                                    : widget.product.cantidad > 0
+                                        ? 'Stock: ${widget.product.cantidad}'
+                                        : 'Agotado',
                             style: TextStyle(
                               fontSize: 13,
-                              color:
-                                  widget.product.cantidad > 0
-                                      ? Colors.green[600]
-                                      : Colors.red[600],
+                              color: widget.product.esElaborado
+                                  ? Colors.orange[600]
+                                  : widget.product.esServicio
+                                      ? Colors.blue[600]
+                                      : widget.product.cantidad > 0
+                                          ? Colors.green[600]
+                                          : Colors.red[600],
                               height: 1.2,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -1351,7 +1359,11 @@ class _ProductCardState extends State<_ProductCard>
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  'Stock: ${widget.product.cantidad}',
+                                  widget.product.esElaborado
+                                      ? '(elaborado)'
+                                      : widget.product.esServicio
+                                          ? '(servicio)'
+                                          : 'Stock: ${widget.product.cantidad}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,

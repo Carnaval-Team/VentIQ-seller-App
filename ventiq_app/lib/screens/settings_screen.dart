@@ -153,6 +153,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           }
           break;
 
+        case SettingsIntegrationEventType.offlineModeAutoDeactivated:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '📶 Modo offline desactivado automáticamente - Conexión restaurada',
+              ),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          // Recargar configuraciones para reflejar el cambio
+          if (mounted) {
+            _loadSettings();
+          }
+          break;
+
         case SettingsIntegrationEventType.connectionRestored:
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

@@ -4,6 +4,7 @@ import '../services/user_preferences_service.dart';
 import '../services/seller_service.dart';
 import '../services/promotion_service.dart';
 import '../services/store_config_service.dart';
+import '../services/settings_integration_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _userPreferencesService = UserPreferencesService();
   final _sellerService = SellerService();
   final _promotionService = PromotionService();
+  final _integrationService = SettingsIntegrationService();
   bool _isLoading = false;
   bool _obscure = true;
   bool _rememberMe = false;
@@ -219,6 +221,9 @@ class _LoginScreenState extends State<LoginScreen> {
               print('❌ Error cargando configuración de tienda: $e');
             }
 
+            // Inicializar servicios inteligentes en segundo plano
+            _initializeSmartServices();
+
             // Login exitoso - ir al catálogo
             if (mounted) {
               Navigator.of(context).pushReplacementNamed('/categories');
@@ -328,6 +333,9 @@ class _LoginScreenState extends State<LoginScreen> {
       print('✅ Login offline exitoso - Todos los datos restaurados');
       print('🔌 Trabajando en modo offline');
       
+      // Inicializar servicios inteligentes en segundo plano (también funciona en offline)
+      _initializeSmartServices();
+      
       // Navegar a categorías
       if (mounted) {
         setState(() {
@@ -344,6 +352,26 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = false;
       });
       return false;
+    }
+  }
+
+  /// Inicializar servicios inteligentes después del login exitoso
+  Future<void> _initializeSmartServices() async {
+    try {
+      print('🚀 Inicializando servicios inteligentes después del login...');
+      
+      // Inicializar el servicio de integración en segundo plano
+      // No esperamos a que termine para no bloquear la navegación
+      _integrationService.initialize().then((_) {
+        print('✅ Servicios inteligentes inicializados correctamente');
+      }).catchError((e) {
+        print('❌ Error inicializando servicios inteligentes: $e');
+        // No mostramos error al usuario ya que no es crítico para el login
+      });
+      
+    } catch (e) {
+      print('❌ Error configurando servicios inteligentes: $e');
+      // No lanzamos el error para no afectar el flujo de login
     }
   }
 

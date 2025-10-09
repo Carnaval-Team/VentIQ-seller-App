@@ -131,6 +131,7 @@ class ProductDetailService {
       esInventariable: true, // Default value
       esPorLotes: false, // Default value
       esElaborado: productData['es_elaborado'] as bool? ?? false,
+      esServicio: productData['es_servicio'] as bool? ?? false,
       categoria: categoryName,
       variantes: variants,
       inventoryMetadata: productInventoryMetadata,

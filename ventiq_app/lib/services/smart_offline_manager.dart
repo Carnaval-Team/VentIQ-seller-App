@@ -330,17 +330,55 @@ class SmartOfflineManager {
         }
       }
     } else {
-      print('🔌 Modo offline activado - Manteniendo estado actual');
+      print('🔌 Modo offline activado - Verificando si fue activado automáticamente...');
 
-      // Si el modo offline está activado, informar al usuario que hay conexión disponible
-      _eventController.add(
-        SmartOfflineEvent(
-          type: SmartOfflineEventType.connectionRestoredWhileOffline,
-          timestamp: DateTime.now(),
-          message:
-              'Conexión restaurada - Puede desactivar modo offline para sincronizar',
-        ),
-      );
+      // Verificar si el modo offline fue activado automáticamente
+      if (!_wasOfflineModeManuallyEnabled) {
+        print('🔄 Modo offline fue activado automáticamente - Desactivando automáticamente...');
+        
+        try {
+          // Desactivar modo offline automáticamente
+          await _userPreferencesService.setOfflineMode(false);
+          
+          // Iniciar sincronización automática
+          if (!_autoSyncService.isRunning) {
+            await _autoSyncService.startAutoSync();
+          }
+          
+          _eventController.add(
+            SmartOfflineEvent(
+              type: SmartOfflineEventType.offlineModeAutoDeactivated,
+              timestamp: DateTime.now(),
+              message: 'Modo offline desactivado automáticamente tras restauración de conexión',
+            ),
+          );
+          
+          print('✅ Modo offline desactivado automáticamente y sincronización iniciada');
+        } catch (e) {
+          print('❌ Error desactivando modo offline automáticamente: $e');
+          
+          _eventController.add(
+            SmartOfflineEvent(
+              type: SmartOfflineEventType.error,
+              timestamp: DateTime.now(),
+              message: 'Error desactivando modo offline automáticamente: $e',
+              error: e.toString(),
+            ),
+          );
+        }
+      } else {
+        print('👤 Modo offline fue activado manualmente - Manteniendo estado actual');
+        
+        // Si el modo offline fue activado manualmente, solo informar al usuario
+        _eventController.add(
+          SmartOfflineEvent(
+            type: SmartOfflineEventType.connectionRestoredWhileOffline,
+            timestamp: DateTime.now(),
+            message:
+                'Conexión restaurada - Puede desactivar modo offline para sincronizar',
+          ),
+        );
+      }
     }
   }
 
@@ -513,6 +551,7 @@ enum SmartOfflineEventType {
   connectivityChanged,
   offlineModeActive,
   offlineModeAutoActivated,
+  offlineModeAutoDeactivated,
   offlineModeManuallyEnabled,
   offlineModeManuallyDisabled,
   autoActivationFailed,

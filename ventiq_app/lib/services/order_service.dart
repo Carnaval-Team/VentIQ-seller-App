@@ -740,6 +740,7 @@ class OrderService {
               esInventariable: true,
               esPorLotes: false,
               esElaborado: false, // Default value for order items
+              esServicio: false, // Default value for order items
               categoria: 'General',
               descripcion: item['presentacion'] ?? '',
               foto: null,
@@ -865,6 +866,7 @@ class OrderService {
             esInventariable: true,
             esPorLotes: false,
             esElaborado: false,
+            esServicio: false,
             categoria: 'General',
             descripcion: null,
             foto: null,

@@ -13,6 +13,7 @@ class Product {
   final bool esInventariable;
   final bool esPorLotes;
   final bool esElaborado;
+  final bool esServicio;
   final String categoria;
   final List<ProductVariant> variantes;
   final Map<String, dynamic>? inventoryMetadata; // Store inventory data for products without variants
@@ -32,6 +33,7 @@ class Product {
     required this.esInventariable,
     required this.esPorLotes,
     required this.esElaborado,
+    required this.esServicio,
     required this.categoria,
     this.variantes = const [],
     this.inventoryMetadata,
@@ -53,6 +55,7 @@ class Product {
       esInventariable: json['es_inventariable'] ?? false,
       esPorLotes: json['es_por_lotes'] ?? false,
       esElaborado: json['es_elaborado'] ?? false,
+      esServicio: json['es_servicio'] ?? false,
       categoria: json['categoria'] ?? '',
       variantes: (json['variantes'] as List<dynamic>?)
           ?.map((v) => ProductVariant.fromJson(v))
