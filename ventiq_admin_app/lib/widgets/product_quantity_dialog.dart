@@ -212,7 +212,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
 
   void _submitForm() async {
     if (_formKey.currentState!.validate()) {
-      final cantidad = double.tryParse(_quantityController.text) ?? 0;
+      final cantidad = (!widget.product.esServicio && !widget.product.esElaborado) ? (double.tryParse(_quantityController.text) ?? 0.0) : 1.0;
       final precioUnitario =
           double.tryParse(_precioUnitarioController.text) ?? 0;
       final precioConvertido = _finalPriceInInvoiceCurrency ?? precioUnitario;
@@ -600,6 +600,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
         ],
 
         // Quantity
+        if(!widget.product.esServicio && !widget.product.esElaborado)
         TextFormField(
           controller: _quantityController,
           decoration: InputDecoration(
