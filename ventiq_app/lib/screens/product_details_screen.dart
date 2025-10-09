@@ -8,6 +8,7 @@ import '../services/currency_service.dart';
 import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/elaborated_product_chip.dart';
+import '../utils/connection_error_handler.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
   final Product product;
@@ -39,6 +40,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   Map<String, dynamic>? _globalPromotionData;
   Map<String, dynamic>? _productPromotionData;
   bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
+  bool _isConnectionError = false; // Para detectar errores de conexión
+  bool _showRetryWidget = false; // Para mostrar el widget de reconexión
 
   // USD rate data
   double _usdRate = 0.0;
@@ -252,10 +255,19 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       });
     } catch (e, stackTrace) {
       print('❌ Error cargando detalles del producto: $e $stackTrace');
+      
+      final isConnectionError = ConnectionErrorHandler.isConnectionError(e);
+      
       setState(() {
-        _errorMessage = 'Error al cargar detalles: $e $stackTrace';
+        _isConnectionError = isConnectionError;
+        _errorMessage = isConnectionError 
+            ? ConnectionErrorHandler.getConnectionErrorMessage()
+            : ConnectionErrorHandler.getGenericErrorMessage(e);
         _isLoadingDetails = false;
+        _showRetryWidget = isConnectionError;
       });
+      
+      debugPrint('🔍 Es error de conexión: $isConnectionError');
     }
   }
 
@@ -662,35 +674,40 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 ),
               )
               : _errorMessage != null
-              ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error al cargar detalles',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _errorMessage!,
-                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: _loadProductDetails,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A90E2),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Reintentar'),
-                    ),
+              ? _showRetryWidget
+                  ? ConnectionRetryWidget(
+                      message: _errorMessage!,
+                      onRetry: _loadProductDetails,
+                    )
+                  : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Error al cargar detalles',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _errorMessage!,
+                            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton(
+                            onPressed: _loadProductDetails,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF4A90E2),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Reintentar'),
+                          ),
                   ],
                 ),
               )
