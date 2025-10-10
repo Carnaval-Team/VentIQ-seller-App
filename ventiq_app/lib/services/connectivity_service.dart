@@ -25,8 +25,8 @@ class ConnectivityService {
   
   // Configuración
   static const Duration _checkInterval = Duration(seconds: 30);
-  static const Duration _timeoutDuration = Duration(seconds: 10);
-  static const String _testUrl = 'https://www.google.com';
+  static const Duration _timeoutDuration = Duration(seconds: 60);
+  static const String _testUrl = 'https://www.fast.com';
   
   Timer? _periodicCheckTimer;
 

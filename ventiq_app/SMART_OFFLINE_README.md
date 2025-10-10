@@ -129,7 +129,7 @@ ConnectionStatusWidget(
 #### ConnectivityService
 ```dart
 static const Duration _checkInterval = Duration(seconds: 30);
-static const Duration _timeoutDuration = Duration(seconds: 10);
+static const Duration _timeoutDuration = Duration(seconds: 60);
 ```
 
 #### AutoSyncService
