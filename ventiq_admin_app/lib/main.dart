@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ventiq_admin_app/screens/excel_import_screen.dart';
 import 'package:ventiq_admin_app/screens/suppliers/supplier_reports_screen.dart';
 import 'package:ventiq_admin_app/widgets/supplier/supplier_alerts_widget.dart';
 import 'config/app_colors.dart';
@@ -156,6 +157,7 @@ class MyApp extends StatelessWidget {
         '/suppliers': (context) => const SuppliersListScreen(),
         '/supplier-alerts': (context) => const SupplierAlertsWidget(alerts: [], isLoading: false ),
         '/supplier-reports': (context) => const SupplierReportsScreen(),
+        '/excel-import': (context) => const ExcelImportScreen(),
         '/add-supplier': (context) => const AddEditSupplierScreen(),
         '/edit-supplier':
             (context) => const AddEditSupplierScreen(),
