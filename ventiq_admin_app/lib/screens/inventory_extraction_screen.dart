@@ -433,7 +433,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Información de Extracción',
+              'Detalles',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
@@ -442,7 +442,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
             DropdownButtonFormField<Map<String, dynamic>>(
               value: _selectedMotivo,
               decoration: const InputDecoration(
-                labelText: 'Motivo de Extracción',
+                labelText: 'Motivo',
                 border: OutlineInputBorder(),
               ),
               items:
@@ -502,15 +502,17 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            /*const Text(
               'Seleccionar Ubicación',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            ),*/
+/*
             const SizedBox(height: 16),
+*/
             LocationSelectorWidget(
               type: LocationSelectorType.single,
-              title: 'Seleccionar Zona de Origen',
-              subtitle: 'Zona desde donde se extraerán los productos',
+              title: 'Seleccionar Zona',
+              subtitle: 'Desde donde se extraerán los productos',
               selectedLocation: _selectedSourceLocation,
               onLocationChanged: (location) {
                 setState(() {
@@ -520,7 +522,7 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
               },
               validationMessage:
                   _selectedSourceLocation == null
-                      ? 'Debe seleccionar una zona de origen'
+                      ? 'Debe seleccionar una zona'
                       : null,
             ),
           ],
@@ -569,11 +571,12 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
               SizedBox(
                 height: 300,
                 child: ProductSelectorWidget(
+                  key: ValueKey('product_selector_${_selectedSourceLocation!.id}'), // Key única por ubicación
                   searchType: ProductSearchType.withStock,
                   requireInventory: true,
                   locationId: int.tryParse(_selectedSourceLocation!.id),
                   searchHint:
-                      'Buscar productos en ${_selectedSourceLocation!.name}...',
+                  'Buscar productos en ${_selectedSourceLocation!.name}...',
                   onProductSelected: _addProductToExtraction,
                 ),
               ),
@@ -1470,45 +1473,46 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                             ),
                           ),
                           hint: const Text('Seleccionar presentación'),
-                          items:
-                              _availablePresentations.map((presentation) {
-                                return DropdownMenuItem<Map<String, dynamic>>(
-                                  value: presentation,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        presentation['denominacion'] ??
-                                            'Sin nombre',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      if (presentation['cantidad'] != null)
-                                        Text(
-                                          '${presentation['cantidad']} unidades base',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.grey.shade600,
-                                          ),
-                                        ),
-                                      if (presentation['stock_disponible'] !=
-                                          null)
-                                        Text(
-                                          'Stock: ${presentation['stock_disponible']}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.success,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                    ],
+                          isExpanded: true, // Esta línea es clave
+                          items: _availablePresentations.map((presentation) {
+                            return DropdownMenuItem<Map<String, dynamic>>(
+                              value: presentation,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    presentation['denominacion'] + ' - ' + presentation['cantidad'].toString() ??
+                                        'Sin nombre',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                    overflow: TextOverflow.ellipsis, // Añadir esto
+                                    maxLines: 1, // Opcional: forzar una sola línea
                                   ),
-                                );
-                              }).toList(),
+                                  /*if (presentation['cantidad'] != null)
+            Text(
+              '${presentation['cantidad']} unidades base',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.grey.shade600,
+              ),
+            ),
+          if (presentation['stock_disponible'] !=
+              null)
+            Text(
+              'Stock: ${presentation['stock_disponible']}',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.success,
+                fontWeight: FontWeight.w500,
+              ),
+            ),*/
+                                ],
+                              ),
+                            );
+                          }).toList(),
                           onChanged: (value) {
                             setState(() {
                               _selectedPresentation = value;
@@ -1756,7 +1760,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 80,
+            width: 90,
             child: Text(
               '$label:',
               style: TextStyle(

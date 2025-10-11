@@ -89,8 +89,11 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           pagina: _currentPage,
         );
 
+        print('response.products');
+        print(response.products);
+
         // Group products to eliminate duplicates
-        List<InventoryProduct> groupedProducts = _groupProducts(
+        List<InventoryProduct> groupedProducts = _groupProducts2(
           response.products,
         );
 
@@ -274,6 +277,57 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           resumenInventario: existing.resumenInventario,
           infoPaginacion: existing.infoPaginacion,
         );
+      } else {
+        print('   ✅ Producto único - Agregando al mapa');
+        groupedMap[uniqueKey] = product;
+      }
+    }
+
+    final result = groupedMap.values.toList();
+    print(
+      '✅ Grouped ${products.length} products into ${result.length} unique items',
+    );
+
+    // Log final de productos agrupados
+    print('📋 Productos finales después del agrupamiento:');
+    for (int i = 0; i < result.length && i < 5; i++) {
+      final item = result[i];
+      print(
+        '   ${i + 1}. ${item.nombreProducto} - ${item.variante} ${item.opcionVariante} - Stock: ${item.stockDisponible}',
+      );
+    }
+
+    return result;
+  }
+
+  List<InventoryProduct> _groupProducts2(List<InventoryProduct> products) {
+    print('🔄 Grouping ${products.length} products to eliminate duplicates...');
+
+    Map<String, InventoryProduct> groupedMap = {};
+
+    for (final product in products) {
+      // Crear clave única que incluya TODOS los campos relevantes para evitar agrupamiento incorrecto
+      final uniqueKey =
+          '${product.id}_${product.idUbicacion}_${product.idVariante ?? 'null'}_${product.idOpcionVariante ?? 'null'}_${product.idPresentacion ?? 'null'}';
+
+      print('🔍 Processing product: ${product.nombreProducto}');
+      print('   - ID: ${product.id}');
+      print('   - Ubicación: ${product.idUbicacion} (${product.ubicacion})');
+      print('   - Variante: ${product.idVariante} (${product.variante})');
+      print(
+        '   - Opción Variante: ${product.idOpcionVariante} (${product.opcionVariante})',
+      );
+      print(
+        '   - Presentación: ${product.idPresentacion} (${product.presentacion})',
+      );
+      print('   - Unique Key: $uniqueKey');
+      print('   - Stock Disponible: ${product.stockDisponible}');
+
+      if (groupedMap.containsKey(uniqueKey)) {
+        print('   ⚠️  DUPLICADO ENCONTRADO - Conservando el primero y descartando este');
+        print('      - Stock del primero: ${groupedMap[uniqueKey]!.stockDisponible}');
+        print('      - Stock del duplicado: ${product.stockDisponible}');
+        // No hacemos nada, conservamos el primer producto que ya está en el mapa
       } else {
         print('   ✅ Producto único - Agregando al mapa');
         groupedMap[uniqueKey] = product;
