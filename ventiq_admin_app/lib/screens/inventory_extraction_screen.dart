@@ -1303,15 +1303,15 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         ),
                       )
                     else if (_availableVariants.isNotEmpty) ...[
-                      Text(
+                      /*Text(
                         'Seleccionar Presentación',
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
                           color: AppColors.black87,
                         ),
-                      ),
-                      const SizedBox(height: 12),
+                      ),*/
+                      /*const SizedBox(height: 12),
 
                       // Presentation Cards
                       ..._availableVariants.map((variant) {
@@ -1397,9 +1397,9 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                             ),
                           ),
                         );
-                      }).toList(),
+                      }).toList(),*/
 
-                      const SizedBox(height: 20),
+                      /*const SizedBox(height: 20),*/
 
                       // Stock Info
                       if (_selectedVariant != null)
@@ -1446,7 +1446,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                         )
                       else if (_availablePresentations.isNotEmpty) ...[
                         Text(
-                          'Seleccionar Presentación para Venta',
+                          'Seleccionar Presentación',
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
