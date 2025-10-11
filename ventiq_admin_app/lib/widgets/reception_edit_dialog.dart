@@ -711,7 +711,7 @@ class _ReceptionEditDialogState extends State<ReceptionEditDialog> {
                         labelText: 'Moneda',
                         border: OutlineInputBorder(),
                       ),
-                      items: ['USD', 'EUR', 'COP', 'MXN'].map((currency) {
+                      items: ['USD', 'CUP'].map((currency) {
                         return DropdownMenuItem(
                           value: currency,
                           child: Text(currency),

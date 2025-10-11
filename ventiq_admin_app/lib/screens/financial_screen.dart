@@ -72,7 +72,9 @@ class _FinancialScreenState extends State<FinancialScreen> {
 
   Future<void> _loadRecentActivities() async {
     try {
-      final activities = await _financialService.getRecentActivities(limit: 5); // Cambiar a 5
+      final activities = await _financialService.getRecentActivities(
+        limit: 5,
+      ); // Cambiar a 5
       setState(() {
         _recentActivities = activities;
       });
@@ -91,10 +93,15 @@ class _FinancialScreenState extends State<FinancialScreen> {
         title: const Text('Módulo Financiero'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        actions: const [
-          AppBarStoreSelectorWidget(),
-          FinancialMenuWidget(),
-          SizedBox(width: 8),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _isLoading ? null : _loadData,
+            tooltip: 'Actualizar Datos',
+          ),
+          const AppBarStoreSelectorWidget(),
+          const FinancialMenuWidget(),
+          const SizedBox(width: 8),
         ],
       ),
       body:
@@ -475,27 +482,30 @@ class _FinancialScreenState extends State<FinancialScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _pendingOperationsCount > 0
-                          ? Colors.orange.withOpacity(0.1)
-                          : Colors.green.withOpacity(0.1),
+                      color:
+                          _pendingOperationsCount > 0
+                              ? Colors.orange.withOpacity(0.1)
+                              : Colors.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _pendingOperationsCount > 0
-                            ? Colors.orange
-                            : Colors.green,
+                        color:
+                            _pendingOperationsCount > 0
+                                ? Colors.orange
+                                : Colors.green,
                         width: 1.5,
                       ),
                     ),
                     child: Column(
                       children: [
                         Icon(
-                          _pendingOperationsCount > 0 
-                              ? Icons.pending_actions 
+                          _pendingOperationsCount > 0
+                              ? Icons.pending_actions
                               : Icons.check_circle,
                           size: 24,
-                          color: _pendingOperationsCount > 0
-                              ? Colors.orange
-                              : Colors.green,
+                          color:
+                              _pendingOperationsCount > 0
+                                  ? Colors.orange
+                                  : Colors.green,
                         ),
                         const SizedBox(height: 6),
                         Text(
@@ -503,9 +513,10 @@ class _FinancialScreenState extends State<FinancialScreen> {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: _pendingOperationsCount > 0
-                                ? Colors.orange
-                                : Colors.green,
+                            color:
+                                _pendingOperationsCount > 0
+                                    ? Colors.orange
+                                    : Colors.green,
                           ),
                         ),
                         Text(
@@ -522,12 +533,17 @@ class _FinancialScreenState extends State<FinancialScreen> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => const FinancialExpensesScreen(),
+                                  builder:
+                                      (context) =>
+                                          const FinancialExpensesScreen(),
                                 ),
                               ).then((_) => _loadData());
                             },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.orange,
                                 borderRadius: BorderRadius.circular(8),
@@ -589,21 +605,25 @@ class _FinancialScreenState extends State<FinancialScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _isConfigured
-                          ? Colors.blue.withOpacity(0.1)
-                          : Colors.grey.withOpacity(0.1),
+                      color:
+                          _isConfigured
+                              ? Colors.blue.withOpacity(0.1)
+                              : Colors.grey.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _isConfigured
-                            ? Colors.blue.withOpacity(0.3)
-                            : Colors.grey.withOpacity(0.3),
+                        color:
+                            _isConfigured
+                                ? Colors.blue.withOpacity(0.3)
+                                : Colors.grey.withOpacity(0.3),
                         width: 1.5,
                       ),
                     ),
                     child: Column(
                       children: [
                         Icon(
-                          _isConfigured ? Icons.settings_suggest : Icons.settings,
+                          _isConfigured
+                              ? Icons.settings_suggest
+                              : Icons.settings,
                           color: _isConfigured ? Colors.blue : Colors.grey,
                           size: 24,
                         ),

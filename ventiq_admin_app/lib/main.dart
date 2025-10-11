@@ -18,6 +18,9 @@ import 'screens/add_product_screen.dart';
 import 'screens/categories_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/sales_screen.dart';
+import 'screens/tpv_prices_screen.dart';
+import 'screens/tpv_management_screen.dart';
+import 'screens/vendor_management_screen.dart';
 import 'screens/promotions_screen.dart';
 import 'screens/marketing_dashboard_screen.dart';
 import 'screens/analytics_screen.dart';
@@ -144,6 +147,8 @@ class MyApp extends StatelessWidget {
         '/categories': (context) => const CategoriesScreen(),
         '/inventory': (context) => const InventoryScreen(),
         '/sales': (context) => const SalesScreen(),
+        '/tpv-prices': (context) => const TpvPricesScreen(),
+        '/tpv-management': (context) => const TpvManagementScreen(),
         '/financial': (context) => const FinancialScreen(),
         '/financial-setup': (context) => const FinancialSetupScreen(),
         '/financial-dashboard': (context) => const FinancialDashboardScreen(),
