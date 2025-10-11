@@ -46,6 +46,7 @@ import 'screens/crm_relationships_screen.dart';
 import 'screens/suppliers/suppliers_list_screen.dart';
 import 'screens/suppliers/supplier_detail_screen.dart';
 import 'screens/suppliers/add_edit_supplier_screen.dart';
+import 'screens/inventory_extractionbysale_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -179,6 +180,7 @@ class MyApp extends StatelessWidget {
         '/loyalty': (context) => const LoyaltyScreen(),
         '/add-product': (context) => const AddProductScreen(),
         '/store-registration': (context) => const StoreRegistrationScreen(),
+        '/sale-by-agreement': (context) => const InventoryExtractionBySaleScreen(),
       },
     );
   }

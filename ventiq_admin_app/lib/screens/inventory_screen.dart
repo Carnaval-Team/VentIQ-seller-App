@@ -10,7 +10,8 @@ import 'inventory_transfer_screen.dart';
 import 'inventory_extraction_screen.dart';
 import 'inventory_adjustment_screen.dart'; // Importar la pantalla de ajuste de inventario
 import 'elaborated_products_extraction_screen.dart'; // Nueva pantalla
-import 'analytics/inventory_dashboard.dart';
+import 'inventory_extractionbysale_screen.dart'; // Venta por Acuerdo
+import 'inventory_dashboard.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -181,6 +182,17 @@ class _InventoryScreenState extends State<InventoryScreen>
                         ),
 
                         _buildMenuOption(
+                          icon: Icons.point_of_sale,
+                          title: 'Venta por Acuerdo',
+                          subtitle: 'Registrar venta directa con precio personalizado',
+                          color: const Color(0xFF10B981),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _navigateToSaleByAgreement();
+                          },
+                        ),
+
+                        _buildMenuOption(
                           icon: Icons.filter_list,
                           title: 'Filtro de Búsqueda',
                           subtitle: 'Filtrar y buscar productos',
@@ -230,6 +242,15 @@ class _InventoryScreenState extends State<InventoryScreen>
       context,
       MaterialPageRoute(
         builder: (context) => const ElaboratedProductsExtractionScreen(),
+      ),
+    );
+  }
+
+  void _navigateToSaleByAgreement() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const InventoryExtractionBySaleScreen(),
       ),
     );
   }

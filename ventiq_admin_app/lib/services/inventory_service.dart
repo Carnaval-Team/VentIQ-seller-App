@@ -2406,4 +2406,114 @@ class InventoryService {
       };
     }
   }
+
+  /// Obtener opciones de medios de pago
+  static Future<List<Map<String, dynamic>>> getMedioPagoOptions() async {
+    try {
+      print('🔍 Obteniendo medios de pago...');
+
+      final response = await _supabase
+          .from('app_nom_medio_pago')
+          .select('id, denominacion, es_efectivo, es_digital')
+          .order('denominacion');
+
+      print('✅ Medios de pago obtenidos: ${response.length}');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error al obtener medios de pago: $e');
+      rethrow;
+    }
+  }
+
+  /// Obtener TPVs de una tienda
+  static Future<List<Map<String, dynamic>>> getTPVsByTienda(int idTienda) async {
+    try {
+      print('🔍 Obteniendo TPVs de la tienda $idTienda...');
+
+      final response = await _supabase
+          .from('app_dat_tpv')
+          .select('id, denominacion, id_tienda, id_almacen')
+          .eq('id_tienda', idTienda)
+          .order('denominacion');
+
+      print('✅ TPVs obtenidos: ${response.length}');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error al obtener TPVs: $e');
+      rethrow;
+    }
+  }
+
+  /// Crear registro de operación de venta
+  static Future<Map<String, dynamic>> createOperacionVenta({
+    required int idOperacion,
+    required int idTpv,
+    required double importeTotal,
+  }) async {
+    try {
+      print('💳 Creando operación de venta...');
+      print('   - ID Operación: $idOperacion');
+      print('   - ID TPV: $idTpv');
+      print('   - Importe: $importeTotal');
+
+      final response = await _supabase
+          .from('app_dat_operacion_venta')
+          .insert({
+            'id_operacion': idOperacion,
+            'id_tpv': idTpv,
+            'importe_total': importeTotal,
+            'es_pagada': true,
+          })
+          .select('id_operacion, id_tpv, importe_total, es_pagada')
+          .single();
+
+      final idOperacionVenta = response['id_operacion'] as int;
+      print('✅ Operación de venta creada con id_operacion: $idOperacionVenta');
+      
+      return {
+        'status': 'success',
+        'id_operacion': idOperacionVenta,
+        'data': response,
+      };
+    } catch (e) {
+      print('❌ Error al crear operación de venta: $e');
+      rethrow;
+    }
+  }
+
+  /// Registrar pago de venta
+  static Future<Map<String, dynamic>> registerPagoVenta({
+    required int idOperacionVenta,
+    required int idMedioPago,
+    required double monto,
+    required String uuid,
+  }) async {
+    try {
+      print('💰 Registrando pago de venta...');
+      print('   - ID Operación Venta: $idOperacionVenta');
+      print('   - ID Medio Pago: $idMedioPago');
+      print('   - Monto: $monto');
+
+      final response = await _supabase
+          .from('app_dat_pago_venta')
+          .insert({
+            'id_operacion_venta': idOperacionVenta,
+            'id_medio_pago': idMedioPago,
+            'monto': monto,
+            'creado_por': uuid,
+          })
+          .select('id, id_operacion_venta, id_medio_pago, monto')
+          .single();
+
+      print('✅ Pago registrado: ${response['id']}');
+      return {
+        'status': 'success',
+        'id_pago': response['id'],
+        'data': response,
+      };
+    } catch (e) {
+      print('❌ Error al registrar pago: $e');
+      rethrow;
+    }
+  }
 }

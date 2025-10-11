@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../models/analytics/inventory_metrics.dart';
-import '../../services/dashboard_service.dart';
-import '../../widgets/analytics/metric_card.dart';
-import 'stock_health_detail_screen.dart';
-import 'rotation_detail_screen.dart';
-import 'stock_alerts_detail_screen.dart';
-import '../../utils/number_formatter.dart';
+import '../models/analytics/inventory_metrics.dart';
+import '../services/dashboard_service.dart';
+import '../widgets/analytics/metric_card.dart';
+import 'analytics/stock_health_detail_screen.dart';
+import 'analytics/rotation_detail_screen.dart';
+import 'analytics/stock_alerts_detail_screen.dart';
+import '../utils/number_formatter.dart';
 
 class InventoryDashboard extends StatefulWidget {
   const InventoryDashboard({super.key});
