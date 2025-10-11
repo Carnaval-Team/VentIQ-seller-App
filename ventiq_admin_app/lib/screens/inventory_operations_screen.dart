@@ -413,47 +413,45 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         backgroundColor: Colors.white,
         displacement: 40.0,
         strokeWidth: 2.5,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _operations.isEmpty
+        child:
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _operations.isEmpty
                 ? ListView(
-                    // Necesario para que el RefreshIndicator funcione con contenido vacío
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: const [
-                      SizedBox(height: 200), // Espacio para permitir el pull
-                      Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.inventory_2_outlined,
-                              size: 64,
-                              color: Colors.grey,
-                            ),
-                            SizedBox(height: 16),
-                            Text('No se encontraron operaciones'),
-                            SizedBox(height: 8),
-                            Text(
-                              'Desliza hacia abajo para actualizar',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
+                  // Necesario para que el RefreshIndicator funcione con contenido vacío
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: const [
+                    SizedBox(height: 200), // Espacio para permitir el pull
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.inventory_2_outlined,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
+                          SizedBox(height: 16),
+                          Text('No se encontraron operaciones'),
+                          SizedBox(height: 8),
+                          Text(
+                            'Desliza hacia abajo para actualizar',
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
+                        ],
                       ),
-                    ],
-                  )
+                    ),
+                  ],
+                )
                 : ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _operations.length,
-                    itemBuilder: (context, index) {
-                      final operation = _operations[index];
-                      return _buildOperationCard(operation);
-                    },
-                  ),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _operations.length,
+                  itemBuilder: (context, index) {
+                    final operation = _operations[index];
+                    return _buildOperationCard(operation);
+                  },
+                ),
       ),
     );
   }
@@ -1236,6 +1234,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         tipoOperacion.contains('extraccion') ||
         tipoOperacion.contains('salida');
 
+    bool isAjuste = tipoOperacion.contains('ajuste');
+
     // Check for different variations of pending status
     bool isPending =
         estado.contains('pendiente') ||
@@ -1250,7 +1250,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       '   - Should show button: ${(isReception || isExtraction) && isPending}',
     );
 
-    return (isReception || isExtraction) && isPending;
+    return (isReception || isExtraction ||isAjuste) && isPending;
   }
 
   bool _shouldShowCancelButton(Map<String, dynamic> operation) {
@@ -1396,7 +1396,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       );
 
       Navigator.pop(context); // Close loading dialog
-    // print('result: ${result['data']}');
+      // print('result: ${result['data']}');
       final response = result['data'];
       if (response['status'] == 'success') {
         // Close the detail modal
