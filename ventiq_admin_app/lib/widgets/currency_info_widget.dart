@@ -42,10 +42,22 @@ class _CurrencyInfoWidgetState extends State<CurrencyInfoWidget> {
 
   Future<void> _loadCurrencies() async {
     try {
-      final currencies = await CurrencyDisplayService.getActiveCurrenciesForDisplay();
+      final currencies =
+          await CurrencyDisplayService.getActiveCurrenciesForDisplay();
+
+      // ✅ DEDUPLICAR POR 'codigo' PARA EVITAR DUPLICADOS
+      final uniqueCurrencies = <String, Map<String, dynamic>>{};
+      for (final currency in currencies) {
+        final codigo = currency['codigo']?.toString() ?? '';
+        if (codigo.isNotEmpty) {
+          uniqueCurrencies[codigo] = currency;
+        }
+      }
+      final currenciesLimpias = uniqueCurrencies.values.toList();
+
       if (mounted) {
         setState(() {
-          _currencies = currencies;
+          _currencies = currenciesLimpias;
         });
       }
     } catch (e) {
@@ -58,10 +70,11 @@ class _CurrencyInfoWidgetState extends State<CurrencyInfoWidget> {
 
     setState(() => _isLoading = true);
     try {
-      final rateInfo = await CurrencyDisplayService.getExchangeRateInfoForDisplay(
-        widget.selectedCurrency,
-        'CUP',
-      );
+      final rateInfo =
+          await CurrencyDisplayService.getExchangeRateInfoForDisplay(
+            widget.selectedCurrency,
+            'CUP',
+          );
       if (mounted) {
         setState(() {
           _exchangeRateInfo = rateInfo;
@@ -99,29 +112,41 @@ class _CurrencyInfoWidgetState extends State<CurrencyInfoWidget> {
               ],
             ),
             const SizedBox(height: 8),
-            
+
             // Selector de moneda
             if (widget.onCurrencyChanged != null) ...[
               Row(
                 children: [
-                  Text('Moneda:', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                  Text(
+                    'Moneda:',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: widget.selectedCurrency,
+                      value:
+                          _currencies.any(
+                                (c) => c['codigo'] == widget.selectedCurrency,
+                              )
+                              ? widget.selectedCurrency
+                              : null, // ✅ Validar que el valor existe
                       decoration: const InputDecoration(
                         isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                       ),
-                      items: _currencies.map((currency) {
-                        return DropdownMenuItem<String>(
-                          value: currency['codigo'],
-                          child: Text(
-                            '${currency['simbolo']} ${currency['codigo']} - ${currency['nombre']}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        );
-                      }).toList(),
+                      items:
+                          _currencies.map((currency) {
+                            return DropdownMenuItem<String>(
+                              value: currency['codigo'],
+                              child: Text(
+                                '${currency['simbolo']} ${currency['codigo']} - ${currency['nombre']}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            );
+                          }).toList(),
                       onChanged: (value) {
                         if (value != null) {
                           widget.onCurrencyChanged!(value);
@@ -145,20 +170,29 @@ class _CurrencyInfoWidgetState extends State<CurrencyInfoWidget> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                     const SizedBox(width: 8),
-                    Text('Cargando tasa...', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                    Text(
+                      'Cargando tasa...',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
                   ],
                 )
               else if (_exchangeRateInfo != null) ...[
                 Row(
                   children: [
-                    Text('Tasa ${widget.selectedCurrency}/CUP:', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                    Text(
+                      'Tasa ${widget.selectedCurrency}/CUP:',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       '${_exchangeRateInfo!['tasa'].toStringAsFixed(2)}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: _exchangeRateInfo!['is_current'] ? Colors.green : Colors.orange,
+                        color:
+                            _exchangeRateInfo!['is_current']
+                                ? Colors.green
+                                : Colors.orange,
                       ),
                     ),
                     if (!_exchangeRateInfo!['is_current'])
@@ -178,7 +212,10 @@ class _CurrencyInfoWidgetState extends State<CurrencyInfoWidget> {
             ],
 
             // Conversión de monto (si se proporciona)
-            if (widget.showConverter && widget.amount != null && widget.amount! > 0 && widget.selectedCurrency != 'CUP') ...[
+            if (widget.showConverter &&
+                widget.amount != null &&
+                widget.amount! > 0 &&
+                widget.selectedCurrency != 'CUP') ...[
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(8),
@@ -191,18 +228,29 @@ class _CurrencyInfoWidgetState extends State<CurrencyInfoWidget> {
                   children: [
                     Text(
                       'Conversión:',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue[700]),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[700],
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      CurrencyDisplayService.formatAmountForDisplay(widget.amount!, widget.selectedCurrency),
+                      CurrencyDisplayService.formatAmountForDisplay(
+                        widget.amount!,
+                        widget.selectedCurrency,
+                      ),
                       style: const TextStyle(fontSize: 12),
                     ),
                     if (_exchangeRateInfo != null) ...[
                       const SizedBox(height: 2),
                       Text(
                         '≈ ${CurrencyDisplayService.formatAmountForDisplay(widget.amount! * _exchangeRateInfo!['tasa'], 'CUP')}',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green[700]),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green[700],
+                        ),
                       ),
                     ],
                   ],

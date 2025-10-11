@@ -224,6 +224,8 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           double.tryParse(_descuentoMontoController.text) ?? 0;
       final bonificacionCantidad =
           double.tryParse(_bonificacionCantidadController.text) ?? 0;
+      final monedaGuardar =
+          _finalCurrency ?? _getCurrentInputCurrency();
 
       try {
         final baseProductData = {
@@ -234,7 +236,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           'bonificacion_cantidad': bonificacionCantidad,
           'denominacion': widget.product.name,
           'sku': widget.product.sku,
-          'moneda_precio': _getCurrentInputCurrency(), // Moneda del input
+          'moneda_precio': monedaGuardar,
         };
 
         if (_selectedVariant != null) {
@@ -251,7 +253,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
               productId: widget.product.id,
               selectedPresentation: _selectedPresentation,
               cantidad: cantidad,
-              precioUnitario: precioUnitario,
+              precioUnitario: precioConvertido,
               baseProductData: baseProductData,
             );
 
@@ -378,6 +380,10 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                         invoiceCurrency: widget.invoiceCurrency,
                         priceController: _precioUnitarioController,
                         onPriceConverted: (convertedPrice, currency) {
+                          print('convertedPrice');
+                          print(convertedPrice);
+                          print('currency');
+                          print(currency);
                           setState(() {
                             _finalPriceInInvoiceCurrency = convertedPrice;
                             _finalCurrency = currency;

@@ -39,6 +39,17 @@ class _ReceptionTotalWidgetState extends State<ReceptionTotalWidget> {
   @override
   void didUpdateWidget(ReceptionTotalWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.invoiceCurrency != widget.invoiceCurrency) {
+      // If the invoice currency changes and now matches the comparison currency,
+      // we need to select a new, valid comparison currency to avoid the error.
+      if (widget.invoiceCurrency == _comparisonCurrency) {
+        setState(() {
+          // A simple, predictable fallback.
+          _comparisonCurrency = widget.invoiceCurrency == 'CUP' ? 'USD' : 'CUP';
+        });
+      }
+    }
+    // Always reload the exchange rate if amount or currency changes.
     if (oldWidget.totalAmount != widget.totalAmount ||
         oldWidget.invoiceCurrency != widget.invoiceCurrency) {
       _loadExchangeRate();

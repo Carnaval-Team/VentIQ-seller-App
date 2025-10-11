@@ -267,6 +267,47 @@ class _SalesScreenState extends State<SalesScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ✅ GESTIÓN DE TPVs
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  'Gestión de TPVs',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            () =>
+                                Navigator.pushNamed(context, '/tpv-management'),
+                        icon: Icon(Icons.devices),
+                        label: Text('TPVs y Vendedores'),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            () => Navigator.pushNamed(context, '/tpv-prices'),
+                        icon: Icon(Icons.attach_money),
+                        label: Text('Precios TPV'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 16),
+
           _buildPeriodSelector(),
           const SizedBox(height: 16),
           if (_isLoadingVendors)

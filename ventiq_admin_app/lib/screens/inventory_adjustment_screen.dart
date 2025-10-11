@@ -903,34 +903,48 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
               ),
               const SizedBox(height: 12),
 
-              DropdownButtonFormField(
+              DropdownButtonFormField<int>( // Especificamos que el tipo de valor es int
                 decoration: const InputDecoration(
                   labelText: 'Presentación *',
                   border: OutlineInputBorder(),
+                  hintText: 'Seleccione una presentación',
                 ),
-                value: _selectedPresentation,
+                // 1. EL VALOR AHORA ES SOLO EL ID
+                value: _selectedPresentation?['id'], // Usamos el ID del mapa, que puede ser null
+
+                // 2. LOS ITEMS SIGUEN USANDO EL ID
                 items: _presentations.map((presentation) {
-                  return DropdownMenuItem(
-                    value: presentation,
-                    child: Container(
-                      width: double.infinity,
-                      child: Text(
-                        presentation['name'],
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                        style: const TextStyle(fontSize: 14),
-                      ),
+                  return DropdownMenuItem<int>( // El tipo del item también es int
+                    value: presentation['id'], // El valor del item es el ID (entero)
+                    child: Text(
+                      presentation['name'] ?? 'Sin nombre',
+                      overflow: TextOverflow.ellipsis,
                     ),
                   );
                 }).toList(),
-                onChanged: _presentations.isEmpty ? null : (value) {
+
+                // 3. EL ONCHANGED RECIBE EL ID (ENTERO)
+                onChanged: _presentations.isEmpty ? null : (int? newId) {
+                  if (newId == null) return;
+
+                  // Buscamos el mapa completo en nuestra lista original usando el ID recibido
+                  final selectedMap = _presentations.firstWhere(
+                        (p) => p['id'] == newId,
+                    orElse: () => {}, // Devolvemos un mapa vacío si no se encuentra
+                  );
+
                   setState(() {
-                    _selectedPresentation = value as Map<String, dynamic>?;
+                    // Asignamos el mapa completo a _selectedPresentation
+                    _selectedPresentation = selectedMap.isNotEmpty ? selectedMap : null;
+                    // Cargamos el stock para la nueva presentación seleccionada
                     _loadCurrentStock();
                   });
                 },
+
+                // 4. LA VALIDACIÓN COMPRUEBA EL ID
                 validator: (value) {
-                  if (_selectedPresentation == null) {
+                  // El valor aquí es el ID
+                  if (value == null) {
                     return 'Debe seleccionar una presentación';
                   }
                   return null;

@@ -2904,11 +2904,20 @@ class _IngredientDialogState extends State<_IngredientDialog> {
       );
 
       // Buscar la unidad seleccionada por abreviatura
+      // CAMBIAR:
+      // Buscar la unidad seleccionada por abreviatura
       final unidadAbrev = widget.ingrediente!['unidad_medida'] ?? 'und';
       _unidadSeleccionada = {
         'abreviatura': unidadAbrev,
         'denominacion': unidadAbrev,
       };
+
+      // POR:
+      // ✅ NO inicializar _unidadSeleccionada aquí
+      // Se inicializará después de cargar la lista real de unidades
+      print(
+        '🔄 Unidad del ingrediente: ${widget.ingrediente!['unidad_medida']}',
+      );
     }
   }
 
@@ -3005,6 +3014,29 @@ class _IngredientDialogState extends State<_IngredientDialog> {
           final existeEnLista = unidadesLimpias.any(
             (u) => u['abreviatura'] == abrevActual,
           );
+          // ✅ SINCRONIZAR UNIDAD SELECCIONADA CON LA LISTA REAL (para modo edición)
+          if (widget.ingrediente != null) {
+            final unidadIngrediente =
+                widget.ingrediente!['unidad_medida'] ?? 'und';
+
+            // Buscar la unidad real en la lista cargada
+            final unidadReal = unidadesLimpias.firstWhere(
+              (u) => u['abreviatura'] == unidadIngrediente,
+              orElse: () => <String, dynamic>{},
+            );
+
+            if (unidadReal.isNotEmpty) {
+              _unidadSeleccionada = unidadReal;
+              print('✅ Unidad sincronizada: ${unidadReal['denominacion']}');
+            } else {
+              print('❌ No se encontró la unidad: $unidadIngrediente');
+              _unidadSeleccionada =
+                  unidadesLimpias.isNotEmpty ? unidadesLimpias.first : null;
+            }
+          } else if (_unidadSeleccionada == null &&
+              unidadesLimpias.isNotEmpty) {
+            _unidadSeleccionada = unidadesLimpias.first;
+          }
           if (!existeEnLista) {
             _unidadSeleccionada =
                 unidadesLimpias.isNotEmpty ? unidadesLimpias.first : null;

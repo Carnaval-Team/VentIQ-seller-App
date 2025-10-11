@@ -6,6 +6,7 @@ import '../services/product_service.dart';
 import '../services/currency_service.dart';
 import 'add_product_screen.dart';
 import 'product_detail_screen.dart';
+import 'excel_import_screen.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/admin_drawer.dart';
 
@@ -110,6 +111,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
             icon: const Icon(Icons.add, color: Colors.white),
             onPressed: _showAddProductDialog,
             tooltip: 'Agregar Producto',
+          ),
+          // En el AppBar actions:
+          IconButton(
+            onPressed: () => Navigator.pushNamed(context, '/excel-import'),
+            icon: const Icon(Icons.upload_file),
+            tooltip: 'Importar desde Excel',
           ),
           Builder(
             builder:
@@ -452,7 +459,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             ),
                           ),
                         ),
-
                     ],
                   ),
                   const SizedBox(width: 16),
@@ -487,7 +493,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       ],
                     ),
                   ),
-                    Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
@@ -502,30 +508,30 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       Column(
                         children: [
                           if (!product.esServicio)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  product.tieneStock
-                                      ? AppColors.success.withOpacity(0.1)
-                                      : AppColors.error.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              product.tieneStock ? 'En Stock' : 'Sin Stock',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
                                 color:
                                     product.tieneStock
-                                        ? AppColors.success
-                                        : AppColors.error,
+                                        ? AppColors.success.withOpacity(0.1)
+                                        : AppColors.error.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                product.tieneStock ? 'En Stock' : 'Sin Stock',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color:
+                                      product.tieneStock
+                                          ? AppColors.success
+                                          : AppColors.error,
+                                ),
                               ),
                             ),
-                          ),
                           const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(

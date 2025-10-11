@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ventiq_admin_app/screens/excel_import_screen.dart';
 import 'package:ventiq_admin_app/screens/suppliers/supplier_reports_screen.dart';
 import 'package:ventiq_admin_app/widgets/supplier/supplier_alerts_widget.dart';
 import 'config/app_colors.dart';
@@ -17,6 +18,9 @@ import 'screens/add_product_screen.dart';
 import 'screens/categories_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/sales_screen.dart';
+import 'screens/tpv_prices_screen.dart';
+import 'screens/tpv_management_screen.dart';
+import 'screens/vendor_management_screen.dart';
 import 'screens/promotions_screen.dart';
 import 'screens/marketing_dashboard_screen.dart';
 import 'screens/analytics_screen.dart';
@@ -42,6 +46,7 @@ import 'screens/crm_relationships_screen.dart';
 import 'screens/suppliers/suppliers_list_screen.dart';
 import 'screens/suppliers/supplier_detail_screen.dart';
 import 'screens/suppliers/add_edit_supplier_screen.dart';
+import 'screens/inventory_extractionbysale_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -143,6 +148,8 @@ class MyApp extends StatelessWidget {
         '/categories': (context) => const CategoriesScreen(),
         '/inventory': (context) => const InventoryScreen(),
         '/sales': (context) => const SalesScreen(),
+        '/tpv-prices': (context) => const TpvPricesScreen(),
+        '/tpv-management': (context) => const TpvManagementScreen(),
         '/financial': (context) => const FinancialScreen(),
         '/financial-setup': (context) => const FinancialSetupScreen(),
         '/financial-dashboard': (context) => const FinancialDashboardScreen(),
@@ -156,6 +163,7 @@ class MyApp extends StatelessWidget {
         '/suppliers': (context) => const SuppliersListScreen(),
         '/supplier-alerts': (context) => const SupplierAlertsWidget(alerts: [], isLoading: false ),
         '/supplier-reports': (context) => const SupplierReportsScreen(),
+        '/excel-import': (context) => const ExcelImportScreen(),
         '/add-supplier': (context) => const AddEditSupplierScreen(),
         '/edit-supplier':
             (context) => const AddEditSupplierScreen(),
@@ -172,6 +180,7 @@ class MyApp extends StatelessWidget {
         '/loyalty': (context) => const LoyaltyScreen(),
         '/add-product': (context) => const AddProductScreen(),
         '/store-registration': (context) => const StoreRegistrationScreen(),
+        '/sale-by-agreement': (context) => const InventoryExtractionBySaleScreen(),
       },
     );
   }

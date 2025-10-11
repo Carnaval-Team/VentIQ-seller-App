@@ -1895,6 +1895,9 @@ class FinancialService {
     List<String>? categoryIds,
   }) async {
     try {
+      print(
+        '🔍 [GASTOS] Consultando tienda: $storeId, período: $startDate a $endDate',
+      );
       var query = _supabase
           .from('app_cont_gastos')
           .select('''
@@ -1912,7 +1915,7 @@ class FinancialService {
       }
 
       final response = await query.order('fecha', ascending: false);
-
+      print('✅ [GASTOS] Encontrados: ${response.length} gastos');
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('❌ Error obteniendo gastos: $e');
@@ -2444,85 +2447,86 @@ class FinancialService {
   }
 
   /// Obtener el conteo optimizado de operaciones pendientes usando RPC
-Future<int> getPendingOperationsCountOptimized({
-  String? startDate,
-  String? endDate,
-}) async {
-  try {
-    print('🔢 Obteniendo conteo de operaciones pendientes con RPC...');
+  Future<int> getPendingOperationsCountOptimized({
+    String? startDate,
+    String? endDate,
+  }) async {
+    try {
+      print('🔢 Obteniendo conteo de operaciones pendientes con RPC...');
 
-    final storeId = await _getStoreId();
-    final userId = _supabase.auth.currentUser?.id;
+      final storeId = await _getStoreId();
+      final userId = _supabase.auth.currentUser?.id;
 
-    print('📊 Parámetros RPC:');
-    print('   - ID Tienda: $storeId');
-    print('   - Usuario UUID: $userId');
-    print('   - Fecha inicio: $startDate');
-    print('   - Fecha fin: $endDate');
+      print('📊 Parámetros RPC:');
+      print('   - ID Tienda: $storeId');
+      print('   - Usuario UUID: $userId');
+      print('   - Fecha inicio: $startDate');
+      print('   - Fecha fin: $endDate');
 
-    // PRIORIDAD 1: Llamar función RPC optimizada
-    final response = await _supabase.rpc(
-      'fn_count_pending_operations_optimized',
-      params: {
-        'p_id_tienda': storeId,
-        'p_fecha_inicio': startDate,
-        'p_fecha_fin': endDate,
-        'p_user_uuid': userId,
-      },
-    );
+      // PRIORIDAD 1: Llamar función RPC optimizada
+      final response = await _supabase.rpc(
+        'fn_count_pending_operations_optimized',
+        params: {
+          'p_id_tienda': storeId,
+          'p_fecha_inicio': startDate,
+          'p_fecha_fin': endDate,
+          'p_user_uuid': userId,
+        },
+      );
 
-    print('📥 Respuesta RPC recibida: $response');
+      print('📥 Respuesta RPC recibida: $response');
 
-    // Validar respuesta de RPC
-    if (response != null) {
-      final result = response as Map<String, dynamic>;
-      
-      print('🔍 Analizando resultado RPC:');
-      print('   - Success: ${result['success']}');
-      print('   - Error: ${result['error']}');
-      print('   - Error Detail: ${result['error_detail']}');
-      print('   - Debug Info: ${result['debug_info']}');
+      // Validar respuesta de RPC
+      if (response != null) {
+        final result = response as Map<String, dynamic>;
 
-      if (result['success'] == true) {
-        final totalCount = result['total_count'] as int? ?? 0;
-        final recepcionesCount = result['recepciones_count'] as int? ?? 0;
-        final entregasCount = result['entregas_count'] as int? ?? 0;
+        print('🔍 Analizando resultado RPC:');
+        print('   - Success: ${result['success']}');
+        print('   - Error: ${result['error']}');
+        print('   - Error Detail: ${result['error_detail']}');
+        print('   - Debug Info: ${result['debug_info']}');
 
-        print('✅ RPC exitosa - Total: $totalCount (Recepciones: $recepcionesCount, Entregas: $entregasCount)');
-        return totalCount;
+        if (result['success'] == true) {
+          final totalCount = result['total_count'] as int? ?? 0;
+          final recepcionesCount = result['recepciones_count'] as int? ?? 0;
+          final entregasCount = result['entregas_count'] as int? ?? 0;
+
+          print(
+            '✅ RPC exitosa - Total: $totalCount (Recepciones: $recepcionesCount, Entregas: $entregasCount)',
+          );
+          return totalCount;
+        } else {
+          final errorMsg = result['error'] ?? 'Error desconocido';
+          final errorDetail = result['error_detail'] ?? '';
+          final debugInfo = result['debug_info'] ?? '';
+
+          print('⚠️ RPC falló:');
+          print('   - Error: $errorMsg');
+          print('   - Detalle: $errorDetail');
+          print('   - Debug: $debugInfo');
+          print('   - SQL State: ${result['error_code']}');
+        }
       } else {
-        final errorMsg = result['error'] ?? 'Error desconocido';
-        final errorDetail = result['error_detail'] ?? '';
-        final debugInfo = result['debug_info'] ?? '';
-        
-        print('⚠️ RPC falló:');
-        print('   - Error: $errorMsg');
-        print('   - Detalle: $errorDetail');
-        print('   - Debug: $debugInfo');
-        print('   - SQL State: ${result['error_code']}');
+        print('⚠️ RPC retornó null - posible error de conexión o permisos');
       }
-    } else {
-      print('⚠️ RPC retornó null - posible error de conexión o permisos');
+    } catch (e, stackTrace) {
+      print('❌ Error en RPC: $e');
+      print('📍 Stack trace: $stackTrace');
+
+      // Verificar si es un error específico de Supabase
+      if (e.toString().contains('PostgrestException')) {
+        print('🔍 Error de PostgreSQL detectado');
+      } else if (e.toString().contains('SocketException')) {
+        print('🔍 Error de conexión de red detectado');
+      } else if (e.toString().contains('TimeoutException')) {
+        print('🔍 Error de timeout detectado');
+      }
     }
 
-  } catch (e, stackTrace) {
-    print('❌ Error en RPC: $e');
-    print('📍 Stack trace: $stackTrace');
-    
-    // Verificar si es un error específico de Supabase
-    if (e.toString().contains('PostgrestException')) {
-      print('🔍 Error de PostgreSQL detectado');
-    } else if (e.toString().contains('SocketException')) {
-      print('🔍 Error de conexión de red detectado');
-    } else if (e.toString().contains('TimeoutException')) {
-      print('🔍 Error de timeout detectado');
-    }
+    // PRIORIDAD 2: Fallback simple si RPC falla
+    print('🔄 Usando fallback simplificado...');
+    return await _getSimplePendingCount();
   }
-
-  // PRIORIDAD 2: Fallback simple si RPC falla
-  print('🔄 Usando fallback simplificado...');
-  return await _getSimplePendingCount();
-}
 
   /// Fallback simplificado para conteo de operaciones pendientes
   Future<int> _getSimplePendingCount() async {
@@ -2628,7 +2632,36 @@ Future<int> getPendingOperationsCountOptimized({
         costTypeId: finalCostTypeId,
         costCenterId: finalCostCenterId,
       );
+      // Enriquecer asignaciones con información descriptiva
+      final enrichedAssignments = <Map<String, dynamic>>[];
+      for (final assignment in assignments) {
+        // Obtener nombre del centro de costo
+        String centerName = 'Centro Desconocido';
+        try {
+          final centerResponse =
+              await _supabase
+                  .from('app_cont_centro_costo')
+                  .select('denominacion')
+                  .eq('id', finalCostCenterId)
+                  .maybeSingle();
 
+          centerName = centerResponse?['denominacion'] ?? 'Centro Desconocido';
+        } catch (e) {
+          print('⚠️ Error obteniendo nombre del centro: $e');
+        }
+
+        // Obtener nombre del método
+        final methodName = _getAssignmentMethodName(
+          assignment['metodo_asignacion'],
+        );
+
+        enrichedAssignments.add({
+          ...assignment,
+          'centro_costo_nombre': centerName,
+          'metodo_asignacion_nombre': methodName,
+          'is_auto_created': assignment['created_automatically'] ?? false,
+        });
+      }
       // Calcular totales
       double totalAssigned = 0.0;
       int automaticAssignments = 0;
@@ -2644,17 +2677,12 @@ Future<int> getPendingOperationsCountOptimized({
           (totalAssigned - expenseAmount).abs() <
           0.01; // Tolerancia de 1 centavo
 
+      // En lugar de 'summary' anidado, devolver campos directos
       return {
-        'assignments': assignments,
-        'summary': {
-          'total_expense': expenseAmount,
-          'total_assigned': totalAssigned,
-          'is_fully_assigned': isFullyAssigned,
-          'assignment_count': assignments.length,
-          'automatic_assignments': automaticAssignments,
-          'coverage_percentage':
-              expenseAmount > 0 ? (totalAssigned / expenseAmount * 100) : 0.0,
-        },
+        'assignments': enrichedAssignments,
+        'expense_amount': expenseAmount, // ← Cambiar de summary
+        'total_assigned': totalAssigned, // ← Cambiar de summary
+        'is_fully_assigned': isFullyAssigned, // ← Cambiar de summary
       };
     } catch (e) {
       print('❌ Error en preview de asignaciones: $e');
