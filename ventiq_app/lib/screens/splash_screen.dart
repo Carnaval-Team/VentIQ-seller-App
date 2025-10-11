@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/user_preferences_service.dart';
 import '../services/auth_service.dart';
+import '../services/settings_integration_service.dart';
+import '../services/auto_sync_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -12,6 +14,7 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen> {
   final _userPreferencesService = UserPreferencesService();
   final _authService = AuthService();
+  final _integrationService = SettingsIntegrationService();
 
   @override
   void initState() {
@@ -28,7 +31,10 @@ class _SplashScreenState extends State<SplashScreen> {
       final hasValidSession = await _userPreferencesService.hasValidSession();
       
       if (hasValidSession) {
-        // User has valid session, go directly to categories
+        // User has valid session, initialize smart services and go to categories
+        print('✅ Sesión válida encontrada - Inicializando servicios inteligentes...');
+        _initializeSmartServices();
+        
         if (mounted) {
           Navigator.of(context).pushReplacementNamed('/categories');
         }
@@ -77,7 +83,10 @@ class _SplashScreenState extends State<SplashScreen> {
           accessToken: response.session?.accessToken ?? '',
         );
         
-        // Auto-login successful, go to categories
+        // Auto-login successful, initialize smart services and go to categories
+        print('✅ Auto-login exitoso - Inicializando servicios inteligentes...');
+        _initializeSmartServices();
+        
         if (mounted) {
           Navigator.of(context).pushReplacementNamed('/categories');
         }
@@ -93,6 +102,35 @@ class _SplashScreenState extends State<SplashScreen> {
       if (mounted) {
         Navigator.of(context).pushReplacementNamed('/login');
       }
+    }
+  }
+
+  /// Inicializar servicios inteligentes después del login exitoso
+  Future<void> _initializeSmartServices() async {
+    try {
+      print('🚀 Inicializando servicios inteligentes desde SplashScreen...');
+      
+      // ✅ MEJORADO: Ejecutar primera sincronización inmediatamente
+      // Inicializar el servicio de integración en segundo plano
+      _integrationService.initialize().then((_) {
+        print('✅ Servicios inteligentes inicializados correctamente desde SplashScreen');
+      }).catchError((e) {
+        print('❌ Error inicializando servicios inteligentes desde SplashScreen: $e');
+        // No mostramos error al usuario ya que no es crítico para la navegación
+      });
+      
+      // Ejecutar primera sincronización inmediatamente sin esperar la inicialización completa
+      print('⚡ Ejecutando primera sincronización inmediata desde SplashScreen...');
+      final autoSyncService = AutoSyncService();
+      autoSyncService.performImmediateSync().then((_) {
+        print('✅ Primera sincronización inmediata completada desde SplashScreen');
+      }).catchError((e) {
+        print('❌ Error en primera sincronización inmediata desde SplashScreen: $e');
+      });
+      
+    } catch (e) {
+      print('❌ Error configurando servicios inteligentes desde SplashScreen: $e');
+      // No lanzamos el error para no afectar el flujo de navegación
     }
   }
 

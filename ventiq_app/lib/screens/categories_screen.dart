@@ -180,7 +180,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       });
 
       debugPrint('✅ Categorías cargadas: ${categories.length}');
-    } catch (e) {
+    } catch (e , stackTrace) {
       final isConnectionError = ConnectionErrorHandler.isConnectionError(e);
       
       setState(() {
@@ -194,6 +194,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       
       debugPrint('❌ Error cargando categorías: $e');
       debugPrint('🔍 Es error de conexión: $isConnectionError');
+      debugPrint('🔍 Stack trace: $stackTrace');
     }
   }
 

@@ -85,6 +85,30 @@ class AutoSyncService {
     print('✅ Sincronización automática iniciada');
   }
 
+  /// Ejecutar una sincronización inmediata sin iniciar el timer periódico
+  /// Útil para ejecutar la primera sincronización rápidamente
+  Future<void> performImmediateSync() async {
+    try {
+      print('⚡ Ejecutando sincronización inmediata...');
+      
+      // Verificar si el modo offline está activado
+      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
+      
+      if (isOfflineModeEnabled) {
+        print('🔌 Modo offline activado - Omitiendo sincronización inmediata');
+        return;
+      }
+      
+      // Ejecutar sincronización inmediata
+      await _performSync();
+      
+      print('✅ Sincronización inmediata completada');
+    } catch (e) {
+      print('❌ Error en sincronización inmediata: $e');
+      rethrow;
+    }
+  }
+
   /// Detener la sincronización automática
   Future<void> stopAutoSync() async {
     if (!_isRunning) return;
@@ -181,29 +205,47 @@ class AutoSyncService {
         print('  ❌ Error sincronizando métodos de pago: $e');
       }
 
-      // 5. Sincronizar categorías
-      try {
-        syncedData['categories'] = await _syncCategories();
-        syncedItems.add('categorías');
-        print('  ✅ Categorías sincronizadas');
-      } catch (e) {
-        print('  ❌ Error sincronizando categorías: $e');
+      // 5. Sincronizar categorías (siempre en primera sincronización, luego cada 3 sincronizaciones)
+      if (_syncCount == 0 || _syncCount % 3 == 0) {
+        try {
+          final isFirstSync = _syncCount == 0;
+          print('  📂 Sincronizando categorías (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})');
+          syncedData['categories'] = await _syncCategories();
+          syncedItems.add('categorías');
+          print('  ✅ Categorías sincronizadas');
+        } catch (e) {
+          print('  ❌ Error sincronizando categorías: $e');
+        }
+      } else {
+        print('  ⏭️ Omitiendo categorías (sincronización #$_syncCount, próxima en ${3 - (_syncCount % 3)})');
       }
 
-      // 6. Sincronizar productos (cada 5 sincronizaciones para mejor cobertura)
-      if (_syncCount % 5 == 0) {
+      // 6. Sincronizar productos (siempre en primera sincronización, luego cada 5 sincronizaciones)
+      if (_syncCount == 0 || _syncCount % 5 == 0) {
         try {
+          final isFirstSync = _syncCount == 0;
+          print('  📦 Sincronizando productos (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})');
           syncedData['products'] = await _syncProducts();
           syncedItems.add('productos');
           print('  ✅ Productos sincronizados');
         } catch (e) {
           print('  ❌ Error sincronizando productos: $e');
         }
+      } else {
+        print('  ⏭️ Omitiendo productos (sincronización #$_syncCount, próxima en ${5 - (_syncCount % 5)})');
       }
 
       // 7. Sincronizar turno y resumen
       try {
-        syncedData['turno'] = await _syncTurno();
+        final turnoData = await _syncTurno();
+        syncedData['turno'] = turnoData;
+        
+        // ✅ CORREGIDO: También guardar en la clave específica de turno offline
+        if (turnoData != null) {
+          await _userPreferencesService.saveOfflineTurno(turnoData);
+          print('  💾 Turno guardado en cache offline específico');
+        }
+        
         await _syncTurnoResumen();
         // Sincronizar resumen de cierre diario para CierreScreen y VentaTotalScreen
         await _syncResumenCierre();

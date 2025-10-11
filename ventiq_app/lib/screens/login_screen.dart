@@ -5,6 +5,7 @@ import '../services/seller_service.dart';
 import '../services/promotion_service.dart';
 import '../services/store_config_service.dart';
 import '../services/settings_integration_service.dart';
+import '../services/auto_sync_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -360,13 +361,22 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       print('🚀 Inicializando servicios inteligentes después del login...');
       
+      // ✅ MEJORADO: Ejecutar primera sincronización inmediatamente
       // Inicializar el servicio de integración en segundo plano
-      // No esperamos a que termine para no bloquear la navegación
       _integrationService.initialize().then((_) {
         print('✅ Servicios inteligentes inicializados correctamente');
       }).catchError((e) {
         print('❌ Error inicializando servicios inteligentes: $e');
         // No mostramos error al usuario ya que no es crítico para el login
+      });
+      
+      // Ejecutar primera sincronización inmediatamente sin esperar la inicialización completa
+      print('⚡ Ejecutando primera sincronización inmediata...');
+      final autoSyncService = AutoSyncService();
+      autoSyncService.performImmediateSync().then((_) {
+        print('✅ Primera sincronización inmediata completada');
+      }).catchError((e) {
+        print('❌ Error en primera sincronización inmediata: $e');
       });
       
     } catch (e) {
