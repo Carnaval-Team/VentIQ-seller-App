@@ -27,6 +27,7 @@ class OrderService {
         items: [],
         total: 0.0,
         status: OrderStatus.borrador,
+        pagos: null, // ✅ Inicializar pagos como null para órdenes nuevas
       );
     }
     return _currentOrder!;
@@ -791,6 +792,9 @@ class OrderService {
             'Cliente';
         final clienteTelefono = clienteData?['telefono']?.toString() ?? '';
 
+        // ✅ Debug: Verificar datos de pagos
+        print('🔍 Datos de pagos para orden ${supabaseOrder['id_operacion']}: ${supabaseOrder['detalles']['pagos']}');
+
         // Crear orden desde los datos de Supabase
         final order = Order(
           id: 'ORD-${supabaseOrder['id_operacion']}',
@@ -804,6 +808,7 @@ class OrderService {
           paymentMethod: 'Efectivo', // Valor por defecto
           notas: supabaseOrder['observaciones'] ?? '',
           operationId: supabaseOrder['id_operacion'],
+          pagos: supabaseOrder['detalles']['pagos'] as List<dynamic>?, // ✅ Agregar campo pagos
         );
 
         _orders.add(order);
@@ -901,6 +906,7 @@ class OrderService {
           items: items,
           total: (orderData['total'] as num).toDouble(),
           status: OrderStatus.pendienteDeSincronizacion, // Estado pendiente de sincronización para órdenes offline pendientes
+          pagos: orderData['pagos'] as List<dynamic>?, // ✅ Agregar campo pagos para órdenes offline
         );
         
         _orders.add(order);

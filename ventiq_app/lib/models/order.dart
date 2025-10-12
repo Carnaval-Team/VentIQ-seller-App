@@ -14,6 +14,7 @@ class Order {
   final String? extraContacts;
   final String? paymentMethod;
   final int? operationId;
+  final List<dynamic>? pagos; // Lista de pagos de la orden
   bool isOfflineOrder; // Campo para marcar órdenes offline
 
   Order({
@@ -28,6 +29,7 @@ class Order {
     this.extraContacts,
     this.paymentMethod,
     this.operationId,
+    this.pagos,
     this.isOfflineOrder = false, // Por defecto false
   });
 
@@ -51,6 +53,7 @@ class Order {
     String? extraContacts,
     String? paymentMethod,
     int? operationId,
+    List<dynamic>? pagos,
     bool? isOfflineOrder,
   }) {
     return Order(
@@ -65,6 +68,7 @@ class Order {
       extraContacts: extraContacts ?? this.extraContacts,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       operationId: operationId ?? this.operationId,
+      pagos: pagos ?? this.pagos,
       isOfflineOrder: isOfflineOrder ?? this.isOfflineOrder,
     );
   }

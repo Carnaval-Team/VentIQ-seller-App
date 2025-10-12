@@ -13,6 +13,8 @@ import '../services/turno_service.dart';
 import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
 import '../widgets/egresos_list_screen.dart';
+import '../widgets/filtered_orders_screen.dart';
+import '../screens/orders_screen.dart';
 
 class VentaTotalScreen extends StatefulWidget {
   const VentaTotalScreen({Key? key}) : super(key: key);
@@ -410,33 +412,36 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: _buildSummaryCard(
+                          child: _buildClickableSummaryCard(
                             'Total Ventas',
                             '\$${_totalVentas.toStringAsFixed(0)}',
                             Icons.attach_money,
-                            const Color(0xFF4A90E2),
+                            Colors.green,
+                            onTap: _showAllOrders,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
-                          child: _buildSummaryCard(
+                          child: _buildClickableSummaryCard(
                             'Total Transferencia',
                             '\$${((_totalEgresado - _egresosEfectivo) > 0 ? (_totalEgresado - _egresosEfectivo) : 0).toStringAsFixed(0)}',
                             Icons.credit_card,
                             Colors.orange,
+                            onTap: _showTransferOrders,
                           ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: _buildSummaryCard(
+                          child: _buildClickableSummaryCard(
                             'Efectivo Real',
                             '\$${_totalEfectivoReal.toStringAsFixed(0)}',
                             Icons.account_balance_wallet,
                             Colors.green,
+                            onTap: _showCashOrders,
                           ),
                         ),
                       ],
@@ -571,6 +576,65 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               egresosEfectivo: _egresosEfectivo,
               egresosTransferencias: _egresosTransferencias,
             ),
+      ),
+    );
+  }
+
+  void _showAllOrders() {
+    print('🔍 Navegando a todas las órdenes...');
+    print('📊 Total órdenes: ${_orderService.orders.length}');
+    print('💰 Total ventas: $_totalVentas');
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const OrdersScreen(),
+      ),
+    );
+  }
+
+  void _showCashOrders() {
+    print('🔍 Mostrando órdenes pagadas con efectivo...');
+    print('💰 Efectivo real: $_totalEfectivoReal');
+    
+    final completedOrders = _orderService.orders
+        .where((order) => 
+            order.status == OrderStatus.completada ||
+            order.status == OrderStatus.pagoConfirmado)
+        .toList();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FilteredOrdersScreen(
+          filter: PaymentFilter.cash,
+          title: 'Órdenes - Efectivo',
+          orders: completedOrders,
+          totalAmount: _totalEfectivoReal,
+        ),
+      ),
+    );
+  }
+
+  void _showTransferOrders() {
+    print('🔍 Mostrando órdenes pagadas con transferencias...');
+    print('💳 Total transferencias: ${(_totalEgresado - _egresosEfectivo)}');
+    
+    final completedOrders = _orderService.orders
+        .where((order) => 
+            order.status == OrderStatus.completada ||
+            order.status == OrderStatus.pagoConfirmado)
+        .toList();
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FilteredOrdersScreen(
+          filter: PaymentFilter.transfer,
+          title: 'Órdenes - Transferencias',
+          orders: completedOrders,
+          totalAmount: (_totalEgresado - _egresosEfectivo),
+        ),
       ),
     );
   }
