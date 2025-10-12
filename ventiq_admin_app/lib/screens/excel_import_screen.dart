@@ -1,10 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:ventiq_admin_app/services/product_service.dart';
 import '../config/app_colors.dart';
 import '../services/excel_import_service.dart';
 import '../widgets/admin_drawer.dart';
+import '../services/user_preferences_service.dart';
+import '../services/warehouse_service.dart';
 
 class ExcelImportScreen extends StatefulWidget {
   const ExcelImportScreen({super.key});
@@ -23,6 +24,15 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
   List<Map<String, dynamic>> _categories = []; // AGREGAR ESTA LÍNEA
   List<Map<String, dynamic>> _units = []; // AGREGAR ESTA LÍNEA
   Map<int, List<Map<String, dynamic>>> _subcategoriesCache = {};
+  
+  // Stock import configuration
+  bool _importWithStock = false;
+  int? _selectedLocationId;
+  Map<String, String> _stockColumnMapping = {};
+  List<Map<String, dynamic>> _locations = [];
+  
+  // Category selection tracking
+  int? _selectedMainCategoryId; // Guardar la categoría principal seleccionada
 
   final _categoryController = TextEditingController();
   final _unitController = TextEditingController();
@@ -39,6 +49,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
     super.initState();
     _loadCategories();
     _loadUnits();
+    _loadLocations();
   }
 
   Future<void> _loadCategories() async {
@@ -60,6 +71,61 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
       });
     } catch (e) {
       print('Error cargando unidades: $e');
+    }
+  }
+
+  Future<void> _loadLocations() async {
+    try {
+      print('🔍 Iniciando carga de ubicaciones...');
+      final userPrefs = UserPreferencesService();
+      final userData = await userPrefs.getUserData();
+      final idTienda = userData['idTienda'] as int?;
+      print('🏪 ID Tienda obtenido: $idTienda');
+      
+      if (idTienda != null) {
+        // ✅ Usar el mismo servicio que las otras pantallas de inventario
+        print('📦 Cargando almacenes y zonas con WarehouseService...');
+        final warehouseService = WarehouseService();
+        final warehouses = await warehouseService.listWarehouses(
+          storeId: idTienda.toString(),
+        );
+        
+        print('🏪 Almacenes obtenidos: ${warehouses.length}');
+        
+        // Extraer todas las zonas de todos los almacenes
+        List<Map<String, dynamic>> allZones = [];
+        for (final warehouse in warehouses) {
+          print('📦 Almacén: ${warehouse.name} - Zonas: ${warehouse.zones.length}');
+          for (final zone in warehouse.zones) {
+            allZones.add({
+              'id': int.parse(zone.id),
+              'denominacion': '${warehouse.name} - ${zone.name}',
+              'warehouse_id': int.parse(warehouse.id),
+              'warehouse_name': warehouse.name,
+              'zone_name': zone.name,
+            });
+          }
+        }
+        
+        setState(() {
+          _locations = allZones;
+        });
+        
+        print('✅ Ubicaciones cargadas en estado: ${_locations.length}');
+        if (_locations.isEmpty) {
+          print('⚠️ No hay zonas disponibles. Verifica la configuración de almacenes.');
+        } else {
+          print('📍 Zonas disponibles:');
+          for (final loc in _locations) {
+            print('   - ID: ${loc['id']}, Nombre: ${loc['denominacion']}');
+          }
+        }
+      } else {
+        print('❌ idTienda es null - no se puede cargar ubicaciones');
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error cargando ubicaciones: $e');
+      print('❌ StackTrace: $stackTrace');
     }
   }
 
@@ -389,6 +455,10 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
 
         // Valores por defecto
         _buildDefaultValuesSection(),
+        
+        // Sección de importación de stock
+        const SizedBox(height: 24),
+        _buildStockImportSection(),
       ],
     );
   }
@@ -620,6 +690,10 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
     );
   }
 
+  int _warningsPage = 0;
+  int _errorsPage = 0;
+  static const int _itemsPerPage = 10;
+
   Widget _buildImportResults() {
     final result = _importResult!;
 
@@ -638,34 +712,155 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
             children: [
               const Text(
                 'Importación completada',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Text('✅ Productos importados: ${result.successCount}'),
               Text('❌ Errores: ${result.errorCount}'),
+              Text('⚠️ Advertencias: ${result.warnings.length}'),
+              const SizedBox(height: 8),
               Text(
                 '📊 Tasa de éxito: ${result.successRate.toStringAsFixed(1)}%',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ],
           ),
         ),
+        
+        // Warnings (eventos alternativos)
+        if (result.warnings.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          const Text(
+            '⚠️ Eventos alternativos encontrados:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          _buildPaginatedList(
+            items: result.warnings,
+            currentPage: _warningsPage,
+            onPageChanged: (page) => setState(() => _warningsPage = page),
+            itemBuilder: (warning) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    _getWarningIcon(warning.type),
+                    size: 16,
+                    color: AppColors.warning,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Fila ${warning.row}: ${warning.message}',
+                      style: TextStyle(color: AppColors.warning),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        
+        // Errors
         if (result.errors.isNotEmpty) ...[
           const SizedBox(height: 16),
           const Text(
-            'Errores encontrados:',
-            style: TextStyle(fontWeight: FontWeight.bold),
+            '❌ Errores encontrados:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
-          ...result.errors
-              .take(5)
-              .map(
-                (error) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text(
-                    'Fila ${error.row}: ${error.message}',
-                    style: TextStyle(color: AppColors.error),
+          const SizedBox(height: 8),
+          _buildPaginatedList(
+            items: result.errors,
+            currentPage: _errorsPage,
+            onPageChanged: (page) => setState(() => _errorsPage = page),
+            itemBuilder: (error) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.error,
+                    size: 16,
+                    color: Colors.red,
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Fila ${error.row}: ${error.message}',
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
               ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+  
+  IconData _getWarningIcon(String type) {
+    switch (type) {
+      case 'value_changed':
+        return Icons.swap_horiz;
+      case 'category_override':
+        return Icons.category;
+      case 'stock_skipped':
+        return Icons.inventory_2;
+      default:
+        return Icons.warning;
+    }
+  }
+  
+  Widget _buildPaginatedList<T>({
+    required List<T> items,
+    required int currentPage,
+    required Function(int) onPageChanged,
+    required Widget Function(T) itemBuilder,
+  }) {
+    final totalPages = (items.length / _itemsPerPage).ceil();
+    final startIndex = currentPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, items.length);
+    final pageItems = items.sublist(startIndex, endIndex);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Column(
+            children: pageItems.map(itemBuilder).toList(),
+          ),
+        ),
+        if (totalPages > 1) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: currentPage > 0
+                    ? () => onPageChanged(currentPage - 1)
+                    : null,
+              ),
+              Text(
+                'Página ${currentPage + 1} de $totalPages',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: currentPage < totalPages - 1
+                    ? () => onPageChanged(currentPage + 1)
+                    : null,
+              ),
+            ],
+          ),
         ],
       ],
     );
@@ -739,6 +934,19 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
 
   Future<void> _startImport() async {
     if (_selectedFile == null || _finalColumnMapping.isEmpty) return;
+    
+    // Validar configuración de stock si está activada
+    if (_importWithStock) {
+      if (_selectedLocationId == null) {
+        _showError('Debe seleccionar una ubicación para el stock');
+        return;
+      }
+      if (!_stockColumnMapping.containsKey('cantidad') || 
+          !_stockColumnMapping.containsKey('precio_compra')) {
+        _showError('Debe mapear las columnas de Cantidad y Precio de Compra');
+        return;
+      }
+    }
 
     setState(() {
       _isImporting = true;
@@ -746,10 +954,20 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
     });
 
     try {
+      print('🚨 PANTALLA - Valores antes de enviar al servicio:');
+      print('   📝 _defaultValues completo: $_defaultValues');
+      print('   🔑 categoria_id en _defaultValues: ${_defaultValues['categoria_id']}');
+      print('   📊 _selectedMainCategoryId: $_selectedMainCategoryId');
+      
       final result = await ExcelImportService.importProducts(
         _selectedFile!,
         _finalColumnMapping,
-        defaultValues: _defaultValues, // AGREGAR ESTA LÍNEA
+        defaultValues: _defaultValues,
+        importWithStock: _importWithStock,
+        stockConfig: _importWithStock ? {
+          'locationId': _selectedLocationId!,
+          'columnMapping': _stockColumnMapping,
+        } : null,
         onProgress: (current, total) {
           setState(() => _importProgress = current / total);
         },
@@ -975,6 +1193,147 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
     }
   }
 
+  Widget _buildStockImportSection() {
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.05),
+        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Toggle
+          CheckboxListTile(
+            value: _importWithStock,
+            onChanged: (value) {
+              setState(() {
+                _importWithStock = value ?? false;
+                if (!_importWithStock) {
+                  _stockColumnMapping.clear();
+                  _selectedLocationId = null;
+                }
+              });
+            },
+            title: const Text(
+              '📦 Importar con Stock Inicial',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            subtitle: const Text(
+              'Se creará una operación de recepción con todos los productos',
+              style: TextStyle(fontSize: 12),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+          
+          if (_importWithStock) ...[
+            const Divider(height: 24),
+            
+            // Ubicación
+            const Text(
+              'Ubicación de Almacenamiento *',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              value: _selectedLocationId,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Seleccione la zona',
+                prefixIcon: Icon(Icons.location_on),
+              ),
+              items: _locations.map((loc) {
+                return DropdownMenuItem<int>(
+                  value: loc['id'],
+                  child: Text(loc['denominacion']),
+                );
+              }).toList(),
+              onChanged: (value) => setState(() => _selectedLocationId = value),
+            ),
+            const SizedBox(height: 16),
+            
+            // Mapeo de columnas
+            const Text(
+              'Mapeo de Columnas de Stock',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            _buildStockColumnRow('cantidad', 'Cantidad/Stock *'),
+            _buildStockColumnRow('precio_compra', 'Precio de Compra *'),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStockColumnRow(String field, String label) {
+    final availableColumns = _analysisResult?.headers
+        .where((h) => !_finalColumnMapping.containsKey(h))
+        .toList() ?? [];
+    
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Flexible(
+            flex: 2,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.arrow_forward, size: 16),
+          const SizedBox(width: 4),
+          Expanded(
+            flex: 3,
+            child: DropdownButtonFormField<String>(
+              value: _stockColumnMapping[field],
+              isExpanded: true, // Permite que el dropdown use todo el espacio disponible
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Seleccionar',
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                isDense: true,
+              ),
+              items: [
+                const DropdownMenuItem<String>(
+                  value: null,
+                  child: Text(
+                    '(No mapear)',
+                    style: TextStyle(color: Colors.grey),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                ...availableColumns.map((col) {
+                  return DropdownMenuItem<String>(
+                    value: col,
+                    child: Text(
+                      col,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }),
+              ],
+              onChanged: (value) {
+                setState(() {
+                  if (value == null) {
+                    _stockColumnMapping.remove(field);
+                  } else {
+                    _stockColumnMapping[field] = value;
+                  }
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showManualMappingDialog(String excelColumn) {
     final availableFields = [
       'denominacion',
@@ -1077,23 +1436,17 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
       );
     }
 
-    final currentValue = _defaultValues[field] as int?;
     final availableCategories = _categories;
-
-    // Determinar si el valor actual es una categoría principal
-    final selectedCategory = availableCategories.firstWhere(
-      (cat) => cat['id'] == currentValue,
-      orElse: () => <String, dynamic>{},
-    );
-
-    final isMainCategorySelected = selectedCategory.isNotEmpty;
+    
+    // Usar _selectedMainCategoryId para el dropdown de categoría principal
+    // Esto mantiene la selección incluso cuando se selecciona una subcategoría
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // DROPDOWN 1: CATEGORÍAS PRINCIPALES (OBLIGATORIO)
         DropdownButtonFormField<int>(
-          value: isMainCategorySelected ? currentValue : null,
+          value: _selectedMainCategoryId,
           decoration: const InputDecoration(
             labelText: 'Categoría Principal *',
             border: OutlineInputBorder(),
@@ -1122,10 +1475,12 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
           onChanged: (int? newValue) {
             setState(() {
               if (newValue != null) {
-                _defaultValues[field] = newValue;
+                _selectedMainCategoryId = newValue; // Guardar categoría principal
+                _defaultValues[field] = newValue; // Inicialmente usar la categoría principal
                 // Limpiar caché de subcategorías para forzar recarga
                 _subcategoriesCache.remove(newValue);
               } else {
+                _selectedMainCategoryId = null;
                 _defaultValues.remove(field);
               }
             });
@@ -1135,8 +1490,8 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
         const SizedBox(height: 16),
 
         // DROPDOWN 2: SUBCATEGORÍAS (OBLIGATORIO si hay categoría seleccionada)
-        if (isMainCategorySelected)
-          _buildSubcategoryDropdown(field, currentValue!),
+        if (_selectedMainCategoryId != null)
+          _buildSubcategoryDropdown(field, _selectedMainCategoryId!),
       ],
     );
   }

@@ -809,6 +809,15 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           children: [
             Text('${item.variante} ${item.opcionVariante}'),
             Text('Almacén: ${item.almacen}'),
+            if (item.ubicacion.isNotEmpty)
+              Text(
+                'Zona: ${item.ubicacion}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.primary.withOpacity(0.7),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
           ],
         ),
         trailing: Column(

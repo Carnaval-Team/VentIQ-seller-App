@@ -1,9 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
-import '../models/product.dart';
+import 'package:ventiq_admin_app/services/inventory_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 
@@ -247,7 +245,9 @@ class ExcelImportService {
   static Future<ImportResult> importProducts(
     File file,
     Map<String, String> finalColumnMapping, {
-    Map<String, dynamic>? defaultValues, // AGREGAR
+    Map<String, dynamic>? defaultValues,
+    bool importWithStock = false,
+    Map<String, dynamic>? stockConfig,
     Function(int, int)? onProgress,
   }) async {
     try {
@@ -290,6 +290,9 @@ class ExcelImportService {
 
       final results = ImportResult();
       final totalRows = dataRows.length;
+      
+      // Lista para almacenar productos importados con stock
+      final List<Map<String, dynamic>> productosConStock = [];
 
       // Procesar en lotes
       for (
@@ -315,7 +318,9 @@ class ExcelImportService {
               finalColumnMapping,
               categoryMap,
               idTienda,
-              defaultValues: defaultValues, // AGREGAR
+              defaultValues: defaultValues,
+              rowIndex: rowIndex,
+              warnings: results.warnings,
             );
 
             // Preparar datos de precios
@@ -343,18 +348,59 @@ class ExcelImportService {
                 },
               ];
             }
+            
+            // Preparar datos de presentación base
+            List<Map<String, dynamic>>? presentacionesData = [
+              {
+                'id_presentacion': 1, // ID 1 = Presentación "Unidad"
+                'cantidad': 1.0, // 1 unidad base = 1 unidad
+                'es_base': true,
+              },
+            ];
 
             // Insertar producto
-            await ProductService.insertProductoCompleto(
+            final insertResult = await ProductService.insertProductoCompleto(
               productoData: productData,
               preciosData: preciosData,
               subcategoriasData: subcategoriasData,
+              presentacionesData: presentacionesData,
             );
+            
+            print('🔍 Estructura completa de insertResult: $insertResult');
+            print('🔍 Claves disponibles: ${insertResult.keys.toList()}');
+            
+            // Intentar obtener el ID del producto de diferentes ubicaciones posibles
+            final productoId = (insertResult['id_producto'] ?? 
+                               insertResult['producto_id'] ?? 
+                               insertResult['data']?['id_producto'] ??
+                               insertResult['data']?['producto_id']) as int?;
+            
+            print('🎯 ID del producto obtenido: $productoId');
 
             results.successCount++;
             results.successfulProducts.add(
               productData['denominacion'] ?? 'Producto ${rowIndex + 1}',
             );
+            
+            // Si se importa con stock, guardar info del producto
+            print('🔍 Verificando si agregar producto a lista de stock (fila ${rowIndex + 2}):');
+            print('   - importWithStock: $importWithStock');
+            print('   - productoId: $productoId');
+            print('   - stockConfig: ${stockConfig != null ? "presente" : "null"}');
+            
+            if (importWithStock && productoId != null && stockConfig != null) {
+              productosConStock.add({
+                'id_producto': productoId,
+                'row': row,
+                'rowIndex': rowIndex,
+              });
+              print('   ✅ Producto $productoId agregado a lista de stock (total: ${productosConStock.length})');
+            } else {
+              print('   ❌ NO agregado - Razones:');
+              if (!importWithStock) print('      - importWithStock es false');
+              if (productoId == null) print('      - productoId es null');
+              if (stockConfig == null) print('      - stockConfig es null');
+            }
           } catch (e) {
             results.errorCount++;
             results.errors.add(
@@ -373,10 +419,67 @@ class ExcelImportService {
         }
       }
 
+      // Crear recepción masiva si hay productos con stock
+      print('🔍 Verificando creación de recepción masiva...');
+      print('   - importWithStock: $importWithStock');
+      print('   - productosConStock.length: ${productosConStock.length}');
+      print('   - stockConfig: $stockConfig');
+      
+      if (importWithStock && productosConStock.isNotEmpty && stockConfig != null) {
+        print('✅ Condiciones cumplidas, creando recepción masiva...');
+        try {
+          await _createBulkStockReception(
+            productosConStock: productosConStock,
+            headers: headers,
+            stockConfig: stockConfig,
+            idTienda: idTienda,
+            warnings: results.warnings,
+          );
+          print('✅ Recepción masiva creada exitosamente');
+        } catch (e, stackTrace) {
+          print('❌ Error creando recepción masiva: $e');
+          print('❌ StackTrace: $stackTrace');
+          results.errors.add(
+            ImportError(
+              row: 0,
+              message: 'Error creando recepción de inventario: $e',
+              data: {},
+            ),
+          );
+        }
+      } else {
+        print('⚠️ No se creará recepción masiva:');
+        if (!importWithStock) print('   - importWithStock es false');
+        if (productosConStock.isEmpty) print('   - productosConStock está vacío');
+        if (stockConfig == null) print('   - stockConfig es null');
+      }
+
       return results;
     } catch (e) {
       throw Exception('Error durante la importación: $e');
     }
+  }
+
+  /// Obtiene el valor de una celda, manejando fórmulas correctamente
+  static String? _getCellValue(Data? cell, {bool returnZeroOnError = false}) {
+    if (cell == null) return returnZeroOnError ? '0' : null;
+    
+    // Si la celda tiene una fórmula, usar el valor calculado (textCellValue)
+    // Si no, usar el valor directo
+    try {
+      // textCellValue devuelve el valor mostrado en Excel (resultado de fórmulas)
+      final textValue = cell.value?.toString();
+      if (textValue != null && textValue.isNotEmpty) {
+        return textValue;
+      }
+    } catch (e) {
+      print('⚠️ Error leyendo celda: $e');
+      if (returnZeroOnError) {
+        return '0';
+      }
+    }
+    
+    return returnZeroOnError ? '0' : null;
   }
 
   /// Convierte una fila de Excel a datos de producto
@@ -386,25 +489,18 @@ class ExcelImportService {
     Map<String, String> columnMapping,
     Map<String, int> categoryMap,
     int idTienda, {
-    Map<String, dynamic>? defaultValues, // AGREGAR
+    Map<String, dynamic>? defaultValues,
+    int? rowIndex,
+    List<ImportWarning>? warnings,
   }) {
     final productData = <String, dynamic>{'id_tienda': idTienda};
 
-    // AGREGAR: Aplicar valores por defecto PRIMERO
-    if (defaultValues != null) {
-      for (final entry in defaultValues.entries) {
-        if (entry.key == 'categoria_id') {
-          productData['id_categoria'] = entry.value;
-        } else {
-          productData[entry.key] = entry.value;
-        }
-      }
-    }
+    // PRIMERO: Leer valores del Excel
     for (int i = 0; i < headers.length && i < row.length; i++) {
       final header = headers[i];
-      final cellValue = row[i]?.value;
+      final cellValueStr = _getCellValue(row[i]);
 
-      if (cellValue == null || cellValue.toString().trim().isEmpty) continue;
+      if (cellValueStr == null || cellValueStr.trim().isEmpty) continue;
 
       final mappedField = columnMapping[header];
       if (mappedField == null) continue;
@@ -413,35 +509,56 @@ class ExcelImportService {
       switch (mappedField) {
         case 'categoria_id':
           // Resolver categoría por nombre o ID
-          final categoryValue = cellValue.toString().toLowerCase().trim();
+          final categoryValue = cellValueStr.toLowerCase().trim();
+          print('📖 PASO 1 - Leyendo categoría del Excel: "$cellValueStr"');
           if (categoryMap.containsKey(categoryValue)) {
             productData['id_categoria'] = categoryMap[categoryValue];
+            print('   ✅ Categoría encontrada por nombre: ${categoryMap[categoryValue]}');
           } else {
             // Intentar parsear como ID directo
-            final categoryId = int.tryParse(cellValue.toString());
+            final categoryId = int.tryParse(cellValueStr);
             if (categoryId != null) {
               productData['id_categoria'] = categoryId;
+              print('   ✅ Categoría parseada como ID: $categoryId');
             } else {
-              throw Exception('Categoría no encontrada: $cellValue');
+              throw Exception('Categoría no encontrada: $cellValueStr');
             }
           }
+          print('   💾 productData["id_categoria"] después del Excel = ${productData['id_categoria']}');
           break;
 
         case 'precio_venta':
         case 'precio_oferta':
         case 'costo_produccion':
-          final doubleValue = double.tryParse(cellValue.toString());
+          // Usar _parseNumericValue para manejar formatos de moneda
+          final doubleValue = _parseNumericValue(cellValueStr);
           if (doubleValue != null) {
             productData[mappedField] = doubleValue;
+          } else {
+            // No se pudo parsear, usar 0 y agregar warning
+            productData[mappedField] = 0.0;
+            warnings?.add(ImportWarning(
+              row: rowIndex ?? 0,
+              message: 'Campo "$mappedField" no pudo parsearse ("$cellValueStr"), se cambió a 0',
+              type: 'value_changed',
+            ));
           }
           break;
 
         case 'stock_minimo':
         case 'stock_maximo':
         case 'dias_alert_caducidad':
-          final intValue = int.tryParse(cellValue.toString());
+          final intValue = int.tryParse(cellValueStr);
           if (intValue != null) {
             productData[mappedField] = intValue;
+          } else {
+            // No se pudo parsear, usar 0 y agregar warning
+            productData[mappedField] = 0;
+            warnings?.add(ImportWarning(
+              row: rowIndex ?? 0,
+              message: 'Campo "$mappedField" no pudo parsearse ("$cellValueStr"), se cambió a 0',
+              type: 'value_changed',
+            ));
           }
           break;
 
@@ -455,12 +572,12 @@ class ExcelImportService {
         case 'es_servicio':
         case 'es_oferta':
         case 'es_elaborado':
-          productData[mappedField] = _parseBooleanValue(cellValue.toString());
+          productData[mappedField] = _parseBooleanValue(cellValueStr);
           break;
 
         case 'fecha_inicio_oferta':
         case 'fecha_fin_oferta':
-          final dateValue = _parseDateValue(cellValue.toString());
+          final dateValue = _parseDateValue(cellValueStr);
           if (dateValue != null) {
             productData[mappedField] = dateValue.toIso8601String().substring(
               0,
@@ -470,7 +587,43 @@ class ExcelImportService {
           break;
 
         default:
-          productData[mappedField] = cellValue.toString().trim();
+          productData[mappedField] = cellValueStr.trim();
+      }
+    }
+    
+    // SEGUNDO: Aplicar valores por defecto
+    if (defaultValues != null) {
+      print('📏 PASO 2 - Aplicando valores por defecto...');
+      print('   📝 defaultValues completo: $defaultValues');
+      for (final entry in defaultValues.entries) {
+        final key = entry.key == 'categoria_id' ? 'id_categoria' : entry.key;
+        print('   🔑 Procesando: ${entry.key} -> $key = ${entry.value}');
+        
+        // CATEGORÍA: Siempre sobrescribir si el usuario la seleccionó en el menú
+        if (key == 'id_categoria') {
+          final oldValue = productData[key];
+          print('   🔍 Valor anterior en productData: $oldValue');
+          print('   🔍 Valor nuevo de defaultValues: ${entry.value}');
+          productData[key] = entry.value;
+          print('   💾 productData["id_categoria"] después de sobrescribir = ${productData[key]}');
+          if (oldValue != null && oldValue != entry.value) {
+            print('   🔄 Sobrescrito $key: $oldValue -> ${entry.value} (selección del usuario)');
+            warnings?.add(ImportWarning(
+              row: rowIndex ?? 0,
+              message: 'Categoría del Excel ($oldValue) sobrescrita por selección del usuario (${entry.value})',
+              type: 'category_override',
+            ));
+          } else {
+            print('   ✅ Aplicado $key = ${entry.value} (selección del usuario)');
+          }
+        }
+        // OTROS CAMPOS: Solo aplicar si no existen en Excel
+        else if (!productData.containsKey(key)) {
+          productData[key] = entry.value;
+          print('   ✅ Aplicado $key = ${entry.value} (no existía en Excel)');
+        } else {
+          print('   ⏭️ Omitido $key (ya existe con valor: ${productData[key]})');
+        }
       }
     }
 
@@ -623,6 +776,194 @@ class ExcelImportService {
     return excel.encode()!;
   }
 */
+
+  /// Limpia un valor numérico eliminando símbolos de moneda, comas, espacios, etc.
+  static double? _parseNumericValue(String value) {
+    if (value.isEmpty) return null;
+    
+    // Eliminar espacios en blanco
+    String cleaned = value.trim();
+    
+    // Eliminar símbolos de moneda comunes
+    cleaned = cleaned.replaceAll(RegExp(r'[\$€£¥₩₽₹CUP]'), '');
+    
+    // Eliminar espacios adicionales
+    cleaned = cleaned.replaceAll(' ', '');
+    
+    // Reemplazar comas por puntos (formato decimal)
+    // Si hay múltiples comas, asumir que son separadores de miles
+    if (cleaned.contains(',')) {
+      final commaCount = ','.allMatches(cleaned).length;
+      if (commaCount == 1 && cleaned.indexOf(',') > cleaned.length - 4) {
+        // Única coma cerca del final = separador decimal
+        cleaned = cleaned.replaceAll(',', '.');
+      } else {
+        // Múltiples comas = separadores de miles, eliminarlas
+        cleaned = cleaned.replaceAll(',', '');
+      }
+    }
+    
+    // Intentar parsear
+    return double.tryParse(cleaned);
+  }
+
+  /// Crea una operación de recepción masiva con todos los productos importados
+  static Future<void> _createBulkStockReception({
+    required List<Map<String, dynamic>> productosConStock,
+    required List<String> headers,
+    required Map<String, dynamic> stockConfig,
+    required int idTienda,
+    List<ImportWarning>? warnings,
+  }) async {
+    final columnMapping = stockConfig['columnMapping'] as Map<String, String>;
+    final locationId = stockConfig['locationId'] as int;
+    
+    print('📦 Creando recepción masiva para ${productosConStock.length} productos');
+    print('📍 Ubicación ID: $locationId');
+    print('🗺️ Mapeo de columnas: $columnMapping');
+    
+    List<Map<String, dynamic>> productos = [];
+    int productosDescartados = 0;
+    
+    for (final productoInfo in productosConStock) {
+      final productoId = productoInfo['id_producto'] as int;
+      final row = productoInfo['row'] as List<Data?>;
+      final rowIndex = productoInfo['rowIndex'] as int;
+      
+      print('\n🔍 Procesando producto ID=$productoId (fila ${rowIndex + 2})');
+      
+      double? cantidad;
+      double? precioCompra;
+      String? cantidadRaw;
+      String? precioRaw;
+      
+      // Extraer valores de la fila usando _getCellValue para manejar fórmulas
+      for (int j = 0; j < headers.length && j < row.length; j++) {
+        final header = headers[j];
+        final cellValueStr = _getCellValue(row[j]);
+        
+        if (cellValueStr == null || cellValueStr.trim().isEmpty) continue;
+        
+        if (columnMapping['cantidad'] == header) {
+          cantidadRaw = cellValueStr;
+          cantidad = _parseNumericValue(cantidadRaw);
+          print('   📦 Cantidad: "$cantidadRaw" -> $cantidad');
+        } else if (columnMapping['precio_compra'] == header) {
+          precioRaw = cellValueStr;
+          precioCompra = _parseNumericValue(precioRaw);
+          print('   💵 Precio: "$precioRaw" -> $precioCompra');
+        }
+      }
+      
+      // Validar datos con logs detallados
+      print('   ✅ Validación:');
+      print('      - Cantidad: $cantidad ${cantidad != null && cantidad > 0 ? "✅" : "❌ (debe ser > 0)"}');
+      print('      - Precio: $precioCompra ${precioCompra != null && precioCompra > 0 ? "✅" : "❌ (debe ser > 0)"}');
+      
+      if (cantidad != null && cantidad > 0 && precioCompra != null && precioCompra > 0) {
+        // Obtener el ID del registro de presentación base (PK de app_dat_producto_presentacion)
+        int? idProductoPresentacion;
+        try {
+          final basePresentation = await ProductService.getBasePresentacion(productoId);
+          if (basePresentation != null) {
+            // getBasePresentacion retorna 'id_presentacion' que es el PK del registro
+            idProductoPresentacion = basePresentation['id_presentacion'] as int?;
+            print('  📦 ID presentación obtenido para producto $productoId: $idProductoPresentacion');
+          } else {
+            print('  ⚠️ Producto $productoId no tiene presentación base');
+          }
+        } catch (e) {
+          print('  ❌ Error obteniendo presentación para producto $productoId: $e');
+        }
+        
+        productos.add({
+          'id_producto': productoId,
+          'id_producto_presentacion': idProductoPresentacion,
+          'id_ubicacion': locationId,
+          'cantidad': cantidad,
+          'precio_compra': precioCompra,
+        });
+        print('   ✅ AGREGADO - Cantidad: $cantidad, Precio: \$$precioCompra, Subtotal: \$${cantidad * precioCompra}');
+      } else {
+        productosDescartados++;
+        print('   ❌ DESCARTADO - Razones:');
+        
+        String razon = '';
+        if (cantidad == null) {
+          razon = 'Cantidad no pudo parsearse ("$cantidadRaw")';
+          print('      - $razon');
+        } else if (cantidad <= 0) {
+          razon = 'Cantidad es 0 o negativa: $cantidad';
+          print('      - $razon');
+        }
+        if (precioCompra == null) {
+          final precioRazon = 'Precio no pudo parsearse ("$precioRaw")';
+          razon = razon.isEmpty ? precioRazon : '$razon, $precioRazon';
+          print('      - $precioRazon');
+        } else if (precioCompra <= 0) {
+          final precioRazon = 'Precio es 0 o negativo: $precioCompra';
+          razon = razon.isEmpty ? precioRazon : '$razon, $precioRazon';
+          print('      - $precioRazon');
+        }
+        
+        warnings?.add(ImportWarning(
+          row: rowIndex + 2,
+          message: 'Producto ID=$productoId no se agregó al inventario: $razon',
+          type: 'stock_skipped',
+        ));
+      }
+    }
+    
+    if (productos.isEmpty) {
+      print('⚠️ No hay productos válidos para crear recepción');
+      return;
+    }
+    
+    print('📦 Creando operación de recepción con ${productos.length} productos válidos');
+    
+    // Obtener UUID del usuario
+    final userPrefs = UserPreferencesService();
+    final userUuid = await userPrefs.getUserId();
+    
+    if (userUuid == null) {
+      throw Exception('No se pudo obtener UUID del usuario');
+    }
+    
+    // Calcular monto total
+    final montoTotal = productos.fold<double>(
+      0.0,
+      (sum, p) => sum + ((p['precio_compra'] as double) * (p['cantidad'] as double)),
+    );
+    
+    // Crear operación de recepción
+    final result = await InventoryService.insertInventoryReception(
+      entregadoPor: 'Importación Excel',
+      recibidoPor: 'Sistema',
+      idTienda: idTienda,
+      montoTotal: montoTotal,
+      motivo: 1, // Motivo: Importación
+      observaciones: 'Importación masiva desde Excel - ${productos.length} productos',
+      productos: productos,
+      uuid: userUuid,
+    );
+    
+    final idOperacion = result['id_operacion'] as int?;
+    
+    if (idOperacion == null) {
+      throw Exception('No se obtuvo ID de operación');
+    }
+    
+    print('📦 Operación de recepción creada: ID=$idOperacion');
+    
+    // Completar operación automáticamente
+    await InventoryService.completeOperation(
+      idOperacion: idOperacion,
+      comentario: 'Importación automática completada',
+      uuid: userUuid,
+    );
+    
+    print('✅ Recepción masiva completada exitosamente');
+  }
 }
 
 /// Resultado del análisis del archivo Excel
@@ -665,6 +1006,7 @@ class ImportResult {
   int errorCount = 0;
   List<String> successfulProducts = [];
   List<ImportError> errors = [];
+  List<ImportWarning> warnings = []; // Eventos alternativos
 
   int get totalProcessed => successCount + errorCount;
   double get successRate =>
@@ -678,4 +1020,13 @@ class ImportError {
   final Map<String, dynamic> data;
 
   ImportError({required this.row, required this.message, required this.data});
+}
+
+/// Warning de importación (eventos alternativos)
+class ImportWarning {
+  final int row;
+  final String message;
+  final String type; // 'value_changed', 'category_override', 'stock_skipped', etc.
+
+  ImportWarning({required this.row, required this.message, required this.type});
 }

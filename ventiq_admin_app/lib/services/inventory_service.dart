@@ -730,18 +730,25 @@ class InventoryService {
   ) async {
     try {
       print('🔍 Obteniendo zonas del almacén $idAlmacen...');
+      print('📊 Consulta: SELECT id, denominacion, sku_codigo, id_tipo_layout FROM app_dat_layout_almacen WHERE id_almacen = $idAlmacen');
 
       final response = await _supabase
           .from('app_dat_layout_almacen')
-          .select('id, denominacion, codigo, tipo, abc, capacidad')
+          .select('id, denominacion, sku_codigo, id_tipo_layout')
           .eq('id_almacen', idAlmacen)
-          .eq('activo', true)
           .order('denominacion');
 
       print('✅ Zonas obtenidas: ${response.length}');
+      if (response.isEmpty) {
+        print('⚠️ No hay zonas registradas en app_dat_layout_almacen para id_almacen=$idAlmacen');
+        print('⚠️ Necesitas crear zonas/ubicaciones para este almacén en la base de datos');
+      } else {
+        print('📍 Zonas encontradas: $response');
+      }
       return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al obtener zonas: $e');
+      print('❌ StackTrace: $stackTrace');
       return [];
     }
   }
