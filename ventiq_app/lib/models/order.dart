@@ -81,6 +81,9 @@ class OrderItem {
   final Map<String, dynamic>? inventoryData;
   final PaymentMethod? paymentMethod;
   final Map<String, dynamic>? promotionData;
+  // Nuevos campos para inventario
+  final double? cantidadInicial;
+  final double? cantidadFinal;
 
   OrderItem({
     required this.id,
@@ -93,6 +96,8 @@ class OrderItem {
     this.inventoryData,
     this.paymentMethod,
     this.promotionData,
+    this.cantidadInicial,
+    this.cantidadFinal,
   });
 
   double get subtotal {
@@ -150,6 +155,8 @@ class OrderItem {
     Map<String, dynamic>? inventoryData,
     PaymentMethod? paymentMethod,
     Map<String, dynamic>? promotionData,
+    double? cantidadInicial,
+    double? cantidadFinal,
   }) {
     return OrderItem(
       id: id ?? this.id,
@@ -162,6 +169,8 @@ class OrderItem {
       inventoryData: inventoryData ?? this.inventoryData,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       promotionData: promotionData ?? this.promotionData,
+      cantidadInicial: cantidadInicial ?? this.cantidadInicial,
+      cantidadFinal: cantidadFinal ?? this.cantidadFinal,
     );
   }
 }

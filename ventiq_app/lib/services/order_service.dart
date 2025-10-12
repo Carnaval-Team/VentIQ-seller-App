@@ -641,7 +641,7 @@ class OrderService {
 
       // Preparar parámetros para listar_ordenes sin filtro de fecha
       final rpcParams = {
-        'con_inventario_param': false,
+        'con_inventario_param': true, // ✅ Activar para obtener datos de inventario
         'fecha_desde_param': null, // Sin filtro de fecha desde
         'fecha_hasta_param': null, // Sin filtro de fecha hasta
         'id_estado_param': null, // Todos los estados
@@ -774,6 +774,9 @@ class OrderService {
               cantidad: (item['cantidad'] ?? 1).toInt(),
               precioUnitario: (item['precio_unitario'] ?? 0.0).toDouble(),
               ubicacionAlmacen: 'Principal', // Valor por defecto
+              // Mapear nuevos campos de inventario desde la función SQL
+              cantidadInicial: item['cantidad_inicial']?.toDouble(),
+              cantidadFinal: item['cantidad_final']?.toDouble(),
             );
 
             orderItems.add(orderItem);

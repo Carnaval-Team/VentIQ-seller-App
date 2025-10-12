@@ -12,6 +12,7 @@ import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../services/currency_service.dart';
 import '../utils/platform_utils.dart';
+import '../widgets/egresos_list_screen.dart';
 
 class VentaTotalScreen extends StatefulWidget {
   const VentaTotalScreen({Key? key}) : super(key: key);
@@ -60,7 +61,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     setState(() {
       _isLoadingUsdRate = true;
     });
-    
+
     try {
       final rate = await CurrencyService.getUsdRate();
       setState(() {
@@ -84,10 +85,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     try {
       // Obtener preferencias del usuario
       final userPrefs = UserPreferencesService();
-      
+
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline activado - Cargando datos desde cache...');
         await _calcularVentaTotalOffline();
@@ -96,7 +97,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       // Modo online: cargar desde Supabase
       print('🌐 Modo online - Cargando datos desde servidor...');
-      
+
       // Primero cargar las órdenes desde Supabase
       _orderService.clearAllOrders();
       await _orderService.listOrdersFromSupabase();
@@ -125,16 +126,21 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
         if (resumenCierreResponse != null) {
           Map<String, dynamic> data;
-          
+
           // Manejar tanto List como Map de respuesta
-          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+          if (resumenCierreResponse is List &&
+              resumenCierreResponse.isNotEmpty) {
             // Si es una lista, tomar el primer elemento
             data = resumenCierreResponse[0] as Map<String, dynamic>;
-            print('📈 VentaTotal datos extraídos de lista: ${data.keys.toList()}');
+            print(
+              '📈 VentaTotal datos extraídos de lista: ${data.keys.toList()}',
+            );
           } else if (resumenCierreResponse is Map<String, dynamic>) {
             // Si ya es un mapa, usarlo directamente
             data = resumenCierreResponse;
-            print('📈 VentaTotal datos recibidos como mapa: ${data.keys.toList()}');
+            print(
+              '📈 VentaTotal datos recibidos como mapa: ${data.keys.toList()}',
+            );
           } else {
             print('⚠️ Formato de respuesta no reconocido en VentaTotalScreen');
             setState(() {
@@ -167,11 +173,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             // Calcular egresado: ventas_totales - efectivo_real + egresos en efectivo
             final ventasTotales = (data['ventas_totales'] ?? 0.0).toDouble();
             final efectivoReal = (data['efectivo_real'] ?? 0.0).toDouble();
-            //marca cambiada 
+            //marca cambiada
             _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
 
             // Efectivo real: efectivo_esperado - egresos en efectivo
-            final efectivoEsperado = (data['efectivo_esperado'] ?? 0.0).toDouble();
+            final efectivoEsperado =
+                (data['efectivo_esperado'] ?? 0.0).toDouble();
             _totalEfectivoReal = efectivoEsperado - _egresosEfectivo;
 
             _isLoading = false;
@@ -183,8 +190,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           print('Órdenes cargadas: ${orders.length}');
           print('Órdenes completadas: ${ordenesVendidas.length}');
           print('Productos vendidos: ${productosVendidos.length}');
-          print('Total Egresado: $_totalEgresado (incluye egresos efectivo: $_egresosEfectivo)');
-          print('Efectivo Real: $_totalEfectivoReal (descontando egresos efectivo)');
+          print(
+            'Total Egresado: $_totalEgresado (incluye egresos efectivo: $_egresosEfectivo)',
+          );
+          print(
+            'Efectivo Real: $_totalEfectivoReal (descontando egresos efectivo)',
+          );
         }
       }
     } catch (e) {
@@ -223,17 +234,21 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   Future<void> _loadExpenses() async {
     try {
       final userPrefs = UserPreferencesService();
-      
+
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
-      
+
       List<Expense> expenses = [];
-      
+
       if (isOfflineModeEnabled) {
-        print('🔌 VentaTotal - Modo offline activado, cargando egresos desde cache...');
+        print(
+          '🔌 VentaTotal - Modo offline activado, cargando egresos desde cache...',
+        );
         expenses = await _loadExpensesOffline();
       } else {
-        print('🌐 VentaTotal - Modo online, obteniendo egresos desde servidor...');
+        print(
+          '🌐 VentaTotal - Modo online, obteniendo egresos desde servidor...',
+        );
         expenses = await TurnoService.getEgresosEnriquecidos();
       }
 
@@ -278,31 +293,36 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   Future<List<Expense>> _loadExpensesOffline() async {
     try {
       print('📱 VentaTotal - Cargando egresos desde cache offline...');
-      
+
       final userPrefs = UserPreferencesService();
-      
+
       // Obtener egresos desde cache específico
       final egresosData = await userPrefs.getEgresosCache();
-      
+
       if (egresosData.isNotEmpty) {
-        final expenses = egresosData.map((expenseJson) {
-          return Expense(
-            idEgreso: expenseJson['id_egreso'] ?? 0,
-            montoEntrega: (expenseJson['monto_entrega'] ?? 0.0).toDouble(),
-            motivoEntrega: expenseJson['motivo_entrega'] ?? 'Sin motivo',
-            nombreRecibe: expenseJson['nombre_recibe'] ?? 'Sin nombre',
-            nombreAutoriza: expenseJson['nombre_autoriza'] ?? 'Sin autorización',
-            fechaEntrega: expenseJson['fecha_entrega'] != null 
-                ? DateTime.parse(expenseJson['fecha_entrega'])
-                : DateTime.now(),
-            idMedioPago: expenseJson['id_medio_pago'],
-            turnoEstado: expenseJson['turno_estado'] ?? 1,
-            medioPago: expenseJson['medio_pago'],
-            esDigital: expenseJson['es_digital'] ?? false,
-          );
-        }).toList();
-        
-        print('✅ VentaTotal - Egresos cargados desde cache offline: ${expenses.length}');
+        final expenses =
+            egresosData.map((expenseJson) {
+              return Expense(
+                idEgreso: expenseJson['id_egreso'] ?? 0,
+                montoEntrega: (expenseJson['monto_entrega'] ?? 0.0).toDouble(),
+                motivoEntrega: expenseJson['motivo_entrega'] ?? 'Sin motivo',
+                nombreRecibe: expenseJson['nombre_recibe'] ?? 'Sin nombre',
+                nombreAutoriza:
+                    expenseJson['nombre_autoriza'] ?? 'Sin autorización',
+                fechaEntrega:
+                    expenseJson['fecha_entrega'] != null
+                        ? DateTime.parse(expenseJson['fecha_entrega'])
+                        : DateTime.now(),
+                idMedioPago: expenseJson['id_medio_pago'],
+                turnoEstado: expenseJson['turno_estado'] ?? 1,
+                medioPago: expenseJson['medio_pago'],
+                esDigital: expenseJson['es_digital'] ?? false,
+              );
+            }).toList();
+
+        print(
+          '✅ VentaTotal - Egresos cargados desde cache offline: ${expenses.length}',
+        );
         return expenses;
       } else {
         print('ℹ️ VentaTotal - No hay egresos en cache offline');
@@ -380,11 +400,12 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: _buildSummaryCard(
+                          child: _buildClickableSummaryCard(
                             'Total Egresado',
                             _egresosEfectivo.toStringAsFixed(0),
                             Icons.attach_money,
                             const Color.fromARGB(255, 160, 22, 22),
+                            onTap: _showEgresosList,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -404,7 +425,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                         Expanded(
                           child: _buildSummaryCard(
                             'Total Transferencia',
-                            '\$${(_totalEgresado - _egresosEfectivo).toStringAsFixed(0)}',
+                            '\$${((_totalEgresado - _egresosEfectivo) > 0 ? (_totalEgresado - _egresosEfectivo) : 0).toStringAsFixed(0)}',
                             Icons.credit_card,
                             Colors.orange,
                           ),
@@ -426,29 +447,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
               // Lista de órdenes vendidas
               Expanded(
-                child: _isLoading
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 16),
-                            Text('Cargando datos de ventas...'),
-                          ],
-                        ),
-                      )
-                    : _ordenesVendidas.isEmpty
+                child:
+                    _isLoading
+                        ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 16),
+                              Text('Cargando datos de ventas...'),
+                            ],
+                          ),
+                        )
+                        : _ordenesVendidas.isEmpty
                         ? _buildEmptyState()
                         : _buildOrdersList(),
               ),
             ],
           ),
           // USD Rate Chip positioned at bottom left
-          Positioned(
-            bottom: 16,
-            left: 16,
-            child: _buildUsdRateChip(),
-          ),
+          Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
         ],
       ),
     );
@@ -487,6 +505,72 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildClickableSummaryCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color, {
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [Icon(icon, color: color, size: 24)],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEgresosList() {
+    print('🔍 Mostrando lista de egresos...');
+    print('📊 Total egresos: $_totalEgresos');
+    print('💰 Egresos efectivo: $_egresosEfectivo');
+    print('💳 Egresos transferencias: $_egresosTransferencias');
+    print('📋 Número de egresos: ${_expenses.length}');
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => EgresosListScreen(
+              expenses: _expenses,
+              totalEgresos: _totalEgresos,
+              egresosEfectivo: _egresosEfectivo,
+              egresosTransferencias: _egresosTransferencias,
+            ),
       ),
     );
   }
@@ -759,20 +843,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
     for (final item in _productosVendidos) {
       final key = item.nombre;
+      print('Item: ${item}');
       if (productosAgrupados.containsKey(key)) {
         productosAgrupados[key]!['cantidad'] += item.cantidad;
         productosAgrupados[key]!['subtotal'] += item.subtotal;
-        productosAgrupados[key]!['costo'] +=
-            (item.precioUnitario * 0.6) * item.cantidad;
-        productosAgrupados[key]!['descuento'] +=
-            (item.precioUnitario * 0.1) * item.cantidad;
+        // Mantener los valores iniciales y finales del primer item (no sumar)
+        if (productosAgrupados[key]!['cantidadInicial'] == null &&
+            item.cantidadInicial != null) {
+          productosAgrupados[key]!['cantidadInicial'] = item.cantidadInicial;
+        }
+        if (productosAgrupados[key]!['cantidadFinal'] == null &&
+            item.cantidadFinal != null) {
+          productosAgrupados[key]!['cantidadFinal'] = item.cantidadFinal;
+        }
       } else {
         productosAgrupados[key] = {
           'item': item,
           'cantidad': item.cantidad,
           'subtotal': item.subtotal,
-          'costo': (item.precioUnitario * 0.6) * item.cantidad,
-          'descuento': (item.precioUnitario * 0.1) * item.cantidad,
+          'cantidadInicial': item.cantidadInicial,
+          'cantidadFinal': item.cantidadFinal,
         };
       }
     }
@@ -800,7 +890,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               ),
               Expanded(
                 child: Text(
-                  'Cant.',
+                  'Inicial',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -811,7 +901,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               ),
               Expanded(
                 child: Text(
-                  'Costo',
+                  'Vend.',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -822,7 +912,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               ),
               Expanded(
                 child: Text(
-                  'Desc.',
+                  'Final',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -858,8 +948,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     final item = producto['item'] as OrderItem;
     final cantidad = producto['cantidad'] as int;
     final subtotal = producto['subtotal'] as double;
-    final costo = producto['costo'] as double;
-    final descuento = producto['descuento'] as double;
+    final cantidadInicial = producto['cantidadInicial'] as double?;
+    final cantidadFinal = producto['cantidadFinal'] as double?;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -892,23 +982,23 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             ),
           ),
 
-          // Cantidad
+          // Cantidad Inicial
           Expanded(
             child: Text(
-              cantidad.toString(),
+              cantidadInicial?.toStringAsFixed(0) ?? '-',
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF1F2937),
+                color: Colors.blue,
               ),
               textAlign: TextAlign.center,
             ),
           ),
 
-          // Costo
+          // Cantidad Vendida
           Expanded(
             child: Text(
-              '\$${costo.toStringAsFixed(0)}',
+              cantidad.toString(),
               style: const TextStyle(
                 fontSize: 12,
                 color: Colors.orange,
@@ -918,13 +1008,13 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             ),
           ),
 
-          // Descuento
+          // Cantidad Final
           Expanded(
             child: Text(
-              '\$${descuento.toStringAsFixed(0)}',
+              cantidadFinal?.toStringAsFixed(0) ?? '-',
               style: const TextStyle(
                 fontSize: 12,
-                color: Colors.red,
+                color: Colors.green,
                 fontWeight: FontWeight.w500,
               ),
               textAlign: TextAlign.center,
@@ -951,31 +1041,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   // Método para imprimir ticket individual
   Future<void> _imprimirTicketIndividual(Order order) async {
     try {
-      print('🖨️ Iniciando impresión de ticket individual para orden ${order.id}');
-      
+      print(
+        '🖨️ Iniciando impresión de ticket individual para orden ${order.id}',
+      );
+
       // Usar PrinterManager para manejar tanto web como Bluetooth
       final result = await _printerManager.printInvoice(context, order);
-      
+
       if (result.success) {
-        _showSuccessDialog(
-          '¡Ticket Impreso!',
-          result.message,
-        );
+        _showSuccessDialog('¡Ticket Impreso!', result.message);
         print('✅ ${result.message}');
         if (result.details != null) {
           print('ℹ️ Detalles: ${result.details}');
         }
       } else {
-        _showErrorDialog(
-          'Error de Impresión',
-          result.message,
-        );
+        _showErrorDialog('Error de Impresión', result.message);
         print('❌ ${result.message}');
         if (result.details != null) {
           print('ℹ️ Detalles: ${result.details}');
         }
       }
-      
     } catch (e) {
       _showErrorDialog('Error', 'Ocurrió un error al imprimir: $e');
       print('❌ Error en _imprimirTicketIndividual: $e');
@@ -1036,7 +1121,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   Future<void> _imprimirResumenDetallado() async {
     try {
       print('🖨️ Iniciando impresión de resumen detallado');
-      
+
       // Verificar si estamos en web
       if (PlatformUtils.isWeb) {
         // Usar impresión web
@@ -1045,7 +1130,6 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         // Usar impresión Bluetooth
         await _imprimirResumenDetalladoBluetooth();
       }
-      
     } catch (e) {
       _showErrorDialog('Error', 'Ocurrió un error al imprimir: $e');
       print('❌ Error en _imprimirResumenDetallado: $e');
@@ -1060,10 +1144,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       if (!shouldPrint) return;
 
       print('🌐 Imprimiendo resumen detallado en web...');
-      
+
       // Importar el servicio web
       final webSummaryService = WebSummaryPrinterService();
-      
+
       // Imprimir usando el servicio web
       bool printed = await webSummaryService.printDetailedSummary(
         productosVendidos: _productosVendidos,
@@ -1086,7 +1170,6 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         );
         print('❌ Error imprimiendo resumen detallado en web');
       }
-      
     } catch (e) {
       _showErrorDialog('Error Web', 'Ocurrió un error al imprimir en web: $e');
       print('❌ Error en _imprimirResumenDetalladoWeb: $e');
@@ -1421,29 +1504,25 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.attach_money,
-            size: 16,
-            color: Color(0xFF4A90E2),
-          ),
+          const Icon(Icons.attach_money, size: 16, color: Color(0xFF4A90E2)),
           const SizedBox(width: 4),
           _isLoadingUsdRate
               ? const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF4A90E2),
-                  ),
-                )
-              : Text(
-                  'USD: \$${_usdRate.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2C3E50),
-                  ),
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFF4A90E2),
                 ),
+              )
+              : Text(
+                'USD: \$${_usdRate.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
         ],
       ),
     );
@@ -1453,24 +1532,25 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   Future<void> _calcularVentaTotalOffline() async {
     try {
       print('📱 Calculando venta total desde cache offline...');
-      
+
       final userPrefs = UserPreferencesService();
-      
+
       // Obtener resumen de cierre actualizado con órdenes offline
       final resumenCierre = await userPrefs.getResumenCierreWithOfflineOrders();
-      
+
       if (resumenCierre != null) {
         print('✅ Resumen de cierre cargado desde cache offline');
         print('📊 Datos disponibles: ${resumenCierre.keys.toList()}');
-        
+
         // Obtener órdenes locales (offline)
         final orders = _orderService.orders;
         final productosVendidos = <OrderItem>[];
         final ordenesVendidas = <Order>[];
-        
+
         // Filtrar órdenes completadas y offline
         for (final order in orders) {
-          if (order.status == OrderStatus.completada || order.status == OrderStatus.pagoConfirmado || 
+          if (order.status == OrderStatus.completada ||
+              order.status == OrderStatus.pagoConfirmado ||
               order.status.name == 'pendienteDeSincronizacion') {
             ordenesVendidas.add(order);
             for (final item in order.items) {
@@ -1478,52 +1558,66 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             }
           }
         }
-        
+
         setState(() {
           _productosVendidos = productosVendidos;
           _ordenesVendidas = ordenesVendidas;
-          
+
           // Usar datos del resumen de cierre (ya incluye órdenes offline)
           // Mapear correctamente los nombres de campos del cache
-          _totalVentas = (resumenCierre['ventas_totales'] ?? resumenCierre['total_ventas'] ?? 0.0).toDouble();
+          _totalVentas =
+              (resumenCierre['ventas_totales'] ??
+                      resumenCierre['total_ventas'] ??
+                      0.0)
+                  .toDouble();
           _totalProductos = (resumenCierre['productos_vendidos'] ?? 0).toInt();
-          
+
           // Calcular valores estimados para campos específicos
           final ventasTotales = _totalVentas;
-          final efectivoReal = (resumenCierre['efectivo_real'] ?? resumenCierre['total_efectivo'] ?? ventasTotales * 0.7).toDouble();
-          
+          final efectivoReal =
+              (resumenCierre['efectivo_real'] ??
+                      resumenCierre['total_efectivo'] ??
+                      ventasTotales * 0.7)
+                  .toDouble();
+
           // Egresado: ventas_totales - efectivo_real + egresos en efectivo
           _totalEgresado = ventasTotales - efectivoReal + _egresosEfectivo;
-          
+
           // Efectivo real: efectivo_esperado - egresos en efectivo
-          final efectivoEsperado = (resumenCierre['efectivo_esperado'] ?? 
-                                   (resumenCierre['efectivo_inicial'] ?? 500.0) + efectivoReal).toDouble();
+          final efectivoEsperado =
+              (resumenCierre['efectivo_esperado'] ??
+                      (resumenCierre['efectivo_inicial'] ?? 500.0) +
+                          efectivoReal)
+                  .toDouble();
           _totalEfectivoReal = efectivoEsperado - _egresosEfectivo;
-          
+
           _isLoading = false;
         });
-        
+
         print('💰 Datos calculados desde cache offline:');
         print('  - Ventas Totales: $_totalVentas');
         print('  - Productos Vendidos: $_totalProductos');
         print('  - Órdenes locales: ${orders.length}');
         print('  - Órdenes completadas/offline: ${ordenesVendidas.length}');
         print('  - Items vendidos: ${productosVendidos.length}');
-        print('  - Total Egresado: $_totalEgresado (incluye egresos efectivo: $_egresosEfectivo)');
-        print('  - Efectivo Real: $_totalEfectivoReal (descontando egresos efectivo)');
-        
+        print(
+          '  - Total Egresado: $_totalEgresado (incluye egresos efectivo: $_egresosEfectivo)',
+        );
+        print(
+          '  - Efectivo Real: $_totalEfectivoReal (descontando egresos efectivo)',
+        );
+
         // Mostrar información de órdenes offline si las hay
-        if (resumenCierre['ordenes_offline'] != null && resumenCierre['ordenes_offline'] > 0) {
+        if (resumenCierre['ordenes_offline'] != null &&
+            resumenCierre['ordenes_offline'] > 0) {
           print('📱 Órdenes offline incluidas en el cálculo:');
           print('  - Órdenes offline: ${resumenCierre['ordenes_offline']}');
           print('  - Ventas offline: \$${resumenCierre['ventas_offline']}');
         }
-        
       } else {
         print('⚠️ No hay resumen de cierre en cache - usando cálculo local');
         await _calcularVentaTotalLocalFallback();
       }
-      
     } catch (e) {
       print('❌ Error calculando venta total offline: $e');
       await _calcularVentaTotalLocalFallback();
@@ -1534,46 +1628,46 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   Future<void> _calcularVentaTotalLocalFallback() async {
     try {
       print('🔄 Calculando venta total usando solo órdenes locales...');
-      
+
       final orders = _orderService.orders;
       final productosVendidos = <OrderItem>[];
       final ordenesVendidas = <Order>[];
       double totalVentas = 0.0;
       int totalProductos = 0;
-      
+
       for (final order in orders) {
-        if (order.status == OrderStatus.completada || 
-            order.status.name == 'pendienteDeSincronizacion' || order.status == OrderStatus.pagoConfirmado) {
+        if (order.status == OrderStatus.completada ||
+            order.status.name == 'pendienteDeSincronizacion' ||
+            order.status == OrderStatus.pagoConfirmado) {
           ordenesVendidas.add(order);
           totalVentas += order.total;
-          
+
           for (final item in order.items) {
             productosVendidos.add(item);
             totalProductos += item.cantidad;
           }
         }
       }
-      
+
       setState(() {
         _productosVendidos = productosVendidos;
         _ordenesVendidas = ordenesVendidas;
         _totalVentas = totalVentas;
         _totalProductos = totalProductos;
-        
+
         // Estimaciones básicas
         final efectivoEstimado = totalVentas * 0.7; // 70% efectivo
         _totalEgresado = totalVentas - efectivoEstimado + _egresosEfectivo;
         _totalEfectivoReal = efectivoEstimado - _egresosEfectivo;
-        
+
         _isLoading = false;
       });
-      
+
       print('💰 Datos calculados localmente (fallback):');
       print('  - Ventas Totales: $_totalVentas');
       print('  - Productos Vendidos: $_totalProductos');
       print('  - Órdenes completadas: ${ordenesVendidas.length}');
       print('  - Items vendidos: ${productosVendidos.length}');
-      
     } catch (e) {
       print('❌ Error en cálculo local fallback: $e');
       setState(() {
