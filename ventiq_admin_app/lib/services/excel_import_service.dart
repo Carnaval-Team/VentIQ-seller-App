@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:ventiq_admin_app/services/inventory_service.dart';
@@ -19,59 +20,92 @@ class ExcelImportService {
 
   /// Mapeo de columnas Excel a campos del modelo Product
   static const Map<String, String> columnMapping = {
-    // Campos básicos obligatorios
+    // ========== CAMPOS BÁSICOS OBLIGATORIOS ==========
     'denominacion': 'denominacion',
     'nombre': 'denominacion', // Alias
+    'nombre_producto': 'denominacion', // Alias
     'descripcion': 'descripcion',
     'categoria_id': 'categoria_id',
     'categoria': 'categoria_id', // Se resolverá por nombre
     'sku': 'sku',
     'codigo': 'sku', // Alias
+    'codigo_producto': 'sku', // Alias
     'precio_venta': 'precio_venta',
     'precio': 'precio_venta', // Alias
-    // Campos opcionales
+    'precio_venta_cup': 'precio_venta', // Alias
+    
+    // ========== INFORMACIÓN ADICIONAL ==========
     'denominacion_corta': 'denominacion_corta',
+    'nombre_corto': 'denominacion_corta', // Alias
     'descripcion_corta': 'descripcion_corta',
     'nombre_comercial': 'nombre_comercial',
     'marca': 'nombre_comercial', // Alias
     'codigo_barras': 'codigo_barras',
     'barcode': 'codigo_barras', // Alias
+    'ean': 'codigo_barras', // Alias
+    'imagen': 'imagen',
+    'url_imagen': 'imagen', // Alias
+    'foto': 'imagen', // Alias
+    
+    // ========== UNIDADES DE MEDIDA ==========
     'unidad_medida': 'um',
     'um': 'um',
+    'unidad': 'um', // Alias
 
-    // Propiedades booleanas
+    // ========== PROPIEDADES DE ALMACENAMIENTO ==========
     'es_refrigerado': 'es_refrigerado',
     'refrigerado': 'es_refrigerado', // Alias
+    'requiere_refrigeracion': 'es_refrigerado', // Alias
     'es_fragil': 'es_fragil',
     'fragil': 'es_fragil', // Alias
     'es_peligroso': 'es_peligroso',
     'peligroso': 'es_peligroso', // Alias
-    'es_vendible': 'es_vendible',
-    'vendible': 'es_vendible', // Alias
-    'es_comprable': 'es_comprable',
-    'comprable': 'es_comprable', // Alias
-    'es_inventariable': 'es_inventariable',
-    'inventariable': 'es_inventariable', // Alias
     'es_por_lotes': 'es_por_lotes',
     'por_lotes': 'es_por_lotes', // Alias
+    'manejo_lotes': 'es_por_lotes', // Alias
+    
+    // ========== PROPIEDADES COMERCIALES ==========
+    'es_vendible': 'es_vendible',
+    'vendible': 'es_vendible', // Alias
+    'se_vende': 'es_vendible', // Alias
+    'es_comprable': 'es_comprable',
+    'comprable': 'es_comprable', // Alias
+    'se_compra': 'es_comprable', // Alias
+    'es_inventariable': 'es_inventariable',
+    'inventariable': 'es_inventariable', // Alias
+    'controla_inventario': 'es_inventariable', // Alias
     'es_servicio': 'es_servicio',
     'servicio': 'es_servicio', // Alias
-    // Stock y límites
+    'es_producto_servicio': 'es_servicio', // Alias
+    
+    // ========== CONTROL DE STOCK ==========
     'stock_minimo': 'stock_minimo',
+    'minimo': 'stock_minimo', // Alias
+    'stock_min': 'stock_minimo', // Alias
     'stock_maximo': 'stock_maximo',
+    'maximo': 'stock_maximo', // Alias
+    'stock_max': 'stock_maximo', // Alias
     'dias_alert_caducidad': 'dias_alert_caducidad',
+    'dias_alerta': 'dias_alert_caducidad', // Alias
+    'alerta_caducidad': 'dias_alert_caducidad', // Alias
 
-    // Ofertas
+    // ========== OFERTAS Y PROMOCIONES ==========
     'es_oferta': 'es_oferta',
     'oferta': 'es_oferta', // Alias
+    'en_oferta': 'es_oferta', // Alias
     'precio_oferta': 'precio_oferta',
+    'precio_promocion': 'precio_oferta', // Alias
     'fecha_inicio_oferta': 'fecha_inicio_oferta',
+    'inicio_oferta': 'fecha_inicio_oferta', // Alias
     'fecha_fin_oferta': 'fecha_fin_oferta',
+    'fin_oferta': 'fecha_fin_oferta', // Alias
 
-    // Productos elaborados
+    // ========== PRODUCTOS ELABORADOS ==========
     'es_elaborado': 'es_elaborado',
     'elaborado': 'es_elaborado', // Alias
+    'producto_elaborado': 'es_elaborado', // Alias
     'costo_produccion': 'costo_produccion',
+    'costo_elaboracion': 'costo_produccion', // Alias
   };
 
   /// Selecciona archivo Excel
@@ -713,69 +747,102 @@ class ExcelImportService {
     return rowData;
   }
 
-  /*/// Genera template Excel para descarga
+  /// Genera template Excel para descarga con todos los campos disponibles
   static Future<Uint8List> generateTemplate() async {
     final excel = Excel.createExcel();
     final sheet = excel['Productos'];
     
-    // Encabezados del template
+    // Encabezados del template - CAMPOS COMPLETOS
     final headers = [
+      // Obligatorios
       'denominacion',
       'descripcion',
       'categoria_id',
       'sku',
       'precio_venta',
+      // Información adicional
       'denominacion_corta',
+      'descripcion_corta',
       'nombre_comercial',
       'codigo_barras',
+      'imagen',
+      // Unidad de medida
       'unidad_medida',
+      // Propiedades de almacenamiento
       'es_refrigerado',
       'es_fragil',
       'es_peligroso',
+      'es_por_lotes',
+      // Propiedades comerciales
       'es_vendible',
       'es_comprable',
+      'es_inventariable',
+      'es_servicio',
+      // Control de stock
       'stock_minimo',
       'stock_maximo',
+      'dias_alert_caducidad',
+      // Ofertas
       'es_oferta',
       'precio_oferta',
+      'fecha_inicio_oferta',
+      'fecha_fin_oferta',
+      // Productos elaborados
       'es_elaborado',
+      'costo_produccion',
     ];
     
     // Agregar encabezados
     for (int i = 0; i < headers.length; i++) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0)).value = headers[i];
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0)).value = TextCellValue(headers[i]);
     }
     
     // Agregar fila de ejemplo
     final exampleData = [
+      // Obligatorios
       'Producto Ejemplo',
-      'Descripción del producto ejemplo',
+      'Descripción completa del producto ejemplo',
       '1',
       'PROD001',
       '25.50',
+      // Información adicional
       'Prod Ej',
+      'Desc corta',
       'Marca Ejemplo',
       '1234567890123',
-      'Unidad',
+      'https://ejemplo.com/imagen.jpg',
+      // Unidad de medida
+      'und',
+      // Propiedades de almacenamiento
       'false',
       'false',
       'false',
+      'false',
+      // Propiedades comerciales
       'true',
       'true',
+      'true',
+      'false',
+      // Control de stock
       '10',
       '100',
+      '30',
+      // Ofertas
       'false',
       '0',
+      '',
+      '',
+      // Productos elaborados
       'false',
+      '0',
     ];
     
     for (int i = 0; i < exampleData.length; i++) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 1)).value = exampleData[i];
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 1)).value = TextCellValue(exampleData[i]);
     }
     
-    return excel.encode()!;
+    return Uint8List.fromList(excel.encode()!);
   }
-*/
 
   /// Limpia un valor numérico eliminando símbolos de moneda, comas, espacios, etc.
   static double? _parseNumericValue(String value) {
