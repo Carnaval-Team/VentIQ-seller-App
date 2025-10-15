@@ -37,6 +37,7 @@ class _SalesScreenState extends State<SalesScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _initializeDateRange();
     _loadSalesData();
   }
@@ -45,6 +46,13 @@ class _SalesScreenState extends State<SalesScreen>
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month, now.day, 0, 0, 0);
     _endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
+  }
+
+  void _onTabChanged() {
+    // Si el usuario cambió al tab de análisis (índice 2), cargar los datos
+    if (_tabController.index == 2) {
+      _loadProductAnalysis();
+    }
   }
 
   @override
@@ -57,7 +65,7 @@ class _SalesScreenState extends State<SalesScreen>
     setState(() => _isLoading = true);
     _loadProductSalesData();
     _loadVendorReports();
-    _loadProductAnalysis(); // Cargar análisis de productos automáticamente
+    // El análisis de productos se carga solo cuando se selecciona el tab de análisis
   }
 
   void _loadProductSalesData() async {
@@ -214,7 +222,7 @@ class _SalesScreenState extends State<SalesScreen>
         ),
       ),
       body:
-          (_isLoadingProducts || _isLoadingVendors || _isLoadingAnalysis)
+          (_isLoadingProducts || _isLoadingVendors)
               ? _buildLoadingState()
               : TabBarView(
                 controller: _tabController,
@@ -737,7 +745,13 @@ class _SalesScreenState extends State<SalesScreen>
                   ),
                   DataColumn(
                     label: Text(
-                      'Precio Venta CUP',
+                      'Tasa de Cambio USD',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Precio Costo USD',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -749,28 +763,29 @@ class _SalesScreenState extends State<SalesScreen>
                   ),
                   DataColumn(
                     label: Text(
-                      'Costo USD',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Valor USD',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
                       'Precio Costo CUP',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                   DataColumn(
                     label: Text(
-                      'Ganancia',
+                      'Precio Venta CUP',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
+                  DataColumn(
+                    label: Text(
+                      'Ganancia USD',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  DataColumn(
+                    label: Text(
+                      'Ganancia CUP',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+
                   DataColumn(
                     label: Text(
                       '% Ganancia',
@@ -799,8 +814,16 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                           DataCell(
                             Text(
-                              '\$${analysis.precioVentaCup.toStringAsFixed(2)}',
-                              style: const TextStyle(color: AppColors.success),
+                              '\$${analysis.valorUsd.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '\$${analysis.precioCostoUsd.toStringAsFixed(2)}',
+                              style: const TextStyle(color: AppColors.warning),
                             ),
                           ),
                           DataCell(
@@ -811,32 +834,22 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                           DataCell(
                             Text(
-                              '\$${analysis.precioCosto.toStringAsFixed(2)}',
+                              '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
                               style: const TextStyle(color: AppColors.warning),
                             ),
                           ),
                           DataCell(
                             Text(
-                              '\$${analysis.valorUsd.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                              ),
+                              '\$${analysis.precioVentaCup.toStringAsFixed(2)}',
+                              style: const TextStyle(color: AppColors.success),
                             ),
                           ),
                           DataCell(
                             Text(
-                              '\$${analysis.precioCostoCup.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              '\$${analysis.ganancia.toStringAsFixed(2)}',
+                              '\$${analysis.gananciaUsd.toStringAsFixed(2)}',
                               style: TextStyle(
                                 color:
-                                    analysis.ganancia >= 0
+                                    analysis.gananciaUsd >= 0
                                         ? AppColors.success
                                         : AppColors.error,
                                 fontWeight: FontWeight.bold,
@@ -845,10 +858,22 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                           DataCell(
                             Text(
-                              '${analysis.porcentajeGanancia.toStringAsFixed(1)}%',
+                              '\$${analysis.gananciaCup.toStringAsFixed(2)}',
                               style: TextStyle(
                                 color:
-                                    analysis.porcentajeGanancia >= 0
+                                analysis.gananciaCup >= 0
+                                    ? AppColors.success
+                                    : AppColors.error,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            Text(
+                              '${analysis.porcGananciaCup.toStringAsFixed(1)}%',
+                              style: TextStyle(
+                                color:
+                                    analysis.porcGananciaCup >= 0
                                         ? AppColors.success
                                         : AppColors.error,
                                 fontWeight: FontWeight.bold,

@@ -288,6 +288,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
         recibidoPor: _recibidoPorController.text,
         idProveedor: _selectedSupplier?.id,
         uuid: userUuid,
+        monedaFactura: _selectedCurrency
       );
 
       if (mounted) {

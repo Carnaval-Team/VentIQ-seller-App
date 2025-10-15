@@ -110,7 +110,12 @@ class ProductAnalysis {
   final double precioCosto;
   final double valorUsd;
   final double precioCostoCup;
+  final double precioCostoUsd;
+  final double gananciaUsd;
+  final double gananciaCup;
   final double ganancia;
+  final double porcGananciaCup;
+  final double porGananciaUsd;
 
   ProductAnalysis({
     required this.idTienda,
@@ -120,6 +125,11 @@ class ProductAnalysis {
     required this.precioCosto,
     required this.valorUsd,
     required this.precioCostoCup,
+    required this.precioCostoUsd,
+    required this.gananciaUsd,
+    required this.gananciaCup,
+    required this.porcGananciaCup,
+    required this.porGananciaUsd,
     required this.ganancia,
   });
 
@@ -133,6 +143,11 @@ class ProductAnalysis {
       valorUsd: (json['valor_usd'] ?? 1).toDouble(),
       precioCostoCup: (json['precio_costo_cup'] ?? 0).toDouble(),
       ganancia: (json['ganancia'] ?? 0).toDouble(),
+      precioCostoUsd: (json['precio_costo_usd'] ?? 0).toDouble(),
+      gananciaUsd: (json['ganancia_usd'] ?? 0).toDouble(),
+      gananciaCup: (json['ganancia_cup'] ?? 0).toDouble(),
+      porcGananciaCup: (json['porcentaje_ganancia_cup'] ?? 0).toDouble(),
+      porGananciaUsd: (json['porcentaje_ganancia_usd'] ?? 0).toDouble(),
     );
   }
 
@@ -391,18 +406,18 @@ class SalesService {
       // Prepare parameters
       final Map<String, dynamic> params = {'p_id_tienda': idTienda};
 
-      if (fechaDesde != null) {
+      /*if (fechaDesde != null) {
         params['p_fecha_desde'] = fechaDesde.toIso8601String().split('T')[0];
       }
       if (fechaHasta != null) {
         params['p_fecha_hasta'] = fechaHasta.toIso8601String().split('T')[0];
-      }
+      }*/
 
       print('Final params: $params');
 
       // Call the RPC function
       final response = await _supabase.rpc(
-        'fn_vista_precios_productos',
+        'fn_vista_precios_productos2',
         params: params,
       );
 

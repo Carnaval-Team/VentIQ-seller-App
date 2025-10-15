@@ -518,7 +518,19 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 ),
               ),
               const SizedBox(height: 40),
-          
+              // Almacenes Section
+              _buildSectionCard(
+                title: 'Almacenes',
+                icon: Icons.warehouse,
+                count: _almacenesData.length,
+                items: _almacenesData,
+                onAdd: _showAddAlmacenDialog,
+                onEdit: (index) => _showEditAlmacenDialog(index),
+                onDelete: (index) => _deleteAlmacen(index),
+                required: true,
+              ),
+              const SizedBox(height: 16),
+
           // TPVs Section
           _buildSectionCard(
             title: 'TPVs',
@@ -532,18 +544,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
           ),
           const SizedBox(height: 16),
           
-          // Almacenes Section
-          _buildSectionCard(
-            title: 'Almacenes',
-            icon: Icons.warehouse,
-            count: _almacenesData.length,
-            items: _almacenesData,
-            onAdd: _showAddAlmacenDialog,
-            onEdit: (index) => _showEditAlmacenDialog(index),
-            onDelete: (index) => _deleteAlmacen(index),
-            required: true,
-          ),
-          const SizedBox(height: 16),
+
           
           // Personal Section
           _buildSectionCard(

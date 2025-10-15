@@ -130,7 +130,9 @@ class ExcelImportService {
   static Future<ExcelAnalysisResult> analyzeExcelFile(File file) async {
     try {
       final bytes = await file.readAsBytes();
+      print('lol');
       final excel = Excel.decodeBytes(bytes);
+
 
       if (excel.tables.isEmpty) {
         throw Exception('El archivo Excel no contiene hojas de cálculo');
@@ -187,6 +189,7 @@ class ExcelImportService {
         isValid: missingRequired.isEmpty,
       );
     } catch (e) {
+      print(e);
       throw Exception('Error al analizar archivo Excel: $e');
     }
   }
@@ -1012,6 +1015,7 @@ class ExcelImportService {
       observaciones: 'Importación masiva desde Excel - ${productos.length} productos',
       productos: productos,
       uuid: userUuid,
+      monedaFactura: 'USD',
     );
     
     final idOperacion = result['id_operacion'] as int?;

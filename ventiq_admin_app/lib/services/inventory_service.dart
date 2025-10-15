@@ -556,6 +556,7 @@ class InventoryService {
         productos: processedReceptionProducts,
         recibidoPor: autorizadoPor,
         uuid: userUuid,
+        monedaFactura: 'USD',
       );
 
       if (receptionResult['status'] != 'success') {
@@ -829,6 +830,7 @@ class InventoryService {
     required String recibidoPor,
     required String uuid,
     int? idProveedor, // ← AGREGAR ESTE PARÁMETRO
+    required String monedaFactura,
   }) async {
     try {
       print('🔍 Insertando recepción de inventario...');
@@ -841,7 +843,7 @@ class InventoryService {
       final productosConvertidos = await processProductsForReception(productos);
 
       final response = await _supabase.rpc(
-        'fn_insertar_recepcion_completa',
+        'fn_insertar_recepcion_completa_with_currency',
         params: {
           'p_entregado_por': entregadoPor,
           'p_id_tienda': idTienda,
@@ -851,6 +853,7 @@ class InventoryService {
           'p_productos': productosConvertidos, // Usar productos convertidos
           'p_recibido_por': recibidoPor,
           'p_uuid': uuid,
+          'p_moneda_factura': monedaFactura,
         },
       );
 
