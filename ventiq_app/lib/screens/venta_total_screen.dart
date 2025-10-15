@@ -1049,7 +1049,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Cantidad Inicial
           Expanded(
             child: Text(
-              cantidadInicial?.toStringAsFixed(0) ?? '-',
+              ((cantidadFinal ?? 0) + (cantidad )).toStringAsFixed(0),
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -1075,7 +1075,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Cantidad Final
           Expanded(
             child: Text(
-              cantidadFinal?.toStringAsFixed(0) ?? '-',
+              (cantidadFinal ?? 0).toStringAsFixed(0) ,
               style: const TextStyle(
                 fontSize: 12,
                 color: Colors.green,
