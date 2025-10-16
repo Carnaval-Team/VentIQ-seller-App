@@ -402,7 +402,7 @@ class ProductService {
 
       final List<dynamic> data = response as List<dynamic>;
 
-      print('📊 Total registros recibidos: ${data.length}');
+      print('📊 Total registros recibidos    : ${data.length}');
 
       // ✅ CORRECCIÓN: Agrupar por ubicación para eliminar duplicados
       final Map<String, Map<String, dynamic>> ubicacionesAgrupadas = {};
@@ -413,11 +413,7 @@ class ProductService {
         final cantidad = (item['cantidad_final'] ?? 0).toDouble();
         final reservado = (item['stock_reservado'] ?? 0).toDouble();
 
-        if (ubicacionesAgrupadas.containsKey(ubicacion)) {
-          // Sumar cantidades si la ubicación ya existe
-          ubicacionesAgrupadas[ubicacion]!['cantidad'] += cantidad;
-          ubicacionesAgrupadas[ubicacion]!['reservado'] += reservado;
-        } else {
+        if (!ubicacionesAgrupadas.containsKey(ubicacion)) {
           // Crear nueva entrada para la ubicación
           ubicacionesAgrupadas[ubicacion] = {
             'ubicacion': ubicacion,
