@@ -408,15 +408,23 @@ class ProductService {
       final Map<String, Map<String, dynamic>> ubicacionesAgrupadas = {};
 
       for (var item in data) {
-        final ubicacion =
-            item['ubicacion'] ?? item['almacen'] ?? 'Sin ubicación';
+        print('📊 Registros recibidos   qw: $item');
+        final idUbicacion =
+            item['id_ubicacion']?.toString() ??
+            item['id_almacen']?.toString() ??
+            '0';
+        final nombreUbicacion =
+            item['ubicacion']?.toString() ??
+            item['almacen']?.toString() ??
+            'Sin ubicación';
         final cantidad = (item['cantidad_final'] ?? 0).toDouble();
         final reservado = (item['stock_reservado'] ?? 0).toDouble();
 
-        if (!ubicacionesAgrupadas.containsKey(ubicacion)) {
-          // Crear nueva entrada para la ubicación
-          ubicacionesAgrupadas[ubicacion] = {
-            'ubicacion': ubicacion,
+        if (!ubicacionesAgrupadas.containsKey(idUbicacion)) {
+          // Crear nueva entrada usando idUbicacion como clave del mapa principal
+          ubicacionesAgrupadas[idUbicacion] = {
+            'id_ubicacion': idUbicacion,
+            'ubicacion': nombreUbicacion,
             'cantidad': cantidad,
             'reservado': reservado,
           };
