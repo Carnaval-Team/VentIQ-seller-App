@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'user_preferences_service.dart';
+import 'analytics_service.dart';
 
 class ProductsAnalyticsService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -9,7 +10,6 @@ class ProductsAnalyticsService {
     try {
       final userPrefs = UserPreferencesService();
       final idTienda = await userPrefs.getIdTienda();
-
       if (idTienda == null) {
         throw Exception('No se encontró ID de tienda');
       }
@@ -21,24 +21,54 @@ class ProductsAnalyticsService {
         params: {'p_id_tienda': idTienda},
       );
       print(response);
-      if (response == null) {
-        throw Exception('No se recibieron datos del análisis');
-      }
+      print('✅ Respuesta del RPC recibida');
 
       final metricas = response['metricas_principales'] ?? {};
       final detalles = response['detalles_adicionales'] ?? {};
-      final alertas = response['alertas'] ?? [];
+
+      print('📊 Métricas principales: $metricas');
+      print('📊 Detalles adicionales: $detalles');
+
+      // ✅ OBTENER ALERTAS REALES para calcular stock bajo correctamente
+      int productosStockBajo = 0;
+      int productosSinStock = 0;
+      final alerts = await AnalyticsService.getStockAlerts(storeId: idTienda);
+      try {
+        for (final alert in alerts) {
+          final severity = alert.severity?.toLowerCase() ?? '';
+          if (severity == 'critical') {
+            productosSinStock++;
+          } else if (severity == 'warning') {
+            productosStockBajo++;
+          }
+        }
+
+        print('📊 Alertas procesadas:');
+        print('  Sin stock (critical): $productosSinStock');
+        print('  Stock bajo (warning): $productosStockBajo');
+        print('  Total alertas: ${alerts.length}');
+      } catch (alertError) {
+        print('⚠️ Error obteniendo alertas: $alertError');
+        // Fallback a los valores de la función RPC
+        productosStockBajo = metricas['stock_bajo'] ?? 0;
+        productosSinStock = detalles['productos_sin_stock'] ?? 0;
+      }
+
+      final totalProductos = metricas['total_productos'] ?? 0;
+      final productosNoElaborados = detalles['productos_no_elaborados'] ?? 0;
+      final productosElaborados = totalProductos - productosNoElaborados;
 
       return {
-        'totalProductos': metricas['total_productos'] ?? 0,
-        'productosActivos': metricas['total_productos'] ?? 0,
+        'totalProductos': totalProductos,
+        'productosActivos': metricas['productos_activos'] ?? 0,
         'productosConStock': metricas['productos_con_stock'] ?? 0,
-        'productosElaborados': metricas['productos_elaborados'] ?? 0,
+        'productosSinStock': productosSinStock, // ✅ Desde alertas reales
+        'productosElaborados': productosElaborados, // ✅ Calculado
         'valorTotalInventario':
             (metricas['valor_inventario'] ?? 0.0).toDouble(),
         'stockTotalUnidades': 0,
         'categoriasPrincipales': 0,
-        'productosStockBajo': metricas['stock_bajo'] ?? 0,
+        'productosStockBajo': productosStockBajo, // ✅ Desde alertas reales
         'productosSinMovimiento': metricas['sin_movimiento'] ?? 0,
         'valorPromedioPorProducto':
             (detalles['stock_promedio_por_producto'] ?? 0.0).toDouble(),
@@ -52,12 +82,9 @@ class ProductsAnalyticsService {
             (metricas['porcentaje_sin_movimiento'] ?? 0.0).toDouble(),
 
         // Detalles adicionales
-        'productosSinStock': detalles['productos_sin_stock'] ?? 0,
         'productosNoElaborados': detalles['productos_no_elaborados'] ?? 0,
         'diasSinMovimiento': detalles['dias_sin_movimiento'] ?? 15,
 
-        // Alertas
-        'alertas': alertas,
         'fechaGeneracion': response['metadata']?['fecha_generacion'],
       };
     } catch (e) {

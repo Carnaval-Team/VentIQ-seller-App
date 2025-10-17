@@ -49,49 +49,69 @@ class _StockHealthDetailScreenState extends State<StockHealthDetailScreen> {
     InventoryMetrics metrics,
     List stockAlerts,
   ) {
+    // ✅ USAR ALERTAS REALES de fn_analytics_stock_alerts
+    // Contar productos por severidad desde las alertas
+    int criticalCount = 0; // Sin stock (current_stock = 0)
+    int warningCount = 0; // Stock bajo (current_stock <= min_stock)
+
+    for (final alert in stockAlerts) {
+      final severity = alert.severity?.toLowerCase() ?? '';
+      if (severity == 'critical') {
+        criticalCount++;
+      } else if (severity == 'warning') {
+        warningCount++;
+      }
+    }
+
+    // Total de productos con alertas
+    final totalWithAlerts = criticalCount + warningCount;
+
+    // Productos saludables = Total - Productos con alertas
+    final healthyCount = metrics.totalProducts - totalWithAlerts;
+
+    print('📊 Distribución de stock:');
+    print('  Total productos: ${metrics.totalProducts}');
+    print('  Críticos (sin stock): $criticalCount');
+    print('  Advertencia (stock bajo): $warningCount');
+    print('  Saludables: $healthyCount');
+    print('  Total alertas: ${stockAlerts.length}');
+
     return [
       {
         'category': 'Sin Stock',
-        'count': metrics.outOfStockProducts,
+        'count': criticalCount,
         'percentage':
             metrics.totalProducts > 0
-                ? (metrics.outOfStockProducts / metrics.totalProducts * 100)
+                ? (criticalCount / metrics.totalProducts * 100)
                 : 0.0,
         'color': Colors.red,
         'icon': Icons.error,
         'severity': 'Crítico',
-        'description': 'Productos completamente agotados',
+        'description': 'Productos completamente agotados (stock = 0)',
       },
       {
         'category': 'Stock Bajo',
-        'count': metrics.lowStockProducts,
+        'count': warningCount,
         'percentage':
             metrics.totalProducts > 0
-                ? (metrics.lowStockProducts / metrics.totalProducts * 100)
+                ? (warningCount / metrics.totalProducts * 100)
                 : 0.0,
         'color': Colors.orange,
         'icon': Icons.warning,
         'severity': 'Alerta',
-        'description': 'Productos con inventario por debajo del mínimo',
+        'description': 'Productos con stock ≤ stock mínimo',
       },
       {
         'category': 'Stock Saludable',
-        'count':
-            metrics.totalProducts -
-            metrics.outOfStockProducts -
-            metrics.lowStockProducts,
+        'count': healthyCount,
         'percentage':
             metrics.totalProducts > 0
-                ? ((metrics.totalProducts -
-                        metrics.outOfStockProducts -
-                        metrics.lowStockProducts) /
-                    metrics.totalProducts *
-                    100)
+                ? (healthyCount / metrics.totalProducts * 100)
                 : 0.0,
         'color': Colors.green,
         'icon': Icons.check_circle,
         'severity': 'Bueno',
-        'description': 'Productos con niveles de inventario adecuados',
+        'description': 'Productos con stock > stock mínimo',
       },
     ];
   }
@@ -146,7 +166,46 @@ class _StockHealthDetailScreenState extends State<StockHealthDetailScreen> {
   }
 
   Widget _buildOverviewCard() {
-    final healthColor = _getHealthColor(_metrics!.stockHealthLevel);
+    // ✅ USAR DATOS DESDE _stockDetails (calculados desde alertas reales)
+    final criticalData = _stockDetails.firstWhere(
+      (d) => d['category'] == 'Sin Stock',
+      orElse: () => {'count': 0, 'color': Colors.red, 'severity': 'Crítico'},
+    );
+    final warningData = _stockDetails.firstWhere(
+      (d) => d['category'] == 'Stock Bajo',
+      orElse: () => {'count': 0},
+    );
+
+    final criticalCount = criticalData['count'] as int;
+    final warningCount = warningData['count'] as int;
+    final totalAlerts = criticalCount + warningCount;
+
+    // Determinar nivel de salud desde alertas reales
+    String healthLevel;
+    Color healthColor;
+    IconData healthIcon;
+
+    if (criticalCount > 0) {
+      healthLevel = 'Crítico';
+      healthColor = Colors.red;
+      healthIcon = Icons.error;
+    } else if (totalAlerts > _metrics!.totalProducts * 0.2) {
+      healthLevel = 'Crítico';
+      healthColor = Colors.red;
+      healthIcon = Icons.error;
+    } else if (totalAlerts > _metrics!.totalProducts * 0.1) {
+      healthLevel = 'Alerta';
+      healthColor = Colors.orange;
+      healthIcon = Icons.warning;
+    } else if (totalAlerts > _metrics!.totalProducts * 0.05) {
+      healthLevel = 'Precaución';
+      healthColor = Colors.yellow.shade700;
+      healthIcon = Icons.warning_amber;
+    } else {
+      healthLevel = 'Saludable';
+      healthColor = Colors.green;
+      healthIcon = Icons.check_circle;
+    }
 
     return Card(
       elevation: 4,
@@ -163,11 +222,7 @@ class _StockHealthDetailScreenState extends State<StockHealthDetailScreen> {
                     color: healthColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    _getHealthIcon(_metrics!.stockHealthLevel),
-                    color: healthColor,
-                    size: 32,
-                  ),
+                  child: Icon(healthIcon, color: healthColor, size: 32),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -175,7 +230,7 @@ class _StockHealthDetailScreenState extends State<StockHealthDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Estado Actual: ${_metrics!.stockHealthLevel}',
+                        'Estado Actual: $healthLevel',
                         style: Theme.of(
                           context,
                         ).textTheme.headlineSmall?.copyWith(
@@ -185,7 +240,7 @@ class _StockHealthDetailScreenState extends State<StockHealthDetailScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '${_metrics!.outOfStockProducts} de ${_metrics!.totalProducts} productos sin stock',
+                        '$criticalCount de ${_metrics!.totalProducts} productos sin stock',
                         style: Theme.of(context).textTheme.bodyLarge,
                       ),
                     ],
@@ -197,9 +252,7 @@ class _StockHealthDetailScreenState extends State<StockHealthDetailScreen> {
             LinearProgressIndicator(
               value:
                   _metrics!.totalProducts > 0
-                      ? 1 -
-                          (_metrics!.outOfStockProducts /
-                              _metrics!.totalProducts)
+                      ? 1 - (criticalCount / _metrics!.totalProducts)
                       : 0,
               backgroundColor: Colors.red.withOpacity(0.2),
               valueColor: AlwaysStoppedAnimation<Color>(healthColor),

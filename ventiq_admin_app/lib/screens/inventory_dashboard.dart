@@ -32,7 +32,9 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
     });
 
     try {
-      final data = await DashboardService.getCompleteStoreAnalysis(periodo: 'mes');
+      final data = await DashboardService.getCompleteStoreAnalysis(
+        periodo: 'mes',
+      );
 
       // ✅ Usar microtask para evitar bloquear UI
       await Future.microtask(() {});
@@ -145,6 +147,52 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
 
   Widget _buildMetricsOverview() {
     final metrics = _dashboardData!['inventory_metrics'] as InventoryMetrics;
+    final alerts = _dashboardData!['stock_alerts'] as List;
+
+    // ✅ CALCULAR DESDE ALERTAS REALES
+    int criticalAlerts = 0;
+    int warningAlerts = 0;
+
+    for (final alert in alerts) {
+      final severity = alert.severity?.toLowerCase() ?? '';
+      if (severity == 'critical') {
+        criticalAlerts++;
+      } else if (severity == 'warning') {
+        warningAlerts++;
+      }
+    }
+
+    final totalAlerts = criticalAlerts + warningAlerts;
+    final alertRatio =
+        metrics.totalProducts > 0 ? totalAlerts / metrics.totalProducts : 0;
+
+    // Determinar nivel de salud y color
+    String healthLevel;
+    Color healthColor;
+
+    if (criticalAlerts > 0) {
+      healthLevel = 'Crítico';
+      healthColor = Colors.red;
+    } else if (alertRatio > 0.2) {
+      healthLevel = 'Crítico';
+      healthColor = Colors.red;
+    } else if (alertRatio > 0.1) {
+      healthLevel = 'Alerta';
+      healthColor = Colors.orange;
+    } else if (alertRatio > 0.05) {
+      healthLevel = 'Precaución';
+      healthColor = Colors.yellow.shade700;
+    } else {
+      healthLevel = 'Saludable';
+      healthColor = Colors.green;
+    }
+
+    print('📊 Métricas de stock:');
+    print('  Total productos: ${metrics.totalProducts}');
+    print('  Alertas críticas: $criticalAlerts');
+    print('  Alertas advertencia: $warningAlerts');
+    print('  Total alertas: $totalAlerts');
+    print('  Nivel de salud: $healthLevel');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -162,15 +210,16 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
             final crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
             return GridView.count(
               crossAxisCount: crossAxisCount,
-              childAspectRatio: 1.2, // ✅ Más ancho, menos alto
-              crossAxisSpacing: 12, // ✅ Menos espacio
-              mainAxisSpacing: 12, // ✅ Menos espacio
+              childAspectRatio: 1.2, // Más ancho, menos alto
+              crossAxisSpacing: 12, // Menos espacio
+              mainAxisSpacing: 12, // Menos espacio
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               children: [
                 MetricCard(
                   title: 'Valor Total',
-                  value: 'CUP \$${NumberFormatter.formatCurrency(metrics.totalValue)}',
+                  value:
+                      'CUP \$${NumberFormatter.formatCurrency(metrics.totalValue)}',
                   icon: Icons.attach_money,
                   color: Colors.green,
                   changePercent: metrics.valueChangePercent,
@@ -182,17 +231,19 @@ class _InventoryDashboardState extends State<InventoryDashboard> {
                   value: metrics.totalProducts.toString(),
                   icon: Icons.inventory,
                   color: Colors.blue,
-                  subtitle:
-                      '${metrics.totalProducts - metrics.outOfStockProducts} disponibles',
+                  subtitle: '${metrics.totalProducts - totalAlerts} saludables',
                 ),
 
                 InventoryMetricCard(
                   title: 'Estado Stock',
-                  value: '${metrics.outOfStockProducts}',
-                  icon: Icons.warning,
-                  color: Colors.orange,
-                  healthLevel: metrics.stockHealthLevel,
-                  subtitle: 'productos sin stock',
+                  value: '$criticalAlerts',
+                  icon: criticalAlerts > 0 ? Icons.error : Icons.warning,
+                  color: healthColor,
+                  healthLevel: healthLevel,
+                  subtitle:
+                      criticalAlerts > 0
+                          ? 'productos sin stock'
+                          : '$totalAlerts con alertas',
                   onTap: _showStockHealthDetail,
                 ),
 

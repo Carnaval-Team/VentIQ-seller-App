@@ -25,12 +25,17 @@ class _RotationDetailScreenState extends State<RotationDetailScreen> {
 
     try {
       final metrics = await AnalyticsService.getInventoryMetrics();
-      final topProducts = await AnalyticsService.getTopRotationProducts(
-        limit: 10,
-      );
-      //final slowProducts = await AnalyticsService.getSlowMovingProducts(limit: 10);
 
-      final rotationCategories = _categorizeRotationLevels(metrics);
+      // ✅ OBTENER TODOS LOS PRODUCTOS para categorización real
+      final allProducts = await AnalyticsService.getProductMovements(
+        limit: 100, // Obtener todos los productos
+      );
+
+      // ✅ CATEGORIZAR DESDE DATOS REALES
+      final rotationCategories = _categorizeRotationLevels(
+        metrics,
+        allProducts, // Pasar productos reales
+      );
 
       setState(() {
         _metrics = metrics;
@@ -47,17 +52,56 @@ class _RotationDetailScreenState extends State<RotationDetailScreen> {
 
   List<Map<String, dynamic>> _categorizeRotationLevels(
     InventoryMetrics metrics,
+    List products, // ✅ Recibir productos reales
   ) {
-    // Simulamos distribución de productos por nivel de rotación
-    final totalProducts = metrics.totalProducts;
-    final avgRotation = metrics.averageRotation;
+    // ✅ CONTAR PRODUCTOS REALES por nivel de rotación
+    int highRotation = 0; // >= 12
+    int goodRotation = 0; // 6-12
+    int regularRotation = 0; // 3-6
+    int slowRotation = 0; // < 3
+
+    print('🔄 Analizando rotación de productos...');
+    print('  Total productos en inventario: ${metrics.totalProducts}');
+    print('  Productos con datos de movimiento: ${products.length}');
+
+    for (final product in products) {
+      final rotationRate = product.rotationRate;
+      print('    - ${product.productName}: ${rotationRate.toStringAsFixed(2)}');
+
+      if (rotationRate >= 12) {
+        highRotation++;
+      } else if (rotationRate >= 6) {
+        goodRotation++;
+      } else if (rotationRate >= 3) {
+        regularRotation++;
+      } else {
+        slowRotation++;
+      }
+    }
+
+    // Productos sin datos de movimiento
+    final productsWithoutData = metrics.totalProducts - products.length;
+
+    print('� Distribución de rotación:');
+    print('  Alta (>=12): $highRotation');
+    print('  Buena (6-12): $goodRotation');
+    print('  Regular (3-6): $regularRotation');
+    print('  Lenta (<3): $slowRotation');
+    print('  Sin datos: $productsWithoutData');
+    print(
+      '  Total: ${highRotation + goodRotation + regularRotation + slowRotation + productsWithoutData}',
+    );
+
+    // Usar el total de productos con datos de movimiento para porcentajes
+    final totalWithData = products.length;
 
     return [
       {
         'category': 'Rotación Alta',
         'range': '12+ veces/año',
-        'count': (totalProducts * 0.2).round(), // 20% aproximadamente
-        'percentage': 20.0,
+        'count': highRotation, // ✅ Conteo real
+        'percentage':
+            totalWithData > 0 ? (highRotation / totalWithData * 100) : 0.0,
         'color': Colors.green,
         'icon': Icons.trending_up,
         'description': 'Productos con excelente movimiento',
@@ -66,8 +110,9 @@ class _RotationDetailScreenState extends State<RotationDetailScreen> {
       {
         'category': 'Rotación Buena',
         'range': '6-12 veces/año',
-        'count': (totalProducts * 0.4).round(), // 40% aproximadamente
-        'percentage': 40.0,
+        'count': goodRotation, // ✅ Conteo real
+        'percentage':
+            totalWithData > 0 ? (goodRotation / totalWithData * 100) : 0.0,
         'color': Colors.blue,
         'icon': Icons.trending_up,
         'description': 'Productos con buen movimiento',
@@ -76,8 +121,9 @@ class _RotationDetailScreenState extends State<RotationDetailScreen> {
       {
         'category': 'Rotación Regular',
         'range': '3-6 veces/año',
-        'count': (totalProducts * 0.25).round(), // 25% aproximadamente
-        'percentage': 25.0,
+        'count': regularRotation, // ✅ Conteo real
+        'percentage':
+            totalWithData > 0 ? (regularRotation / totalWithData * 100) : 0.0,
         'color': Colors.orange,
         'icon': Icons.trending_flat,
         'description': 'Productos con movimiento moderado',
@@ -86,12 +132,26 @@ class _RotationDetailScreenState extends State<RotationDetailScreen> {
       {
         'category': 'Rotación Lenta',
         'range': '<3 veces/año',
-        'count': (totalProducts * 0.15).round(), // 15% aproximadamente
-        'percentage': 15.0,
+        'count': slowRotation, // ✅ Conteo real
+        'percentage':
+            totalWithData > 0 ? (slowRotation / totalWithData * 100) : 0.0,
         'color': Colors.red,
         'icon': Icons.trending_down,
         'description': 'Productos con movimiento lento',
         'benchmark': 'Crítico: <3 rotaciones anuales',
+      },
+      {
+        'category': 'Sin datos',
+        'range': 'Sin datos',
+        'count': productsWithoutData,
+        'percentage':
+            metrics.totalProducts > 0
+                ? (productsWithoutData / metrics.totalProducts * 100)
+                : 0.0,
+        'color': Colors.grey,
+        'icon': Icons.warning,
+        'description': 'Productos sin datos de movimiento',
+        'benchmark': 'No hay datos para evaluar',
       },
     ];
   }

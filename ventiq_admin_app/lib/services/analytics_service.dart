@@ -90,13 +90,42 @@ class AnalyticsService {
           calculatedAt: DateTime.now(),
         );
       }
+
       final response = await _supabase.rpc(
-        'get_inventario_analisis_tienda_json',
-        params: {'p_id_tienda': userStoreId},
+        'fn_analytics_inventory_metrics',
+        params: {'p_store_id': userStoreId},
       );
+
+      // ✅ CALCULAR ROTACIÓN PROMEDIO REAL desde productos
+      double averageRotation = 0.0;
+      try {
+        final products = await getProductMovements(
+          storeId: userStoreId,
+          limit: 100, // Obtener más productos para cálculo preciso
+        );
+
+        if (products.isNotEmpty) {
+          final totalRotation = products.fold<double>(
+            0.0,
+            (sum, p) => sum + p.rotationRate,
+          );
+          averageRotation = totalRotation / products.length;
+          print(
+            '🔄 Rotación promedio calculada: ${averageRotation.toStringAsFixed(2)} (desde ${products.length} productos)',
+          );
+        } else {
+          print('⚠️ No hay productos con movimiento, usando rotación 0');
+          averageRotation = 0.0;
+        }
+      } catch (rotationError) {
+        print('⚠️ Error calculando rotación: $rotationError');
+        print('   Usando rotación fallback: 0.0');
+        averageRotation = 0.0; // Fallback más conservador
+      }
+
       print(response);
       print('✅ Métricas obtenidas exitosamente');
-      return _mapProductsAnalysisToInventoryMetrics(response);
+      return _mapProductsAnalysisToInventoryMetrics(response, averageRotation);
     } catch (e) {
       print('❌ Error al obtener métricas de inventario: $e');
       // Fallback con datos básicos
@@ -107,16 +136,33 @@ class AnalyticsService {
   /// Mapear respuesta de productos analysis a InventoryMetrics
   static InventoryMetrics _mapProductsAnalysisToInventoryMetrics(
     Map<String, dynamic> response,
+    double averageRotation, // ✅ Recibir rotación calculada
   ) {
+    print('🗐️ Mapeando respuesta a InventoryMetrics...');
+    print('  Response keys: ${response.keys}');
+
     final metricas = response['metricas_principales'] ?? {};
     final detalles = response['detalles_adicionales'] ?? {};
 
+    print('  Métricas principales: $metricas');
+    print('  Detalles adicionales: $detalles');
+
+    final totalProducts = metricas['total_productos'] ?? 0;
+    final lowStock = metricas['stock_bajo'] ?? 0;
+    final outOfStock = detalles['productos_sin_stock'] ?? 0;
+
+    print('📊 Valores extraídos:');
+    print('  totalProducts: $totalProducts');
+    print('  lowStockProducts: $lowStock');
+    print('  outOfStockProducts: $outOfStock');
+    print('  averageRotation: $averageRotation');
+
     return InventoryMetrics(
       totalValue: (metricas['valor_inventario'] ?? 0.0).toDouble(),
-      totalProducts: metricas['total_productos'] ?? 0,
-      lowStockProducts: metricas['stock_bajo'] ?? 0,
-      outOfStockProducts: detalles['productos_sin_stock'] ?? 0,
-      averageRotation: (metricas['productos_con_stock'] ?? 0) > 0 ? 6.0 : 0.0,
+      totalProducts: totalProducts,
+      lowStockProducts: lowStock,
+      outOfStockProducts: outOfStock,
+      averageRotation: averageRotation, // ✅ Usar rotación real calculada
       monthlyMovement: (metricas['productos_con_stock'] ?? 0) * 0.25,
       calculatedAt: DateTime.now(),
     );
@@ -223,26 +269,41 @@ class AnalyticsService {
 
       final movements =
           response.map<ProductMovementMetric>((json) {
-            print('🔄 Procesando: $json');
             final movement = ProductMovementMetric.fromJson(json);
-            print('✅ Creado: ${movement.productName}');
             return movement;
           }).toList();
 
-      // Eliminar duplicados por productId, manteniendo el de mayor rotación
+      print('📊 Total registros recibidos: ${movements.length}');
+
+      // ✅ ELIMINAR DUPLICADOS por productId
+      // Mantener solo el PRIMER registro de cada producto
       final uniqueMovements = <int, ProductMovementMetric>{};
+      int duplicatesCount = 0;
+
       for (final movement in movements) {
-        if (!uniqueMovements.containsKey(movement.productId) ||
-            movement.rotationRate >
-                uniqueMovements[movement.productId]!.rotationRate) {
+        if (!uniqueMovements.containsKey(movement.productId)) {
           uniqueMovements[movement.productId] = movement;
+        } else {
+          duplicatesCount++;
         }
       }
 
       final result = uniqueMovements.values.toList();
-      print(
-        '📊 Únicos: ${result.length} (eliminados ${movements.length - result.length} duplicados)',
-      );
+      print('✅ Productos únicos: ${result.length}');
+      print('🗑️ Duplicados eliminados: $duplicatesCount');
+
+      // Mostrar resumen de productos
+      if (result.isNotEmpty) {
+        print('📊 Resumen de rotaciones:');
+        for (final product in result.take(5)) {
+          print(
+            '  - ${product.productName}: ${product.rotationRate.toStringAsFixed(2)}',
+          );
+        }
+        if (result.length > 5) {
+          print('  ... y ${result.length - 5} productos más');
+        }
+      }
 
       return result;
     } catch (e) {
@@ -311,25 +372,48 @@ class AnalyticsService {
       if (response is List && response.isNotEmpty) {
         print('📊 Procesando ${response.length} alertas directas');
 
-        return response.map<StockAlert>((alertData) {
-          print('🔄 Procesando: $alertData');
+        // ⚠️ FILTRADO ADICIONAL DE SEGURIDAD
+        // Filtrar primero por tienda en el response original
+        final filteredResponse =
+            response.where((alertData) {
+              if (alertData.containsKey('storeId') ||
+                  alertData.containsKey('store_id')) {
+                final alertStoreId =
+                    alertData['storeId'] ?? alertData['store_id'];
+                return alertStoreId == userStoreId;
+              }
+              // Si no tiene storeId, asumir que es válida (fallback)
+              return true;
+            }).toList();
 
-          // Los datos ya vienen en formato correcto
-          final alertJson = <String, dynamic>{
-            'product_id': alertData['productId'] ?? 0,
-            'product_name': alertData['productName'] ?? 'Producto Desconocido',
-            'alert_type': alertData['alertType'] ?? 'unknown',
-            'severity': alertData['severity'] ?? 'info',
-            'current_stock': alertData['currentStock'] ?? 0,
-            'min_stock': alertData['minStock'],
-            'message': alertData['message'] ?? '',
-            'created_at':
-                alertData['createdAt'] ?? DateTime.now().toIso8601String(),
-            'is_active': true,
-          };
+        print(
+          '🔒 Alertas filtradas por tienda: ${filteredResponse.length} de ${response.length}',
+        );
 
-          return StockAlert.fromJson(alertJson);
-        }).toList();
+        final alerts =
+            filteredResponse.map<StockAlert>((alertData) {
+              print('🔄 Procesando: $alertData');
+
+              // Los datos ya vienen en formato correcto
+              final alertJson = <String, dynamic>{
+                'product_id': alertData['productId'] ?? 0,
+                'product_name':
+                    alertData['productName'] ?? 'Producto Desconocido',
+                'alert_type': alertData['alertType'] ?? 'unknown',
+                'severity': alertData['severity'] ?? 'info',
+                'current_stock': alertData['currentStock'] ?? 0,
+                'min_stock': alertData['minStock'],
+                'message': alertData['message'] ?? '',
+                'created_at':
+                    alertData['createdAt'] ?? DateTime.now().toIso8601String(),
+                'is_active': true,
+              };
+
+              return StockAlert.fromJson(alertJson);
+            }).toList();
+
+        print('✅ Alertas procesadas: ${alerts.length}');
+        return alerts;
       }
 
       print('⚠️ Usando fallback');
