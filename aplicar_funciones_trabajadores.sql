@@ -81,6 +81,8 @@ PRINCIPALES:
 
 3. fn_eliminar_trabajador_completo(trabajador_id, id_tienda)
    - Elimina un trabajador y su registro en la tabla de rol específico
+   - Verifica que no tenga operaciones registradas (operaciones, turnos, pagos, pre-asignaciones)
+   - Solo permite eliminación si el trabajador no tiene actividad en el sistema
    - Maneja la eliminación en cascada correctamente
 
 4. fn_editar_trabajador_completo(trabajador_id, id_tienda, [nuevos_datos])

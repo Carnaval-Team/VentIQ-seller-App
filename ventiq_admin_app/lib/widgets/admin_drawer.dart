@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
+import '../utils/navigation_guard.dart';
 
 class AdminDrawer extends StatefulWidget {
   const AdminDrawer({Key? key}) : super(key: key);
@@ -149,29 +151,66 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ),
                 const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.inventory_2,
-                  title: 'Productos',
-                  subtitle: 'Gestión del catálogo',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/products-dashboard');
+                // Productos (solo Gerente y Supervisor)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/products',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.inventory_2,
+                            title: 'Productos',
+                            subtitle: 'Gestión del catálogo',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(
+                                context,
+                                '/products-dashboard',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
                   },
                 ),
-                const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.warehouse,
-                  title: 'Inventario',
-                  subtitle: 'Control de stock',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/inventory');
+                // Inventario (solo Gerente y Supervisor)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/inventory',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.warehouse,
+                            title: 'Inventario',
+                            subtitle: 'Control de stock',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(context, '/inventory');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
                   },
                 ),
-                const Divider(height: 1),
 
                 _buildDrawerItem(
                   context,
@@ -185,74 +224,175 @@ class _AdminDrawerState extends State<AdminDrawer> {
                 ),
                 const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.campaign,
-                  title: 'Marketing',
-                  subtitle: 'Campañas y promociones',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/marketing-dashboard');
+                // Marketing (solo Gerente)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/marketing-dashboard',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.campaign,
+                            title: 'Marketing',
+                            subtitle: 'Campañas y promociones',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(
+                                context,
+                                '/marketing-dashboard',
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
                   },
                 ),
-                const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.point_of_sale,
-                  title: 'Ventas',
-                  subtitle: 'Monitoreo de ventas',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/sales');
+                // Ventas (solo Gerente y Supervisor)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/sales',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.point_of_sale,
+                            title: 'Ventas',
+                            subtitle: 'Monitoreo de ventas',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(context, '/sales');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
                   },
                 ),
-                const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.account_balance_wallet,
-                  title: 'Finanzas',
-                  subtitle: 'Gestión financiera',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/financial');
+                // Finanzas (solo Gerente)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/financial',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.account_balance_wallet,
+                            title: 'Finanzas',
+                            subtitle: 'Gestión financiera',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(context, '/financial');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
                   },
                 ),
-                const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.business_center,
-                  title: 'CRM Empresarial',
-                  subtitle: 'Clientes y proveedores',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/crm-dashboard');
+                // CRM (solo Gerente)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/crm-dashboard',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.business_center,
+                            title: 'CRM Empresarial',
+                            subtitle: 'Clientes y proveedores',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(context, '/crm-dashboard');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
                   },
                 ),
-                const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.group,
-                  title: 'Trabajadores',
-                  subtitle: 'Gestión de personal',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/workers');
+                // Trabajadores (solo Gerente y Supervisor)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/workers',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.group,
+                            title: 'Trabajadores',
+                            subtitle: 'Gestión de personal',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(context, '/workers');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
                   },
                 ),
-                const Divider(height: 1),
 
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.settings,
-                  title: 'Configuración',
-                  subtitle: 'Ajustes del sistema',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/settings');
+                // Configuración (solo Gerente)
+                FutureBuilder<bool>(
+                  future: NavigationGuard.canNavigate(
+                    '/settings',
+                    context,
+                    showDialog: false,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return _buildDrawerItem(
+                        context,
+                        icon: Icons.settings,
+                        title: 'Configuración',
+                        subtitle: 'Ajustes del sistema',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.pushNamed(context, '/settings');
+                        },
+                      );
+                    }
+                    return const SizedBox.shrink();
                   },
                 ),
                 const Divider(height: 1),

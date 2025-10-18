@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _authService = AuthService();
   final _userPreferencesService = UserPreferencesService();
+  final _permissionsService = PermissionsService();
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _rememberMe = false;
@@ -360,24 +363,96 @@ class _LoginScreenState extends State<LoginScreen> {
     FocusScope.of(context).unfocus();
 
     try {
-      // Use new supervisor verification method
-      final loginData = await _authService.signInWithSupervisorVerification(
+      // Paso 1: Autenticar con Supabase
+      final authResponse = await _authService.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
-      final user = loginData['user'];
-      final session = loginData['session'];
-      final supervisorStores =
-          loginData['supervisorStores'] as List<Map<String, dynamic>>;
-      final defaultStore = loginData['defaultStore'] as Map<String, dynamic>;
+      if (authResponse.user == null) {
+        throw Exception('Authentication failed');
+      }
 
-      // Get admin profile
-      final adminProfile = await _authService.getAdminProfile(user.id);
+      final user = authResponse.user!;
+      final session = authResponse.session!;
 
-      // Prepare stores list for preferences
+      // Limpiar caché de permisos antes de detectar rol
+      _permissionsService.clearCache();
+
+      // Paso 2: Detectar rol con mayor jerarquía
+      final userRole = await _permissionsService.getUserRole();
+      final roleName = _permissionsService.getRoleName(userRole);
+
+      print('🔍 Rol detectado: $roleName ($userRole)');
+
+      // Paso 3: Verificar que tenga acceso (bloquear vendedores y sin rol)
+      if (userRole == UserRole.none || userRole == UserRole.vendedor) {
+        await _authService.signOut();
+        throw Exception('NO_ADMIN_PRIVILEGES');
+      }
+
+      // Paso 4: Obtener tiendas según el rol
+      List<Map<String, dynamic>> userStores = [];
+      int? defaultStoreId;
+      final supabase = Supabase.instance.client;
+
+      if (userRole == UserRole.gerente) {
+        // Gerente: obtener desde app_dat_gerente
+        final gerenteData = await supabase
+            .from('app_dat_gerente')
+            .select('id_tienda, app_dat_tienda(id, denominacion)')
+            .eq('uuid', user.id);
+
+        if (gerenteData.isNotEmpty) {
+          userStores = List<Map<String, dynamic>>.from(gerenteData);
+          defaultStoreId = gerenteData.first['id_tienda'];
+        }
+      } else if (userRole == UserRole.supervisor) {
+        // Supervisor: obtener desde app_dat_supervisor
+        final supervisorData = await supabase
+            .from('app_dat_supervisor')
+            .select('id_tienda, app_dat_tienda(id, denominacion)')
+            .eq('uuid', user.id);
+
+        if (supervisorData.isNotEmpty) {
+          userStores = List<Map<String, dynamic>>.from(supervisorData);
+          defaultStoreId = supervisorData.first['id_tienda'];
+        }
+      } else if (userRole == UserRole.almacenero) {
+        // Almacenero: obtener desde app_dat_almacenero
+        final almaceneroData =
+            await supabase
+                .from('app_dat_almacenero')
+                .select('id_almacen, app_dat_almacen(id_tienda)')
+                .eq('uuid', user.id)
+                .maybeSingle();
+
+        if (almaceneroData != null) {
+          final idTienda = almaceneroData['app_dat_almacen']['id_tienda'];
+          defaultStoreId = idTienda;
+
+          // Obtener info de la tienda
+          final tiendaData =
+              await supabase
+                  .from('app_dat_tienda')
+                  .select('id, denominacion')
+                  .eq('id', idTienda)
+                  .maybeSingle();
+
+          userStores = [
+            {'id_tienda': idTienda, 'app_dat_tienda': tiendaData},
+          ];
+        }
+      }
+
+      if (userStores.isEmpty || defaultStoreId == null) {
+        await _authService.signOut();
+        throw Exception('NO_STORE_ASSIGNED');
+      }
+
+      // Paso 5: Preparar datos para guardar
       final storesForPreferences =
-          supervisorStores
+          userStores
               .map(
                 (store) => {
                   'id_tienda': store['id_tienda'],
@@ -389,23 +464,23 @@ class _LoginScreenState extends State<LoginScreen> {
               )
               .toList();
 
-      // Save user data in preferences including stores list and default store
+      // Paso 6: Guardar datos del usuario
       await _userPreferencesService.saveUserData(
         userId: user.id,
         email: user.email ?? _emailController.text.trim(),
         accessToken: session.accessToken,
-        adminName: adminProfile?['name'],
-        adminRole: adminProfile?['role'],
-        idTienda: defaultStore['id_tienda'],
+        adminName: user.userMetadata?['full_name'] ?? user.email?.split('@')[0],
+        adminRole: roleName,
+        idTienda: defaultStoreId,
         userStores: storesForPreferences,
       );
 
-      print('✅ Supervisor user saved in preferences:');
+      print('✅ Usuario autenticado:');
       print('  - ID: ${user.id}');
       print('  - Email: ${user.email}');
-      print('  - Role: ${adminProfile?['role']}');
-      print('  - Default Store ID: ${defaultStore['id_tienda']}');
-      print('  - Total Stores: ${supervisorStores.length}');
+      print('  - Rol: $roleName');
+      print('  - Tienda: $defaultStoreId');
+      print('  - Total tiendas: ${userStores.length}');
 
       // Save credentials if user marked "Remember me"
       if (_rememberMe) {
@@ -417,7 +492,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await _userPreferencesService.clearSavedCredentials();
       }
 
-      print('✅ Supervisor login successful');
+      print('✅ Login exitoso como $roleName');
 
       // Navigate to dashboard
       if (mounted) {
@@ -427,7 +502,14 @@ class _LoginScreenState extends State<LoginScreen> {
       print('❌ Login error: $e');
       setState(() {
         if (e.toString().contains('NO_SUPERVISOR_PRIVILEGES')) {
-          _errorMessage = 'No tienes los privilegios para entrar aquí.';
+          _errorMessage =
+              'Esta es la app de administración. Los vendedores deben usar la app de ventas.';
+        } else if (e.toString().contains('NO_ADMIN_PRIVILEGES')) {
+          _errorMessage =
+              'No tienes permisos de administrador. Solo gerentes, supervisores y almaceneros pueden acceder.';
+        } else if (e.toString().contains('NO_STORE_ASSIGNED')) {
+          _errorMessage =
+              'Tu usuario no tiene una tienda asignada. Contacta al administrador.';
         } else if (e.toString().contains('Invalid login credentials')) {
           _errorMessage =
               'Credenciales inválidas. Verifica tu email y contraseña.';

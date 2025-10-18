@@ -6,6 +6,9 @@ import '../models/worker_models.dart';
 import '../services/worker_service.dart';
 import '../services/store_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/navigation_guard.dart';
+import '../utils/screen_protection_mixin.dart';
+import 'edit_worker_multi_role_screen.dart';
 
 class WorkersScreen extends StatefulWidget {
   const WorkersScreen({super.key});
@@ -15,13 +18,16 @@ class WorkersScreen extends StatefulWidget {
 }
 
 class _WorkersScreenState extends State<WorkersScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, ScreenProtectionMixin {
+  @override
+  String get protectedRoute => '/workers';
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
   // Datos de trabajadores
   List<WorkerData> _workers = [];
+  List<WorkerData> _deletedWorkers = []; // 🆕 Trabajadores eliminados
   List<WorkerRole> _roles = [];
   List<TPVData> _tpvs = [];
   List<AlmacenData> _almacenes = [];
@@ -30,6 +36,7 @@ class _WorkersScreenState extends State<WorkersScreen>
   // Estados de carga
   bool _isLoadingWorkers = true;
   bool _isLoadingRoles = true;
+  bool _isLoadingDeleted = true; // 🆕 Estado de carga de eliminados
 
   // Filtros
   String _selectedRole = 'Todos';
@@ -160,10 +167,23 @@ class _WorkersScreenState extends State<WorkersScreen>
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          FutureBuilder<bool>(
+            future: NavigationGuard.canPerformAction('worker.create'),
+            builder: (context, snapshot) {
+              if (snapshot.data == true) {
+                return IconButton(
+                  icon: const Icon(Icons.person_add, color: Colors.white),
+                  onPressed: _showAddWorkerDialog,
+                  tooltip: 'Agregar Trabajador',
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
           IconButton(
-            icon: const Icon(Icons.person_add, color: Colors.white),
-            onPressed: _showAddWorkerDialog,
-            tooltip: 'Agregar Trabajador',
+            icon: const Icon(Icons.sync, color: Colors.white),
+            onPressed: _showSyncUUIDDialog,
+            tooltip: 'Sincronizar UUID desde Roles',
           ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
@@ -325,6 +345,10 @@ class _WorkersScreenState extends State<WorkersScreen>
   }
 
   Widget _buildWorkerCard(WorkerData worker) {
+    // Obtener el rol con mayor jerarquía
+    final rolPrincipal = _getRolPrincipal(worker);
+    final nombreRolPrincipal = _getRoleDisplayName(rolPrincipal);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -338,11 +362,11 @@ class _WorkersScreenState extends State<WorkersScreen>
             children: [
               CircleAvatar(
                 radius: 25,
-                backgroundColor: _getRoleColor(worker.tipoRol).withOpacity(0.1),
+                backgroundColor: _getRoleColor(rolPrincipal).withOpacity(0.1),
                 child: Text(
                   worker.nombres.substring(0, 1).toUpperCase(),
                   style: TextStyle(
-                    color: _getRoleColor(worker.tipoRol),
+                    color: _getRoleColor(rolPrincipal),
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
                   ),
@@ -362,15 +386,18 @@ class _WorkersScreenState extends State<WorkersScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      worker.rolNombre,
+                      nombreRolPrincipal,
                       style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 14,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    // 🆕 NUEVO: Etiquetas múltiples de roles
+                    _buildRoleTags(worker),
                     const SizedBox(height: 4),
-                    if (worker.tipoRol == 'vendedor' &&
-                        worker.tpvDenominacion != null)
+                    // Mostrar detalles de vendedor si es vendedor
+                    if (worker.esVendedor && worker.tpvDenominacion != null)
                       Row(
                         children: [
                           Icon(
@@ -388,7 +415,8 @@ class _WorkersScreenState extends State<WorkersScreen>
                           ),
                         ],
                       ),
-                    if (worker.tipoRol == 'almacenero' &&
+                    // Mostrar detalles de almacenero si es almacenero
+                    if (worker.esAlmacenero &&
                         worker.almacenDenominacion != null)
                       Row(
                         children: [
@@ -410,44 +438,28 @@ class _WorkersScreenState extends State<WorkersScreen>
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                  // Botón para crear usuario si no tiene UUID
+                  if (!worker.tieneUsuario)
+                    IconButton(
+                      icon: const Icon(Icons.person_add, size: 18),
+                      onPressed: () => _showCreateUserDialog(worker),
+                      tooltip: 'Crear Usuario',
+                      color: Colors.green,
                     ),
-                    decoration: BoxDecoration(
-                      color: _getRoleColor(worker.tipoRol).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _getRoleDisplayName(worker.tipoRol),
-                      style: TextStyle(
-                        color: _getRoleColor(worker.tipoRol),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 18),
+                    onPressed: () => _showEditWorkerDialog(worker),
+                    tooltip: 'Editar',
+                    color: AppColors.primary,
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, size: 18),
-                        onPressed: () => _showEditWorkerDialog(worker),
-                        tooltip: 'Editar',
-                        color: AppColors.primary,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, size: 18),
-                        onPressed: () => _showDeleteWorkerDialog(worker),
-                        tooltip: 'Eliminar',
-                        color: Colors.red,
-                      ),
-                    ],
+                  IconButton(
+                    icon: const Icon(Icons.delete, size: 18),
+                    onPressed: () => _showDeleteWorkerDialog(worker),
+                    tooltip: 'Eliminar',
+                    color: Colors.red,
                   ),
                 ],
               ),
@@ -479,6 +491,29 @@ class _WorkersScreenState extends State<WorkersScreen>
     );
   }
 
+  // Método para obtener el rol con mayor jerarquía
+  String _getRolPrincipal(WorkerData worker) {
+    // Jerarquía: gerente > supervisor > almacenero > vendedor
+    if (worker.esGerente) return 'gerente';
+    if (worker.esSupervisor) return 'supervisor';
+    if (worker.esAlmacenero) return 'almacenero';
+    if (worker.esVendedor) return 'vendedor';
+
+    // Si no tiene roles de app, usar el rol general (seg_roll)
+    // Retornar el tipoRol o rolNombre si existe
+    if (worker.tipoRol.isNotEmpty && worker.tipoRol != 'sin_rol') {
+      return worker.tipoRol;
+    }
+
+    // Si tiene rolNombre, usarlo
+    if (worker.rolNombre.isNotEmpty) {
+      return worker.rolNombre.toLowerCase();
+    }
+
+    // Por defecto, retornar 'sin_rol'
+    return 'sin_rol';
+  }
+
   Color _getRoleColor(String role) {
     switch (role) {
       case 'gerente':
@@ -495,7 +530,7 @@ class _WorkersScreenState extends State<WorkersScreen>
   }
 
   String _getRoleDisplayName(String role) {
-    switch (role) {
+    switch (role.toLowerCase()) {
       case 'gerente':
         return 'Gerente';
       case 'supervisor':
@@ -504,10 +539,97 @@ class _WorkersScreenState extends State<WorkersScreen>
         return 'Vendedor';
       case 'almacenero':
         return 'Almacenero';
-      case 'Todos':
+      case 'todos':
         return 'Todos';
+      case 'sin_rol':
+        return 'Trabajador';
       default:
-        return role;
+        // Capitalizar primera letra para roles personalizados
+        if (role.isEmpty) return 'Trabajador';
+        return role[0].toUpperCase() + role.substring(1);
+    }
+  }
+
+  // 🆕 NUEVO: Widget para mostrar etiquetas múltiples de roles
+  Widget _buildRoleTags(WorkerData worker) {
+    // rolesActivos ya incluye 'usuario' si tieneUsuario es true
+    final tags = worker.rolesActivos;
+
+    if (tags.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: tags.map((tag) => _buildRoleTag(tag)).toList(),
+    );
+  }
+
+  // 🆕 NUEVO: Widget para construir una etiqueta individual de rol
+  Widget _buildRoleTag(String role) {
+    final config = _getRoleTagConfig(role);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: config['color'].withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: config['color'].withOpacity(0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(config['icon'], size: 12, color: config['color']),
+          const SizedBox(width: 4),
+          Text(
+            config['label'],
+            style: TextStyle(
+              color: config['color'],
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🆕 NUEVO: Configuración de colores e iconos para cada tipo de rol
+  Map<String, dynamic> _getRoleTagConfig(String role) {
+    switch (role) {
+      case 'usuario':
+        return {
+          'label': 'Usuario',
+          'icon': Icons.account_circle,
+          'color': Colors.blue,
+        };
+      case 'vendedor':
+        return {
+          'label': 'Vendedor',
+          'icon': Icons.point_of_sale,
+          'color': AppColors.primary,
+        };
+      case 'supervisor':
+        return {
+          'label': 'Supervisor',
+          'icon': Icons.supervisor_account,
+          'color': Colors.orange,
+        };
+      case 'almacenero':
+        return {
+          'label': 'Almacenero',
+          'icon': Icons.warehouse,
+          'color': Colors.green,
+        };
+      case 'gerente':
+        return {
+          'label': 'Gerente',
+          'icon': Icons.admin_panel_settings,
+          'color': Colors.purple,
+        };
+      default:
+        return {'label': role, 'icon': Icons.label, 'color': Colors.grey};
     }
   }
 
@@ -830,16 +952,19 @@ class _WorkersScreenState extends State<WorkersScreen>
     );
   }
 
-  // Diálogo para agregar trabajador
+  // 🆕 Diálogo mejorado para agregar trabajador
   void _showAddWorkerDialog() {
     final nombresController = TextEditingController();
     final apellidosController = TextEditingController();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
     final numeroConfirmacionController = TextEditingController();
-    String selectedRole = 'vendedor';
+    bool crearUsuario = false;
+    bool asignarRolEspecifico = false;
+    String? selectedRole;
     int? selectedTPV;
     int? selectedAlmacen;
+    int? selectedRolGeneral;
     bool _obscurePassword = true;
 
     showDialog(
@@ -848,136 +973,317 @@ class _WorkersScreenState extends State<WorkersScreen>
           (context) => StatefulBuilder(
             builder:
                 (context, setDialogState) => AlertDialog(
-                  title: const Text('Agregar Trabajador'),
+                  title: Row(
+                    children: [
+                      Icon(Icons.person_add, color: AppColors.primary),
+                      const SizedBox(width: 12),
+                      const Text('Agregar Trabajador'),
+                    ],
+                  ),
                   content: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Información básica
+                        const Text(
+                          'Información Básica',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         TextField(
                           controller: nombresController,
                           decoration: const InputDecoration(
-                            labelText: 'Nombres',
+                            labelText: 'Nombres *',
                             prefixIcon: Icon(Icons.person),
+                            border: OutlineInputBorder(),
                           ),
                         ),
                         const SizedBox(height: 12),
                         TextField(
                           controller: apellidosController,
                           decoration: const InputDecoration(
-                            labelText: 'Apellidos',
+                            labelText: 'Apellidos *',
                             prefixIcon: Icon(Icons.person_outline),
+                            border: OutlineInputBorder(),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: emailController,
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
-                            prefixIcon: Icon(Icons.email),
-                            hintText: 'usuario@ejemplo.com',
+                        const SizedBox(height: 16),
+                        const Divider(),
+                        const SizedBox(height: 16),
+
+                        // Opción de crear usuario
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue.shade200),
                           ),
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: passwordController,
-                          obscureText: _obscurePassword,
-                          decoration: InputDecoration(
-                            labelText: 'Contraseña',
-                            prefixIcon: const Icon(Icons.lock),
-                            hintText: 'Mínimo 6 caracteres',
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility
-                                    : Icons.visibility_off,
+                          child: Row(
+                            children: [
+                              Checkbox(
+                                value: crearUsuario,
+                                onChanged: (value) {
+                                  setDialogState(() {
+                                    crearUsuario = value ?? false;
+                                  });
+                                },
                               ),
-                              onPressed: () {
-                                setDialogState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: selectedRole,
-                          decoration: const InputDecoration(
-                            labelText: 'Rol',
-                            prefixIcon: Icon(Icons.work),
-                          ),
-                          items:
-                              [
-                                    'gerente',
-                                    'supervisor',
-                                    'vendedor',
-                                    'almacenero',
-                                  ]
-                                  .map(
-                                    (role) => DropdownMenuItem(
-                                      value: role,
-                                      child: Text(_getRoleDisplayName(role)),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedRole = value!;
-                              selectedTPV = null;
-                              selectedAlmacen = null;
-                            });
-                          },
-                        ),
-                        if (selectedRole == 'vendedor') ...[
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<int>(
-                            value: selectedTPV,
-                            decoration: const InputDecoration(
-                              labelText: 'TPV Asignado',
-                              prefixIcon: Icon(Icons.point_of_sale),
-                            ),
-                            items:
-                                _tpvs
-                                    .map(
-                                      (tpv) => DropdownMenuItem(
-                                        value: tpv.id,
-                                        child: Text(tpv.denominacion),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Crear usuario de acceso',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                    )
-                                    .toList(),
-                            onChanged: (value) {
-                              setDialogState(() => selectedTPV = value);
-                            },
+                                    ),
+                                    Text(
+                                      'Permitirá al trabajador acceder a la app',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Campos de usuario (solo si crearUsuario = true)
+                        if (crearUsuario) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Credenciales de Acceso',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           TextField(
-                            controller: numeroConfirmacionController,
+                            controller: emailController,
                             decoration: const InputDecoration(
-                              labelText: 'Número de Confirmación (Opcional)',
-                              prefixIcon: Icon(Icons.confirmation_number),
+                              labelText: 'Email *',
+                              prefixIcon: Icon(Icons.email),
+                              hintText: 'usuario@ejemplo.com',
+                              border: OutlineInputBorder(),
+                            ),
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: passwordController,
+                            obscureText: _obscurePassword,
+                            decoration: InputDecoration(
+                              labelText: 'Contraseña *',
+                              prefixIcon: const Icon(Icons.lock),
+                              hintText: 'Mínimo 6 caracteres',
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                ),
+                                onPressed: () {
+                                  setDialogState(() {
+                                    _obscurePassword = !_obscurePassword;
+                                  });
+                                },
+                              ),
                             ),
                           ),
+                          const SizedBox(height: 16),
+                          const Divider(),
+                          const SizedBox(height: 16),
+
+                          // Opción de asignar rol específico
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Checkbox(
+                                  value: asignarRolEspecifico,
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      asignarRolEspecifico = value ?? false;
+                                      if (!asignarRolEspecifico) {
+                                        selectedRole = null;
+                                        selectedTPV = null;
+                                        selectedAlmacen = null;
+                                      }
+                                    });
+                                  },
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Asignar rol específico de la app',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Vendedor o Almacenero con configuración',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // Roles específicos
+                          if (asignarRolEspecifico) ...[
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Configuración de Rol',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              value: selectedRole,
+                              decoration: const InputDecoration(
+                                labelText: 'Rol Específico *',
+                                prefixIcon: Icon(Icons.work),
+                                border: OutlineInputBorder(),
+                              ),
+                              items:
+                                  [
+                                        'gerente',
+                                        'supervisor',
+                                        'vendedor',
+                                        'almacenero',
+                                      ]
+                                      .map(
+                                        (role) => DropdownMenuItem(
+                                          value: role,
+                                          child: Text(
+                                            _getRoleDisplayName(role),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged: (value) {
+                                setDialogState(() {
+                                  selectedRole = value;
+                                  selectedTPV = null;
+                                  selectedAlmacen = null;
+                                });
+                              },
+                            ),
+                            if (selectedRole == 'vendedor') ...[
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<int>(
+                                value: selectedTPV,
+                                decoration: const InputDecoration(
+                                  labelText: 'TPV Asignado',
+                                  prefixIcon: Icon(Icons.point_of_sale),
+                                  border: OutlineInputBorder(),
+                                ),
+                                items:
+                                    _tpvs
+                                        .map(
+                                          (tpv) => DropdownMenuItem(
+                                            value: tpv.id,
+                                            child: Text(tpv.denominacion),
+                                          ),
+                                        )
+                                        .toList(),
+                                onChanged: (value) {
+                                  setDialogState(() => selectedTPV = value);
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: numeroConfirmacionController,
+                                decoration: const InputDecoration(
+                                  labelText:
+                                      'Número de Confirmación (Opcional)',
+                                  prefixIcon: Icon(Icons.confirmation_number),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ],
+                            if (selectedRole == 'almacenero') ...[
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<int>(
+                                value: selectedAlmacen,
+                                decoration: const InputDecoration(
+                                  labelText: 'Almacén Asignado',
+                                  prefixIcon: Icon(Icons.warehouse),
+                                  border: OutlineInputBorder(),
+                                ),
+                                items:
+                                    _almacenes
+                                        .map(
+                                          (almacen) => DropdownMenuItem(
+                                            value: almacen.id,
+                                            child: Text(almacen.denominacion),
+                                          ),
+                                        )
+                                        .toList(),
+                                onChanged: (value) {
+                                  setDialogState(() => selectedAlmacen = value);
+                                },
+                              ),
+                            ],
+                          ],
                         ],
-                        if (selectedRole == 'almacenero') ...[
+
+                        // Rol general (si no crea usuario)
+                        if (!crearUsuario) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Rol General',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
                           const SizedBox(height: 12),
                           DropdownButtonFormField<int>(
-                            value: selectedAlmacen,
+                            value: selectedRolGeneral,
                             decoration: const InputDecoration(
-                              labelText: 'Almacén Asignado',
-                              prefixIcon: Icon(Icons.warehouse),
+                              labelText: 'Rol *',
+                              prefixIcon: Icon(Icons.badge),
+                              border: OutlineInputBorder(),
+                              helperText: 'Rol organizacional del trabajador',
                             ),
                             items:
-                                _almacenes
+                                _roles
                                     .map(
-                                      (almacen) => DropdownMenuItem(
-                                        value: almacen.id,
-                                        child: Text(almacen.denominacion),
+                                      (role) => DropdownMenuItem(
+                                        value: role.id,
+                                        child: Text(role.denominacion),
                                       ),
                                     )
                                     .toList(),
                             onChanged: (value) {
-                              setDialogState(() => selectedAlmacen = value);
+                              setDialogState(() => selectedRolGeneral = value);
                             },
                           ),
                         ],
@@ -989,13 +1295,15 @@ class _WorkersScreenState extends State<WorkersScreen>
                       onPressed: () => Navigator.pop(context),
                       child: const Text('Cancelar'),
                     ),
-                    ElevatedButton(
+                    ElevatedButton.icon(
                       onPressed:
-                          () => _createWorkerWithRegistration(
+                          () => _createWorkerFlexible(
                             nombres: nombresController.text,
                             apellidos: apellidosController.text,
+                            crearUsuario: crearUsuario,
                             email: emailController.text,
                             password: passwordController.text,
+                            asignarRolEspecifico: asignarRolEspecifico,
                             tipoRol: selectedRole,
                             tpvId: selectedTPV,
                             almacenId: selectedAlmacen,
@@ -1003,8 +1311,13 @@ class _WorkersScreenState extends State<WorkersScreen>
                                 numeroConfirmacionController.text.isEmpty
                                     ? null
                                     : numeroConfirmacionController.text,
+                            rolGeneralId: selectedRolGeneral,
                           ),
-                      child: const Text('Agregar'),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Agregar Trabajador'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                      ),
                     ),
                   ],
                 ),
@@ -1179,6 +1492,242 @@ class _WorkersScreenState extends State<WorkersScreen>
         ),
       ),
     );
+  }
+
+  // 🆕 Método flexible para crear trabajador (con o sin usuario)
+  Future<void> _createWorkerFlexible({
+    required String nombres,
+    required String apellidos,
+    required bool crearUsuario,
+    String? email,
+    String? password,
+    required bool asignarRolEspecifico,
+    String? tipoRol,
+    int? tpvId,
+    int? almacenId,
+    String? numeroConfirmacion,
+    int? rolGeneralId,
+  }) async {
+    // Validaciones básicas
+    if (nombres.isEmpty || apellidos.isEmpty) {
+      _showErrorDialog('Por favor, ingresa nombres y apellidos');
+      return;
+    }
+
+    if (_storeId == null) {
+      _showErrorDialog('Error: No se pudo obtener el ID de la tienda');
+      return;
+    }
+
+    // Validaciones según el modo
+    if (crearUsuario) {
+      if (email == null ||
+          email.isEmpty ||
+          password == null ||
+          password.isEmpty) {
+        _showErrorDialog('Por favor, completa email y contraseña');
+        return;
+      }
+
+      if (!email.contains('@')) {
+        _showErrorDialog('Por favor, ingresa un email válido');
+        return;
+      }
+
+      if (password.length < 6) {
+        _showErrorDialog('La contraseña debe tener al menos 6 caracteres');
+        return;
+      }
+
+      if (asignarRolEspecifico && tipoRol == null) {
+        _showErrorDialog('Por favor, selecciona un rol específico');
+        return;
+      }
+    } else {
+      if (rolGeneralId == null) {
+        _showErrorDialog('Por favor, selecciona un rol general');
+        return;
+      }
+    }
+
+    Navigator.pop(context); // Cerrar diálogo
+
+    // Mostrar loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  crearUsuario
+                      ? 'Registrando usuario y creando trabajador...'
+                      : 'Creando trabajador...',
+                ),
+              ],
+            ),
+          ),
+    );
+
+    try {
+      String? userUuid;
+
+      // CASO 1: Crear usuario
+      if (crearUsuario) {
+        print('🔐 Registrando usuario en Supabase Auth...');
+        final supabase = Supabase.instance.client;
+        final authResponse = await supabase.auth.signUp(
+          email: email!,
+          password: password!,
+          data: {
+            'nombres': nombres,
+            'apellidos': apellidos,
+            'full_name': '$nombres $apellidos',
+          },
+          emailRedirectTo: null,
+        );
+
+        if (authResponse.user == null) {
+          throw Exception('Error al registrar usuario en Supabase Auth');
+        }
+
+        userUuid = authResponse.user!.id;
+        print('✅ Usuario registrado con UUID: $userUuid');
+
+        // Si asigna rol específico
+        if (asignarRolEspecifico && tipoRol != null) {
+          print('👤 Creando trabajador con rol específico: $tipoRol');
+          final success = await WorkerService.createWorker(
+            storeId: _storeId!,
+            nombres: nombres,
+            apellidos: apellidos,
+            tipoRol: tipoRol,
+            usuarioUuid: userUuid,
+            tpvId: tpvId,
+            almacenId: almacenId,
+            numeroConfirmacion: numeroConfirmacion,
+          );
+
+          if (!success) {
+            throw Exception('Error al crear trabajador con rol específico');
+          }
+        } else {
+          // Solo crear trabajador con UUID, sin rol específico
+          print('👤 Creando trabajador con usuario pero sin rol específico');
+          final success = await WorkerService.createWorkerBasic(
+            storeId: _storeId!,
+            nombres: nombres,
+            apellidos: apellidos,
+            usuarioUuid: userUuid,
+            rolId: rolGeneralId,
+          );
+
+          if (!success) {
+            throw Exception('Error al crear trabajador');
+          }
+        }
+      }
+      // CASO 2: No crear usuario (UUID null)
+      else {
+        print('👤 Creando trabajador SIN usuario (UUID null)');
+        final success = await WorkerService.createWorkerBasic(
+          storeId: _storeId!,
+          nombres: nombres,
+          apellidos: apellidos,
+          usuarioUuid: null,
+          rolId: rolGeneralId,
+        );
+
+        if (!success) {
+          throw Exception('Error al crear trabajador');
+        }
+      }
+
+      Navigator.pop(context); // Cerrar loading
+
+      // Mostrar diálogo de confirmación
+      await showDialog(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green.shade600),
+                  const SizedBox(width: 12),
+                  const Text('Trabajador Creado'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'El trabajador $nombres $apellidos ha sido creado exitosamente.',
+                  ),
+                  if (crearUsuario) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '✅ Usuario creado',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 4),
+                          Text('Email: $email'),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.orange),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Sin usuario de acceso. Puedes crear uno después.',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Aceptar'),
+                ),
+              ],
+            ),
+      );
+
+      // Recargar lista de trabajadores
+      await _loadWorkersData();
+    } catch (e) {
+      Navigator.pop(context); // Cerrar loading
+      print('❌ Error al crear trabajador: $e');
+      _showErrorDialog('Error al crear trabajador: $e');
+    }
   }
 
   // Método para crear trabajador con registro de usuario
@@ -1404,169 +1953,22 @@ class _WorkersScreenState extends State<WorkersScreen>
     }
   }
 
-  // Métodos para editar trabajador
+  // 🆕 Métodos para editar trabajador con roles múltiples
   void _showEditWorkerDialog(WorkerData worker) {
-    final nombresController = TextEditingController(text: worker.nombres);
-    final apellidosController = TextEditingController(text: worker.apellidos);
-    final uuidController = TextEditingController(
-      text: worker.usuarioUuid ?? '',
-    );
-    final numeroConfirmacionController = TextEditingController(
-      text: worker.numeroConfirmacion ?? '',
-    );
-    String selectedRole = worker.tipoRol;
-    int? selectedTPV = worker.tpvId;
-    int? selectedAlmacen = worker.almacenId;
-
-    showDialog(
-      context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: Text('Editar: ${worker.nombreCompleto}'),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextField(
-                          controller: nombresController,
-                          decoration: const InputDecoration(
-                            labelText: 'Nombres',
-                            prefixIcon: Icon(Icons.person),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: apellidosController,
-                          decoration: const InputDecoration(
-                            labelText: 'Apellidos',
-                            prefixIcon: Icon(Icons.person_outline),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: uuidController,
-                          decoration: const InputDecoration(
-                            labelText: 'UUID del Usuario',
-                            prefixIcon: Icon(Icons.fingerprint),
-                            hintText: 'UUID de Supabase Auth',
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: selectedRole,
-                          decoration: const InputDecoration(
-                            labelText: 'Rol',
-                            prefixIcon: Icon(Icons.work),
-                          ),
-                          items:
-                              [
-                                    'gerente',
-                                    'supervisor',
-                                    'vendedor',
-                                    'almacenero',
-                                  ]
-                                  .map(
-                                    (role) => DropdownMenuItem(
-                                      value: role,
-                                      child: Text(_getRoleDisplayName(role)),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedRole = value!;
-                              if (selectedRole != 'vendedor')
-                                selectedTPV = null;
-                              if (selectedRole != 'almacenero')
-                                selectedAlmacen = null;
-                            });
-                          },
-                        ),
-                        if (selectedRole == 'vendedor') ...[
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<int>(
-                            value: selectedTPV,
-                            decoration: const InputDecoration(
-                              labelText: 'TPV Asignado',
-                              prefixIcon: Icon(Icons.point_of_sale),
-                            ),
-                            items:
-                                _tpvs
-                                    .map(
-                                      (tpv) => DropdownMenuItem(
-                                        value: tpv.id,
-                                        child: Text(tpv.denominacion),
-                                      ),
-                                    )
-                                    .toList(),
-                            onChanged: (value) {
-                              setDialogState(() => selectedTPV = value);
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: numeroConfirmacionController,
-                            decoration: const InputDecoration(
-                              labelText: 'Número de Confirmación (Opcional)',
-                              prefixIcon: Icon(Icons.confirmation_number),
-                            ),
-                          ),
-                        ],
-                        if (selectedRole == 'almacenero') ...[
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<int>(
-                            value: selectedAlmacen,
-                            decoration: const InputDecoration(
-                              labelText: 'Almacén Asignado',
-                              prefixIcon: Icon(Icons.warehouse),
-                            ),
-                            items:
-                                _almacenes
-                                    .map(
-                                      (almacen) => DropdownMenuItem(
-                                        value: almacen.id,
-                                        child: Text(almacen.denominacion),
-                                      ),
-                                    )
-                                    .toList(),
-                            onChanged: (value) {
-                              setDialogState(() => selectedAlmacen = value);
-                            },
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      onPressed:
-                          () => _editWorker(
-                            worker: worker,
-                            nombres: nombresController.text,
-                            apellidos: apellidosController.text,
-                            uuid:
-                                uuidController.text.isEmpty
-                                    ? null
-                                    : uuidController.text,
-                            tipoRol: selectedRole,
-                            tpvId: selectedTPV,
-                            almacenId: selectedAlmacen,
-                            numeroConfirmacion:
-                                numeroConfirmacionController.text.isEmpty
-                                    ? null
-                                    : numeroConfirmacionController.text,
-                          ),
-                      child: const Text('Guardar'),
-                    ),
-                  ],
-                ),
-          ),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder:
+            (context) => EditWorkerMultiRoleScreen(
+              worker: worker,
+              storeId: _storeId!,
+              userUuid: _userUuid!,
+              tpvs: _tpvs,
+              almacenes: _almacenes,
+              onSaved: () {
+                _loadWorkersData();
+              },
+            ),
+      ),
     );
   }
 
@@ -1891,6 +2293,512 @@ class _WorkersScreenState extends State<WorkersScreen>
       }
     } catch (e) {
       _showErrorDialog('Error al eliminar rol: $e');
+    }
+  }
+
+  // 👤 Diálogo para crear usuario para un trabajador sin UUID
+  Future<void> _showCreateUserDialog(WorkerData worker) async {
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    bool _obscurePassword = true;
+
+    await showDialog(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.person_add, color: AppColors.primary),
+                      const SizedBox(width: 12),
+                      const Text('Crear Usuario'),
+                    ],
+                  ),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Trabajador:',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                worker.nombreCompleto,
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Credenciales de Acceso',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: emailController,
+                          decoration: const InputDecoration(
+                            labelText: 'Email *',
+                            prefixIcon: Icon(Icons.email),
+                            hintText: 'usuario@ejemplo.com',
+                            border: OutlineInputBorder(),
+                          ),
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: passwordController,
+                          obscureText: _obscurePassword,
+                          decoration: InputDecoration(
+                            labelText: 'Contraseña *',
+                            prefixIcon: const Icon(Icons.lock),
+                            hintText: 'Mínimo 6 caracteres',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
+                              ),
+                              onPressed: () {
+                                setDialogState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.orange),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Se creará un usuario y se asignará al trabajador.',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final email = emailController.text.trim();
+                        final password = passwordController.text;
+
+                        if (email.isEmpty || password.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Por favor completa todos los campos',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+
+                        if (!email.contains('@')) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Por favor ingresa un email válido',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+
+                        if (password.length < 6) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'La contraseña debe tener al menos 6 caracteres',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+
+                        Navigator.pop(context); // Cerrar diálogo
+
+                        await _createUserForWorker(
+                          worker: worker,
+                          email: email,
+                          password: password,
+                        );
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('Crear Usuario'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+          ),
+    );
+  }
+
+  // Crear usuario para un trabajador existente
+  Future<void> _createUserForWorker({
+    required WorkerData worker,
+    required String email,
+    required String password,
+  }) async {
+    // Mostrar loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Creando usuario...'),
+              ],
+            ),
+          ),
+    );
+
+    try {
+      // Paso 1: Registrar usuario en Supabase Auth
+      print('🔐 Registrando usuario en Supabase Auth...');
+      final supabase = Supabase.instance.client;
+      final authResponse = await supabase.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'nombres': worker.nombres,
+          'apellidos': worker.apellidos,
+          'full_name': worker.nombreCompleto,
+        },
+        emailRedirectTo: null,
+      );
+
+      if (authResponse.user == null) {
+        throw Exception('Error al registrar usuario en Supabase Auth');
+      }
+
+      final userUuid = authResponse.user!.id;
+      print('✅ Usuario registrado con UUID: $userUuid');
+
+      // Paso 2: Actualizar trabajador con el UUID
+      print('🔄 Actualizando trabajador con UUID...');
+      final success = await WorkerService.updateWorkerUUID(
+        workerId: worker.trabajadorId,
+        storeId: _storeId!,
+        uuid: userUuid,
+      );
+
+      if (!success) {
+        throw Exception('Error al actualizar trabajador con UUID');
+      }
+
+      Navigator.pop(context); // Cerrar loading
+
+      // Mostrar diálogo de éxito
+      await showDialog(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green.shade600),
+                  const SizedBox(width: 12),
+                  const Text('Usuario Creado'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Usuario creado exitosamente para ${worker.nombreCompleto}',
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '✅ Credenciales',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text('Email: $email'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Aceptar'),
+                ),
+              ],
+            ),
+      );
+
+      // Recargar trabajadores
+      await _loadWorkersData();
+    } catch (e) {
+      Navigator.pop(context); // Cerrar loading
+      print('❌ Error al crear usuario: $e');
+      _showErrorDialog('Error al crear usuario: $e');
+    }
+  }
+
+  // 🔄 Diálogo para sincronizar UUID desde roles
+  Future<void> _showSyncUUIDDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.sync, color: AppColors.primary),
+                const SizedBox(width: 12),
+                const Expanded(child: Text('Sincronizar UUID desde Roles')),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Esta acción buscará trabajadores que:',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '• No tienen UUID asignado en la tabla trabajadores',
+                ),
+                const Text(
+                  '• Tienen roles activos (gerente, supervisor, vendedor, almacenero)',
+                ),
+                const Text('• El UUID se copiará desde la tabla del rol'),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.blue.shade700,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Esto permitirá que estos trabajadores puedan tener múltiples roles.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.sync, size: 18),
+                label: const Text('Sincronizar'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed == true && _storeId != null) {
+      try {
+        // Mostrar loading
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder:
+                (context) => const Center(
+                  child: Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('Sincronizando UUID...'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+          );
+        }
+
+        final result = await WorkerService.assignUUIDFromRoles(_storeId);
+
+        if (mounted) {
+          Navigator.pop(context); // Cerrar loading
+
+          if (result['success'] == true) {
+            final total = result['total'] ?? 0;
+            final results = result['results'] as List<dynamic>;
+
+            // Mostrar resultados
+            await showDialog(
+              context: context,
+              builder:
+                  (context) => AlertDialog(
+                    title: Row(
+                      children: [
+                        Icon(
+                          total > 0 ? Icons.check_circle : Icons.info_outline,
+                          color: total > 0 ? Colors.green : Colors.orange,
+                        ),
+                        const SizedBox(width: 12),
+                        const Text('Resultado de Sincronización'),
+                      ],
+                    ),
+                    content: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            result['message'] ?? 'Sincronización completada',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (total > 0) ...[
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Trabajadores actualizados:',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 8),
+                            ...results.map((worker) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.person,
+                                      size: 16,
+                                      color: Colors.green.shade700,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '${worker['nombres']} ${worker['apellidos']}',
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade100,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        worker['rol_asignado'] ?? '',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.blue.shade900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ],
+                        ],
+                      ),
+                    ),
+                    actions: [
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cerrar'),
+                      ),
+                    ],
+                  ),
+            );
+
+            // Recargar trabajadores si hubo cambios
+            if (total > 0) {
+              await _loadWorkersData();
+            }
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          Navigator.pop(context); // Cerrar loading si está abierto
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
     }
   }
 

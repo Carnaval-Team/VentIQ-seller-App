@@ -7,6 +7,7 @@ import 'transfer_service.dart';
 import 'product_service.dart';
 import 'financial_service.dart';
 import 'restaurant_service.dart'; // Agregar import para conversión de unidades
+import 'permissions_service.dart';
 
 class InventoryService {
   static final InventoryService _instance = InventoryService._internal();
@@ -731,7 +732,9 @@ class InventoryService {
   ) async {
     try {
       print('🔍 Obteniendo zonas del almacén $idAlmacen...');
-      print('📊 Consulta: SELECT id, denominacion, sku_codigo, id_tipo_layout FROM app_dat_layout_almacen WHERE id_almacen = $idAlmacen');
+      print(
+        '📊 Consulta: SELECT id, denominacion, sku_codigo, id_tipo_layout FROM app_dat_layout_almacen WHERE id_almacen = $idAlmacen',
+      );
 
       final response = await _supabase
           .from('app_dat_layout_almacen')
@@ -741,8 +744,12 @@ class InventoryService {
 
       print('✅ Zonas obtenidas: ${response.length}');
       if (response.isEmpty) {
-        print('⚠️ No hay zonas registradas en app_dat_layout_almacen para id_almacen=$idAlmacen');
-        print('⚠️ Necesitas crear zonas/ubicaciones para este almacén en la base de datos');
+        print(
+          '⚠️ No hay zonas registradas en app_dat_layout_almacen para id_almacen=$idAlmacen',
+        );
+        print(
+          '⚠️ Necesitas crear zonas/ubicaciones para este almacén en la base de datos',
+        );
       } else {
         print('📍 Zonas encontradas: $response');
       }
@@ -2436,7 +2443,9 @@ class InventoryService {
   }
 
   /// Obtener TPVs de una tienda
-  static Future<List<Map<String, dynamic>>> getTPVsByTienda(int idTienda) async {
+  static Future<List<Map<String, dynamic>>> getTPVsByTienda(
+    int idTienda,
+  ) async {
     try {
       print('🔍 Obteniendo TPVs de la tienda $idTienda...');
 
@@ -2466,20 +2475,21 @@ class InventoryService {
       print('   - ID TPV: $idTpv');
       print('   - Importe: $importeTotal');
 
-      final response = await _supabase
-          .from('app_dat_operacion_venta')
-          .insert({
-            'id_operacion': idOperacion,
-            'id_tpv': idTpv,
-            'importe_total': importeTotal,
-            'es_pagada': true,
-          })
-          .select('id_operacion, id_tpv, importe_total, es_pagada')
-          .single();
+      final response =
+          await _supabase
+              .from('app_dat_operacion_venta')
+              .insert({
+                'id_operacion': idOperacion,
+                'id_tpv': idTpv,
+                'importe_total': importeTotal,
+                'es_pagada': true,
+              })
+              .select('id_operacion, id_tpv, importe_total, es_pagada')
+              .single();
 
       final idOperacionVenta = response['id_operacion'] as int;
       print('✅ Operación de venta creada con id_operacion: $idOperacionVenta');
-      
+
       return {
         'status': 'success',
         'id_operacion': idOperacionVenta,
@@ -2504,23 +2514,20 @@ class InventoryService {
       print('   - ID Medio Pago: $idMedioPago');
       print('   - Monto: $monto');
 
-      final response = await _supabase
-          .from('app_dat_pago_venta')
-          .insert({
-            'id_operacion_venta': idOperacionVenta,
-            'id_medio_pago': idMedioPago,
-            'monto': monto,
-            'creado_por': uuid,
-          })
-          .select('id, id_operacion_venta, id_medio_pago, monto')
-          .single();
+      final response =
+          await _supabase
+              .from('app_dat_pago_venta')
+              .insert({
+                'id_operacion_venta': idOperacionVenta,
+                'id_medio_pago': idMedioPago,
+                'monto': monto,
+                'creado_por': uuid,
+              })
+              .select('id, id_operacion_venta, id_medio_pago, monto')
+              .single();
 
       print('✅ Pago registrado: ${response['id']}');
-      return {
-        'status': 'success',
-        'id_pago': response['id'],
-        'data': response,
-      };
+      return {'status': 'success', 'id_pago': response['id'], 'data': response};
     } catch (e) {
       print('❌ Error al registrar pago: $e');
       rethrow;

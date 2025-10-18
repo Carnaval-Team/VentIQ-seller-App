@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
+import '../utils/screen_protection_mixin.dart';
+import '../utils/navigation_guard.dart';
 import '../widgets/marketing_menu_widget.dart';
 import '../widgets/store_selector_widget.dart';
 
@@ -7,12 +9,19 @@ class MarketingDashboardScreen extends StatefulWidget {
   const MarketingDashboardScreen({super.key});
 
   @override
-  State<MarketingDashboardScreen> createState() => _MarketingDashboardScreenState();
+  State<MarketingDashboardScreen> createState() =>
+      _MarketingDashboardScreenState();
 }
 
-class _MarketingDashboardScreenState extends State<MarketingDashboardScreen> {
+class _MarketingDashboardScreenState extends State<MarketingDashboardScreen>
+    with ScreenProtectionMixin {
+  @override
+  String get protectedRoute => '/marketing-dashboard';
   @override
   Widget build(BuildContext context) {
+    if (isCheckingPermissions) return buildPermissionLoadingWidget();
+    if (!hasAccess) return buildAccessDeniedWidget();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Marketing Dashboard'),
@@ -61,11 +70,7 @@ class _MarketingDashboardScreenState extends State<MarketingDashboardScreen> {
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.campaign,
-                  size: 32,
-                  color: AppColors.primary,
-                ),
+                Icon(Icons.campaign, size: 32, color: AppColors.primary),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Column(
@@ -81,10 +86,7 @@ class _MarketingDashboardScreenState extends State<MarketingDashboardScreen> {
                       ),
                       Text(
                         'Gestiona promociones, campañas y fidelización de clientes',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey,
-                        ),
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -130,7 +132,12 @@ class _MarketingDashboardScreenState extends State<MarketingDashboardScreen> {
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -148,10 +155,7 @@ class _MarketingDashboardScreenState extends State<MarketingDashboardScreen> {
             ),
             Text(
               title,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
           ],
@@ -166,10 +170,7 @@ class _MarketingDashboardScreenState extends State<MarketingDashboardScreen> {
       children: [
         const Text(
           'Módulos Disponibles',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 16),
         GridView.count(
@@ -256,10 +257,7 @@ class _MarketingDashboardScreenState extends State<MarketingDashboardScreen> {
               const SizedBox(height: 4),
               Text(
                 description,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -275,10 +273,7 @@ class _MarketingDashboardScreenState extends State<MarketingDashboardScreen> {
       children: [
         const Text(
           'Actividad Reciente',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 16),
         Card(
@@ -326,17 +321,11 @@ class _MarketingDashboardScreenState extends State<MarketingDashboardScreen> {
         backgroundColor: color.withOpacity(0.2),
         child: Icon(icon, color: color, size: 20),
       ),
-      title: Text(
-        title,
-        style: const TextStyle(fontWeight: FontWeight.w500),
-      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
       subtitle: Text(description),
       trailing: Text(
         time,
-        style: const TextStyle(
-          fontSize: 12,
-          color: Colors.grey,
-        ),
+        style: const TextStyle(fontSize: 12, color: Colors.grey),
       ),
     );
   }
