@@ -4,6 +4,7 @@ import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/currency_service.dart';
+import '../services/permissions_service.dart';
 import 'add_product_screen.dart';
 import 'product_detail_screen.dart';
 import 'excel_import_screen.dart';
@@ -26,12 +27,27 @@ class _ProductsScreenState extends State<ProductsScreen> {
   String _sortBy = 'name';
   List<Map<String, dynamic>> _categories = [];
   int? _selectedCategoryId;
+  final PermissionsService _permissionsService = PermissionsService();
+  bool _canCreateProduct = false;
 
   @override
   void initState() {
     super.initState();
+    _checkPermissions();
     _loadCategories();
     _loadProducts();
+  }
+
+  void _checkPermissions() async {
+    print('🔐 Verificando permisos de productos...');
+    final canCreate = await _permissionsService.canPerformAction(
+      'product.create',
+    );
+    print('  • Crear producto: $canCreate');
+    print('✅ Puede crear productos: $canCreate');
+    setState(() {
+      _canCreateProduct = canCreate;
+    });
   }
 
   @override
@@ -107,17 +123,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: Colors.white),
-            onPressed: _showAddProductDialog,
-            tooltip: 'Agregar Producto',
-          ),
-          // En el AppBar actions:
-          IconButton(
-            onPressed: () => Navigator.pushNamed(context, '/excel-import'),
-            icon: const Icon(Icons.upload_file),
-            tooltip: 'Importar desde Excel',
-          ),
+          if (_canCreateProduct)
+            IconButton(
+              icon: const Icon(Icons.add, color: Colors.white),
+              onPressed: _showAddProductDialog,
+              tooltip: 'Agregar Producto',
+            ),
+          if (_canCreateProduct)
+            IconButton(
+              onPressed: () => Navigator.pushNamed(context, '/excel-import'),
+              icon: const Icon(Icons.upload_file),
+              tooltip: 'Importar desde Excel',
+            ),
           Builder(
             builder:
                 (context) => IconButton(
@@ -141,11 +158,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
         currentIndex: 1,
         onTap: _onBottomNavTap,
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddProductDialog,
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton:
+          _canCreateProduct
+              ? FloatingActionButton(
+                onPressed: _showAddProductDialog,
+                backgroundColor: AppColors.primary,
+                child: const Icon(Icons.add, color: Colors.white),
+              )
+              : null,
     );
   }
 

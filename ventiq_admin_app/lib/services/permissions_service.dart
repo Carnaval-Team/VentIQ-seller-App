@@ -15,13 +15,42 @@ class PermissionsService {
   int? _cachedWarehouseId;
   String? _cachedUserId;
 
+  // SOLO PARA DESARROLLO: Forzar un rol específico
+  UserRole? _forcedRole;
+
+  /// SOLO PARA DESARROLLO: Forzar un rol específico para pruebas
+  void forceRole(UserRole role) {
+    print('⚠️ MODO DESARROLLO: Forzando rol a ${getRoleName(role)}');
+    _forcedRole = role;
+    _cachedRole = role;
+  }
+
+  /// SOLO PARA DESARROLLO: Limpiar rol forzado
+  void clearForcedRole() {
+    print('✅ Limpiando rol forzado');
+    _forcedRole = null;
+    clearCache();
+  }
+
   /// Obtener el rol del usuario actual
   Future<UserRole> getUserRole() async {
-    if (_cachedRole != null) return _cachedRole!;
+    // Si hay un rol forzado (modo desarrollo), usarlo
+    if (_forcedRole != null) {
+      print('⚠️ USANDO ROL FORZADO: ${getRoleName(_forcedRole!)}');
+      return _forcedRole!;
+    }
+
+    if (_cachedRole != null) {
+      print('💾 Usando rol en caché: ${getRoleName(_cachedRole!)}');
+      return _cachedRole!;
+    }
 
     try {
       final user = _supabase.auth.currentUser;
-      if (user == null) return UserRole.none;
+      if (user == null) {
+        print('❌ No hay usuario autenticado');
+        return UserRole.none;
+      }
 
       _cachedUserId = user.id;
       print('🔍 Verificando roles para UUID: ${user.id}');
@@ -37,7 +66,7 @@ class PermissionsService {
 
       print('  • Gerente: ${gerenteData != null ? "✅ Sí" : "❌ No"}');
       if (gerenteData != null) {
-        print('✅ Rol detectado: GERENTE');
+        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: GERENTE');
         _cachedRole = UserRole.gerente;
         return UserRole.gerente;
       }
@@ -52,7 +81,7 @@ class PermissionsService {
 
       print('  • Supervisor: ${supervisorData != null ? "✅ Sí" : "❌ No"}');
       if (supervisorData != null) {
-        print('✅ Rol detectado: SUPERVISOR');
+        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: SUPERVISOR');
         _cachedRole = UserRole.supervisor;
         return UserRole.supervisor;
       }
@@ -68,7 +97,7 @@ class PermissionsService {
       print('  • Almacenero: ${almaceneroData != null ? "✅ Sí" : "❌ No"}');
       if (almaceneroData != null) {
         print(
-          '✅ Rol detectado: ALMACENERO (Almacén: ${almaceneroData['id_almacen']})',
+          '✅ ROL DETECTADO Y GUARDADO EN CACHÉ: ALMACENERO (Almacén: ${almaceneroData['id_almacen']})',
         );
         _cachedRole = UserRole.almacenero;
         _cachedWarehouseId = almaceneroData['id_almacen'] as int?;
@@ -85,7 +114,7 @@ class PermissionsService {
 
       print('  • Vendedor: ${vendedorData != null ? "✅ Sí" : "❌ No"}');
       if (vendedorData != null) {
-        print('✅ Rol detectado: VENDEDOR');
+        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: VENDEDOR');
         _cachedRole = UserRole.vendedor;
         return UserRole.vendedor;
       }
@@ -152,12 +181,23 @@ class PermissionsService {
     final role = await getUserRole();
     final permissions = _actionPermissions[action];
 
+    print('🔍 canPerformAction("$action")');
+    print('  • Rol detectado: ${getRoleName(role)}');
+    print(
+      '  • Permisos para esta acción: ${permissions?.map((r) => getRoleName(r)).join(", ") ?? "NO DEFINIDOS"}',
+    );
+
     if (permissions == null) {
       // Si no está en la matriz, denegar por defecto
+      print('  ❌ Acción no definida en matriz - DENEGADO');
       return false;
     }
 
-    return permissions.contains(role);
+    final hasPermission = permissions.contains(role);
+    print(
+      '  ${hasPermission ? "✅" : "❌"} Resultado: ${hasPermission ? "PERMITIDO" : "DENEGADO"}',
+    );
+    return hasPermission;
   }
 
   /// Obtener lista de pantallas permitidas para el rol
@@ -213,8 +253,8 @@ class PermissionsService {
       UserRole.supervisor,
       UserRole.almacenero,
     ],
-    '/inventory-reception': [UserRole.gerente],
-    '/inventory-extraction': [UserRole.gerente, UserRole.almacenero],
+    '/inventory-reception': [UserRole.gerente, UserRole.almacenero],
+    '/inventory-extraction': [UserRole.gerente],
     '/inventory-transfer': [UserRole.gerente, UserRole.almacenero],
     '/inventory-adjustment': [UserRole.gerente, UserRole.supervisor],
     '/inventory-history': [
@@ -288,8 +328,8 @@ class PermissionsService {
     ],
 
     // Inventario
-    'inventory.create_reception': [UserRole.gerente],
-    'inventory.create_extraction': [UserRole.gerente, UserRole.almacenero],
+    'inventory.create_reception': [UserRole.gerente, UserRole.almacenero],
+    'inventory.create_extraction': [UserRole.gerente],
     'inventory.create_transfer': [UserRole.gerente, UserRole.almacenero],
     'inventory.create_adjustment': [UserRole.gerente],
     'inventory.approve_adjustment': [UserRole.gerente, UserRole.supervisor],

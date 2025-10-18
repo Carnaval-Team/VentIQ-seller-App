@@ -262,15 +262,17 @@ class ProductsQuickActions extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(
-                child: _buildActionButton(
-                  icon: Icons.add,
-                  label: 'Agregar',
-                  color: AppColors.primary,
-                  onTap: onAddProduct,
+              if (onAddProduct != null) ...[
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.add,
+                    label: 'Agregar',
+                    color: AppColors.primary,
+                    onTap: onAddProduct,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: _buildActionButton(
                   icon: Icons.list,
