@@ -1913,24 +1913,33 @@ class InventoryService {
     int? idAlmacen,
     int? idTienda,
     DateTime? fechaHasta,
+    DateTime? fechaDesde,
   }) async {
     try {
-      print('🔍 Calling fn_listar_inventario_simple with params:');
+      print('🔍 Calling obtener_reporte_inventario with params:');
       print('  - idAlmacen: $idAlmacen');
       print('  - idTienda: $idTienda');
-      print('  - fechaHasta: $fechaHasta');
+      print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
+      print('  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}');
 
       final response = await _supabase.rpc(
-        'fn_listar_inventario_simple',
+        'obtener_reporte_inventario',
         params: {
-          'p_id_almacen': idAlmacen,
           'p_id_tienda': idTienda,
-          'p_fecha_hasta': fechaHasta?.toIso8601String(),
+          'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
+          'p_fecha_hasta': fechaHasta != null 
+              ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59'
+              : null,
+          'p_id_almacen': idAlmacen,
         },
       );
 
       print('📦 Response received: ${response?.length ?? 0} items');
-
+      print(response);
+      print('Respuesta completa: $response');
+      print('Tipo: ${response.runtimeType}');
+      print('Es lista: ${response is List}');
+      print('Es mapa: ${response is Map}');
       if (response == null) {
         print('❌ Response is null');
         return [];

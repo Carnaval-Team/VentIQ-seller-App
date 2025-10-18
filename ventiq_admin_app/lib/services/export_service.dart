@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -10,6 +11,10 @@ import 'package:intl/intl.dart';
 import '../models/inventory.dart';
 import '../models/warehouse.dart';
 import '../config/app_colors.dart';
+
+// Importación condicional para web
+import 'web_download_stub.dart' 
+  if (dart.library.html) 'web_download_web.dart' as web_download;
 
 class ExportService {
   static const String _appName = 'Vendedor Cuba Admin';
@@ -40,26 +45,34 @@ class ExportService {
           break;
       }
 
-      // Guardar archivo temporalmente
-      final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/$fileName');
-      await file.writeAsBytes(fileBytes);
+      // Manejar descarga según la plataforma
+      if (kIsWeb) {
+        // Descarga directa en web
+        _downloadFileWeb(fileBytes, fileName, mimeType);
+      } else {
+        // Guardar archivo temporalmente y compartir en móvil
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsBytes(fileBytes);
 
-      // Compartir archivo
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: mimeType)],
-        subject: 'Inventario - $warehouseName - $zoneName',
-        text:
-            'Reporte de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
-      );
+        // Compartir archivo
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: mimeType)],
+          subject: 'Inventario - $warehouseName - $zoneName',
+          text:
+              'Reporte de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+        );
+      }
 
       // Mostrar mensaje de éxito
       if (context.mounted) {
+        final message = kIsWeb 
+            ? 'Archivo ${format.displayName} descargado exitosamente'
+            : 'Archivo ${format.displayName} generado y compartido exitosamente';
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Archivo ${format.displayName} generado exitosamente',
-            ),
+            content: Text(message),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 3),
           ),
@@ -303,9 +316,8 @@ class ExportService {
     sheet.setColumnWidth(3, 12); // Cant. Actual
     sheet.setColumnWidth(4, 15); // Precio Unitario
     sheet.setColumnWidth(5, 15); // Presentación
-    sheet.setColumnWidth(6, 15); // Categoría
-    sheet.setColumnWidth(7, 15); // Subcategoría
-    sheet.setColumnWidth(8, 15); // Variante
+    sheet.setColumnWidth(6, 15); // Subcategoría
+    sheet.setColumnWidth(7, 15); // Variante
 
     int currentRow = 0;
 
@@ -359,7 +371,6 @@ class ExportService {
       'Cantidad Actual',
       'Precio Unitario',
       'Presentación',
-      'Categoría',
       'Subcategoría',
       'Variante',
     ];
@@ -388,7 +399,6 @@ class ExportService {
             ? '\$${product.precioVenta!.toStringAsFixed(2)}'
             : 'N/A',
         product.presentacion,
-        product.categoria,
         product.subcategoria,
         product.variante,
       ];
@@ -444,12 +454,16 @@ class ExportService {
   }
 
   /// Construye una celda de encabezado para la tabla PDF
-  pw.Widget _buildTableHeader(String text) {
+  pw.Widget _buildTableHeader(String text, {PdfColor? color}) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(8),
       child: pw.Text(
         text,
-        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+        style: pw.TextStyle(
+          fontSize: 10, 
+          fontWeight: pw.FontWeight.bold,
+          color: color,
+        ),
         textAlign: pw.TextAlign.center,
       ),
     );
@@ -902,7 +916,8 @@ class ExportService {
     required BuildContext context,
     required List<Map<String, dynamic>> inventoryData,
     required String warehouseName,
-    DateTime? filterDate,
+    DateTime? filterDateFrom,
+    DateTime? filterDateTo,
     required String format,
   }) async {
     try {
@@ -921,13 +936,18 @@ class ExportService {
 
         // Configurar el ancho de las columnas
         sheet.setColumnWidth(0, 25); // Nombre
-        sheet.setColumnWidth(1, 15); // Stock Disponible
-        sheet.setColumnWidth(2, 15); // Cantidad Inicial
-        sheet.setColumnWidth(3, 15); // Cantidad Final
-        sheet.setColumnWidth(4, 15); // Precio Venta
-        sheet.setColumnWidth(5, 15); // Costo Promedio USD
-        sheet.setColumnWidth(6, 15); // Costo Promedio CUP
-        sheet.setColumnWidth(7, 12); // Tasa USD
+        sheet.setColumnWidth(1, 15); // Cantidad Inicial
+        sheet.setColumnWidth(2, 15); // Entradas Período
+        sheet.setColumnWidth(3, 15); // Extracciones Período
+        sheet.setColumnWidth(4, 15); // Ventas Período
+        sheet.setColumnWidth(5, 15); // Cantidad Final
+        sheet.setColumnWidth(6, 18); // Valor Inventario USD
+        sheet.setColumnWidth(7, 18); // Valor Inventario CUP
+        sheet.setColumnWidth(8, 18); // Valor Venta Estimado
+        sheet.setColumnWidth(9, 15); // Días Inventario
+        sheet.setColumnWidth(10, 15); // Rotación Anual
+        sheet.setColumnWidth(11, 15); // Margen Bruto %
+        sheet.setColumnWidth(12, 12); // Tasa Cambio
 
         int currentRow = 0;
 
@@ -951,16 +971,22 @@ class ExportService {
         warehouseCell.cellStyle = CellStyle(bold: true, fontSize: 14);
         currentRow++;
 
-        // Fecha del filtro o fecha actual
-        final dateCell = sheet.cell(
+        // Período del reporte
+        final periodCell = sheet.cell(
           CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
         );
-        final dateStrFormatted =
-            filterDate != null
-                ? DateFormat('dd/MM/yyyy').format(filterDate)
-                : DateFormat('dd/MM/yyyy').format(DateTime.now());
-        dateCell.value = TextCellValue('Fecha: $dateStrFormatted');
-        dateCell.cellStyle = CellStyle(bold: true, fontSize: 12);
+        String periodText;
+        if (filterDateFrom != null && filterDateTo != null) {
+          periodText = 'Período: ${DateFormat('dd/MM/yyyy').format(filterDateFrom)} - ${DateFormat('dd/MM/yyyy').format(filterDateTo)}';
+        } else if (filterDateFrom != null) {
+          periodText = 'Desde: ${DateFormat('dd/MM/yyyy').format(filterDateFrom)}';
+        } else if (filterDateTo != null) {
+          periodText = 'Hasta: ${DateFormat('dd/MM/yyyy').format(filterDateTo)}';
+        } else {
+          periodText = 'Fecha: ${DateFormat('dd/MM/yyyy').format(DateTime.now())}';
+        }
+        periodCell.value = TextCellValue(periodText);
+        periodCell.cellStyle = CellStyle(bold: true, fontSize: 12);
         currentRow += 2;
 
         // Agrupar por almacén y ubicación
@@ -979,7 +1005,8 @@ class ExportService {
           groupedData[almacen]![ubicacion]!.add(item);
         }
 
-        // Generar contenido por almacén y ubicación
+
+        // Generar contenido por almacén y ubicación (todos los registros)
         for (final almacenEntry in groupedData.entries) {
           final almacenName = almacenEntry.key;
 
@@ -997,7 +1024,9 @@ class ExportService {
 
           for (final ubicacionEntry in almacenEntry.value.entries) {
             final ubicacionName = ubicacionEntry.key;
-            final productos = ubicacionEntry.value;
+            final productos = ubicacionEntry.value; // Mostrar todos los productos
+
+            if (productos.isEmpty) continue; // Saltar si no hay productos
 
             // Subtítulo de ubicación
             final ubicacionTitleCell = sheet.cell(
@@ -1016,13 +1045,18 @@ class ExportService {
             // Encabezados de la tabla
             final headers = [
               'Nombre',
-              'Cantidad Final',
               'Cantidad Inicial',
-              'Vendido',
-              'Precio Venta',
-              'Costo Promedio USD',
-              'Costo Promedio CUP',
-              'Tasa USD',
+              'Entradas Período',
+              'Extracciones Período',
+              'Ventas Período',
+              'Cantidad Final',
+              'Valor Inventario USD',
+              'Valor Inventario CUP',
+              'Valor Venta Estimado',
+              'Días Inventario',
+              'Rotación Anual',
+              'Margen Bruto %',
+              'Tasa Cambio',
             ];
 
             for (int i = 0; i < headers.length; i++) {
@@ -1043,17 +1077,31 @@ class ExportService {
 
             // Datos de los productos
             for (final producto in productos) {
+              // Verificar si este producto tiene errores de cálculo
+              final inicial = double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0;
+              final entradas = double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0;
+              final extracciones = double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0;
+              final ventas = double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0;
+              final final_ = double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0;
+              
+              final expectedFinal = inicial + entradas - extracciones - ventas;
+              final difference = (final_ - expectedFinal).abs();
+              final hasError = difference >= 0.01;
+              
               final rowData = [
                 producto['nombre_producto']?.toString() ?? 'Sin nombre',
-                (producto['stock_disponible'] ?? 0).toString(),
-                (producto['cantidad_inicial'] ?? 0).toString(),
-                ((producto['cantidad_inicial'] ?? 0) -
-                        (producto['stock_disponible'] ?? 0))
-                    .toString(),
-                '\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}',
-                '\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}',
-                '\$${(producto['costo_promedio_cup'] ?? 0).toStringAsFixed(2)} CUP',
-                '${(producto['tasa_usd'] ?? 1).toStringAsFixed(2)}',
+                (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                (double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                '\$${(double.tryParse(producto['valor_inventario_usd']?.toString() ?? '0') ?? 0).toStringAsFixed(2)} USD',
+                '\$${(double.tryParse(producto['valor_inventario_cup']?.toString() ?? '0') ?? 0).toStringAsFixed(2)} CUP',
+                '\$${(double.tryParse(producto['valor_venta_estimado_cup']?.toString() ?? '0') ?? 0).toStringAsFixed(2)} CUP',
+                producto['dias_inventario']?.toString() ?? 'N/A',
+                (double.tryParse(producto['rotacion_anual']?.toString() ?? '0') ?? 0).toStringAsFixed(2),
+                '${(double.tryParse(producto['margen_bruto_porcentaje']?.toString() ?? '0') ?? 0).toStringAsFixed(2)}%',
+                (double.tryParse(producto['tasa_cambio']?.toString() ?? '0') ?? 0).toStringAsFixed(2),
               ];
 
               for (int i = 0; i < rowData.length; i++) {
@@ -1064,29 +1112,13 @@ class ExportService {
                   ),
                 );
                 cell.value = TextCellValue(rowData[i]);
-
-                // Aplicar color basado en el stock disponible
-                if (i == 1) {
-                  // Columna de stock disponible
-                  final stock =
-                      double.tryParse(
-                        producto['stock_disponible']?.toString() ?? '0',
-                      ) ??
-                      0;
-                  if (stock <= 0) {
-                    cell.cellStyle = CellStyle(
-                      backgroundColorHex: ExcelColor.red,
-                    );
-                  } else if (stock <= 10) {
-                    cell.cellStyle = CellStyle(
-                      backgroundColorHex: ExcelColor.orange,
-                    );
-                  } else {
-                    cell.cellStyle = CellStyle(
-                      backgroundColorHex: ExcelColor.green,
-                    );
-                  }
-                }
+                
+                /* // Aplicar color de fondo rojo claro si hay error
+                if (hasError) {
+                  cell.cellStyle = CellStyle(
+                    backgroundColorHex: ExcelColor.red200,
+                  );
+                } */
               }
               currentRow++;
             }
@@ -1096,6 +1128,7 @@ class ExportService {
 
           currentRow += 1; // Espacio entre almacenes
         }
+
 
         fileBytes = Uint8List.fromList(excel.encode()!);
         mimeType =
@@ -1107,20 +1140,21 @@ class ExportService {
         final dateFormatter = DateFormat('dd/MM/yyyy');
         final timeFormatter = DateFormat('HH:mm');
 
-        // Agrupar por almacén y ubicación
-        final groupedData = <String, Map<String, List<Map<String, dynamic>>>>{};
+
+        // Agrupar por almacén y ubicación (todos los registros)
+        final groupedDataPdf = <String, Map<String, List<Map<String, dynamic>>>>{};
 
         for (final item in inventoryData) {
           final almacen = item['almacen']?.toString() ?? 'Sin almacén';
           final ubicacion = item['ubicacion']?.toString() ?? 'Sin ubicación';
 
-          if (!groupedData.containsKey(almacen)) {
-            groupedData[almacen] = {};
+          if (!groupedDataPdf.containsKey(almacen)) {
+            groupedDataPdf[almacen] = {};
           }
-          if (!groupedData[almacen]!.containsKey(ubicacion)) {
-            groupedData[almacen]![ubicacion] = [];
+          if (!groupedDataPdf[almacen]!.containsKey(ubicacion)) {
+            groupedDataPdf[almacen]![ubicacion] = [];
           }
-          groupedData[almacen]![ubicacion]!.add(item);
+          groupedDataPdf[almacen]![ubicacion]!.add(item);
         }
 
         pdf.addPage(
@@ -1152,7 +1186,7 @@ class ExportService {
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(
-                      'Fecha: ${filterDate != null ? dateFormatter.format(filterDate) : dateFormatter.format(now)}',
+                      _buildPeriodText(filterDateFrom, filterDateTo, dateFormatter, now),
                       style: pw.TextStyle(
                         fontSize: 16,
                         fontWeight: pw.FontWeight.normal,
@@ -1169,7 +1203,7 @@ class ExportService {
               );
 
               // Contenido por almacén y ubicación
-              for (final almacenEntry in groupedData.entries) {
+              for (final almacenEntry in groupedDataPdf.entries) {
                 final almacenName = almacenEntry.key;
 
                 widgets.add(
@@ -1225,13 +1259,11 @@ class ExportService {
                       ),
                       columnWidths: {
                         0: const pw.FlexColumnWidth(2.5), // Nombre
-                        1: const pw.FlexColumnWidth(1.2), // Stock Disponible
-                        2: const pw.FlexColumnWidth(1.2), // Cant. Inicial
-                        3: const pw.FlexColumnWidth(1.2), // Cant. Final
-                        4: const pw.FlexColumnWidth(1.2), // Precio Venta
-                        5: const pw.FlexColumnWidth(1.2), // Costo Promedio USD
-                        6: const pw.FlexColumnWidth(1.2), // Costo Promedio CUP
-                        7: const pw.FlexColumnWidth(1), // Tasa USD
+                        1: const pw.FlexColumnWidth(1), // Cant. Inicial
+                        2: const pw.FlexColumnWidth(1), // Entradas
+                        3: const pw.FlexColumnWidth(1), // Extracciones
+                        4: const pw.FlexColumnWidth(1), // Ventas
+                        5: const pw.FlexColumnWidth(1), // Cant. Final
                       },
                       children: [
                         // Encabezado de la tabla
@@ -1242,56 +1274,54 @@ class ExportService {
                           children: [
                             _buildTableHeader('Nombre'),
                             _buildTableHeader('Cant. Inicial'),
-                            _buildTableHeader('Vendido'),
+                            _buildTableHeader('Entradas'),
+                            _buildTableHeader('Extracciones'),
+                            _buildTableHeader('Ventas'),
                             _buildTableHeader('Cant. Final'),
-                            _buildTableHeader('Precio Venta'),
-                            _buildTableHeader('Costo USD'),
-                            _buildTableHeader('Costo CUP'),
-                            _buildTableHeader('Tasa USD'),
                           ],
                         ),
 
                         // Filas de productos
                         ...productos.map(
-                          (producto) => pw.TableRow(
-                            children: [
-                              _buildTableCell(
-                                producto['nombre_producto']?.toString() ??
-                                    'Sin nombre',
-                              ),
-                              _buildTableCell(
-                                (producto['cantidad_inicial'] ?? 0).toString(),
-                              ),
-                              _buildTableCell(
-                                (((producto['cantidad_inicial'] ?? 0) -
-                                                (producto['stock_disponible'] ??
-                                                    0)) >
-                                            0
-                                        ? (((producto['cantidad_inicial'] ??
-                                                    0) -
-                                                (producto['stock_disponible'] ??
-                                                    0))
-                                            .toString())
-                                        : 0)
-                                    .toString(),
-                              ),
-                              _buildTableCell(
-                                (producto['stock_disponible'] ?? 0).toString(),
-                              ),
-                              _buildTableCell(
-                                '\$${(producto['precio_venta'] ?? 0).toStringAsFixed(2)}',
-                              ),
-                              _buildTableCell(
-                                '\$${(producto['costo_promedio'] ?? 0).toStringAsFixed(2)}',
-                              ),
-                              _buildTableCell(
-                                '\$${(producto['costo_promedio_cup'] ?? 0).toStringAsFixed(2)}',
-                              ),
-                              _buildTableCell(
-                                '${(producto['tasa_usd'] ?? 1).toStringAsFixed(2)}',
-                              ),
-                            ],
-                          ),
+                          (producto) {
+                            // Verificar si este producto tiene errores de cálculo
+                            final inicial = double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0;
+                            final entradas = double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0;
+                            final extracciones = double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0;
+                            final ventas = double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0;
+                            final final_ = double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0;
+                            
+                            final expectedFinal = inicial + entradas - extracciones - ventas;
+                            final difference = (final_ - expectedFinal).abs();
+                            final hasError = difference >= 0.01;
+                            
+                            return pw.TableRow(
+                              decoration: hasError ? const pw.BoxDecoration(
+                                color: PdfColors.red50,
+                              ) : null,
+                              children: [
+                                _buildTableCell(
+                                  producto['nombre_producto']?.toString() ??
+                                      'Sin nombre',
+                                ),
+                                _buildTableCell(
+                                  (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                                ),
+                                _buildTableCell(
+                                  (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                                ),
+                                _buildTableCell(
+                                  (double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                                ),
+                                _buildTableCell(
+                                  (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                                ),
+                                _buildTableCell(
+                                  (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -1300,6 +1330,7 @@ class ExportService {
                   widgets.add(pw.SizedBox(height: 16));
                 }
               }
+
 
               return widgets;
             },
@@ -1336,26 +1367,34 @@ class ExportService {
         fileName = 'inventario_${cleanWarehouse}_$dateStr.pdf';
       }
 
-      // Guardar archivo temporalmente
-      final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/$fileName');
-      await file.writeAsBytes(fileBytes);
+      // Manejar descarga según la plataforma
+      if (kIsWeb) {
+        // Descarga directa en web
+        _downloadFileWeb(fileBytes, fileName, mimeType);
+      } else {
+        // Guardar archivo temporalmente y compartir en móvil
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsBytes(fileBytes);
 
-      // Compartir archivo
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: mimeType)],
-        subject: 'Inventario - $warehouseName',
-        text:
-            'Reporte de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
-      );
+        // Compartir archivo
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: mimeType)],
+          subject: 'Inventario - $warehouseName',
+          text:
+              'Reporte de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(now)}',
+        );
+      }
 
       // Mostrar mensaje de éxito
       if (context.mounted) {
+        final message = kIsWeb 
+            ? 'Archivo ${format.toUpperCase()} descargado exitosamente'
+            : 'Archivo ${format.toUpperCase()} generado y compartido exitosamente';
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Archivo ${format.toUpperCase()} generado y compartido exitosamente',
-            ),
+            content: Text(message),
             backgroundColor: AppColors.success,
             duration: const Duration(seconds: 3),
           ),
@@ -1376,6 +1415,13 @@ class ExportService {
     }
   }
 
+  /// Descarga un archivo en web usando AnchorElement
+  void _downloadFileWeb(Uint8List bytes, String fileName, String mimeType) {
+    if (kIsWeb) {
+      web_download.downloadFileWeb(bytes, fileName, mimeType);
+    }
+  }
+
   /// Abre un archivo usando el visor predeterminado del sistema
   Future<void> openFile(String filePath) async {
     try {
@@ -1383,6 +1429,19 @@ class ExportService {
     } catch (e) {
       print('Error abriendo archivo: $e');
       rethrow;
+    }
+  }
+
+  /// Helper method to build period text for date range display
+  String _buildPeriodText(DateTime? filterDateFrom, DateTime? filterDateTo, DateFormat dateFormatter, DateTime now) {
+    if (filterDateFrom != null && filterDateTo != null) {
+      return 'Período: ${dateFormatter.format(filterDateFrom)} - ${dateFormatter.format(filterDateTo)}';
+    } else if (filterDateFrom != null) {
+      return 'Desde: ${dateFormatter.format(filterDateFrom)}';
+    } else if (filterDateTo != null) {
+      return 'Hasta: ${dateFormatter.format(filterDateTo)}';
+    } else {
+      return 'Fecha: ${dateFormatter.format(now)}';
     }
   }
 }

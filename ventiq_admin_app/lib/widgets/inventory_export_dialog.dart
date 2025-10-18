@@ -25,6 +25,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   int? _selectedWarehouseId;
   String _selectedWarehouseName = 'Todos';
   DateTime? _selectedDate;
+  DateTime? _selectedDateTo;
   List<Warehouse> _warehouses = [];
   String? _error;
 
@@ -69,6 +70,21 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
     }
   }
 
+  Future<void> _selectDateTo() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDateTo ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+
+    if (picked != null && picked != _selectedDateTo) {
+      setState(() {
+        _selectedDateTo = picked;
+      });
+    }
+  }
+
   Future<void> _exportInventory() async {
     if (_selectedExportMethod == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -95,7 +111,8 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       final inventoryData = await InventoryService.getInventarioSimple(
         idAlmacen: _selectedWarehouseId,
         idTienda: storeId,
-        fechaHasta: _selectedDate,
+        fechaDesde: _selectedDate,
+        fechaHasta: _selectedDateTo,
       );
 
       if (inventoryData.isEmpty) {
@@ -107,7 +124,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         context: context,
         inventoryData: inventoryData,
         warehouseName: _selectedWarehouseName,
-        filterDate: _selectedDate,
+        // filterDate: _selectedDateTo,
         format: _selectedExportMethod == 'excel' ? 'excel' : 'pdf',
       );
 
@@ -362,8 +379,8 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             Expanded(
                               child: Text(
                                 _selectedDate != null
-                                    ? 'Hasta: ${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}'
-                                    : 'Seleccionar fecha límite',
+                                    ? 'Desde: ${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}'
+                                    : 'Seleccionar fecha desde',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: _selectedDate != null
@@ -377,6 +394,59 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                                 onPressed: () {
                                   setState(() {
                                     _selectedDate = null;
+                                  });
+                                },
+                                icon: const Icon(
+                                  Icons.clear,
+                                  color: AppColors.textSecondary,
+                                  size: 20,
+                                ),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 24,
+                                  minHeight: 24,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    InkWell(
+                      onTap: _selectDateTo,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.withOpacity(0.5)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.calendar_today,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _selectedDateTo != null
+                                    ? 'Hasta: ${_selectedDateTo!.day}/${_selectedDateTo!.month}/${_selectedDateTo!.year}'
+                                    : 'Seleccionar fecha hasta',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: _selectedDateTo != null
+                                      ? AppColors.textPrimary
+                                      : AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                            if (_selectedDateTo != null)
+                              IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _selectedDateTo = null;
                                   });
                                 },
                                 icon: const Icon(
