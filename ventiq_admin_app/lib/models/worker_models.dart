@@ -41,6 +41,13 @@ class WorkerData {
   final Map<String, dynamic> datosEspecificos;
   final String? usuarioUuid;
 
+  // 🆕 Nuevos campos para roles múltiples
+  final bool tieneUsuario;
+  final bool esGerente;
+  final bool esSupervisor;
+  final bool esVendedor;
+  final bool esAlmacenero;
+
   WorkerData({
     required this.trabajadorId,
     required this.nombres,
@@ -51,6 +58,11 @@ class WorkerData {
     required this.tipoRol,
     required this.datosEspecificos,
     this.usuarioUuid,
+    this.tieneUsuario = false,
+    this.esGerente = false,
+    this.esSupervisor = false,
+    this.esVendedor = false,
+    this.esAlmacenero = false,
   });
 
   factory WorkerData.fromJson(Map<String, dynamic> json) {
@@ -59,25 +71,49 @@ class WorkerData {
       nombres: json['nombres'] as String,
       apellidos: json['apellidos'] as String,
       fechaCreacion: DateTime.parse(json['fecha_creacion'] as String),
-      rolId: json['rol_id'] as int? ?? 0, // Si es null, usar 0
-      rolNombre: json['rol_nombre'] as String? ?? 'Desconocido', // Si es null, usar 'Desconocido'
+      rolId: json['rol_id'] as int? ?? 0,
+      rolNombre: json['rol_nombre'] as String? ?? 'Desconocido',
       tipoRol: json['tipo_rol'] as String,
-      datosEspecificos: json['datos_especificos'] as Map<String, dynamic>? ?? {},
+      datosEspecificos:
+          json['datos_especificos'] as Map<String, dynamic>? ?? {},
       usuarioUuid: json['usuario_uuid'] as String?,
+      // 🆕 Parsear nuevos campos de roles múltiples
+      tieneUsuario: json['tiene_usuario'] as bool? ?? false,
+      esGerente: json['es_gerente'] as bool? ?? false,
+      esSupervisor: json['es_supervisor'] as bool? ?? false,
+      esVendedor: json['es_vendedor'] as bool? ?? false,
+      esAlmacenero: json['es_almacenero'] as bool? ?? false,
     );
   }
 
   String get nombreCompleto => '$nombres $apellidos';
 
+  // 🆕 Getter para obtener lista de roles activos
+  List<String> get rolesActivos {
+    List<String> roles = [];
+    // Usar ?? false para manejar valores null de forma segura
+    if (tieneUsuario == true) roles.add('usuario');
+    if (esGerente == true) roles.add('gerente');
+    if (esSupervisor == true) roles.add('supervisor');
+    if (esVendedor == true) roles.add('vendedor');
+    if (esAlmacenero == true) roles.add('almacenero');
+    return roles;
+  }
+
   // Getters para datos específicos según el rol
-  String? get tpvDenominacion => datosEspecificos['tpv_denominacion'] as String?;
+  String? get tpvDenominacion =>
+      datosEspecificos['tpv_denominacion'] as String?;
   int? get tpvId => datosEspecificos['tpv_id'] as int?;
-  String? get numeroConfirmacion => datosEspecificos['numero_confirmacion'] as String?;
-  
-  String? get almacenDenominacion => datosEspecificos['almacen_denominacion'] as String?;
+  String? get numeroConfirmacion =>
+      datosEspecificos['numero_confirmacion'] as String?;
+
+  String? get almacenDenominacion =>
+      datosEspecificos['almacen_denominacion'] as String?;
   int? get almacenId => datosEspecificos['almacen_id'] as int?;
-  String? get almacenDireccion => datosEspecificos['almacen_direccion'] as String?;
-  String? get almacenUbicacion => datosEspecificos['almacen_ubicacion'] as String?;
+  String? get almacenDireccion =>
+      datosEspecificos['almacen_direccion'] as String?;
+  String? get almacenUbicacion =>
+      datosEspecificos['almacen_ubicacion'] as String?;
 
   Map<String, dynamic> toJson() {
     return {
@@ -90,6 +126,12 @@ class WorkerData {
       'tipo_rol': tipoRol,
       'datos_especificos': datosEspecificos,
       'usuario_uuid': usuarioUuid,
+      // 🆕 Incluir nuevos campos en JSON
+      'tiene_usuario': tieneUsuario,
+      'es_gerente': esGerente,
+      'es_supervisor': esSupervisor,
+      'es_vendedor': esVendedor,
+      'es_almacenero': esAlmacenero,
     };
   }
 }
@@ -185,7 +227,7 @@ class WorkerStatistics {
     // Extraer datos de la estructura anidada del RPC
     final porRol = json['por_rol'] as Map<String, dynamic>? ?? {};
     final porcentajes = json['porcentajes'] as Map<String, dynamic>? ?? {};
-    
+
     return WorkerStatistics(
       totalTrabajadores: json['total_trabajadores'] as int? ?? 0,
       totalGerentes: porRol['gerentes'] as int? ?? 0,
@@ -193,9 +235,12 @@ class WorkerStatistics {
       totalVendedores: porRol['vendedores'] as int? ?? 0,
       totalAlmaceneros: porRol['almaceneros'] as int? ?? 0,
       porcentajeGerentes: (porcentajes['gerentes'] as num?)?.toDouble() ?? 0.0,
-      porcentajeSupervisores: (porcentajes['supervisores'] as num?)?.toDouble() ?? 0.0,
-      porcentajeVendedores: (porcentajes['vendedores'] as num?)?.toDouble() ?? 0.0,
-      porcentajeAlmaceneros: (porcentajes['almaceneros'] as num?)?.toDouble() ?? 0.0,
+      porcentajeSupervisores:
+          (porcentajes['supervisores'] as num?)?.toDouble() ?? 0.0,
+      porcentajeVendedores:
+          (porcentajes['vendedores'] as num?)?.toDouble() ?? 0.0,
+      porcentajeAlmaceneros:
+          (porcentajes['almaceneros'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }

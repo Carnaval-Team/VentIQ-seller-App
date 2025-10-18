@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
+import '../utils/screen_protection_mixin.dart';
+import '../utils/navigation_guard.dart';
 import '../widgets/crm/crm_menu_widget.dart';
 import '../widgets/crm/crm_kpi_cards.dart';
 import '../widgets/store_selector_widget.dart';
@@ -13,7 +15,10 @@ class CRMDashboardScreen extends StatefulWidget {
   State<CRMDashboardScreen> createState() => _CRMDashboardScreenState();
 }
 
-class _CRMDashboardScreenState extends State<CRMDashboardScreen> {
+class _CRMDashboardScreenState extends State<CRMDashboardScreen>
+    with ScreenProtectionMixin {
+  @override
+  String get protectedRoute => '/crm-dashboard';
   bool _isLoading = true;
   CRMMetrics _crmMetrics = const CRMMetrics();
 

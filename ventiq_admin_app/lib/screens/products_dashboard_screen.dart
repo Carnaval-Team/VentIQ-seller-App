@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/products_analytics_service.dart';
+import '../services/permissions_service.dart';
 import '../widgets/products_kpi_cards.dart';
 import '../widgets/products_charts_widget.dart';
 import '../widgets/admin_bottom_navigation.dart';
@@ -24,6 +25,10 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
   bool _isLoadingCharts = true;
   bool _isLoadingAlerts = true;
 
+  // Permisos
+  final PermissionsService _permissionsService = PermissionsService();
+  bool _canCreateProduct = false;
+
   // Datos del dashboard
   Map<String, dynamic> _kpis = {};
   List<Map<String, dynamic>> _categoryDistribution = [];
@@ -37,7 +42,18 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _checkPermissions();
     _loadDashboardData();
+  }
+
+  void _checkPermissions() async {
+    print('🔐 Verificando permisos en dashboard de productos...');
+    final canCreate = await _permissionsService.canPerformAction(
+      'product.create',
+    );
+    setState(() {
+      _canCreateProduct = canCreate;
+    });
   }
 
   @override
@@ -265,7 +281,7 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
         onTap: _onBottomNavTap,
       ),
       floatingActionButton:
-          _tabController.index == 0
+          _tabController.index == 0 && _canCreateProduct
               ? FloatingActionButton.extended(
                 onPressed: () => Navigator.pushNamed(context, '/add-product'),
                 backgroundColor: AppColors.primary,
@@ -290,17 +306,21 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
             ProductsKPICards(kpis: _kpis, isLoading: _isLoadingKPIs),
             const SizedBox(height: 20),
 
-            // Nueva información adicional
-            ProductsAdditionalInfo(kpis: _kpis, isLoading: _isLoadingKPIs),
-            const SizedBox(height: 20),
-
+            // Acciones Rápidas
             ProductsQuickActions(
-              onAddProduct: () => Navigator.pushNamed(context, '/add-product'),
+              onAddProduct:
+                  _canCreateProduct
+                      ? () => Navigator.pushNamed(context, '/add-product')
+                      : null,
               onViewAll: () => Navigator.pushNamed(context, '/products'),
               onViewAlerts:
                   () => _tabController.animateTo(2), // Cambiar de 2 a 3
               onViewReports: () => _tabController.animateTo(1), // Mantener en 1
             ),
+            const SizedBox(height: 20),
+
+            // Información adicional
+            ProductsAdditionalInfo(kpis: _kpis, isLoading: _isLoadingKPIs),
             const SizedBox(height: 20),
             ProductsCategoryChart(
               categoryData: _categoryDistribution,
@@ -921,14 +941,16 @@ class ProductsAdditionalInfo extends StatelessWidget {
               children: [
                 Icon(Icons.info_outline, color: Colors.blue[600]),
                 const SizedBox(width: 8),
-                Expanded( // Esto hace que el texto se ajuste al espacio disponible
+                Expanded(
+                  // Esto hace que el texto se ajuste al espacio disponible
                   child: Text(
                     'Información Adicional del Inventario',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: Colors.blue[600],
                     ),
-                    maxLines: 2, // Permite que se divida en 2 líneas si es necesario
+                    maxLines:
+                        2, // Permite que se divida en 2 líneas si es necesario
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),

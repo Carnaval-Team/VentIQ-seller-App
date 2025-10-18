@@ -167,18 +167,20 @@ BEGIN
         ) RETURNING id INTO rol_id;
     END IF;
     
-    -- Crear el trabajador base
+    -- ✅ CORREGIDO: Crear el trabajador base CON UUID
     INSERT INTO app_dat_trabajadores (
         id_tienda,
         id_roll,
         nombres,
         apellidos,
+        uuid,
         created_at
     ) VALUES (
         p_id_tienda,
         rol_id,
         p_nombres,
         p_apellidos,
+        p_usuario_uuid,  -- ✅ AGREGADO: Insertar UUID en trabajadores
         NOW()
     ) RETURNING id INTO nuevo_trabajador_id;
     
@@ -302,6 +304,12 @@ AS $$
 DECLARE
     trabajador_existe boolean := false;
     tipo_rol_actual character varying;
+    usuario_uuid uuid;
+    operaciones_count integer := 0;
+    turnos_count integer := 0;
+    entregas_count integer := 0;
+    pagos_count integer := 0;
+    pre_asignaciones_count integer := 0;
 BEGIN
     -- Verificar que el trabajador existe y pertenece a la tienda
     SELECT EXISTS(
@@ -314,6 +322,54 @@ BEGIN
             'success', false,
             'message', 'El trabajador no existe o no pertenece a esta tienda'
         );
+    END IF;
+    
+    -- Obtener el UUID del usuario desde las tablas de roles
+    SELECT COALESCE(
+        (SELECT uuid FROM app_dat_gerente WHERE id_trabajador = p_trabajador_id),
+        (SELECT uuid FROM app_dat_supervisor WHERE id_trabajador = p_trabajador_id),
+        (SELECT uuid FROM app_dat_vendedor WHERE id_trabajador = p_trabajador_id),
+        (SELECT uuid FROM app_dat_almacenero WHERE id_trabajador = p_trabajador_id)
+    ) INTO usuario_uuid;
+    
+    -- Si tiene UUID, verificar operaciones en las tablas que lo usan
+    IF usuario_uuid IS NOT NULL THEN
+        -- Verificar operaciones en app_dat_operaciones
+        SELECT COUNT(*) INTO operaciones_count
+        FROM app_dat_operaciones
+        WHERE uuid = usuario_uuid;
+        
+        -- Verificar turnos de caja (creado_por o cerrado_por)
+        SELECT COUNT(*) INTO turnos_count
+        FROM app_dat_caja_turno
+        WHERE creado_por = usuario_uuid OR cerrado_por = usuario_uuid;
+        
+        -- Verificar entregas parciales (no tiene UUID directo, pero se relaciona con turno)
+        -- No es necesario verificar ya que depende de turno
+        
+        -- Verificar pagos de venta
+        SELECT COUNT(*) INTO pagos_count
+        FROM app_dat_pago_venta
+        WHERE creado_por = usuario_uuid;
+        
+        -- Verificar pre-asignaciones
+        SELECT COUNT(*) INTO pre_asignaciones_count
+        FROM app_dat_pre_asignaciones
+        WHERE creado_por = usuario_uuid OR confirmado_por = usuario_uuid;
+        
+        -- Si tiene operaciones, no permitir eliminación
+        IF operaciones_count > 0 OR turnos_count > 0 OR pagos_count > 0 OR pre_asignaciones_count > 0 THEN
+            RETURN jsonb_build_object(
+                'success', false,
+                'message', 'No se puede eliminar el trabajador porque tiene operaciones registradas',
+                'data', jsonb_build_object(
+                    'operaciones', operaciones_count,
+                    'turnos_caja', turnos_count,
+                    'pagos', pagos_count,
+                    'pre_asignaciones', pre_asignaciones_count
+                )
+            );
+        END IF;
     END IF;
     
     -- Determinar el tipo de rol actual para eliminar de la tabla específica

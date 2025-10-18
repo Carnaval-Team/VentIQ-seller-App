@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
+import '../services/permissions_service.dart';
 import '../widgets/marketing_menu_widget.dart';
 import '../screens/add_product_screen.dart';
 import '../widgets/reception_edit_dialog.dart';
@@ -32,6 +33,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   List<Map<String, dynamic>> _ingredientes = [];
   bool _isLoadingIngredients = false;
   bool _isLoadingPromotions = false; // ✅ AGREGAR ESTA LÍNEA
+  final PermissionsService _permissionsService = PermissionsService();
+  bool _canEditProduct = false;
   // Pagination and filtering for reception operations
   // Pagination and filtering for reception operations
   int _currentPage = 1;
@@ -47,7 +50,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void initState() {
     super.initState();
     _product = widget.product;
+    _checkPermissions();
     _loadAdditionalData();
+  }
+
+  void _checkPermissions() async {
+    print('🔐 Verificando permisos de edición de producto...');
+    final canEdit = await _permissionsService.canPerformAction('product.edit');
+    print('  • Editar producto: $canEdit');
+    print('✅ Puede editar productos: $canEdit');
+    setState(() {
+      _canEditProduct = canEdit;
+    });
   }
 
   Future<void> _loadAdditionalData() async {
@@ -209,45 +223,47 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         elevation: 0,
         iconTheme: IconThemeData(color: Colors.grey[800]),
         actions: [
-          IconButton(icon: const Icon(Icons.edit), onPressed: _editProduct),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              switch (value) {
-                case 'duplicate':
-                  _duplicateProduct();
-                  break;
-                case 'delete':
-                  _showDeleteConfirmation();
-                  break;
-              }
-            },
-            itemBuilder:
-                (context) => [
-                  const PopupMenuItem(
-                    value: 'duplicate',
-                    child: Row(
-                      children: [
-                        Icon(Icons.copy, size: 20),
-                        SizedBox(width: 8),
-                        Text('Duplicar producto'),
-                      ],
+          if (_canEditProduct)
+            IconButton(icon: const Icon(Icons.edit), onPressed: _editProduct),
+          if (_canEditProduct)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                switch (value) {
+                  case 'duplicate':
+                    _duplicateProduct();
+                    break;
+                  case 'delete':
+                    _showDeleteConfirmation();
+                    break;
+                }
+              },
+              itemBuilder:
+                  (context) => [
+                    const PopupMenuItem(
+                      value: 'duplicate',
+                      child: Row(
+                        children: [
+                          Icon(Icons.copy, size: 20),
+                          SizedBox(width: 8),
+                          Text('Duplicar producto'),
+                        ],
+                      ),
                     ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete, size: 20, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text(
-                          'Eliminar producto',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                      ],
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, size: 20, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text(
+                            'Eliminar producto',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-          ),
+                  ],
+            ),
         ],
       ),
       body:
@@ -1016,36 +1032,37 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
-// ✅ CORRECCIÓN: Cambiar Row por Column para evitar overflow
-Column(
-  crossAxisAlignment: CrossAxisAlignment.start,
-  children: [
-    Text(
-      'Precio original: \$${NumberFormat('#,###.00').format(promo['precio_original'])}',
-      style: TextStyle(
-        fontSize: 13,
-        color: Colors.grey[600],
-        decoration: TextDecoration.lineThrough,
-      ),
-    ),
-    const SizedBox(height: 4),
-    Text(
-      'Precio promocional: \$${NumberFormat('#,###.00').format(promo['precio_promocional'])}',
-      style: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.bold,
-        color: promo['activa']
-            ? AppColors.success
-            : Colors.grey[600],
-      ),
-    ),
-  ],
-),
-const SizedBox(height: 4),
-Text(
-  'Vigencia: ${promo['vigencia']}',
-  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-),
+                      // ✅ CORRECCIÓN: Cambiar Row por Column para evitar overflow
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Precio original: \$${NumberFormat('#,###.00').format(promo['precio_original'])}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[600],
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Precio promocional: \$${NumberFormat('#,###.00').format(promo['precio_promocional'])}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  promo['activa']
+                                      ? AppColors.success
+                                      : Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Vigencia: ${promo['vigencia']}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
                     ],
                   ),
                 ),
@@ -1242,14 +1259,12 @@ Text(
             runSpacing: 8, // Espacio vertical entre líneas
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _product.isActive
-                      ? AppColors.success.withOpacity(0.1)
-                      : AppColors.error.withOpacity(0.1),
+                  color:
+                      _product.isActive
+                          ? AppColors.success.withOpacity(0.1)
+                          : AppColors.error.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -1257,21 +1272,18 @@ Text(
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: _product.isActive
-                        ? AppColors.success
-                        : AppColors.error,
+                    color:
+                        _product.isActive ? AppColors.success : AppColors.error,
                   ),
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _product.esVendible
-                      ? AppColors.primary.withOpacity(0.1)
-                      : AppColors.warning.withOpacity(0.1),
+                  color:
+                      _product.esVendible
+                          ? AppColors.primary.withOpacity(0.1)
+                          : AppColors.warning.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -1279,9 +1291,10 @@ Text(
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    color: _product.esVendible
-                        ? AppColors.primary
-                        : AppColors.warning,
+                    color:
+                        _product.esVendible
+                            ? AppColors.primary
+                            : AppColors.warning,
                   ),
                 ),
               ),
@@ -1330,18 +1343,15 @@ Text(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.build,
-                        size: 14,
-                        color: Colors.purple[700],
-                      ),
+                      Icon(Icons.build, size: 14, color: Colors.purple[700]),
                       const SizedBox(width: 4),
                       Text(
                         'Servicio', // CORREGIDO: Cambié "Elaborado" por "Servicio"
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: Colors.purple[700], // CORREGIDO: Cambié el color
+                          color:
+                              Colors.purple[700], // CORREGIDO: Cambié el color
                         ),
                       ),
                     ],

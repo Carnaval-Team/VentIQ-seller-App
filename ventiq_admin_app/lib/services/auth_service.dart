@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import 'permissions_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -26,10 +27,10 @@ class AuthService {
         email: email,
         password: password,
       );
-      
+
       print('🔐 Admin login attempt for: $email');
       print('✅ Login successful: ${response.user?.id}');
-      
+
       return response;
     } catch (e) {
       print('❌ Admin login error: $e');
@@ -41,6 +42,8 @@ class AuthService {
   Future<void> signOut() async {
     try {
       await _supabase.auth.signOut();
+      // Limpiar caché de permisos
+      PermissionsService().clearCache();
       print('👋 Admin signed out successfully');
     } catch (e) {
       print('❌ Admin sign out error: $e');
@@ -61,25 +64,29 @@ class AuthService {
   Stream<AuthState> get authStateChanges => _supabase.auth.onAuthStateChange;
 
   // Verify supervisor permissions and get all stores for user
-  Future<List<Map<String, dynamic>>?> verifySupervisorPermissions(String userId) async {
+  Future<List<Map<String, dynamic>>?> verifySupervisorPermissions(
+    String userId,
+  ) async {
     try {
       print('🔍 Verifying supervisor permissions for user: $userId');
-      
+
       final response = await _supabase
           .from('app_dat_supervisor')
           .select('*,app_dat_tienda(id,denominacion)')
           .eq('uuid', userId);
-      
+
       if (response.isEmpty) {
         print('❌ No supervisor record found for user: $userId');
         return null;
       }
-      
+
       print('✅ Supervisor found with ${response.length} store(s)');
       for (var store in response) {
-        print('   - Store ID: ${store['id_tienda']}, Name: ${store['app_dat_tienda']?['denominacion']}');
+        print(
+          '   - Store ID: ${store['id_tienda']}, Name: ${store['app_dat_tienda']?['denominacion']}',
+        );
       }
-      
+
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('❌ Supervisor verification error: $e');
@@ -98,22 +105,22 @@ class AuthService {
         email: email,
         password: password,
       );
-      
+
       if (authResponse.user == null) {
         throw Exception('Authentication failed');
       }
-      
+
       final userId = authResponse.user!.id;
-      
+
       // Step 2: Verify supervisor permissions and get all stores
       final supervisorStores = await verifySupervisorPermissions(userId);
-      
+
       if (supervisorStores == null || supervisorStores.isEmpty) {
         // Sign out the user since they don't have supervisor privileges
         await signOut();
         throw Exception('NO_SUPERVISOR_PRIVILEGES');
       }
-      
+
       // Step 3: Return complete data for saving
       return {
         'user': authResponse.user!,
@@ -131,12 +138,15 @@ class AuthService {
   Future<Map<String, dynamic>?> getAdminProfile(String userId) async {
     try {
       print('👤 Fetching admin profile for user: $userId');
-      
+
       final user = currentUser;
       if (user == null) return null;
-      
+
       return {
-        'name': user.userMetadata?['name'] ?? user.email?.split('@')[0] ?? 'Administrador',
+        'name':
+            user.userMetadata?['name'] ??
+            user.email?.split('@')[0] ??
+            'Administrador',
         'role': 'Supervisor',
         'email': user.email,
       };

@@ -3,6 +3,8 @@ import '../config/app_colors.dart';
 import '../widgets/financial_menu_widget.dart';
 import '../widgets/store_selector_widget.dart';
 import '../services/financial_service.dart';
+import '../utils/screen_protection_mixin.dart';
+import '../utils/navigation_guard.dart';
 import 'financial_configuration_screen.dart';
 import 'financial_expenses_screen.dart';
 import 'financial_activity_history_screen.dart';
@@ -15,7 +17,10 @@ class FinancialScreen extends StatefulWidget {
   State<FinancialScreen> createState() => _FinancialScreenState();
 }
 
-class _FinancialScreenState extends State<FinancialScreen> {
+class _FinancialScreenState extends State<FinancialScreen>
+    with ScreenProtectionMixin {
+  @override
+  String get protectedRoute => '/financial';
   final FinancialService _financialService = FinancialService();
   bool _isInitializing = false;
   bool _isConfigured = false;
@@ -26,6 +31,7 @@ class _FinancialScreenState extends State<FinancialScreen> {
   @override
   void initState() {
     super.initState();
+    // ScreenProtectionMixin ya llama a super.initState() y verifica permisos
     _loadData();
   }
 
@@ -88,6 +94,15 @@ class _FinancialScreenState extends State<FinancialScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Verificar permisos antes de mostrar contenido
+    if (isCheckingPermissions) {
+      return buildPermissionLoadingWidget();
+    }
+
+    if (!hasAccess) {
+      return buildAccessDeniedWidget();
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Módulo Financiero'),

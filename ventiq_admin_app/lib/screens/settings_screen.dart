@@ -8,6 +8,8 @@ import '../widgets/variants_tab_view.dart';
 import '../widgets/presentations_tab_view.dart';
 import '../widgets/units_tab_view.dart';
 import '../services/variant_service.dart';
+import '../utils/screen_protection_mixin.dart';
+import '../utils/navigation_guard.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -16,13 +18,21 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProviderStateMixin {
+class _SettingsScreenState extends State<SettingsScreen>
+    with SingleTickerProviderStateMixin, ScreenProtectionMixin {
+  @override
+  String get protectedRoute => '/settings';
   late TabController _tabController;
-  final GlobalKey<State<GlobalConfigTabView>> _globalConfigTabKey = GlobalKey<State<GlobalConfigTabView>>();
-  final GlobalKey<State<CategoriesTabView>> _categoriesTabKey = GlobalKey<State<CategoriesTabView>>();
-  final GlobalKey<State<VariantsTabView>> _variantsTabKey = GlobalKey<State<VariantsTabView>>();
-  final GlobalKey<State<PresentationsTabView>> _presentationsTabKey = GlobalKey<State<PresentationsTabView>>();
-  final GlobalKey<State<UnitsTabView>> _unitsTabKey = GlobalKey<State<UnitsTabView>>();
+  final GlobalKey<State<GlobalConfigTabView>> _globalConfigTabKey =
+      GlobalKey<State<GlobalConfigTabView>>();
+  final GlobalKey<State<CategoriesTabView>> _categoriesTabKey =
+      GlobalKey<State<CategoriesTabView>>();
+  final GlobalKey<State<VariantsTabView>> _variantsTabKey =
+      GlobalKey<State<VariantsTabView>>();
+  final GlobalKey<State<PresentationsTabView>> _presentationsTabKey =
+      GlobalKey<State<PresentationsTabView>>();
+  final GlobalKey<State<UnitsTabView>> _unitsTabKey =
+      GlobalKey<State<UnitsTabView>>();
 
   @override
   void initState() {
@@ -38,6 +48,15 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
+    // Verificar permisos antes de mostrar contenido
+    if (isCheckingPermissions) {
+      return buildPermissionLoadingWidget();
+    }
+
+    if (!hasAccess) {
+      return buildAccessDeniedWidget();
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -55,11 +74,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
         bottom: TabBar(
@@ -107,7 +127,9 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         // Tab Global - no tiene funcionalidad de agregar
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('La configuración global no permite agregar elementos'),
+            content: Text(
+              'La configuración global no permite agregar elementos',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -119,7 +141,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         (_variantsTabKey.currentState as dynamic)?.showAddVariantDialog();
         break;
       case 3:
-        (_presentationsTabKey.currentState as dynamic)?.showAddPresentationDialog();
+        (_presentationsTabKey.currentState as dynamic)
+            ?.showAddPresentationDialog();
         break;
       case 4:
         (_unitsTabKey.currentState as dynamic)?.showAddDialog();
@@ -135,7 +158,11 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0:
-        Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/dashboard',
+          (route) => false,
+        );
         break;
       case 1:
         Navigator.pushNamed(context, '/products-dashboard');
