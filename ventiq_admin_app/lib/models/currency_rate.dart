@@ -73,25 +73,27 @@ class CurrencyRatesResponse {
     );
   }
 
-  // Default rates to use when API fails (based on ElToque rates)
+  // Default rates to use when API and database both fail
   factory CurrencyRatesResponse.defaultRates() {
     final now = DateTime.now();
+    print('⚠️ Using hardcoded default rates as final fallback');
+    print('💡 These values should only be used when both API and database fail');
     return CurrencyRatesResponse(
       usd: CurrencyRate(
         currency: 'USD',
-        value: 440.0, // Updated from ElToque
+        value: 440.0, // Hardcoded fallback - should be rare
         lastUpdate: now,
         timestamp: now,
       ),
       eur: CurrencyRate(
         currency: 'EUR',
-        value: 495.0, // Updated from ElToque (ECU)
+        value: 495.0, // Hardcoded fallback - should be rare
         lastUpdate: now,
         timestamp: now,
       ),
       mlc: CurrencyRate(
         currency: 'MLC',
-        value: 210.0, // Updated from ElToque
+        value: 210.0, // Hardcoded fallback - should be rare
         lastUpdate: now,
         timestamp: now,
       ),

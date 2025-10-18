@@ -116,19 +116,19 @@ class CurrencyService {
       return CurrencyRatesResponse(
         usd: CurrencyRate(
           currency: 'USD',
-          value: (tasas['USD'] as num?)?.toDouble() ?? 440.0,
+          value: (tasas['USD'] as num?)?.toDouble() ?? 440.0, // Fallback if API doesn't have USD
           lastUpdate: timestamp,
           timestamp: timestamp,
         ),
         eur: CurrencyRate(
           currency: 'EUR',
-          value: (tasas['ECU'] as num?)?.toDouble() ?? 495.0, // ElToque uses ECU for EUR
+          value: (tasas['ECU'] as num?)?.toDouble() ?? 495.0, // ElToque uses ECU for EUR, fallback if not available
           lastUpdate: timestamp,
           timestamp: timestamp,
         ),
         mlc: CurrencyRate(
           currency: 'MLC',
-          value: (tasas['MLC'] as num?)?.toDouble() ?? 210.0,
+          value: (tasas['MLC'] as num?)?.toDouble() ?? 210.0, // Fallback if API doesn't have MLC
           lastUpdate: timestamp,
           timestamp: timestamp,
         ),
@@ -160,9 +160,19 @@ class CurrencyService {
     }
   }
 
-  /// Loads fallback rates from local storage or default values
+  /// Loads fallback rates from database first, then local storage, then default values
   static Future<CurrencyRatesResponse> _loadFallbackRates() async {
     try {
+      // First, try to get rates from database
+      print('🗄️ Attempting to load rates from database as fallback...');
+      final dbRates = await _loadRatesFromDatabase();
+      if (dbRates != null) {
+        print('✅ Using rates from database as fallback');
+        return dbRates;
+      }
+      
+      // If database fails, try local storage
+      print('📱 Database fallback failed, trying local storage...');
       final prefs = await SharedPreferences.getInstance();
       final savedRatesString = prefs.getString(_savedRatesKey);
       
@@ -178,12 +188,12 @@ class CurrencyService {
           timestamp: DateTime.parse(savedRatesJson['timestamp']),
         );
       } else {
-        print('🔄 No saved rates found, using default rates');
+        print('🔄 No saved rates found, using hardcoded default rates');
         return CurrencyRatesResponse.defaultRates();
       }
     } catch (e) {
       print('❌ Error loading fallback rates: $e');
-      print('🔄 Using default rates as final fallback');
+      print('🔄 Using hardcoded default rates as final fallback');
       return CurrencyRatesResponse.defaultRates();
     }
   }
@@ -278,6 +288,69 @@ class CurrencyService {
     } catch (e) {
       print('❌ Error checking if rates need update: $e');
       return true;
+    }
+  }
+
+  /// Loads rates from database and converts to CurrencyRatesResponse
+  static Future<CurrencyRatesResponse?> _loadRatesFromDatabase() async {
+    try {
+      final rates = await getCurrentRatesFromDatabase();
+      if (rates.isEmpty) {
+        print('📭 No rates found in database');
+        return null;
+      }
+
+      print('🗄️ Found ${rates.length} rates in database');
+      
+      // Find specific currency rates
+      final usdRate = rates.firstWhere(
+        (rate) => rate['moneda_origen'] == 'USD',
+        orElse: () => <String, dynamic>{},
+      );
+      final eurRate = rates.firstWhere(
+        (rate) => rate['moneda_origen'] == 'EUR',
+        orElse: () => <String, dynamic>{},
+      );
+      final mlcRate = rates.firstWhere(
+        (rate) => rate['moneda_origen'] == 'MLC',
+        orElse: () => <String, dynamic>{},
+      );
+
+      // Get the most recent update time
+      final lastUpdateStr = rates.first['fecha_actualizacion'] as String;
+      final lastUpdate = DateTime.parse(lastUpdateStr);
+      
+      print('💱 Database rates found:');
+      print('  - USD: ${usdRate.isNotEmpty ? usdRate['tasa'] : 'not found'}');
+      print('  - EUR: ${eurRate.isNotEmpty ? eurRate['tasa'] : 'not found'}');
+      print('  - MLC: ${mlcRate.isNotEmpty ? mlcRate['tasa'] : 'not found'}');
+      print('  - Last update: $lastUpdate');
+
+      return CurrencyRatesResponse(
+        usd: CurrencyRate(
+          currency: 'USD',
+          value: usdRate.isNotEmpty ? (usdRate['tasa'] as num).toDouble() : 440.0,
+          lastUpdate: lastUpdate,
+          timestamp: lastUpdate,
+        ),
+        eur: CurrencyRate(
+          currency: 'EUR',
+          value: eurRate.isNotEmpty ? (eurRate['tasa'] as num).toDouble() : 495.0,
+          lastUpdate: lastUpdate,
+          timestamp: lastUpdate,
+        ),
+        mlc: CurrencyRate(
+          currency: 'MLC',
+          value: mlcRate.isNotEmpty ? (mlcRate['tasa'] as num).toDouble() : 210.0,
+          lastUpdate: lastUpdate,
+          timestamp: lastUpdate,
+        ),
+        lastUpdate: lastUpdate,
+        timestamp: lastUpdate,
+      );
+    } catch (e) {
+      print('❌ Error loading rates from database: $e');
+      return null;
     }
   }
 }
