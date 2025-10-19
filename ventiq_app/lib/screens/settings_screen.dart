@@ -10,6 +10,8 @@ import '../services/payment_method_service.dart';
 import '../services/turno_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/store_config_service.dart';
+import '../services/update_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/connection_status_widget.dart';
@@ -399,6 +401,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildPrintSettingsTile(),
             _buildDivider(),
             _buildFluidModeSettingsTile(),
+            _buildDivider(),
+            _buildSettingsTile(
+              icon: Icons.system_update_outlined,
+              title: 'Buscar Actualizaciones',
+              subtitle: 'Verificar si hay nuevas versiones',
+              onTap: () => _checkForUpdates(),
+            ),
             _buildDivider(),
             _buildSettingsTile(
               icon: Icons.language_outlined,
@@ -917,6 +926,230 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
     );
+  }
+
+  /// Verificar actualizaciones disponibles
+  Future<void> _checkForUpdates() async {
+    // Mostrar diálogo de carga
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Verificando actualizaciones...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final updateInfo = await UpdateService.checkForUpdates();
+      
+      // Cerrar diálogo de carga
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (updateInfo['hay_actualizacion'] == true) {
+        // Hay actualización disponible
+        _showUpdateAvailableDialog(updateInfo);
+      } else {
+        // No hay actualizaciones
+        _showNoUpdateDialog(updateInfo);
+      }
+    } catch (e) {
+      // Cerrar diálogo de carga
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      
+      // Mostrar error
+      _showUpdateErrorDialog(e.toString());
+    }
+  }
+
+  /// Mostrar diálogo cuando hay actualización disponible
+  void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
+    final bool isObligatory = updateInfo['obligatoria'] ?? false;
+    final String newVersion = updateInfo['version_disponible'] ?? 'Desconocida';
+    final String currentVersion = updateInfo['current_version'] ?? 'Desconocida';
+    
+    showDialog(
+      context: context,
+      barrierDismissible: !isObligatory,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              isObligatory ? Icons.warning : Icons.system_update,
+              color: isObligatory ? Colors.orange : Colors.blue,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                isObligatory ? 'Actualización Obligatoria' : 'Actualización Disponible',
+                style: const TextStyle(fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Nueva versión disponible: $newVersion'),
+            Text('Versión actual: $currentVersion'),
+            const SizedBox(height: 16),
+            if (isObligatory)
+              const Text(
+                'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
+                style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w500),
+              )
+            else
+              const Text('Se recomienda actualizar para obtener las últimas mejoras y correcciones.'),
+          ],
+        ),
+        actions: [
+          if (!isObligatory)
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Más tarde'),
+            ),
+          ElevatedButton(
+            onPressed: () => _downloadUpdate(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isObligatory ? Colors.orange : Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Descargar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mostrar diálogo cuando no hay actualizaciones
+  void _showNoUpdateDialog(Map<String, dynamic> updateInfo) {
+    final String currentVersion = updateInfo['current_version'] ?? 'Desconocida';
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Aplicación Actualizada',
+                style: TextStyle(fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Versión actual: $currentVersion'),
+            const SizedBox(height: 8),
+            const Text('Tu aplicación está actualizada con la última versión disponible.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mostrar diálogo de error
+  void _showUpdateErrorDialog(String error) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error, color: Colors.red),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Error de Verificación',
+                style: const TextStyle(fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('No se pudo verificar si hay actualizaciones disponibles.'),
+            const SizedBox(height: 8),
+            Text('Error: $error', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Descargar actualización
+  Future<void> _downloadUpdate() async {
+    try {
+      final Uri url = Uri.parse(UpdateService.downloadUrl);
+      
+      if (await canLaunchUrl(url)) {
+        await launchUrl(
+          url,
+          mode: LaunchMode.externalApplication,
+        );
+        
+        // Cerrar diálogo
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+        
+        // Mostrar mensaje de confirmación
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📱 Descarga iniciada - Instala la nueva versión'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      } else {
+        throw 'No se puede abrir el enlace de descarga';
+      }
+    } catch (e) {
+      print('❌ Error abriendo enlace de descarga: $e');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error abriendo enlace de descarga: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   void _showStorageOptions() {

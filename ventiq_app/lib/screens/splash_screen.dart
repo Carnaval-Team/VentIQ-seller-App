@@ -3,6 +3,8 @@ import '../services/user_preferences_service.dart';
 import '../services/auth_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
+import '../services/update_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -37,6 +39,8 @@ class _SplashScreenState extends State<SplashScreen> {
         
         if (mounted) {
           Navigator.of(context).pushReplacementNamed('/categories');
+          // Verificar actualizaciones después de navegar
+          _checkForUpdatesAfterNavigation();
         }
       } else {
         // Check if user has saved credentials for auto-login
@@ -89,6 +93,8 @@ class _SplashScreenState extends State<SplashScreen> {
         
         if (mounted) {
           Navigator.of(context).pushReplacementNamed('/categories');
+          // Verificar actualizaciones después de navegar
+          _checkForUpdatesAfterNavigation();
         }
       } else {
         // Auto-login failed, go to login screen
@@ -131,6 +137,134 @@ class _SplashScreenState extends State<SplashScreen> {
     } catch (e) {
       print('❌ Error configurando servicios inteligentes desde SplashScreen: $e');
       // No lanzamos el error para no afectar el flujo de navegación
+    }
+  }
+
+  /// Verificar actualizaciones después de navegar a la vista principal
+  Future<void> _checkForUpdatesAfterNavigation() async {
+    // Esperar un poco para que la navegación se complete
+    await Future.delayed(const Duration(seconds: 1));
+    
+    try {
+      print('🔍 Verificando actualizaciones automáticamente...');
+      
+      final updateInfo = await UpdateService.checkForUpdates();
+      
+      if (updateInfo['hay_actualizacion'] == true && mounted) {
+        // Solo mostrar si hay actualización disponible
+        _showUpdateAvailableDialog(updateInfo);
+      } else {
+        print('✅ No hay actualizaciones disponibles');
+      }
+    } catch (e) {
+      print('❌ Error verificando actualizaciones automáticamente: $e');
+      // No mostrar error al usuario, es una verificación silenciosa
+    }
+  }
+
+  /// Mostrar diálogo cuando hay actualización disponible
+  void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
+    final bool isObligatory = updateInfo['obligatoria'] ?? false;
+    final String newVersion = updateInfo['version_disponible'] ?? 'Desconocida';
+    final String currentVersion = updateInfo['current_version'] ?? 'Desconocida';
+    
+    showDialog(
+      context: context,
+      barrierDismissible: !isObligatory,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              isObligatory ? Icons.warning : Icons.system_update,
+              color: isObligatory ? Colors.orange : Colors.blue,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                isObligatory ? 'Actualización Obligatoria' : 'Nueva Versión Disponible',
+                style: const TextStyle(fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Nueva versión disponible: $newVersion'),
+            Text('Versión actual: $currentVersion'),
+            const SizedBox(height: 16),
+            if (isObligatory)
+              const Text(
+                'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
+                style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w500),
+              )
+            else
+              const Text('Se recomienda actualizar para obtener las últimas mejoras y correcciones.'),
+          ],
+        ),
+        actions: [
+          if (!isObligatory)
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Más tarde'),
+            ),
+          ElevatedButton(
+            onPressed: () => _downloadUpdate(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isObligatory ? Colors.orange : Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Descargar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Descargar actualización
+  Future<void> _downloadUpdate() async {
+    try {
+      final Uri url = Uri.parse(UpdateService.downloadUrl);
+      
+      if (await canLaunchUrl(url)) {
+        await launchUrl(
+          url,
+          mode: LaunchMode.externalApplication,
+        );
+        
+        // Cerrar diálogo
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+        
+        // Mostrar mensaje de confirmación
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('📱 Descarga iniciada - Instala la nueva versión'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        throw 'No se puede abrir el enlace de descarga';
+      }
+    } catch (e) {
+      print('❌ Error abriendo enlace de descarga: $e');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error abriendo enlace de descarga: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
