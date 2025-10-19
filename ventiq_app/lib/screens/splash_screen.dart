@@ -32,33 +32,41 @@ class _SplashScreenState extends State<SplashScreen> {
     try {
       // Check if user has a valid session
       final hasValidSession = await _userPreferencesService.hasValidSession();
-      
+
       if (hasValidSession) {
         // User has valid session, initialize smart services and go to categories
-        print('✅ Sesión válida encontrada - Inicializando servicios inteligentes...');
+        print(
+          '✅ Sesión válida encontrada - Inicializando servicios inteligentes...',
+        );
         _initializeSmartServices();
-        
+
         if (mounted) {
           Navigator.of(context).pushReplacementNamed('/categories');
-          // Verificar actualizaciones después de navegar
-          _checkForUpdatesAfterNavigation();
+          // Verificar actualizaciones después de que el frame esté completamente renderizado
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _checkForUpdatesAfterNavigation();
+          });
         }
       } else {
         // Check if user has saved credentials for auto-login
         final shouldRemember = await _userPreferencesService.shouldRememberMe();
-        
+
         if (shouldRemember) {
-          final credentials = await _userPreferencesService.getSavedCredentials();
+          final credentials =
+              await _userPreferencesService.getSavedCredentials();
           final email = credentials['email'];
           final password = credentials['password'];
-          
-          if (email != null && password != null && email.isNotEmpty && password.isNotEmpty) {
+
+          if (email != null &&
+              password != null &&
+              email.isNotEmpty &&
+              password.isNotEmpty) {
             // Attempt automatic login
             await _attemptAutoLogin(email, password);
             return;
           }
         }
-        
+
         // No valid session or saved credentials, go to login
         if (mounted) {
           Navigator.of(context).pushReplacementNamed('/login');
@@ -79,7 +87,7 @@ class _SplashScreenState extends State<SplashScreen> {
         email: email,
         password: password,
       );
-      
+
       if (response.user != null) {
         // Update user data with new token
         await _userPreferencesService.saveUserData(
@@ -87,15 +95,17 @@ class _SplashScreenState extends State<SplashScreen> {
           email: response.user!.email ?? email,
           accessToken: response.session?.accessToken ?? '',
         );
-        
+
         // Auto-login successful, initialize smart services and go to categories
         print('✅ Auto-login exitoso - Inicializando servicios inteligentes...');
         _initializeSmartServices();
-        
+
         if (mounted) {
           Navigator.of(context).pushReplacementNamed('/categories');
-          // Verificar actualizaciones después de navegar
-          _checkForUpdatesAfterNavigation();
+          // Verificar actualizaciones después de que el frame esté completamente renderizado
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _checkForUpdatesAfterNavigation();
+          });
         }
       } else {
         // Auto-login failed, go to login screen
@@ -116,49 +126,79 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _initializeSmartServices() async {
     try {
       print('🚀 Inicializando servicios inteligentes desde SplashScreen...');
-      
+
       // ✅ MEJORADO: Ejecutar primera sincronización inmediatamente
       // Inicializar el servicio de integración en segundo plano
-      _integrationService.initialize().then((_) {
-        print('✅ Servicios inteligentes inicializados correctamente desde SplashScreen');
-      }).catchError((e) {
-        print('❌ Error inicializando servicios inteligentes desde SplashScreen: $e');
-        // No mostramos error al usuario ya que no es crítico para la navegación
-      });
-      
+      _integrationService
+          .initialize()
+          .then((_) {
+            print(
+              '✅ Servicios inteligentes inicializados correctamente desde SplashScreen',
+            );
+          })
+          .catchError((e) {
+            print(
+              '❌ Error inicializando servicios inteligentes desde SplashScreen: $e',
+            );
+            // No mostramos error al usuario ya que no es crítico para la navegación
+          });
+
       // Ejecutar primera sincronización inmediatamente sin esperar la inicialización completa
-      print('⚡ Ejecutando primera sincronización inmediata desde SplashScreen...');
+      print(
+        '⚡ Ejecutando primera sincronización inmediata desde SplashScreen...',
+      );
       final autoSyncService = AutoSyncService();
-      autoSyncService.performImmediateSync().then((_) {
-        print('✅ Primera sincronización inmediata completada desde SplashScreen');
-      }).catchError((e) {
-        print('❌ Error en primera sincronización inmediata desde SplashScreen: $e');
-      });
-      
+      autoSyncService
+          .performImmediateSync()
+          .then((_) {
+            print(
+              '✅ Primera sincronización inmediata completada desde SplashScreen',
+            );
+          })
+          .catchError((e) {
+            print(
+              '❌ Error en primera sincronización inmediata desde SplashScreen: $e',
+            );
+          });
     } catch (e) {
-      print('❌ Error configurando servicios inteligentes desde SplashScreen: $e');
+      print(
+        '❌ Error configurando servicios inteligentes desde SplashScreen: $e',
+      );
       // No lanzamos el error para no afectar el flujo de navegación
     }
   }
 
   /// Verificar actualizaciones después de navegar a la vista principal
   Future<void> _checkForUpdatesAfterNavigation() async {
-    // Esperar un poco para que la navegación se complete
-    await Future.delayed(const Duration(seconds: 1));
-    
+    // Esperar más tiempo para que la navegación se complete totalmente
+    await Future.delayed(const Duration(seconds: 3));
+
     try {
-      print('🔍 Verificando actualizaciones automáticamente...');
-      
+      print(
+        '🔍 Verificando actualizaciones automáticamente desde SplashScreen...',
+      );
+
+      // Verificar que el contexto sigue siendo válido
+      if (!mounted) {
+        print(
+          '❌ Contexto no válido, cancelando verificación de actualizaciones',
+        );
+        return;
+      }
+
       final updateInfo = await UpdateService.checkForUpdates();
-      
+
       if (updateInfo['hay_actualizacion'] == true && mounted) {
+        print('🆕 Actualización disponible detectada desde SplashScreen');
         // Solo mostrar si hay actualización disponible
         _showUpdateAvailableDialog(updateInfo);
       } else {
-        print('✅ No hay actualizaciones disponibles');
+        print('✅ No hay actualizaciones disponibles desde SplashScreen');
       }
     } catch (e) {
-      print('❌ Error verificando actualizaciones automáticamente: $e');
+      print(
+        '❌ Error verificando actualizaciones automáticamente desde SplashScreen: $e',
+      );
       // No mostrar error al usuario, es una verificación silenciosa
     }
   }
@@ -167,61 +207,78 @@ class _SplashScreenState extends State<SplashScreen> {
   void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
     final bool isObligatory = updateInfo['obligatoria'] ?? false;
     final String newVersion = updateInfo['version_disponible'] ?? 'Desconocida';
-    final String currentVersion = updateInfo['current_version'] ?? 'Desconocida';
-    
+    final String currentVersion =
+        updateInfo['current_version'] ?? 'Desconocida';
+
+    // Verificar que el contexto sea válido antes de mostrar el diálogo
+    if (!mounted) {
+      print('❌ Contexto no válido para mostrar diálogo de actualización');
+      return;
+    }
+
+    print('📱 Mostrando diálogo de actualización desde SplashScreen');
+
     showDialog(
       context: context,
       barrierDismissible: !isObligatory,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              isObligatory ? Icons.warning : Icons.system_update,
-              color: isObligatory ? Colors.orange : Colors.blue,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  isObligatory ? Icons.warning : Icons.system_update,
+                  color: isObligatory ? Colors.orange : Colors.blue,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isObligatory
+                        ? 'Actualización Obligatoria'
+                        : 'Nueva Versión Disponible',
+                    style: const TextStyle(fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                isObligatory ? 'Actualización Obligatoria' : 'Nueva Versión Disponible',
-                style: const TextStyle(fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Nueva versión disponible: $newVersion'),
+                Text('Versión actual: $currentVersion'),
+                const SizedBox(height: 16),
+                if (isObligatory)
+                  const Text(
+                    'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  )
+                else
+                  const Text(
+                    'Se recomienda actualizar para obtener las últimas mejoras y correcciones.',
+                  ),
+              ],
+            ),
+            actions: [
+              if (!isObligatory)
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Más tarde'),
+                ),
+              ElevatedButton(
+                onPressed: () => _downloadUpdate(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isObligatory ? Colors.orange : Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Descargar'),
               ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Nueva versión disponible: $newVersion'),
-            Text('Versión actual: $currentVersion'),
-            const SizedBox(height: 16),
-            if (isObligatory)
-              const Text(
-                'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
-                style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w500),
-              )
-            else
-              const Text('Se recomienda actualizar para obtener las últimas mejoras y correcciones.'),
-          ],
-        ),
-        actions: [
-          if (!isObligatory)
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Más tarde'),
-            ),
-          ElevatedButton(
-            onPressed: () => _downloadUpdate(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isObligatory ? Colors.orange : Colors.blue,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Descargar'),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -229,36 +286,30 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _downloadUpdate() async {
     try {
       final Uri url = Uri.parse(UpdateService.downloadUrl);
-      
+
       print('🔗 Intentando abrir URL: ${url.toString()}');
-      
+
       // Intentar diferentes modos de lanzamiento
       bool launched = false;
-      
+
       // Método 1: Intentar con navegador web
       try {
-        launched = await launchUrl(
-          url,
-          mode: LaunchMode.externalApplication,
-        );
+        launched = await launchUrl(url, mode: LaunchMode.externalApplication);
         print('✅ Método 1 (externalApplication): $launched');
       } catch (e) {
         print('❌ Método 1 falló: $e');
       }
-      
+
       // Método 2: Si falla, intentar con navegador interno
       if (!launched) {
         try {
-          launched = await launchUrl(
-            url,
-            mode: LaunchMode.inAppWebView,
-          );
+          launched = await launchUrl(url, mode: LaunchMode.inAppWebView);
           print('✅ Método 2 (inAppWebView): $launched');
         } catch (e) {
           print('❌ Método 2 falló: $e');
         }
       }
-      
+
       // Método 3: Si falla, intentar modo plataforma
       if (!launched) {
         try {
@@ -268,13 +319,13 @@ class _SplashScreenState extends State<SplashScreen> {
           print('❌ Método 3 falló: $e');
         }
       }
-      
+
       if (launched) {
         // Cerrar diálogo
         if (mounted) {
           Navigator.of(context).pop();
         }
-        
+
         // Mostrar mensaje de confirmación
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -289,91 +340,95 @@ class _SplashScreenState extends State<SplashScreen> {
         // Si todos los métodos fallan, mostrar diálogo con URL para copiar
         _showManualDownloadDialog();
       }
-      
     } catch (e) {
       print('❌ Error general abriendo enlace de descarga: $e');
       _showManualDownloadDialog();
     }
   }
-  
+
   /// Mostrar diálogo para descarga manual
   void _showManualDownloadDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.download, color: Colors.blue),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Descarga Manual',
-                style: TextStyle(fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.download, color: Colors.blue),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Descarga Manual',
+                    style: TextStyle(fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('No se pudo abrir automáticamente el enlace de descarga.'),
-            const SizedBox(height: 16),
-            const Text('Copia este enlace y ábrelo en tu navegador:'),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: SelectableText(
-                UpdateService.downloadUrl,
-                style: const TextStyle(fontSize: 12),
-              ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'No se pudo abrir automáticamente el enlace de descarga.',
+                ),
+                const SizedBox(height: 16),
+                const Text('Copia este enlace y ábrelo en tu navegador:'),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: SelectableText(
+                    UpdateService.downloadUrl,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Cerrar diálogo manual
-              Navigator.of(context).pop(); // Cerrar diálogo de actualización
-            },
-            child: const Text('Cerrar'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Cerrar diálogo manual
+                  Navigator.of(
+                    context,
+                  ).pop(); // Cerrar diálogo de actualización
+                },
+                child: const Text('Cerrar'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  // Intentar copiar al portapapeles
+                  try {
+                    await _copyToClipboard(UpdateService.downloadUrl);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('📋 Enlace copiado al portapapeles'),
+                          backgroundColor: Colors.green,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    print('❌ Error copiando al portapapeles: $e');
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Copiar Enlace'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              // Intentar copiar al portapapeles
-              try {
-                await _copyToClipboard(UpdateService.downloadUrl);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('📋 Enlace copiado al portapapeles'),
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                }
-              } catch (e) {
-                print('❌ Error copiando al portapapeles: $e');
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Copiar Enlace'),
-          ),
-        ],
-      ),
     );
   }
-  
+
   /// Copiar texto al portapapeles
   Future<void> _copyToClipboard(String text) async {
     try {
@@ -388,9 +443,7 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF4A90E2),
-        ),
+        decoration: const BoxDecoration(color: Color(0xFF4A90E2)),
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

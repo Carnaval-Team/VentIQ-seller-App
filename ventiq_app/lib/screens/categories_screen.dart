@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'products_screen.dart';
 import 'barcode_scanner_screen.dart';
 import 'fluid_mode_screen.dart';
@@ -8,9 +9,11 @@ import '../services/category_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/changelog_service.dart';
 import '../services/currency_service.dart';
+import '../services/update_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../utils/connection_error_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -49,6 +52,10 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     _loadDataUsageSettings();
     _loadFluidModeSettings();
     _loadOfflineModeSettings();
+    // Verificar actualizaciones después de que el frame esté completamente renderizado
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForUpdatesAfterNavigation();
+    });
   }
 
   Future<void> _loadDataUsageSettings() async {
@@ -180,18 +187,19 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       });
 
       debugPrint('✅ Categorías cargadas: ${categories.length}');
-    } catch (e , stackTrace) {
+    } catch (e, stackTrace) {
       final isConnectionError = ConnectionErrorHandler.isConnectionError(e);
-      
+
       setState(() {
         _isConnectionError = isConnectionError;
-        _errorMessage = isConnectionError 
-            ? ConnectionErrorHandler.getConnectionErrorMessage()
-            : ConnectionErrorHandler.getGenericErrorMessage(e);
+        _errorMessage =
+            isConnectionError
+                ? ConnectionErrorHandler.getConnectionErrorMessage()
+                : ConnectionErrorHandler.getGenericErrorMessage(e);
         _isLoading = false;
         _showRetryWidget = isConnectionError;
       });
-      
+
       debugPrint('❌ Error cargando categorías: $e');
       debugPrint('🔍 Es error de conexión: $isConnectionError');
       debugPrint('🔍 Stack trace: $stackTrace');
@@ -228,7 +236,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                   ? '🔌 Modo offline activado - Trabajando con datos sincronizados'
                   : '🌐 Modo online - Conectado al servidor',
             ),
-            backgroundColor: _isOfflineModeEnabled ? Colors.grey[600] : Colors.green,
+            backgroundColor:
+                _isOfflineModeEnabled ? Colors.grey[600] : Colors.green,
             duration: const Duration(seconds: 2),
           ),
         );
@@ -239,7 +248,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           color: _isOfflineModeEnabled ? Colors.grey[100] : Colors.green[50],
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: _isOfflineModeEnabled ? Colors.grey[400]! : Colors.green[400]!,
+            color:
+                _isOfflineModeEnabled ? Colors.grey[400]! : Colors.green[400]!,
             width: 0.8,
           ),
           boxShadow: [
@@ -258,7 +268,10 @@ class _CategoriesScreenState extends State<CategoriesScreen>
               Icon(
                 _isOfflineModeEnabled ? Icons.cloud_off : Icons.cloud_done,
                 size: 12,
-                color: _isOfflineModeEnabled ? Colors.grey[600] : Colors.green[600],
+                color:
+                    _isOfflineModeEnabled
+                        ? Colors.grey[600]
+                        : Colors.green[600],
               ),
               const SizedBox(width: 3),
               Text(
@@ -266,7 +279,10 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                 style: TextStyle(
                   fontSize: 8,
                   fontWeight: FontWeight.bold,
-                  color: _isOfflineModeEnabled ? Colors.grey[600] : Colors.green[600],
+                  color:
+                      _isOfflineModeEnabled
+                          ? Colors.grey[600]
+                          : Colors.green[600],
                 ),
               ),
             ],
@@ -427,7 +443,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           onRetry: () => _loadCategories(forceRefresh: true),
         );
       }
-      
+
       // Para otros errores, mostrar el widget de error tradicional
       return Center(
         child: Column(
@@ -525,6 +541,276 @@ class _CategoriesScreenState extends State<CategoriesScreen>
         break;
     }
   }
+
+  /// Verificar actualizaciones después de navegar a la vista principal
+  Future<void> _checkForUpdatesAfterNavigation() async {
+    // Esperar más tiempo para que la navegación se complete totalmente
+    await Future.delayed(const Duration(seconds: 3));
+
+    try {
+      print(
+        '🔍 Verificando actualizaciones automáticamente desde CategoriesScreen...',
+      );
+
+      // Verificar que el contexto sigue siendo válido
+      if (!mounted) {
+        print(
+          '❌ Contexto no válido, cancelando verificación de actualizaciones',
+        );
+        return;
+      }
+
+      final updateInfo = await UpdateService.checkForUpdates();
+
+      if (updateInfo['hay_actualizacion'] == true && mounted) {
+        print('🆕 Actualización disponible detectada desde CategoriesScreen');
+        // Solo mostrar si hay actualización disponible
+        _showUpdateAvailableDialog(updateInfo);
+      } else {
+        print('✅ No hay actualizaciones disponibles desde CategoriesScreen');
+      }
+    } catch (e) {
+      print(
+        '❌ Error verificando actualizaciones automáticamente desde CategoriesScreen: $e',
+      );
+      // No mostrar error al usuario, es una verificación silenciosa
+    }
+  }
+
+  /// Mostrar diálogo cuando hay actualización disponible
+  void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
+    final bool isObligatory = updateInfo['obligatoria'] ?? false;
+    final String newVersion = updateInfo['version_disponible'] ?? 'Desconocida';
+    final String currentVersion =
+        updateInfo['current_version'] ?? 'Desconocida';
+
+    // Verificar que el contexto sea válido antes de mostrar el diálogo
+    if (!mounted) {
+      print('❌ Contexto no válido para mostrar diálogo de actualización');
+      return;
+    }
+
+    print('📱 Mostrando diálogo de actualización desde CategoriesScreen');
+
+    showDialog(
+      context: context,
+      barrierDismissible: !isObligatory, // Si es obligatoria, no se puede cerrar
+      builder: (context) => WillPopScope(
+        onWillPop: () async => !isObligatory, // Prevenir cierre con botón atrás si es obligatoria
+        child: AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                isObligatory ? Icons.warning : Icons.system_update,
+                color: isObligatory ? Colors.orange : Colors.blue,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isObligatory
+                      ? 'Actualización Obligatoria'
+                      : 'Nueva Versión Disponible',
+                  style: const TextStyle(fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Nueva versión disponible: $newVersion'),
+              Text('Versión actual: $currentVersion'),
+              const SizedBox(height: 16),
+              if (isObligatory)
+                const Text(
+                  'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.w500,
+                  ),
+                )
+              else
+                const Text(
+                  'Se recomienda actualizar para obtener las últimas mejoras y correcciones.',
+                ),
+            ],
+          ),
+          actions: [
+            if (!isObligatory)
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Más tarde'),
+              ),
+            ElevatedButton(
+              onPressed: () => _downloadUpdate(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isObligatory ? Colors.orange : Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Descargar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Descargar actualización
+  Future<void> _downloadUpdate() async {
+    try {
+      final Uri url = Uri.parse(UpdateService.downloadUrl);
+
+      print('🔗 Intentando abrir URL: ${url.toString()}');
+
+      // Intentar diferentes modos de lanzamiento
+      bool launched = false;
+
+      // Método 1: Intentar con navegador web
+      try {
+        launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+        print('✅ Método 1 (externalApplication): $launched');
+      } catch (e) {
+        print('❌ Método 1 falló: $e');
+      }
+
+      // Método 2: Si falla, intentar con navegador interno
+      if (!launched) {
+        try {
+          launched = await launchUrl(url, mode: LaunchMode.inAppWebView);
+          print('✅ Método 2 (inAppWebView): $launched');
+        } catch (e) {
+          print('❌ Método 2 falló: $e');
+        }
+      }
+
+      // Método 3: Si falla, intentar modo plataforma
+      if (!launched) {
+        try {
+          launched = await launchUrl(url);
+          print('✅ Método 3 (default): $launched');
+        } catch (e) {
+          print('❌ Método 3 falló: $e');
+        }
+      }
+
+      if (launched) {
+        // Cerrar diálogo solo si no es obligatoria
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+
+        // Mostrar mensaje de confirmación
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('📱 Descarga iniciada - Instala la nueva versión'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        // Si todos los métodos fallan, mostrar diálogo con URL para copiar
+        _showManualDownloadDialog();
+      }
+    } catch (e) {
+      print('❌ Error general abriendo enlace de descarga: $e');
+      _showManualDownloadDialog();
+    }
+  }
+
+  /// Mostrar diálogo para descarga manual
+  void _showManualDownloadDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.download, color: Colors.blue),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Descarga Manual',
+                style: TextStyle(fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'No se pudo abrir automáticamente el enlace de descarga.',
+            ),
+            const SizedBox(height: 16),
+            const Text('Copia este enlace y ábrelo en tu navegador:'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: SelectableText(
+                UpdateService.downloadUrl,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // Cerrar diálogo manual
+              Navigator.of(context).pop(); // Cerrar diálogo de actualización
+            },
+            child: const Text('Cerrar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // Intentar copiar al portapapeles
+              try {
+                await _copyToClipboard(UpdateService.downloadUrl);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('📋 Enlace copiado al portapapeles'),
+                      backgroundColor: Colors.green,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              } catch (e) {
+                print('❌ Error copiando al portapapeles: $e');
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Copiar Enlace'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Copiar texto al portapapeles
+  Future<void> _copyToClipboard(String text) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+    } catch (e) {
+      print('❌ Error copiando al portapapeles: $e');
+      rethrow;
+    }
+  }
 }
 
 class _CategoryCard extends StatefulWidget {
@@ -580,16 +866,14 @@ class _CategoryCardState extends State<_CategoryCard>
   void _onTapUp(TapUpDetails details) {
     setState(() => _isPressed = false);
     _animationController.reverse();
-    
+
     // Check if fluid mode is enabled
     if (widget.isFluidModeEnabled) {
       print('🚀 Modo fluido activado - Navegando a FluidModeScreen');
       // Navigate to fluid mode screen
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => const FluidModeScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const FluidModeScreen()),
       );
     } else {
       print('📱 Modo tradicional - Navegando a ProductsScreen');
@@ -597,11 +881,12 @@ class _CategoryCardState extends State<_CategoryCard>
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ProductsScreen(
-            categoryId: widget.id,
-            categoryName: widget.name,
-            categoryColor: widget.color,
-          ),
+          builder:
+              (_) => ProductsScreen(
+                categoryId: widget.id,
+                categoryName: widget.name,
+                categoryColor: widget.color,
+              ),
         ),
       );
     }

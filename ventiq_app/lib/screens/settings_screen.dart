@@ -16,7 +16,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/connection_status_widget.dart';
-import '../models/order.dart';
 import 'dart:async';
 
 class SettingsScreen extends StatefulWidget {
