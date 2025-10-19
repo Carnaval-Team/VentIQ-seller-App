@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -1117,12 +1118,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final Uri url = Uri.parse(UpdateService.downloadUrl);
       
-      if (await canLaunchUrl(url)) {
-        await launchUrl(
+      print('🔗 Intentando abrir URL: ${url.toString()}');
+      
+      // Intentar diferentes modos de lanzamiento
+      bool launched = false;
+      
+      // Método 1: Intentar con navegador web
+      try {
+        launched = await launchUrl(
           url,
           mode: LaunchMode.externalApplication,
         );
-        
+        print('✅ Método 1 (externalApplication): $launched');
+      } catch (e) {
+        print('❌ Método 1 falló: $e');
+      }
+      
+      // Método 2: Si falla, intentar con navegador interno
+      if (!launched) {
+        try {
+          launched = await launchUrl(
+            url,
+            mode: LaunchMode.inAppWebView,
+          );
+          print('✅ Método 2 (inAppWebView): $launched');
+        } catch (e) {
+          print('❌ Método 2 falló: $e');
+        }
+      }
+      
+      // Método 3: Si falla, intentar modo plataforma
+      if (!launched) {
+        try {
+          launched = await launchUrl(url);
+          print('✅ Método 3 (default): $launched');
+        } catch (e) {
+          print('❌ Método 3 falló: $e');
+        }
+      }
+      
+      if (launched) {
         // Cerrar diálogo
         if (mounted) {
           Navigator.of(context).pop();
@@ -1137,19 +1172,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       } else {
-        throw 'No se puede abrir el enlace de descarga';
+        // Si todos los métodos fallan, mostrar diálogo con URL para copiar
+        _showManualDownloadDialog();
       }
-    } catch (e) {
-      print('❌ Error abriendo enlace de descarga: $e');
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Error abriendo enlace de descarga: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+    } catch (e) {
+      print('❌ Error general abriendo enlace de descarga: $e');
+      _showManualDownloadDialog();
     }
+  }
+  
+  /// Mostrar diálogo para descarga manual
+  void _showManualDownloadDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.download, color: Colors.blue),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Descarga Manual',
+                style: TextStyle(fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('No se pudo abrir automáticamente el enlace de descarga.'),
+            const SizedBox(height: 16),
+            const Text('Copia este enlace y ábrelo en tu navegador:'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: SelectableText(
+                UpdateService.downloadUrl,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // Cerrar diálogo manual
+              Navigator.of(context).pop(); // Cerrar diálogo de actualización
+            },
+            child: const Text('Cerrar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // Intentar copiar al portapapeles
+              try {
+                await Clipboard.setData(ClipboardData(text: UpdateService.downloadUrl));
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('📋 Enlace copiado al portapapeles'),
+                      backgroundColor: Colors.green,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              } catch (e) {
+                print('❌ Error copiando al portapapeles: $e');
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Copiar Enlace'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showStorageOptions() {
