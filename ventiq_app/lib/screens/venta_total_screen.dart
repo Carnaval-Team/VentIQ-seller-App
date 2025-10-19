@@ -587,31 +587,33 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const OrdersScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const OrdersScreen()),
     );
   }
 
   void _showCashOrders() {
     print('🔍 Mostrando órdenes pagadas con efectivo...');
     print('💰 Efectivo real: $_totalEfectivoReal');
-    
-    final completedOrders = _orderService.orders
-        .where((order) => 
-            order.status == OrderStatus.completada ||
-            order.status == OrderStatus.pagoConfirmado)
-        .toList();
+
+    final completedOrders =
+        _orderService.orders
+            .where(
+              (order) =>
+                  order.status == OrderStatus.completada ||
+                  order.status == OrderStatus.pagoConfirmado,
+            )
+            .toList();
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FilteredOrdersScreen(
-          filter: PaymentFilter.cash,
-          title: 'Órdenes - Efectivo',
-          orders: completedOrders,
-          totalAmount: _totalEfectivoReal,
-        ),
+        builder:
+            (context) => FilteredOrdersScreen(
+              filter: PaymentFilter.cash,
+              title: 'Órdenes - Efectivo',
+              orders: completedOrders,
+              totalAmount: _totalEfectivoReal,
+            ),
       ),
     );
   }
@@ -619,22 +621,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
   void _showTransferOrders() {
     print('🔍 Mostrando órdenes pagadas con transferencias...');
     print('💳 Total transferencias: ${(_totalEgresado - _egresosEfectivo)}');
-    
-    final completedOrders = _orderService.orders
-        .where((order) => 
-            order.status == OrderStatus.completada ||
-            order.status == OrderStatus.pagoConfirmado)
-        .toList();
+
+    final completedOrders =
+        _orderService.orders
+            .where(
+              (order) =>
+                  order.status == OrderStatus.completada ||
+                  order.status == OrderStatus.pagoConfirmado,
+            )
+            .toList();
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FilteredOrdersScreen(
-          filter: PaymentFilter.transfer,
-          title: 'Órdenes - Transferencias',
-          orders: completedOrders,
-          totalAmount: (_totalEgresado - _egresosEfectivo),
-        ),
+        builder:
+            (context) => FilteredOrdersScreen(
+              filter: PaymentFilter.transfer,
+              title: 'Órdenes - Transferencias',
+              orders: completedOrders,
+              totalAmount: (_totalEgresado - _egresosEfectivo),
+            ),
       ),
     );
   }
@@ -908,49 +914,61 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     for (final item in _productosVendidos) {
       print('🔍 Procesando item: ${item.nombre}');
       print('🔍 Ingredientes: ${item.ingredientes?.length ?? 0}');
-      
+
       // Si el producto tiene ingredientes, mostrar los ingredientes en lugar del producto
       if (item.ingredientes != null && item.ingredientes!.isNotEmpty) {
         print('🍽️ Producto elaborado detectado: ${item.nombre}');
-        
+
         // Procesar cada ingrediente
         for (final ingrediente in item.ingredientes!) {
-          final nombreIngrediente = ingrediente['nombre_ingrediente'] as String? ?? 'Ingrediente';
-          final cantidadVendida = (ingrediente['cantidad_vendida'] as num?)?.toDouble() ?? 0.0;
-          final cantidadInicial = (ingrediente['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
-          final cantidadFinal = (ingrediente['cantidad_final'] as num?)?.toDouble() ?? 0.0;
-          final unidadMedida = ingrediente['unidad_medida'] as String? ?? 'unidades';
-          final precioUnitario = (ingrediente['precio_unitario'] as num?)?.toDouble() ?? 0.0;
+          final nombreIngrediente =
+              ingrediente['nombre_ingrediente'] as String? ?? 'Ingrediente';
+          final cantidadVendida =
+              (ingrediente['cantidad_vendida'] as num?)?.toDouble() ?? 0.0;
+          final cantidadInicial =
+              (ingrediente['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
+          final cantidadFinal =
+              (ingrediente['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+          final unidadMedida =
+              ingrediente['unidad_medida'] as String? ?? 'unidades';
+          final precioUnitario =
+              (ingrediente['precio_unitario'] as num?)?.toDouble() ?? 0.0;
           final importe = (ingrediente['importe'] as num?)?.toDouble() ?? 0.0;
-          
+
           final keyIngrediente = '$nombreIngrediente ($unidadMedida)';
-          
+
           print('📦 Procesando ingrediente: $keyIngrediente');
           print('   - Cantidad vendida: $cantidadVendida');
           print('   - Cantidad inicial: $cantidadInicial');
           print('   - Cantidad final: $cantidadFinal');
           print('   - Precio unitario: $precioUnitario');
           print('   - Importe: $importe');
-          
+
           if (productosAgrupados.containsKey(keyIngrediente)) {
             // Sumar cantidades vendidas e importes de ingredientes duplicados
             productosAgrupados[keyIngrediente]!['cantidad'] += cantidadVendida;
             productosAgrupados[keyIngrediente]!['subtotal'] += importe;
             // Mantener los valores iniciales y finales del primer ingrediente
-            if (productosAgrupados[keyIngrediente]!['cantidadInicial'] == null) {
-              productosAgrupados[keyIngrediente]!['cantidadInicial'] = cantidadInicial;
+            if (productosAgrupados[keyIngrediente]!['cantidadInicial'] ==
+                null) {
+              productosAgrupados[keyIngrediente]!['cantidadInicial'] =
+                  cantidadInicial;
             }
             if (productosAgrupados[keyIngrediente]!['cantidadFinal'] == null) {
-              productosAgrupados[keyIngrediente]!['cantidadFinal'] = cantidadFinal;
+              productosAgrupados[keyIngrediente]!['cantidadFinal'] =
+                  cantidadFinal;
             }
           } else {
             // Crear entrada para el ingrediente
             productosAgrupados[keyIngrediente] = {
               'item': OrderItem(
-                id: 'ING-${ingrediente['id_ingrediente']}-${DateTime.now().millisecondsSinceEpoch}',
-                producto: item.producto, // Usar el producto padre para referencia
+                id:
+                    'ING-${ingrediente['id_ingrediente']}-${DateTime.now().millisecondsSinceEpoch}',
+                producto:
+                    item.producto, // Usar el producto padre para referencia
                 cantidad: cantidadVendida.toInt(),
-                precioUnitario: precioUnitario, // Precio unitario del ingrediente
+                precioUnitario:
+                    precioUnitario, // Precio unitario del ingrediente
                 ubicacionAlmacen: item.ubicacionAlmacen,
               ),
               'nombre': nombreIngrediente,
@@ -965,31 +983,34 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
         }
       } else {
         // Producto normal (no elaborado)
-        final key = item.nombre;
-        print('📦 Producto normal: $key');
-        
-        if (productosAgrupados.containsKey(key)) {
-          productosAgrupados[key]!['cantidad'] += item.cantidad;
-          productosAgrupados[key]!['subtotal'] += item.subtotal;
-          // Mantener los valores iniciales y finales del primer item (no sumar)
-          if (productosAgrupados[key]!['cantidadInicial'] == null &&
-              item.cantidadInicial != null) {
-            productosAgrupados[key]!['cantidadInicial'] = item.cantidadInicial;
+        if (!item.producto.esElaborado) {
+          final key = item.nombre;
+          print('📦 Producto normal: $key');
+
+          if (productosAgrupados.containsKey(key)) {
+            productosAgrupados[key]!['cantidad'] += item.cantidad;
+            productosAgrupados[key]!['subtotal'] += item.subtotal;
+            // Mantener los valores iniciales y finales del primer item (no sumar)
+            if (productosAgrupados[key]!['cantidadInicial'] == null &&
+                item.cantidadInicial != null) {
+              productosAgrupados[key]!['cantidadInicial'] =
+                  item.cantidadInicial;
+            }
+            if (productosAgrupados[key]!['cantidadFinal'] == null &&
+                item.cantidadFinal != null) {
+              productosAgrupados[key]!['cantidadFinal'] = item.cantidadFinal;
+            }
+          } else {
+            productosAgrupados[key] = {
+              'item': item,
+              'nombre': item.nombre,
+              'cantidad': item.cantidad,
+              'subtotal': item.subtotal,
+              'cantidadInicial': item.cantidadInicial,
+              'cantidadFinal': item.cantidadFinal,
+              'esIngrediente': false,
+            };
           }
-          if (productosAgrupados[key]!['cantidadFinal'] == null &&
-              item.cantidadFinal != null) {
-            productosAgrupados[key]!['cantidadFinal'] = item.cantidadFinal;
-          }
-        } else {
-          productosAgrupados[key] = {
-            'item': item,
-            'nombre': item.nombre,
-            'cantidad': item.cantidad,
-            'subtotal': item.subtotal,
-            'cantidadInicial': item.cantidadInicial,
-            'cantidadFinal': item.cantidadFinal,
-            'esIngrediente': false,
-          };
         }
       }
     }
@@ -1083,7 +1104,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     final unidadMedida = producto['unidadMedida'] as String?;
 
     // Para ingredientes, usar las cantidades reales del ingrediente
-    final cantidadMostrar = esIngrediente ? cantidad.toDouble() : cantidad.toDouble();
+    final cantidadMostrar =
+        esIngrediente ? cantidad.toDouble() : cantidad.toDouble();
     final cantidadInicialMostrar = cantidadInicial ?? 0.0;
     final cantidadFinalMostrar = cantidadFinal ?? 0.0;
 
@@ -1119,7 +1141,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: esIngrediente ? Colors.orange[800] : const Color(0xFF1F2937),
+                          color:
+                              esIngrediente
+                                  ? Colors.orange[800]
+                                  : const Color(0xFF1F2937),
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -1131,17 +1156,14 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
                   Text(
                     'Ingrediente${unidadMedida != null ? ' ($unidadMedida)' : ''}',
                     style: TextStyle(
-                      fontSize: 10, 
+                      fontSize: 10,
                       color: Colors.orange[600],
                       fontStyle: FontStyle.italic,
                     ),
                   ),
                   Text(
                     '\$${item.precioUnitario.toStringAsFixed(2)} c/u',
-                    style: TextStyle(
-                      fontSize: 10, 
-                      color: Colors.orange[600],
-                    ),
+                    style: TextStyle(fontSize: 10, color: Colors.orange[600]),
                   ),
                 ] else ...[
                   Text(
@@ -1199,7 +1221,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: esIngrediente ? Colors.orange[700] : const Color(0xFF4A90E2),
+                color:
+                    esIngrediente
+                        ? Colors.orange[700]
+                        : const Color(0xFF4A90E2),
               ),
               textAlign: TextAlign.right,
             ),

@@ -792,7 +792,7 @@ class OrderService {
               esComprable: true,
               esInventariable: true,
               esPorLotes: false,
-              esElaborado: false, // Default value for order items
+              esElaborado: item['es_elaborado'] ?? false, // Default value for order items
               esServicio: false, // Default value for order items
               categoria: 'General',
               descripcion: item['presentacion'] ?? '',
