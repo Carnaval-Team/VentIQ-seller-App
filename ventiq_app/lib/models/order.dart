@@ -88,6 +88,8 @@ class OrderItem {
   // Nuevos campos para inventario
   final double? cantidadInicial;
   final double? cantidadFinal;
+  // Campo para ingredientes de productos elaborados
+  final List<dynamic>? ingredientes;
 
   OrderItem({
     required this.id,
@@ -102,6 +104,7 @@ class OrderItem {
     this.promotionData,
     this.cantidadInicial,
     this.cantidadFinal,
+    this.ingredientes,
   });
 
   double get subtotal {
@@ -161,6 +164,7 @@ class OrderItem {
     Map<String, dynamic>? promotionData,
     double? cantidadInicial,
     double? cantidadFinal,
+    List<dynamic>? ingredientes,
   }) {
     return OrderItem(
       id: id ?? this.id,
@@ -175,6 +179,7 @@ class OrderItem {
       promotionData: promotionData ?? this.promotionData,
       cantidadInicial: cantidadInicial ?? this.cantidadInicial,
       cantidadFinal: cantidadFinal ?? this.cantidadFinal,
+      ingredientes: ingredientes ?? this.ingredientes,
     );
   }
 }

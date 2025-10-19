@@ -212,12 +212,12 @@ class OrderService {
     try {
       final userPrefs = UserPreferencesService();
       final isOfflineModeEnabled = await userPrefs.isOfflineModeEnabled();
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Actualizando estado de orden offline...');
         return await _updateOrderStatusOffline(orderId, newStatus);
       }
-      
+
       // Extraer el ID de operación del orderId (formato: ORD-{id_operacion})
       final operationId = int.tryParse(orderId.replaceFirst('ORD-', ''));
       if (operationId == null) {
@@ -235,7 +235,7 @@ class OrderService {
         final orderIndex = _orders.indexWhere((order) => order.id == orderId);
         if (orderIndex != -1) {
           final updatedOrder = _orders[orderIndex].copyWith(status: newStatus);
-        print('updatedOrder: ${updatedOrder.status} $newStatus');
+          print('updatedOrder: ${updatedOrder.status} $newStatus');
           _orders[orderIndex] = updatedOrder;
         }
 
@@ -391,10 +391,11 @@ class OrderService {
 
       // Preparar productos para fn_registrar_venta
       final productos = <Map<String, dynamic>>[];
-      
+
       for (final item in order.items) {
         final inventoryData = item.inventoryData ?? {};
-        final decompositionData = inventoryData['decomposition_data'] as Map<String, dynamic>?;
+        final decompositionData =
+            inventoryData['decomposition_data'] as Map<String, dynamic>?;
 
         print('ID del producto: ${item.producto.id}');
         print('ID de la variante (si aplica): ${inventoryData['id_variante']}');
@@ -405,7 +406,9 @@ class OrderService {
         double correctPrice = item.displayPrice;
 
         print('🏷️ Item: ${item.nombre}');
-        print('💰 Payment Method: ${item.paymentMethod?.displayName ?? 'None'} (ID: ${item.paymentMethod?.id})');
+        print(
+          '💰 Payment Method: ${item.paymentMethod?.displayName ?? 'None'} (ID: ${item.paymentMethod?.id})',
+        );
         print('💵 Precio Base: ${item.precioBase}');
         print('💸 Precio Unitario (con descuento): ${item.precioUnitario}');
         print('✅ Precio Final Enviado: $correctPrice');
@@ -419,20 +422,21 @@ class OrderService {
           'id_presentacion': inventoryData['id_presentacion'],
           'cantidad': item.cantidad,
           'precio_unitario': correctPrice,
-          'sku_producto': inventoryData['sku_producto'] ?? item.producto.id.toString(),
+          'sku_producto':
+              inventoryData['sku_producto'] ?? item.producto.id.toString(),
           'sku_ubicacion': inventoryData['sku_ubicacion'],
           'es_producto_venta': true, // Mark as sales product
         };
-        
+
         productos.add(mainProduct);
 
         // If this is an elaborated product, add its ingredients for inventory deduction
         // if (decompositionData != null && decompositionData['es_elaborado'] == true) {
         //   print('🍽️ Producto elaborado detectado: ${item.nombre}');
-          
+
         //   final ingredientes = decompositionData['ingredientes_descompuestos'] as List<dynamic>? ?? [];
         //   print('📦 Agregando ${ingredientes.length} ingredientes para rebaja de inventario');
-          
+
         //   for (final ingrediente in ingredientes) {
         //     final ingredientProduct = {
         //       'id_producto': ingrediente['id_producto'],
@@ -447,7 +451,7 @@ class OrderService {
         //       'es_ingrediente_elaborado': true, // Mark as ingredient for inventory
         //       'producto_elaborado_id': item.producto.id, // Reference to parent product
         //     };
-            
+
         //     productos.add(ingredientProduct);
         //     print('📦 Ingrediente agregado: ID=${ingrediente['id_producto']}, Cantidad=${ingrediente['cantidad']}');
         //   }
@@ -551,9 +555,11 @@ class OrderService {
           int actualMethodId = item.paymentMethod!.id;
           if (actualMethodId == 999) {
             actualMethodId = 1; // Convertir a efectivo normal
-            print('🔄 Convirtiendo método especial "Pago Regular (Efectivo)" a método ID 1 (efectivo)');
+            print(
+              '🔄 Convirtiendo método especial "Pago Regular (Efectivo)" a método ID 1 (efectivo)',
+            );
           }
-          
+
           final itemTotal = item.subtotal;
 
           paymentsByMethod[actualMethodId] =
@@ -642,7 +648,8 @@ class OrderService {
 
       // Preparar parámetros para listar_ordenes sin filtro de fecha
       final rpcParams = {
-        'con_inventario_param': true, // ✅ Activar para obtener datos de inventario
+        'con_inventario_param':
+            true, // ✅ Activar para obtener datos de inventario
         'fecha_desde_param': null, // Sin filtro de fecha desde
         'fecha_hasta_param': null, // Sin filtro de fecha hasta
         'id_estado_param': null, // Todos los estados
@@ -726,7 +733,52 @@ class OrderService {
         if (detalles != null && detalles['items'] != null) {
           final items = detalles['items'] as List<dynamic>;
 
+          // Agrupar items por producto para evitar duplicados
+          Map<String, Map<String, dynamic>> groupedItems = {};
+
           for (var item in items) {
+            final productId = item['id_producto'].toString();
+            final variantId =
+                item['variante']?['id']?.toString() ?? 'no_variant';
+            final key = '${productId}_${variantId}';
+
+            if (!groupedItems.containsKey(key)) {
+              // Primera vez que vemos este producto/variante
+              groupedItems[key] = Map<String, dynamic>.from(item);
+
+              // Inicializar lista de ingredientes si existen
+              if (item['ingredientes'] != null) {
+                groupedItems[key]!['ingredientes'] = List<dynamic>.from(
+                  item['ingredientes'],
+                );
+              }
+            } else {
+              // Ya existe este producto/variante, consolidar ingredientes
+              if (item['ingredientes'] != null) {
+                final existingIngredientes =
+                    groupedItems[key]!['ingredientes'] as List<dynamic>? ?? [];
+                final newIngredientes = item['ingredientes'] as List<dynamic>;
+
+                // Agregar ingredientes que no estén ya en la lista
+                for (var newIngrediente in newIngredientes) {
+                  final exists = existingIngredientes.any(
+                    (existing) =>
+                        existing['id_ingrediente'] ==
+                        newIngrediente['id_ingrediente'],
+                  );
+
+                  if (!exists) {
+                    existingIngredientes.add(newIngrediente);
+                  }
+                }
+
+                groupedItems[key]!['ingredientes'] = existingIngredientes;
+              }
+            }
+          }
+
+          // Crear OrderItems desde los items agrupados
+          for (var item in groupedItems.values) {
             // Crear producto desde los datos de Supabase
             final product = Product(
               id: item['id_producto'],
@@ -766,6 +818,15 @@ class OrderService {
               );
             }
 
+            // Extraer ingredientes consolidados
+            List<dynamic>? ingredientes;
+            if (item['ingredientes'] != null) {
+              ingredientes = item['ingredientes'] as List<dynamic>;
+              print(
+                '🍽️ Ingredientes consolidados para ${product.denominacion}: ${ingredientes.length}',
+              );
+            }
+
             // Crear OrderItem
             final orderItem = OrderItem(
               id:
@@ -778,6 +839,8 @@ class OrderService {
               // Mapear nuevos campos de inventario desde la función SQL
               cantidadInicial: item['cantidad_inicial']?.toDouble(),
               cantidadFinal: item['cantidad_final']?.toDouble(),
+              // Mapear ingredientes consolidados
+              ingredientes: ingredientes,
             );
 
             orderItems.add(orderItem);
@@ -793,7 +856,9 @@ class OrderService {
         final clienteTelefono = clienteData?['telefono']?.toString() ?? '';
 
         // ✅ Debug: Verificar datos de pagos
-        print('🔍 Datos de pagos para orden ${supabaseOrder['id_operacion']}: ${supabaseOrder['detalles']['pagos']}');
+        print(
+          '🔍 Datos de pagos para orden ${supabaseOrder['id_operacion']}: ${supabaseOrder['detalles']['pagos']}',
+        );
 
         // Crear orden desde los datos de Supabase
         final order = Order(
@@ -808,7 +873,9 @@ class OrderService {
           paymentMethod: 'Efectivo', // Valor por defecto
           notas: supabaseOrder['observaciones'] ?? '',
           operationId: supabaseOrder['id_operacion'],
-          pagos: supabaseOrder['detalles']['pagos'] as List<dynamic>?, // ✅ Agregar campo pagos
+          pagos:
+              supabaseOrder['detalles']['pagos']
+                  as List<dynamic>?, // ✅ Agregar campo pagos
         );
 
         _orders.add(order);
@@ -844,74 +911,87 @@ class OrderService {
   int get totalOrders => _orders.length;
   int get currentOrderItemCount => _currentOrder?.totalItems ?? 0;
   double get currentOrderTotal => _currentOrder?.total ?? 0.0;
-  
+
   // ==================== MÉTODOS PARA MODO OFFLINE ====================
-  
+
   /// Hacer público el método de transformación para uso en orders_screen
   void transformSupabaseToOrdersPublic(List<dynamic> supabaseOrders) {
     _transformSupabaseToOrders(supabaseOrders);
   }
-  
+
   /// Agregar órdenes pendientes de sincronización a la lista
   void addPendingOrdersToList(List<Map<String, dynamic>> pendingOrders) {
     try {
-      print('📋 Agregando ${pendingOrders.length} órdenes pendientes a la lista...');
-      
+      print(
+        '📋 Agregando ${pendingOrders.length} órdenes pendientes a la lista...',
+      );
+
       for (var orderData in pendingOrders) {
         // Crear items de la orden
-        final items = (orderData['items'] as List<dynamic>).map((itemData) {
-          // Crear producto básico
-          final product = Product(
-            id: itemData['id_producto'] as int,
-            denominacion: itemData['denominacion'] as String,
-            precio: (itemData['precio_unitario'] as num).toDouble(),
-            cantidad: (itemData['cantidad'] as num).toInt(),
-            esRefrigerado: false,
-            esFragil: false,
-            esPeligroso: false,
-            esVendible: true,
-            esComprable: true,
-            esInventariable: true,
-            esPorLotes: false,
-            esElaborado: false,
-            esServicio: false,
-            categoria: 'General',
-            descripcion: null,
-            foto: null,
-          );
-          
-          // Extraer ubicación del almacén desde inventory_metadata
-          final inventoryMetadata = itemData['inventory_metadata'] as Map<String, dynamic>?;
-          final ubicacion = inventoryMetadata?['ubicacion_nombre'] as String? ?? 'Sin ubicación';
-          final almacen = inventoryMetadata?['almacen_nombre'] as String? ?? 'Sin almacén';
-          final ubicacionAlmacen = '$almacen - $ubicacion';
-          
-          // Crear OrderItem
-          return OrderItem(
-            id: '${orderData['id']}_${itemData['id_producto']}',
-            producto: product,
-            variante: null,
-            cantidad: (itemData['cantidad'] as num).toInt(),
-            precioUnitario: (itemData['precio_unitario'] as num).toDouble(),
-            ubicacionAlmacen: ubicacionAlmacen,
-            inventoryData: inventoryMetadata,
-            paymentMethod: null, // Se reconstruirá si es necesario
-          );
-        }).toList();
-        
+        final items =
+            (orderData['items'] as List<dynamic>).map((itemData) {
+              // Crear producto básico
+              final product = Product(
+                id: itemData['id_producto'] as int,
+                denominacion: itemData['denominacion'] as String,
+                precio: (itemData['precio_unitario'] as num).toDouble(),
+                cantidad: (itemData['cantidad'] as num).toInt(),
+                esRefrigerado: false,
+                esFragil: false,
+                esPeligroso: false,
+                esVendible: true,
+                esComprable: true,
+                esInventariable: true,
+                esPorLotes: false,
+                esElaborado: false,
+                esServicio: false,
+                categoria: 'General',
+                descripcion: null,
+                foto: null,
+              );
+
+              // Extraer ubicación del almacén desde inventory_metadata
+              final inventoryMetadata =
+                  itemData['inventory_metadata'] as Map<String, dynamic>?;
+              final ubicacion =
+                  inventoryMetadata?['ubicacion_nombre'] as String? ??
+                  'Sin ubicación';
+              final almacen =
+                  inventoryMetadata?['almacen_nombre'] as String? ??
+                  'Sin almacén';
+              final ubicacionAlmacen = '$almacen - $ubicacion';
+
+              // Crear OrderItem
+              return OrderItem(
+                id: '${orderData['id']}_${itemData['id_producto']}',
+                producto: product,
+                variante: null,
+                cantidad: (itemData['cantidad'] as num).toInt(),
+                precioUnitario: (itemData['precio_unitario'] as num).toDouble(),
+                ubicacionAlmacen: ubicacionAlmacen,
+                inventoryData: inventoryMetadata,
+                paymentMethod: null, // Se reconstruirá si es necesario
+              );
+            }).toList();
+
         // Crear orden con status pendiente de sincronización
         final order = Order(
           id: orderData['id'] as String,
           fechaCreacion: DateTime.parse(orderData['fecha_creacion'] as String),
           items: items,
           total: (orderData['total'] as num).toDouble(),
-          status: OrderStatus.pendienteDeSincronizacion, // Estado pendiente de sincronización para órdenes offline pendientes
-          pagos: orderData['pagos'] as List<dynamic>?, // ✅ Agregar campo pagos para órdenes offline
+          status:
+              OrderStatus
+                  .pendienteDeSincronizacion, // Estado pendiente de sincronización para órdenes offline pendientes
+          pagos:
+              orderData['pagos']
+                  as List<
+                    dynamic
+                  >?, // ✅ Agregar campo pagos para órdenes offline
         );
-        
+
         _orders.add(order);
       }
-      
     } catch (e, stackTrace) {
       print('❌ Error agregando órdenes pendientes: $e');
       print('Stack trace: $stackTrace');
@@ -925,36 +1005,44 @@ class OrderService {
   ) async {
     try {
       final userPrefs = UserPreferencesService();
-      
+
       // 1. Actualizar estado local inmediatamente
       final orderIndex = _orders.indexWhere((order) => order.id == orderId);
       if (orderIndex != -1) {
         final updatedOrder = _orders[orderIndex].copyWith(status: newStatus);
         _orders[orderIndex] = updatedOrder;
-        print('✅ Estado local actualizado: $orderId -> ${newStatus.toString()}');
+        print(
+          '✅ Estado local actualizado: $orderId -> ${newStatus.toString()}',
+        );
       } else {
         print('⚠️ Orden no encontrada localmente: $orderId');
       }
-      
+
       // 2. Verificar si la orden está en órdenes pendientes de sincronización
       final pendingOrders = await userPrefs.getPendingOrders();
       bool isOrderPending = false;
-      
+
       for (var pendingOrder in pendingOrders) {
         if (pendingOrder['id'] == orderId) {
           isOrderPending = true;
           break;
         }
       }
-      
+
       if (isOrderPending) {
         // 3. Si es una orden pendiente, actualizar su estado en las órdenes pendientes
-        await userPrefs.updatePendingOrderStatus(orderId, _orderStatusToString(newStatus), {
-          'updated_offline_at': DateTime.now().toIso8601String(),
-          'operation_type': 'status_change',
-        });
-        
-        print('📝 Estado actualizado en órdenes pendientes: $orderId -> ${newStatus.toString()}');
+        await userPrefs.updatePendingOrderStatus(
+          orderId,
+          _orderStatusToString(newStatus),
+          {
+            'updated_offline_at': DateTime.now().toIso8601String(),
+            'operation_type': 'status_change',
+          },
+        );
+
+        print(
+          '📝 Estado actualizado en órdenes pendientes: $orderId -> ${newStatus.toString()}',
+        );
       } else {
         // 4. Si no es una orden pendiente, crear operación de cambio de estado
         await userPrefs.savePendingOperation({
@@ -963,20 +1051,22 @@ class OrderService {
           'new_status': _orderStatusToString(newStatus),
           'timestamp': DateTime.now().toIso8601String(),
         });
-        
-        print('💾 Operación de cambio de estado guardada: $orderId -> ${newStatus.toString()}');
+
+        print(
+          '💾 Operación de cambio de estado guardada: $orderId -> ${newStatus.toString()}',
+        );
       }
-      
+
       return {
         'success': true,
-        'message': 'Estado actualizado offline. Se sincronizará cuando tengas conexión.',
+        'message':
+            'Estado actualizado offline. Se sincronizará cuando tengas conexión.',
         'offline': true,
       };
-      
     } catch (e, stackTrace) {
       print('❌ Error actualizando estado offline: $e');
       print('Stack trace: $stackTrace');
-      
+
       return {
         'success': false,
         'error': 'Error actualizando estado offline: ${e.toString()}',

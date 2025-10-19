@@ -906,32 +906,96 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     final productosAgrupados = <String, Map<String, dynamic>>{};
 
     for (final item in _productosVendidos) {
-      final key = item.nombre;
-      print('Item: ${item}');
-      if (productosAgrupados.containsKey(key)) {
-        productosAgrupados[key]!['cantidad'] += item.cantidad;
-        productosAgrupados[key]!['subtotal'] += item.subtotal;
-        // Mantener los valores iniciales y finales del primer item (no sumar)
-        if (productosAgrupados[key]!['cantidadInicial'] == null &&
-            item.cantidadInicial != null) {
-          productosAgrupados[key]!['cantidadInicial'] = item.cantidadInicial;
-        }
-        if (productosAgrupados[key]!['cantidadFinal'] == null &&
-            item.cantidadFinal != null) {
-          productosAgrupados[key]!['cantidadFinal'] = item.cantidadFinal;
+      print('🔍 Procesando item: ${item.nombre}');
+      print('🔍 Ingredientes: ${item.ingredientes?.length ?? 0}');
+      
+      // Si el producto tiene ingredientes, mostrar los ingredientes en lugar del producto
+      if (item.ingredientes != null && item.ingredientes!.isNotEmpty) {
+        print('🍽️ Producto elaborado detectado: ${item.nombre}');
+        
+        // Procesar cada ingrediente
+        for (final ingrediente in item.ingredientes!) {
+          final nombreIngrediente = ingrediente['nombre_ingrediente'] as String? ?? 'Ingrediente';
+          final cantidadVendida = (ingrediente['cantidad_vendida'] as num?)?.toDouble() ?? 0.0;
+          final cantidadInicial = (ingrediente['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
+          final cantidadFinal = (ingrediente['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+          final unidadMedida = ingrediente['unidad_medida'] as String? ?? 'unidades';
+          final precioUnitario = (ingrediente['precio_unitario'] as num?)?.toDouble() ?? 0.0;
+          final importe = (ingrediente['importe'] as num?)?.toDouble() ?? 0.0;
+          
+          final keyIngrediente = '$nombreIngrediente ($unidadMedida)';
+          
+          print('📦 Procesando ingrediente: $keyIngrediente');
+          print('   - Cantidad vendida: $cantidadVendida');
+          print('   - Cantidad inicial: $cantidadInicial');
+          print('   - Cantidad final: $cantidadFinal');
+          print('   - Precio unitario: $precioUnitario');
+          print('   - Importe: $importe');
+          
+          if (productosAgrupados.containsKey(keyIngrediente)) {
+            // Sumar cantidades vendidas e importes de ingredientes duplicados
+            productosAgrupados[keyIngrediente]!['cantidad'] += cantidadVendida;
+            productosAgrupados[keyIngrediente]!['subtotal'] += importe;
+            // Mantener los valores iniciales y finales del primer ingrediente
+            if (productosAgrupados[keyIngrediente]!['cantidadInicial'] == null) {
+              productosAgrupados[keyIngrediente]!['cantidadInicial'] = cantidadInicial;
+            }
+            if (productosAgrupados[keyIngrediente]!['cantidadFinal'] == null) {
+              productosAgrupados[keyIngrediente]!['cantidadFinal'] = cantidadFinal;
+            }
+          } else {
+            // Crear entrada para el ingrediente
+            productosAgrupados[keyIngrediente] = {
+              'item': OrderItem(
+                id: 'ING-${ingrediente['id_ingrediente']}-${DateTime.now().millisecondsSinceEpoch}',
+                producto: item.producto, // Usar el producto padre para referencia
+                cantidad: cantidadVendida.toInt(),
+                precioUnitario: precioUnitario, // Precio unitario del ingrediente
+                ubicacionAlmacen: item.ubicacionAlmacen,
+              ),
+              'nombre': nombreIngrediente,
+              'unidadMedida': unidadMedida,
+              'cantidad': cantidadVendida,
+              'subtotal': importe, // Importe del ingrediente
+              'cantidadInicial': cantidadInicial,
+              'cantidadFinal': cantidadFinal,
+              'esIngrediente': true,
+            };
+          }
         }
       } else {
-        productosAgrupados[key] = {
-          'item': item,
-          'cantidad': item.cantidad,
-          'subtotal': item.subtotal,
-          'cantidadInicial': item.cantidadInicial,
-          'cantidadFinal': item.cantidadFinal,
-        };
+        // Producto normal (no elaborado)
+        final key = item.nombre;
+        print('📦 Producto normal: $key');
+        
+        if (productosAgrupados.containsKey(key)) {
+          productosAgrupados[key]!['cantidad'] += item.cantidad;
+          productosAgrupados[key]!['subtotal'] += item.subtotal;
+          // Mantener los valores iniciales y finales del primer item (no sumar)
+          if (productosAgrupados[key]!['cantidadInicial'] == null &&
+              item.cantidadInicial != null) {
+            productosAgrupados[key]!['cantidadInicial'] = item.cantidadInicial;
+          }
+          if (productosAgrupados[key]!['cantidadFinal'] == null &&
+              item.cantidadFinal != null) {
+            productosAgrupados[key]!['cantidadFinal'] = item.cantidadFinal;
+          }
+        } else {
+          productosAgrupados[key] = {
+            'item': item,
+            'nombre': item.nombre,
+            'cantidad': item.cantidad,
+            'subtotal': item.subtotal,
+            'cantidadInicial': item.cantidadInicial,
+            'cantidadFinal': item.cantidadFinal,
+            'esIngrediente': false,
+          };
+        }
       }
     }
 
     final productosFinales = productosAgrupados.values.toList();
+    print('📋 Total items en resumen: ${productosFinales.length}');
 
     return Column(
       children: [
@@ -1010,38 +1074,81 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
   Widget _buildDetailedProductItem(Map<String, dynamic> producto) {
     final item = producto['item'] as OrderItem;
-    final cantidad = producto['cantidad'] as int;
+    final cantidad = producto['cantidad'] as num;
     final subtotal = producto['subtotal'] as double;
     final cantidadInicial = producto['cantidadInicial'] as double?;
     final cantidadFinal = producto['cantidadFinal'] as double?;
+    final esIngrediente = producto['esIngrediente'] as bool? ?? false;
+    final nombre = producto['nombre'] as String? ?? item.nombre;
+    final unidadMedida = producto['unidadMedida'] as String?;
+
+    // Para ingredientes, usar las cantidades reales del ingrediente
+    final cantidadMostrar = esIngrediente ? cantidad.toDouble() : cantidad.toDouble();
+    final cantidadInicialMostrar = cantidadInicial ?? 0.0;
+    final cantidadFinalMostrar = cantidadFinal ?? 0.0;
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+        // Fondo diferente para ingredientes
+        color: esIngrediente ? Colors.orange[50] : Colors.white,
       ),
       child: Row(
         children: [
-          // Nombre del producto
+          // Nombre del producto/ingrediente
           Expanded(
             flex: 3,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  item.nombre,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF1F2937),
+                Row(
+                  children: [
+                    // Ícono para ingredientes
+                    if (esIngrediente) ...[
+                      Icon(
+                        Icons.restaurant,
+                        size: 14,
+                        color: Colors.orange[700],
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Expanded(
+                      child: Text(
+                        nombre,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: esIngrediente ? Colors.orange[800] : const Color(0xFF1F2937),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                if (esIngrediente) ...[
+                  Text(
+                    'Ingrediente${unidadMedida != null ? ' ($unidadMedida)' : ''}',
+                    style: TextStyle(
+                      fontSize: 10, 
+                      color: Colors.orange[600],
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  '\$${item.precioUnitario.toStringAsFixed(0)} c/u',
-                  style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-                ),
+                  Text(
+                    '\$${item.precioUnitario.toStringAsFixed(2)} c/u',
+                    style: TextStyle(
+                      fontSize: 10, 
+                      color: Colors.orange[600],
+                    ),
+                  ),
+                ] else ...[
+                  Text(
+                    '\$${item.precioUnitario.toStringAsFixed(0)} c/u',
+                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1049,7 +1156,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Cantidad Inicial
           Expanded(
             child: Text(
-              ((cantidadFinal ?? 0) + (cantidad )).toStringAsFixed(0),
+              cantidadInicialMostrar.toStringAsFixed(esIngrediente ? 1 : 0),
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -1062,10 +1169,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Cantidad Vendida
           Expanded(
             child: Text(
-              cantidad.toString(),
-              style: const TextStyle(
+              cantidadMostrar.toStringAsFixed(esIngrediente ? 1 : 0),
+              style: TextStyle(
                 fontSize: 12,
-                color: Colors.orange,
+                color: esIngrediente ? Colors.orange[700] : Colors.orange,
                 fontWeight: FontWeight.w500,
               ),
               textAlign: TextAlign.center,
@@ -1075,7 +1182,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Cantidad Final
           Expanded(
             child: Text(
-              (cantidadFinal ?? 0).toStringAsFixed(0) ,
+              cantidadFinalMostrar.toStringAsFixed(esIngrediente ? 1 : 0),
               style: const TextStyle(
                 fontSize: 12,
                 color: Colors.green,
@@ -1085,14 +1192,14 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             ),
           ),
 
-          // Total
+          // Total (ahora incluye ingredientes)
           Expanded(
             child: Text(
-              '\$${subtotal.toStringAsFixed(0)}',
-              style: const TextStyle(
+              '\$${subtotal.toStringAsFixed(esIngrediente ? 2 : 0)}',
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF4A90E2),
+                color: esIngrediente ? Colors.orange[700] : const Color(0xFF4A90E2),
               ),
               textAlign: TextAlign.right,
             ),

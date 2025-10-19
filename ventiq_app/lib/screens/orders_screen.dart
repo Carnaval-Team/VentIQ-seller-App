@@ -20,7 +20,8 @@ class OrdersScreen extends StatefulWidget {
 class _OrdersScreenState extends State<OrdersScreen> {
   final OrderService _orderService = OrderService();
   final PrinterManager _printerManager = PrinterManager();
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
   final TextEditingController _searchController = TextEditingController();
   List<Order> _filteredOrders = [];
   String _searchQuery = '';
@@ -41,95 +42,112 @@ class _OrdersScreenState extends State<OrdersScreen> {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-      
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Preservando cambios locales y recargando...');
-        
+
         // Guardar cambios de estado locales antes de limpiar
         final localStateChanges = <String, OrderStatus>{};
-        final pendingOperations = await _userPreferencesService.getPendingOperations();
-        
+        final pendingOperations =
+            await _userPreferencesService.getPendingOperations();
+
         // Identificar órdenes que han sido modificadas offline
         for (final order in _orderService.orders) {
           // Capturar órdenes pendientes de sincronización
           if (order.status == OrderStatus.pendienteDeSincronizacion) {
             localStateChanges[order.id] = order.status;
           }
-          
+
           // Capturar órdenes que tienen operaciones pendientes de cambio de estado
           for (final operation in pendingOperations) {
-            if (operation['type'] == 'order_status_change' && 
+            if (operation['type'] == 'order_status_change' &&
                 operation['order_id'] == order.id) {
               final newStatusString = operation['new_status'] as String;
               final newStatus = _stringToOrderStatus(newStatusString);
               if (newStatus != null) {
                 localStateChanges[order.id] = newStatus;
-                print('📋 Cambio de estado offline detectado: ${order.id} -> $newStatusString');
+                print(
+                  '📋 Cambio de estado offline detectado: ${order.id} -> $newStatusString',
+                );
               }
               break;
             }
           }
         }
-        
+
         // Limpiar órdenes antes de cargar las nuevas
         _orderService.clearAllOrders();
-        
+
         // Cargar órdenes sincronizadas desde cache
         final offlineData = await _userPreferencesService.getOfflineData();
         if (offlineData != null && offlineData['orders'] != null) {
           final ordersData = offlineData['orders'] as List<dynamic>;
           _orderService.transformSupabaseToOrdersPublic(ordersData);
-          print('✅ Órdenes sincronizadas cargadas desde cache: ${ordersData.length}');
+          print(
+            '✅ Órdenes sincronizadas cargadas desde cache: ${ordersData.length}',
+          );
         }
-        
+
         // Cargar órdenes pendientes de sincronización
         final pendingOrders = await _userPreferencesService.getPendingOrders();
         if (pendingOrders.isNotEmpty) {
           _orderService.addPendingOrdersToList(pendingOrders);
-          print('⏳ Órdenes pendientes de sincronización: ${pendingOrders.length}');
+          print(
+            '⏳ Órdenes pendientes de sincronización: ${pendingOrders.length}',
+          );
         }
-        
+
         // Aplicar cambios de estado offline después de cargar todas las órdenes
         if (localStateChanges.isNotEmpty) {
-          print('🔄 Aplicando ${localStateChanges.length} cambios de estado offline...');
+          print(
+            '🔄 Aplicando ${localStateChanges.length} cambios de estado offline...',
+          );
           for (final entry in localStateChanges.entries) {
             final orderId = entry.key;
             final newStatus = entry.value;
-            
-            final orderIndex = _orderService.orders.indexWhere((order) => order.id == orderId);
+
+            final orderIndex = _orderService.orders.indexWhere(
+              (order) => order.id == orderId,
+            );
             if (orderIndex != -1) {
               final currentOrder = _orderService.orders[orderIndex];
-              
+
               // Solo actualizar si el estado actual es diferente al cambio offline
               if (currentOrder.status != newStatus) {
                 final updatedOrder = currentOrder.copyWith(status: newStatus);
                 _orderService.orders[orderIndex] = updatedOrder;
-                print('🔄 Estado aplicado: $orderId -> ${currentOrder.status} → ${newStatus.toString()}');
+                print(
+                  '🔄 Estado aplicado: $orderId -> ${currentOrder.status} → ${newStatus.toString()}',
+                );
               } else {
-                print('ℹ️ Estado ya correcto: $orderId -> ${newStatus.toString()}');
+                print(
+                  'ℹ️ Estado ya correcto: $orderId -> ${newStatus.toString()}',
+                );
               }
             } else {
               print('⚠️ Orden no encontrada para restaurar estado: $orderId');
             }
           }
-          
+
           // Verificar si hay operaciones pendientes que necesitan ser aplicadas
           final hasChanges = await _applyPendingStatusChanges();
-          
+
           // Actualizar UI después de aplicar todos los cambios
           if (hasChanges) {
-            print('🔄 Forzando actualización de UI después de cambios de estado...');
+            print(
+              '🔄 Forzando actualización de UI después de cambios de estado...',
+            );
             setState(() {
               _filteredOrders = List.from(_orderService.orders);
               _filterOrders(); // Re-aplicar filtros si los hay
             });
           }
         }
-        
       } else {
         print('🌐 Modo online - Cargando órdenes desde Supabase...');
         // Limpiar órdenes antes de cargar las nuevas para evitar mezclar usuarios
@@ -137,7 +155,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         await _orderService.listOrdersFromSupabase();
         print('✅ Órdenes cargadas desde Supabase');
       }
-      
+
       // Actualizar la UI después de cargar las órdenes
       if (mounted) {
         setState(() {
@@ -250,39 +268,39 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Cargando órdenes...',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
+      body:
+          _isLoading
+              ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Color(0xFF4A90E2),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    Text(
+                      'Cargando órdenes...',
+                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              )
+              : RefreshIndicator(
+                onRefresh: _refreshOrders,
+                child: Column(
+                  children: [
+                    _buildSearchBar(),
+                    Expanded(
+                      child:
+                          orders.isEmpty
+                              ? _buildEmptyState()
+                              : _buildOrdersList(orders),
+                    ),
+                  ],
+                ),
               ),
-            )
-          : RefreshIndicator(
-              onRefresh: _refreshOrders,
-              child: Column(
-                children: [
-                  _buildSearchBar(),
-                  Expanded(
-                    child:
-                        orders.isEmpty
-                            ? _buildEmptyState()
-                            : _buildOrdersList(orders),
-                  ),
-                ],
-              ),
-            ),
       endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 2, // Órdenes tab
@@ -371,22 +389,35 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     // Agrupar órdenes por prioridad actualizada
     final offlineOrders =
-        orders.where((o) => _getStatusPriority(o.status) == 0).toList(); // Pendientes de sincronización
+        orders
+            .where((o) => _getStatusPriority(o.status) == 0)
+            .toList(); // Pendientes de sincronización
     final draftOrders =
-        orders.where((o) => _getStatusPriority(o.status) == 1).toList(); // Borradores
+        orders
+            .where((o) => _getStatusPriority(o.status) == 1)
+            .toList(); // Borradores
     final pendingOrders =
-        orders.where((o) => _getStatusPriority(o.status) == 2).toList(); // Enviadas/Procesando
+        orders
+            .where((o) => _getStatusPriority(o.status) == 2)
+            .toList(); // Enviadas/Procesando
     final paymentConfirmedOrders =
-        orders.where((o) => _getStatusPriority(o.status) == 3).toList(); // Pago confirmado
+        orders
+            .where((o) => _getStatusPriority(o.status) == 3)
+            .toList(); // Pago confirmado
     final completedOrders =
-        orders.where((o) => _getStatusPriority(o.status) == 4).toList(); // Completadas/Canceladas
+        orders
+            .where((o) => _getStatusPriority(o.status) == 4)
+            .toList(); // Completadas/Canceladas
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // Órdenes offline pendientes de sincronización
         if (offlineOrders.isNotEmpty) ...[
-          _buildSectionHeader('⏳ Pendientes de Sincronización', offlineOrders.length),
+          _buildSectionHeader(
+            '⏳ Pendientes de Sincronización',
+            offlineOrders.length,
+          ),
           ...offlineOrders.map((order) => _buildOrderCard(order)),
           const SizedBox(height: 16),
         ],
@@ -407,7 +438,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
         // Órdenes con pago confirmado
         if (paymentConfirmedOrders.isNotEmpty) ...[
-          _buildSectionHeader('💰 Pago Confirmado', paymentConfirmedOrders.length),
+          _buildSectionHeader(
+            '💰 Pago Confirmado',
+            paymentConfirmedOrders.length,
+          ),
           ...paymentConfirmedOrders.map((order) => _buildOrderCard(order)),
           const SizedBox(height: 16),
         ],
@@ -784,52 +818,108 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             ),
                             const SizedBox(height: 8),
                             // Lista de productos (filtrar productos con precio 0)
-                            ...order.items.where((item) => item.subtotal > 0).map(
-                              (item) => Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.grey[200]!),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      item.nombre,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: Color(0xFF1F2937),
+                            ...order.items
+                                .where((item) => item.subtotal > 0)
+                                .map(
+                                  (item) => Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[50],
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.grey[200]!,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Cantidad: ${item.cantidad} • ${item.ubicacionAlmacen}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                        Text(
-                                          '\$${item.subtotal.toStringAsFixed(2)}',
+                                          item.nombre,
                                           style: const TextStyle(
                                             fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF4A90E2),
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF1F2937),
                                           ),
                                         ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              'Cantidad: ${item.cantidad} • ${item.ubicacionAlmacen}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                            Text(
+                                              '\$${item.subtotal.toStringAsFixed(2)}',
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFF4A90E2),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        // Mostrar ingredientes si existen
+                                        if (item.ingredientes != null && item.ingredientes!.isNotEmpty) ...[
+                                          const SizedBox(height: 8),
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.orange[50],
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: Colors.orange[200]!,
+                                                width: 1,
+                                              ),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.restaurant,
+                                                      size: 14,
+                                                      color: Colors.orange[700],
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      'Ingredientes utilizados:',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Colors.orange[700],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                ...item.ingredientes!.map((ingrediente) {
+                                                  return Padding(
+                                                    padding: const EdgeInsets.only(left: 18, bottom: 2),
+                                                    child: Text(
+                                                      '• ${ingrediente['nombre_ingrediente']} - ${ingrediente['cantidad_vendida']} ${ingrediente['unidad_medida'] ?? 'unidades'}',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors.grey[700],
+                                                      ),
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            ),
 
                             // Botones de acción
                             const SizedBox(height: 24),
@@ -965,7 +1055,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (newStatus == OrderStatus.cancelada) {
       try {
         final storeConfig = await _userPreferencesService.getStoreConfig();
-        if (storeConfig != null && storeConfig['need_master_password_to_cancel'] == true) {
+        if (storeConfig != null &&
+            storeConfig['need_master_password_to_cancel'] == true) {
           _showMasterPasswordDialog(order, newStatus, title, message, color);
           return;
         }
@@ -978,28 +1069,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
     // Flujo normal para otros estados o cuando no se requiere contraseña maestra
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  _updateOrderStatus(order, newStatus);
+                  Navigator.pop(context); // Cerrar diálogo
+                  Navigator.pop(context); // Cerrar modal de detalles
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Confirmar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              _updateOrderStatus(order, newStatus);
-              Navigator.pop(context); // Cerrar diálogo
-              Navigator.pop(context); // Cerrar modal de detalles
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Confirmar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1008,16 +1100,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: Color(0xFF4A90E2)),
-            SizedBox(height: 16),
-            Text('Actualizando estado...'),
-          ],
-        ),
-      ),
+      builder:
+          (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                SizedBox(height: 16),
+                Text('Actualizando estado...'),
+              ],
+            ),
+          ),
     );
 
     try {
@@ -1300,57 +1393,55 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   /// Verificar configuración de Impresión y mostrar diálogo si está habilitada
   Future<void> _checkAndShowPrintDialog(Order order) async {
-    print('DEBUG: Verificando configuración de Impresión para orden ${order.id}');
-    
+    print(
+      'DEBUG: Verificando configuración de Impresión para orden ${order.id}',
+    );
+
     // Verificar si la Impresión está habilitada
     final isPrintEnabled = await _userPreferencesService.isPrintEnabled();
     print('DEBUG: Impresión habilitada: $isPrintEnabled');
-    
+
     if (isPrintEnabled) {
       print('DEBUG: Impresión habilitada - Usando PrinterManager');
       print(' Plataforma detectada: ${PlatformUtils.isWeb ? "Web" : "Móvil"}');
-      
+
       // Usar PrinterManager que decide automáticamente el tipo de Impresión
       Future.delayed(Duration(milliseconds: 500), () {
         _printOrderWithManager(order);
       });
     } else {
-      print('DEBUG: Impresión deshabilitada - No se muestra diálogo de Impresión');
+      print(
+        'DEBUG: Impresión deshabilitada - No se muestra diálogo de Impresión',
+      );
     }
   }
 
   /// Imprimir orden usando PrinterManager (detecta automáticamente la plataforma)
   Future<void> _printOrderWithManager(Order order) async {
     try {
-      print('🖨️ Iniciando impresión con PrinterManager para orden ${order.id}');
-      
+      print(
+        '🖨️ Iniciando impresión con PrinterManager para orden ${order.id}',
+      );
+
       // Usar PrinterManager que maneja automáticamente web vs móvil
       final result = await _printerManager.printInvoice(context, order);
-      
+
       if (result.success) {
-        _showSuccessDialog(
-          '¡Factura Impresa!',
-          result.message,
-        );
+        _showSuccessDialog('¡Factura Impresa!', result.message);
         print('✅ ${result.message} (${result.platform})');
       } else {
-        _showErrorDialog(
-          'Error de Impresión',
-          result.message,
-        );
+        _showErrorDialog('Error de Impresión', result.message);
         print('❌ ${result.message} (${result.platform})');
       }
-      
+
       if (result.details != null) {
         print('ℹ️ Detalles: ${result.details}');
       }
-      
     } catch (e) {
       _showErrorDialog('Error', 'Ocurrió un error durante la impresión: $e');
       print('❌ Error en _printOrderWithManager: $e');
     }
   }
-
 
   /// Mostrar diálogo de error
   void _showErrorDialog(String title, String message) {
@@ -1413,7 +1504,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   // Personalizar nombres de métodos de pago para el desglose
   String _getCustomPaymentMethodName(Map<String, dynamic> payment) {
     final mediopagoId = payment['medio_pago_id'];
-    
+
     if (mediopagoId == 1) {
       return 'Dinero en efectivo';
     } else {
@@ -1449,50 +1540,62 @@ class _OrdersScreenState extends State<OrdersScreen> {
   /// Aplicar cambios de estado pendientes que no se han sincronizado
   Future<bool> _applyPendingStatusChanges() async {
     try {
-      final pendingOperations = await _userPreferencesService.getPendingOperations();
-      
+      final pendingOperations =
+          await _userPreferencesService.getPendingOperations();
+
       if (pendingOperations.isEmpty) {
         print('ℹ️ No hay operaciones pendientes de cambio de estado');
         return false;
       }
-      
-      print('🔄 Aplicando ${pendingOperations.length} operaciones pendientes...');
+
+      print(
+        '🔄 Aplicando ${pendingOperations.length} operaciones pendientes...',
+      );
       bool hasChanges = false;
-      
+
       for (final operation in pendingOperations) {
         if (operation['type'] == 'order_status_change') {
           final orderId = operation['order_id'] as String;
           final newStatusString = operation['new_status'] as String;
           final newStatus = _stringToOrderStatus(newStatusString);
-          
+
           if (newStatus != null) {
-            final orderIndex = _orderService.orders.indexWhere((order) => order.id == orderId);
+            final orderIndex = _orderService.orders.indexWhere(
+              (order) => order.id == orderId,
+            );
             if (orderIndex != -1) {
               final currentOrder = _orderService.orders[orderIndex];
-              
+
               // Aplicar el cambio de estado pendiente
               if (currentOrder.status != newStatus) {
                 final updatedOrder = currentOrder.copyWith(status: newStatus);
                 _orderService.orders[orderIndex] = updatedOrder;
                 hasChanges = true;
-                print('🔄 Operación pendiente aplicada: $orderId -> ${currentOrder.status} → ${newStatus.toString()}');
-                print('🎯 Estado final confirmado: ${_orderService.orders[orderIndex].status}');
+                print(
+                  '🔄 Operación pendiente aplicada: $orderId -> ${currentOrder.status} → ${newStatus.toString()}',
+                );
+                print(
+                  '🎯 Estado final confirmado: ${_orderService.orders[orderIndex].status}',
+                );
               } else {
-                print('ℹ️ Estado ya aplicado: $orderId -> ${newStatus.toString()}');
+                print(
+                  'ℹ️ Estado ya aplicado: $orderId -> ${newStatus.toString()}',
+                );
               }
             } else {
-              print('⚠️ Orden no encontrada para operación pendiente: $orderId');
+              print(
+                '⚠️ Orden no encontrada para operación pendiente: $orderId',
+              );
             }
           }
         }
       }
-      
+
       if (hasChanges) {
         print('✅ Se aplicaron cambios de estado - UI será actualizada');
       }
-      
+
       return hasChanges;
-      
     } catch (e) {
       print('❌ Error aplicando cambios de estado pendientes: $e');
       return false;
@@ -1511,128 +1614,136 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(
-                Icons.vpn_key,
-                color: Colors.orange,
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Contraseña Maestra',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Ingresa la contraseña maestra para cancelar esta orden.',
-                style: TextStyle(fontSize: 16),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: passwordController,
-                obscureText: obscurePassword,
-                decoration: InputDecoration(
-                  labelText: 'Contraseña Maestra',
-                  prefixIcon: const Icon(Icons.lock),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      obscurePassword ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () {
-                      setDialogState(() {
-                        obscurePassword = !obscurePassword;
-                      });
-                    },
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final enteredPassword = passwordController.text.trim();
-                if (enteredPassword.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Por favor ingresa la contraseña'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                  return;
-                }
-
-                // Verificar la contraseña
-                try {
-                  final storeConfig = await _userPreferencesService.getStoreConfig();
-                  final storedPassword = storeConfig?['master_password'];
-                  
-                  if (storedPassword == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('No hay contraseña maestra configurada'),
-                        backgroundColor: Colors.red,
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.vpn_key, color: Colors.orange, size: 28),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Contraseña Maestra',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    );
-                    return;
-                  }
-
-                  // Encriptar la contraseña ingresada para compararla
-                  final bytes = utf8.encode(enteredPassword);
-                  final digest = sha256.convert(bytes);
-                  final encryptedEnteredPassword = digest.toString();
-
-                  if (encryptedEnteredPassword == storedPassword) {
-                    // Contraseña correcta - proceder con la cancelación
-                    Navigator.pop(context); // Cerrar diálogo de contraseña
-                    Navigator.pop(context); // Cerrar modal de detalles
-                    _updateOrderStatus(order, newStatus);
-                  } else {
-                    // Contraseña incorrecta
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Contraseña incorrecta'),
-                        backgroundColor: Colors.red,
+                    ],
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Ingresa la contraseña maestra para cancelar esta orden.',
+                        style: TextStyle(fontSize: 16),
                       ),
-                    );
-                  }
-                } catch (e) {
-                  print('❌ Error al verificar contraseña maestra: $e');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al verificar contraseña: $e'),
-                      backgroundColor: Colors.red,
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: passwordController,
+                        obscureText: obscurePassword,
+                        decoration: InputDecoration(
+                          labelText: 'Contraseña Maestra',
+                          prefixIcon: const Icon(Icons.lock),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscurePassword
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                            onPressed: () {
+                              setDialogState(() {
+                                obscurePassword = !obscurePassword;
+                              });
+                            },
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
                     ),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: color,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Confirmar'),
-            ),
-          ],
-        ),
-      ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final enteredPassword = passwordController.text.trim();
+                        if (enteredPassword.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Por favor ingresa la contraseña'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                          return;
+                        }
+
+                        // Verificar la contraseña
+                        try {
+                          final storeConfig =
+                              await _userPreferencesService.getStoreConfig();
+                          final storedPassword =
+                              storeConfig?['master_password'];
+
+                          if (storedPassword == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'No hay contraseña maestra configurada',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          // Encriptar la contraseña ingresada para compararla
+                          final bytes = utf8.encode(enteredPassword);
+                          final digest = sha256.convert(bytes);
+                          final encryptedEnteredPassword = digest.toString();
+
+                          if (encryptedEnteredPassword == storedPassword) {
+                            // Contraseña correcta - proceder con la cancelación
+                            Navigator.pop(
+                              context,
+                            ); // Cerrar diálogo de contraseña
+                            Navigator.pop(context); // Cerrar modal de detalles
+                            _updateOrderStatus(order, newStatus);
+                          } else {
+                            // Contraseña incorrecta
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Contraseña incorrecta'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          print('❌ Error al verificar contraseña maestra: $e');
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Error al verificar contraseña: $e',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: color,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Confirmar'),
+                    ),
+                  ],
+                ),
+          ),
     );
   }
 }
