@@ -521,15 +521,14 @@ class ExportService {
       warehouseCell.cellStyle = CellStyle(bold: true, fontSize: 14);
       currentRow++;
 
-      // Fecha del filtro o fecha actual
+      // Fecha del filtro o histórico
       final dateCell = sheet.cell(
         CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
       );
-      final dateStr =
-          filterDate != null
-              ? DateFormat('dd/MM/yyyy').format(filterDate)
-              : DateFormat('dd/MM/yyyy').format(DateTime.now());
-      dateCell.value = TextCellValue('Fecha: $dateStr');
+      final dateStr = filterDate != null
+          ? 'Fecha: ${DateFormat('dd/MM/yyyy').format(filterDate)}'
+          : 'Período: Histórico';
+      dateCell.value = TextCellValue(dateStr);
       dateCell.cellStyle = CellStyle(bold: true, fontSize: 12);
       currentRow += 2;
 
@@ -539,6 +538,10 @@ class ExportService {
       for (final item in inventoryData) {
         final almacen = item['almacen']?.toString() ?? 'Sin almacén';
         final ubicacion = item['ubicacion']?.toString() ?? 'Sin ubicación';
+        final idUbicacion = item['id_ubicacion'];
+
+        // Skip items without location or with null id_ubicacion
+        if (ubicacion == 'Sin ubicación' || ubicacion == 'SIN UBICACIÓN' || idUbicacion == null) continue;
 
         if (!groupedData.containsKey(almacen)) {
           groupedData[almacen] = {};
@@ -626,28 +629,7 @@ class ExportService {
               );
               cell.value = TextCellValue(rowData[i]);
 
-              // Aplicar color basado en el stock disponible
-              if (i == 1) {
-                // Columna de stock disponible
-                final stock =
-                    double.tryParse(
-                      producto['stock_disponible']?.toString() ?? '0',
-                    ) ??
-                    0;
-                if (stock <= 0) {
-                  cell.cellStyle = CellStyle(
-                    backgroundColorHex: ExcelColor.red,
-                  );
-                } else if (stock <= 10) {
-                  cell.cellStyle = CellStyle(
-                    backgroundColorHex: ExcelColor.orange,
-                  );
-                } else {
-                  cell.cellStyle = CellStyle(
-                    backgroundColorHex: ExcelColor.green,
-                  );
-                }
-              }
+              // No color coding for stock levels
             }
             currentRow++;
           }
@@ -695,6 +677,10 @@ class ExportService {
       for (final item in inventoryData) {
         final almacen = item['almacen']?.toString() ?? 'Sin almacén';
         final ubicacion = item['ubicacion']?.toString() ?? 'Sin ubicación';
+        final idUbicacion = item['id_ubicacion'];
+
+        // Skip items without location or with null id_ubicacion
+        if (ubicacion == 'Sin ubicación' || ubicacion == 'SIN UBICACIÓN' || idUbicacion == null) continue;
 
         if (!groupedData.containsKey(almacen)) {
           groupedData[almacen] = {};
@@ -734,7 +720,9 @@ class ExportService {
                   ),
                   pw.SizedBox(height: 4),
                   pw.Text(
-                    'Fecha: ${filterDate != null ? dateFormatter.format(filterDate) : dateFormatter.format(now)}',
+                    filterDate != null 
+                        ? 'Fecha: ${dateFormatter.format(filterDate)}'
+                        : 'Período: Histórico',
                     style: pw.TextStyle(
                       fontSize: 16,
                       fontWeight: pw.FontWeight.normal,
@@ -995,6 +983,10 @@ class ExportService {
         for (final item in inventoryData) {
           final almacen = item['almacen']?.toString() ?? 'Sin almacén';
           final ubicacion = item['ubicacion']?.toString() ?? 'Sin ubicación';
+          final idUbicacion = item['id_ubicacion'];
+
+          // Skip items without location or with null id_ubicacion
+          if (ubicacion == 'Sin ubicación' || ubicacion == 'SIN UBICACIÓN' || idUbicacion == null) continue;
 
           if (!groupedData.containsKey(almacen)) {
             groupedData[almacen] = {};
@@ -1077,17 +1069,6 @@ class ExportService {
 
             // Datos de los productos
             for (final producto in productos) {
-              // Verificar si este producto tiene errores de cálculo
-              final inicial = double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0;
-              final entradas = double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0;
-              final extracciones = double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0;
-              final ventas = double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0;
-              final final_ = double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0;
-              
-              final expectedFinal = inicial + entradas - extracciones - ventas;
-              final difference = (final_ - expectedFinal).abs();
-              final hasError = difference >= 0.01;
-              
               final rowData = [
                 producto['nombre_producto']?.toString() ?? 'Sin nombre',
                 (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
@@ -1112,13 +1093,6 @@ class ExportService {
                   ),
                 );
                 cell.value = TextCellValue(rowData[i]);
-                
-                /* // Aplicar color de fondo rojo claro si hay error
-                if (hasError) {
-                  cell.cellStyle = CellStyle(
-                    backgroundColorHex: ExcelColor.red200,
-                  );
-                } */
               }
               currentRow++;
             }
@@ -1147,6 +1121,10 @@ class ExportService {
         for (final item in inventoryData) {
           final almacen = item['almacen']?.toString() ?? 'Sin almacén';
           final ubicacion = item['ubicacion']?.toString() ?? 'Sin ubicación';
+          final idUbicacion = item['id_ubicacion'];
+
+          // Skip items without location or with null id_ubicacion
+          if (ubicacion == 'Sin ubicación' || ubicacion == 'SIN UBICACIÓN' || idUbicacion == null) continue;
 
           if (!groupedDataPdf.containsKey(almacen)) {
             groupedDataPdf[almacen] = {};
@@ -1283,45 +1261,29 @@ class ExportService {
 
                         // Filas de productos
                         ...productos.map(
-                          (producto) {
-                            // Verificar si este producto tiene errores de cálculo
-                            final inicial = double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0;
-                            final entradas = double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0;
-                            final extracciones = double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0;
-                            final ventas = double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0;
-                            final final_ = double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0;
-                            
-                            final expectedFinal = inicial + entradas - extracciones - ventas;
-                            final difference = (final_ - expectedFinal).abs();
-                            final hasError = difference >= 0.01;
-                            
-                            return pw.TableRow(
-                              decoration: hasError ? const pw.BoxDecoration(
-                                color: PdfColors.red50,
-                              ) : null,
-                              children: [
-                                _buildTableCell(
-                                  producto['nombre_producto']?.toString() ??
-                                      'Sin nombre',
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                ),
-                              ],
-                            );
-                          },
+                          (producto) => pw.TableRow(
+                            children: [
+                              _buildTableCell(
+                                producto['nombre_producto']?.toString() ??
+                                    'Sin nombre',
+                              ),
+                              _buildTableCell(
+                                (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                              ),
+                              _buildTableCell(
+                                (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                              ),
+                              _buildTableCell(
+                                (double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                              ),
+                              _buildTableCell(
+                                (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                              ),
+                              _buildTableCell(
+                                (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -1441,7 +1403,7 @@ class ExportService {
     } else if (filterDateTo != null) {
       return 'Hasta: ${dateFormatter.format(filterDateTo)}';
     } else {
-      return 'Fecha: ${dateFormatter.format(now)}';
+      return 'Período: Histórico';
     }
   }
 }
