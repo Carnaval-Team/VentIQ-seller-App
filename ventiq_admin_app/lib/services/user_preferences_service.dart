@@ -177,10 +177,62 @@ class UserPreferencesService {
     return prefs.getString(_appVersionKey);
   }
 
-  // Verificar si es la primera vez que se abre la app
-  Future<bool> isFirstTimeOpening() async {
+  // Verificar si es la primera vez que se abre la app o hay una nueva versión
+  Future<bool> isFirstTimeOpening([String? currentVersion]) async {
     final prefs = await SharedPreferences.getInstance();
-    return !prefs.containsKey(_appVersionKey);
+    
+    // Si no hay versión guardada, es primera vez
+    if (!prefs.containsKey(_appVersionKey)) {
+      return true;
+    }
+    
+    // Si se proporciona una versión actual, comparar
+    if (currentVersion != null) {
+      final savedVersion = prefs.getString(_appVersionKey);
+      if (savedVersion == null) {
+        return true;
+      }
+      
+      // Comparar versiones usando comparación semántica
+      return _isNewerVersion(currentVersion, savedVersion);
+    }
+    
+    // Si no se proporciona versión, usar lógica anterior
+    return false;
+  }
+  
+  // Comparar si la versión actual es más nueva que la guardada
+  bool _isNewerVersion(String currentVersion, String savedVersion) {
+    try {
+      // Limpiar versiones (remover caracteres no numéricos excepto puntos)
+      final cleanCurrent = currentVersion.replaceAll(RegExp(r'[^\d\.]'), '');
+      final cleanSaved = savedVersion.replaceAll(RegExp(r'[^\d\.]'), '');
+      
+      // Dividir en partes (major.minor.patch)
+      final currentParts = cleanCurrent.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+      final savedParts = cleanSaved.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+      
+      // Asegurar que ambas listas tengan al menos 3 elementos
+      while (currentParts.length < 3) currentParts.add(0);
+      while (savedParts.length < 3) savedParts.add(0);
+      
+      // Comparar major.minor.patch
+      for (int i = 0; i < 3; i++) {
+        if (currentParts[i] > savedParts[i]) {
+          return true; // Versión actual es mayor
+        } else if (currentParts[i] < savedParts[i]) {
+          return false; // Versión guardada es mayor
+        }
+        // Si son iguales, continuar con el siguiente número
+      }
+      
+      // Si llegamos aquí, las versiones son iguales
+      return false;
+    } catch (e) {
+      print('Error comparando versiones: $e');
+      // En caso de error, asumir que es nueva versión para mostrar changelog
+      return true;
+    }
   }
 
   // Obtener todos los datos del usuario

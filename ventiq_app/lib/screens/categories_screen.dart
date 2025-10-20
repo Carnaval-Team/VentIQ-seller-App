@@ -104,23 +104,30 @@ class _CategoriesScreenState extends State<CategoriesScreen>
 
   Future<void> _checkForChangelog() async {
     try {
-      final isFirstTime = await _preferencesService.isFirstTimeOpening();
+      // Obtener el changelog más reciente para obtener la versión actual
+      final changelog = await _changelogService.getLatestChangelog();
+      if (changelog == null) return;
+      
+      // Verificar si es primera vez o hay nueva versión
+      final shouldShowChangelog = await _preferencesService.isFirstTimeOpening(changelog.version);
 
-      if (isFirstTime) {
+      if (shouldShowChangelog) {
         // Wait a bit for the screen to load
         await Future.delayed(const Duration(milliseconds: 500));
 
-        final changelog = await _changelogService.getLatestChangelog();
-        if (changelog != null && mounted) {
+        if (mounted) {
           await showDialog(
             context: context,
             barrierDismissible: false,
             builder: (context) => ChangelogDialog(changelog: changelog),
           );
 
-          // Save current app version to preferences
-          await _preferencesService.saveAppVersion('1.0.0');
+          // Guardar la versión actual del changelog
+          await _preferencesService.saveAppVersion(changelog.version);
+          print('📱 Changelog mostrado y versión guardada: ${changelog.version}');
         }
+      } else {
+        print('📱 Changelog no mostrado - Versión actual: ${changelog.version}');
       }
     } catch (e) {
       debugPrint('Error checking changelog: $e');
