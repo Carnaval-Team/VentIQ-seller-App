@@ -62,6 +62,30 @@ class Product {
           .toList() ?? [],
     );
   }
+
+  /// Convertir Product a JSON para persistencia
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'denominacion': denominacion,
+      'descripcion': descripcion,
+      'foto': foto,
+      'precio': precio,
+      'cantidad': cantidad,
+      'es_refrigerado': esRefrigerado,
+      'es_fragil': esFragil,
+      'es_peligroso': esPeligroso,
+      'es_vendible': esVendible,
+      'es_comprable': esComprable,
+      'es_inventariable': esInventariable,
+      'es_por_lotes': esPorLotes,
+      'es_elaborado': esElaborado,
+      'es_servicio': esServicio,
+      'categoria': categoria,
+      'variantes': variantes.map((v) => v.toJson()).toList(),
+      'inventoryMetadata': inventoryMetadata,
+    };
+  }
 }
 
 class ProductVariant {
@@ -89,6 +113,18 @@ class ProductVariant {
       cantidad: json['cantidad'] ?? 0,
       descripcion: json['descripcion'],
     );
+  }
+
+  /// Convertir ProductVariant a JSON para persistencia
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'precio': precio,
+      'cantidad': cantidad,
+      'descripcion': descripcion,
+      'inventoryMetadata': inventoryMetadata,
+    };
   }
 }
 

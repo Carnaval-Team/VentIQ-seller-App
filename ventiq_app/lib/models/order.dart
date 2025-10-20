@@ -72,6 +72,46 @@ class Order {
       isOfflineOrder: isOfflineOrder ?? this.isOfflineOrder,
     );
   }
+
+  /// Convertir Order a JSON para persistencia
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'fechaCreacion': fechaCreacion.toIso8601String(),
+      'items': items.map((item) => item.toJson()).toList(),
+      'total': total,
+      'status': status.index,
+      'notas': notas,
+      'buyerName': buyerName,
+      'buyerPhone': buyerPhone,
+      'extraContacts': extraContacts,
+      'paymentMethod': paymentMethod,
+      'operationId': operationId,
+      'pagos': pagos,
+      'isOfflineOrder': isOfflineOrder,
+    };
+  }
+
+  /// Crear Order desde JSON para persistencia
+  factory Order.fromJson(Map<String, dynamic> json) {
+    return Order(
+      id: json['id'] as String,
+      fechaCreacion: DateTime.parse(json['fechaCreacion'] as String),
+      items: (json['items'] as List<dynamic>)
+          .map((itemJson) => OrderItem.fromJson(itemJson as Map<String, dynamic>))
+          .toList(),
+      total: (json['total'] as num).toDouble(),
+      status: OrderStatus.values[json['status'] as int],
+      notas: json['notas'] as String?,
+      buyerName: json['buyerName'] as String?,
+      buyerPhone: json['buyerPhone'] as String?,
+      extraContacts: json['extraContacts'] as String?,
+      paymentMethod: json['paymentMethod'] as String?,
+      operationId: json['operationId'] as int?,
+      pagos: json['pagos'] as List<dynamic>?,
+      isOfflineOrder: json['isOfflineOrder'] as bool? ?? false,
+    );
+  }
 }
 
 class OrderItem {
@@ -180,6 +220,54 @@ class OrderItem {
       cantidadInicial: cantidadInicial ?? this.cantidadInicial,
       cantidadFinal: cantidadFinal ?? this.cantidadFinal,
       ingredientes: ingredientes ?? this.ingredientes,
+    );
+  }
+
+  /// Convertir OrderItem a JSON para persistencia
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'producto': producto.toJson(),
+      'variante': variante?.toJson(),
+      'cantidad': cantidad,
+      'precioUnitario': precioUnitario,
+      'precioBase': precioBase,
+      'ubicacionAlmacen': ubicacionAlmacen,
+      'inventoryData': inventoryData,
+      'paymentMethod': paymentMethod?.toJson(),
+      'promotionData': promotionData,
+      'cantidadInicial': cantidadInicial,
+      'cantidadFinal': cantidadFinal,
+      'ingredientes': ingredientes,
+    };
+  }
+
+  /// Crear OrderItem desde JSON para persistencia
+  factory OrderItem.fromJson(Map<String, dynamic> json) {
+    return OrderItem(
+      id: json['id'] as String,
+      producto: Product.fromJson(json['producto'] as Map<String, dynamic>),
+      variante: json['variante'] != null 
+          ? ProductVariant.fromJson(json['variante'] as Map<String, dynamic>)
+          : null,
+      cantidad: json['cantidad'] as int,
+      precioUnitario: (json['precioUnitario'] as num).toDouble(),
+      precioBase: json['precioBase'] != null 
+          ? (json['precioBase'] as num).toDouble()
+          : null,
+      ubicacionAlmacen: json['ubicacionAlmacen'] as String,
+      inventoryData: json['inventoryData'] as Map<String, dynamic>?,
+      paymentMethod: json['paymentMethod'] != null
+          ? PaymentMethod.fromJson(json['paymentMethod'] as Map<String, dynamic>)
+          : null,
+      promotionData: json['promotionData'] as Map<String, dynamic>?,
+      cantidadInicial: json['cantidadInicial'] != null
+          ? (json['cantidadInicial'] as num).toDouble()
+          : null,
+      cantidadFinal: json['cantidadFinal'] != null
+          ? (json['cantidadFinal'] as num).toDouble()
+          : null,
+      ingredientes: json['ingredientes'] as List<dynamic>?,
     );
   }
 }

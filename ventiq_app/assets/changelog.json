@@ -1,8 +1,30 @@
 {
-  "current_version": "1.3.0",
-  "build":130,
+  "current_version": "1.3.1",
+  "build": 104,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.3.1",
+      "date": "2024-10-20",
+      "title": "🔧 Corrección de Persistencia de Datos en Navegación",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Persistencia de Preórdenes Corregida",
+          "description": "Solucionado problema donde los datos de preórdenes se perdían al navegar desde Orders → Preorder debido a uso inconsistente de pushNamedAndRemoveUntil vs pushNamed"
+        },
+        {
+          "type": "improvement", 
+          "title": "Navegación Consistente",
+          "description": "Estandarizada la navegación entre pantallas usando pushNamed para mantener el stack y preservar datos de órdenes activas"
+        },
+        {
+          "type": "improvement",
+          "title": "Flujo de Navegación Optimizado",
+          "description": "Mejorado el comportamiento de navegación para evitar pérdida de datos al cambiar entre secciones de la aplicación"
+        }
+      ]
+    },
     {
       "version": "1.3.0",
       "date": "2024-10-02",

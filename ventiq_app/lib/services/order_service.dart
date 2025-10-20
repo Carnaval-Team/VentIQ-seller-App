@@ -81,6 +81,9 @@ class OrderService {
 
     // Actualizar total de la orden
     _updateOrderTotal(order);
+    
+    // Guardar automáticamente en persistencia
+    _savePersistentPreorder();
   }
 
   // Actualizar cantidad de un item
@@ -98,6 +101,9 @@ class OrderService {
             .copyWith(cantidad: newQuantity);
       }
       _updateOrderTotal(_currentOrder!);
+      
+      // Guardar automáticamente en persistencia
+      _savePersistentPreorder();
     }
   }
 
@@ -114,6 +120,9 @@ class OrderService {
 
       // Recalcular total ya que el precio puede cambiar según el método de pago
       _updateOrderTotal(_currentOrder!);
+      
+      // Guardar automáticamente en persistencia
+      _savePersistentPreorder();
     }
   }
 
@@ -123,6 +132,9 @@ class OrderService {
 
     _currentOrder!.items.removeWhere((item) => item.id == itemId);
     _updateOrderTotal(_currentOrder!);
+    
+    // Guardar automáticamente en persistencia
+    _savePersistentPreorder();
   }
 
   // Actualizar total de la orden
@@ -142,6 +154,9 @@ class OrderService {
 
     _orders.add(finalizedOrder);
     _currentOrder = null; // Limpiar orden actual
+    
+    // Limpiar persistencia cuando se finaliza la orden
+    clearPersistentPreorder();
   }
 
   // Finalizar orden con detalles completos del checkout
@@ -169,6 +184,9 @@ class OrderService {
 
         _orders.add(finalizedOrder);
         _currentOrder = null; // Limpiar orden actual
+        
+        // Limpiar persistencia cuando se finaliza la orden
+        clearPersistentPreorder();
 
         return {
           'success': true,
@@ -193,6 +211,9 @@ class OrderService {
   // Cancelar orden actual
   void cancelCurrentOrder() {
     _currentOrder = null;
+    
+    // Limpiar persistencia cuando se cancela la orden
+    clearPersistentPreorder();
   }
 
   // Obtener orden por ID
@@ -1093,6 +1114,63 @@ class OrderService {
         return 'devuelta';
       case OrderStatus.pendienteDeSincronizacion:
         return 'pendiente_sincronizacion';
+    }
+  }
+
+  // ==================== PERSISTENCIA DE PREORDEN ====================
+
+  /// Guardar preorden actual en persistencia
+  Future<void> _savePersistentPreorder() async {
+    if (_currentOrder == null || _currentOrder!.items.isEmpty) {
+      // Si no hay orden o está vacía, limpiar la persistencia
+      await UserPreferencesService().clearPersistentPreorder();
+      return;
+    }
+
+    try {
+      final orderData = _currentOrder!.toJson();
+      await UserPreferencesService().savePersistentPreorder(orderData);
+      print('💾 Preorden guardada automáticamente en persistencia');
+    } catch (e) {
+      print('❌ Error guardando preorden en persistencia: $e');
+    }
+  }
+
+  /// Cargar preorden desde persistencia
+  Future<void> loadPersistentPreorder() async {
+    try {
+      final orderData = await UserPreferencesService().getPersistentPreorder();
+      
+      if (orderData != null) {
+        _currentOrder = Order.fromJson(orderData);
+        print('📱 Preorden cargada desde persistencia');
+        print('📦 Items restaurados: ${_currentOrder!.items.length}');
+      } else {
+        print('📱 No hay preorden persistente para cargar');
+      }
+    } catch (e) {
+      print('❌ Error cargando preorden desde persistencia: $e');
+      _currentOrder = null;
+    }
+  }
+
+  /// Limpiar preorden persistente
+  Future<void> clearPersistentPreorder() async {
+    try {
+      await UserPreferencesService().clearPersistentPreorder();
+      print('🗑️ Preorden persistente limpiada');
+    } catch (e) {
+      print('❌ Error limpiando preorden persistente: $e');
+    }
+  }
+
+  /// Verificar si hay preorden persistente
+  Future<bool> hasPersistentPreorder() async {
+    try {
+      return await UserPreferencesService().hasPersistentPreorder();
+    } catch (e) {
+      print('❌ Error verificando preorden persistente: $e');
+      return false;
     }
   }
 }

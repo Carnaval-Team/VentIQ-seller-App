@@ -367,7 +367,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () => _onBottomNavTap(0), // Ir a Home
+            onPressed: () => Navigator.pushNamed(context, '/categories'), // Ir a Home
             icon: const Icon(Icons.home),
             label: const Text('Ir al Catálogo'),
             style: ElevatedButton.styleFrom(
@@ -1374,11 +1374,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Home
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/categories',
-          (route) => false,
-        );
+        // Usar pushNamed en lugar de pushNamedAndRemoveUntil para mantener la persistencia
+        Navigator.pushNamed(context, '/categories');
         break;
       case 1: // Preorden
         Navigator.pushNamed(context, '/preorder');

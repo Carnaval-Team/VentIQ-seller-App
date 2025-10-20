@@ -34,7 +34,18 @@ class _PreorderScreenState extends State<PreorderScreen> {
   @override
   void initState() {
     super.initState();
+    _loadPersistentPreorder();
     _checkOpenShift();
+  }
+  
+  /// Cargar preorden persistente al inicializar la pantalla
+  Future<void> _loadPersistentPreorder() async {
+    try {
+      await _orderService.loadPersistentPreorder();
+      print('📱 PreorderScreen: Preorden persistente cargada al inicializar');
+    } catch (e) {
+      print('❌ PreorderScreen: Error cargando preorden persistente: $e');
+    }
   }
 
   Future<void> _checkOpenShift() async {
@@ -1403,11 +1414,8 @@ class _PreorderScreenState extends State<PreorderScreen> {
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Home
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/categories',
-          (route) => false,
-        );
+        // Usar pushNamed en lugar de pushNamedAndRemoveUntil para mantener la persistencia
+        Navigator.pushNamed(context, '/categories');
         break;
       case 1: // Preorden (current)
         break;

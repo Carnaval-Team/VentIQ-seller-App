@@ -53,6 +53,9 @@ class UserPreferencesService {
   static const String _egresosOfflineKey = 'egresos_offline'; // Egresos creados offline
   static const String _egresosCacheKey = 'egresos_cache'; // Cache de egresos para modo offline
   static const String _storeConfigKey = 'store_config'; // Configuración de la tienda
+  
+  // Persistent preorder keys
+  static const String _persistentPreorderKey = 'persistent_preorder'; // Preorden persistente
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -1344,6 +1347,63 @@ class UserPreferencesService {
       print('🗑️ Configuración de tienda eliminada del cache');
     } catch (e) {
       print('❌ Error limpiando configuración de tienda: $e');
+    }
+  }
+
+  // ==================== PREORDEN PERSISTENTE ====================
+
+  /// Guardar preorden persistente
+  Future<void> savePersistentPreorder(Map<String, dynamic> orderData) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_persistentPreorderKey, jsonEncode(orderData));
+      print('💾 Preorden guardada en cache persistente');
+      print('📦 Items en preorden: ${orderData['items']?.length ?? 0}');
+    } catch (e) {
+      print('❌ Error guardando preorden persistente: $e');
+    }
+  }
+
+  /// Obtener preorden persistente
+  Future<Map<String, dynamic>?> getPersistentPreorder() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final orderJson = prefs.getString(_persistentPreorderKey);
+      
+      if (orderJson != null) {
+        final orderData = jsonDecode(orderJson) as Map<String, dynamic>;
+        print('📱 Preorden cargada desde cache persistente');
+        print('📦 Items en preorden: ${orderData['items']?.length ?? 0}');
+        return orderData;
+      }
+      
+      print('📱 No hay preorden persistente guardada');
+      return null;
+    } catch (e) {
+      print('❌ Error obteniendo preorden persistente: $e');
+      return null;
+    }
+  }
+
+  /// Verificar si hay preorden persistente
+  Future<bool> hasPersistentPreorder() async {
+    try {
+      final preorder = await getPersistentPreorder();
+      return preorder != null && (preorder['items'] as List?)?.isNotEmpty == true;
+    } catch (e) {
+      print('❌ Error verificando preorden persistente: $e');
+      return false;
+    }
+  }
+
+  /// Limpiar preorden persistente
+  Future<void> clearPersistentPreorder() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_persistentPreorderKey);
+      print('🗑️ Preorden persistente eliminada del cache');
+    } catch (e) {
+      print('❌ Error limpiando preorden persistente: $e');
     }
   }
 }
