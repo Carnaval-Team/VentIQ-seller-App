@@ -925,10 +925,10 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               ingrediente['nombre_ingrediente'] as String? ?? 'Ingrediente';
           final cantidadVendida =
               (ingrediente['cantidad_vendida'] as num?)?.toDouble() ?? 0.0;
-          final cantidadInicial =
-              (ingrediente['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
           final cantidadFinal =
               (ingrediente['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+          // Calcular cantidad inicial como: final + vendido
+          final cantidadInicial = cantidadFinal + cantidadVendida;
           final unidadMedida =
               ingrediente['unidad_medida'] as String? ?? 'unidades';
           final precioUnitario =
@@ -939,8 +939,8 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
           print('📦 Procesando ingrediente: $keyIngrediente');
           print('   - Cantidad vendida: $cantidadVendida');
-          print('   - Cantidad inicial: $cantidadInicial');
           print('   - Cantidad final: $cantidadFinal');
+          print('   - Cantidad inicial (calculada): $cantidadInicial = $cantidadFinal + $cantidadVendida');
           print('   - Precio unitario: $precioUnitario');
           print('   - Importe: $importe');
 
@@ -948,15 +948,16 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
             // Sumar cantidades vendidas e importes de ingredientes duplicados
             productosAgrupados[keyIngrediente]!['cantidad'] += cantidadVendida;
             productosAgrupados[keyIngrediente]!['subtotal'] += importe;
-            // Mantener los valores iniciales y finales del primer ingrediente
-            if (productosAgrupados[keyIngrediente]!['cantidadInicial'] ==
-                null) {
-              productosAgrupados[keyIngrediente]!['cantidadInicial'] =
-                  cantidadInicial;
+            // Recalcular cantidad inicial como: final + total vendido para ingredientes
+            if (productosAgrupados[keyIngrediente]!['cantidadFinal'] != null) {
+              productosAgrupados[keyIngrediente]!['cantidadInicial'] = 
+                  productosAgrupados[keyIngrediente]!['cantidadFinal'] + productosAgrupados[keyIngrediente]!['cantidad'];
             }
             if (productosAgrupados[keyIngrediente]!['cantidadFinal'] == null) {
-              productosAgrupados[keyIngrediente]!['cantidadFinal'] =
-                  cantidadFinal;
+              productosAgrupados[keyIngrediente]!['cantidadFinal'] = cantidadFinal;
+              // Recalcular inicial después de asignar final
+              productosAgrupados[keyIngrediente]!['cantidadInicial'] = 
+                  cantidadFinal + productosAgrupados[keyIngrediente]!['cantidad'];
             }
           } else {
             // Crear entrada para el ingrediente
@@ -990,23 +991,28 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           if (productosAgrupados.containsKey(key)) {
             productosAgrupados[key]!['cantidad'] += item.cantidad;
             productosAgrupados[key]!['subtotal'] += item.subtotal;
-            // Mantener los valores iniciales y finales del primer item (no sumar)
-            if (productosAgrupados[key]!['cantidadInicial'] == null &&
-                item.cantidadInicial != null) {
-              productosAgrupados[key]!['cantidadInicial'] =
-                  item.cantidadInicial;
+            // Recalcular cantidad inicial como: final + total vendido
+            if (productosAgrupados[key]!['cantidadFinal'] != null) {
+              productosAgrupados[key]!['cantidadInicial'] = 
+                  productosAgrupados[key]!['cantidadFinal'] + productosAgrupados[key]!['cantidad'];
             }
             if (productosAgrupados[key]!['cantidadFinal'] == null &&
                 item.cantidadFinal != null) {
               productosAgrupados[key]!['cantidadFinal'] = item.cantidadFinal;
+              // Recalcular inicial después de asignar final
+              productosAgrupados[key]!['cantidadInicial'] = 
+                  (item.cantidadFinal ?? 0.0) + productosAgrupados[key]!['cantidad'];
             }
           } else {
+            // Calcular cantidad inicial como: final + vendido para productos normales
+            final cantidadInicialCalculada = (item.cantidadFinal ?? 0.0) + item.cantidad;
+            
             productosAgrupados[key] = {
               'item': item,
               'nombre': item.nombre,
               'cantidad': item.cantidad,
               'subtotal': item.subtotal,
-              'cantidadInicial': item.cantidadInicial,
+              'cantidadInicial': cantidadInicialCalculada,
               'cantidadFinal': item.cantidadFinal,
               'esIngrediente': false,
             };
