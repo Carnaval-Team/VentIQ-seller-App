@@ -390,7 +390,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         ],
       ),
       floatingActionButton: _buildExportFAB(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 

@@ -412,6 +412,8 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                       ),
                     ),
 
+                    const SizedBox(height: 8),
+
                     InkWell(
                       onTap: _selectDateTo,
                       borderRadius: BorderRadius.circular(8),
