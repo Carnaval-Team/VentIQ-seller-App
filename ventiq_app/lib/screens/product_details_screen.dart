@@ -571,19 +571,22 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     double total = 0.0;
 
     if (currentProduct.variantes.isEmpty) {
-      // Producto sin variantes - siempre usar precio_oferta
+      // Producto sin variantes - usar precio con presentación
       final prices = _calculatePromotionPrices(currentProduct.precio);
       final finalPrice = prices['precio_oferta']!;
-      total = finalPrice * selectedQuantity;
+      total = _calculateTotalPriceWithPresentation(finalPrice, selectedQuantity, currentProduct);
     } else {
-      // Producto con variantes - siempre usar precio_oferta
+      // Producto con variantes - usar precio con presentación
       for (var entry in variantQuantities.entries) {
-        final prices = _calculatePromotionPrices(entry.key.precio);
+        final variant = entry.key;
+        final quantity = entry.value;
+        final prices = _calculatePromotionPrices(variant.precio);
         final finalPrice = prices['precio_oferta']!;
-        total += finalPrice * entry.value;
+        total += _calculateTotalPriceWithPresentation(finalPrice, quantity, currentProduct);
       }
     }
 
+    debugPrint('💰 Total price calculado con presentaciones: \$${total.toStringAsFixed(2)}');
     return total;
   }
 
@@ -960,7 +963,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'TOTAL: ${_getTotalItems()} producto${_getTotalItems() == 1 ? '' : 's'}',
+                                  'TOTAL: ${_getTotalEquivalentUnits()} unidad${_getTotalEquivalentUnits() == 1 ? '' : 'es'}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -1666,7 +1669,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     return totalPrice;
   }
 
-  // Método para obtener el total de items
+  // Método para obtener el total de items (productos/presentaciones seleccionadas)
+  // Mantenido para compatibilidad futura - cuenta las presentaciones, no las unidades
   int _getTotalItems() {
     int total = 0;
     if (currentProduct.variantes.isEmpty) {
@@ -1676,6 +1680,28 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         total += quantity;
       }
     }
+    return total;
+  }
+
+  // Método para obtener el total de unidades equivalentes considerando presentaciones
+  int _getTotalEquivalentUnits() {
+    int total = 0;
+    if (currentProduct.variantes.isEmpty) {
+      // Producto sin variantes
+      final conversionFactor = _getPresentationConversionFactor(currentProduct);
+      total = (selectedQuantity * conversionFactor).round();
+    } else {
+      // Producto con variantes
+      for (var entry in variantQuantities.entries) {
+        final quantity = entry.value;
+        
+        // Buscar el producto correspondiente a esta variante para obtener su factor de conversión
+        final conversionFactor = _getPresentationConversionFactor(currentProduct);
+        total += (quantity * conversionFactor).round();
+      }
+    }
+    
+    debugPrint('📊 Total unidades equivalentes calculado: $total');
     return total;
   }
 
