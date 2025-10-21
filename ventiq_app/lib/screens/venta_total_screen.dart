@@ -978,19 +978,28 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               'subtotal': importe, // Importe del ingrediente
               'cantidadInicial': cantidadInicial,
               'cantidadFinal': cantidadFinal,
+              'entradasProducto': (ingrediente['entradas_producto'] as num?)?.toDouble() ?? 0.0,
               'esIngrediente': true,
             };
           }
         }
       } else {
-        // Producto normal (no elaborado)
-        if (!item.producto.esElaborado) {
-          final key = item.nombre;
+        // Producto (elaborado o normal)
+        final key = item.nombre;
+        final esElaborado = item.producto.esElaborado;
+        
+        if (esElaborado) {
+          print('🍽️ Producto elaborado: $key');
+        } else {
           print('📦 Producto normal: $key');
+        }
 
-          if (productosAgrupados.containsKey(key)) {
-            productosAgrupados[key]!['cantidad'] += item.cantidad;
-            productosAgrupados[key]!['subtotal'] += item.subtotal;
+        if (productosAgrupados.containsKey(key)) {
+          productosAgrupados[key]!['cantidad'] += item.cantidad;
+          productosAgrupados[key]!['subtotal'] += item.subtotal;
+          
+          // Solo calcular cantidades iniciales y finales para productos NO elaborados
+          if (!esElaborado) {
             // Recalcular cantidad inicial como: final + total vendido
             if (productosAgrupados[key]!['cantidadFinal'] != null) {
               productosAgrupados[key]!['cantidadInicial'] = 
@@ -1003,6 +1012,21 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               productosAgrupados[key]!['cantidadInicial'] = 
                   (item.cantidadFinal ?? 0.0) + productosAgrupados[key]!['cantidad'];
             }
+          }
+        } else {
+          if (esElaborado) {
+            // Para productos elaborados: cantidades inicial y final = null (se mostrarán como "-")
+            productosAgrupados[key] = {
+              'item': item,
+              'nombre': item.nombre,
+              'cantidad': item.cantidad,
+              'subtotal': item.subtotal,
+              'cantidadInicial': null, // Se mostrará como "-"
+              'cantidadFinal': null,   // Se mostrará como "-"
+              'entradasProducto': item.entradasProducto ?? 0.0,
+              'esIngrediente': false,
+              'esElaborado': true,
+            };
           } else {
             // Calcular cantidad inicial como: final + vendido para productos normales
             final cantidadInicialCalculada = (item.cantidadFinal ?? 0.0) + item.cantidad;
@@ -1014,7 +1038,9 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               'subtotal': item.subtotal,
               'cantidadInicial': cantidadInicialCalculada,
               'cantidadFinal': item.cantidadFinal,
+              'entradasProducto': item.entradasProducto ?? 0.0,
               'esIngrediente': false,
+              'esElaborado': false,
             };
           }
         }
@@ -1046,6 +1072,17 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
               Expanded(
                 child: Text(
                   'Inicial',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  'Entra.',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -1105,15 +1142,26 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
     final subtotal = producto['subtotal'] as double;
     final cantidadInicial = producto['cantidadInicial'] as double?;
     final cantidadFinal = producto['cantidadFinal'] as double?;
+    final entradasProducto = producto['entradasProducto'] as double? ?? 0.0;
     final esIngrediente = producto['esIngrediente'] as bool? ?? false;
+    final esElaborado = producto['esElaborado'] as bool? ?? false;
     final nombre = producto['nombre'] as String? ?? item.nombre;
     final unidadMedida = producto['unidadMedida'] as String?;
 
     // Para ingredientes, usar las cantidades reales del ingrediente
     final cantidadMostrar =
         esIngrediente ? cantidad.toDouble() : cantidad.toDouble();
-    final cantidadInicialMostrar = cantidadInicial ?? 0.0;
-    final cantidadFinalMostrar = cantidadFinal ?? 0.0;
+    
+    // Para productos elaborados, mostrar "-" en cantidades inicial, entradas y final
+    final cantidadInicialTexto = (esElaborado && cantidadInicial == null) 
+        ? "-" 
+        : (cantidadInicial ?? 0.0).toStringAsFixed(esIngrediente ? 1 : 0);
+    final entradasTexto = esElaborado 
+        ? "-" 
+        : entradasProducto.toStringAsFixed(esIngrediente ? 1 : 0);
+    final cantidadFinalTexto = (esElaborado && cantidadFinal == null) 
+        ? "-" 
+        : (cantidadFinal ?? 0.0).toStringAsFixed(esIngrediente ? 1 : 0);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1184,11 +1232,24 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Cantidad Inicial
           Expanded(
             child: Text(
-              cantidadInicialMostrar.toStringAsFixed(esIngrediente ? 1 : 0),
+              cantidadInicialTexto,
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 color: Colors.blue,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+
+          // Entradas del Producto
+          Expanded(
+            child: Text(
+              entradasTexto,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.purple,
               ),
               textAlign: TextAlign.center,
             ),
@@ -1210,7 +1271,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
           // Cantidad Final
           Expanded(
             child: Text(
-              cantidadFinalMostrar.toStringAsFixed(esIngrediente ? 1 : 0),
+              cantidadFinalTexto,
               style: const TextStyle(
                 fontSize: 12,
                 color: Colors.green,

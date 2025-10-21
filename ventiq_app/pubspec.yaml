@@ -90,6 +90,7 @@ flutter:
     - assets/ni_image_bg.png
     - assets/no_image_g.png
     - assets/no_image.png
+    - assets/Lk1KNR.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

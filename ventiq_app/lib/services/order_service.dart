@@ -860,6 +860,7 @@ class OrderService {
               // Mapear nuevos campos de inventario desde la función SQL
               cantidadInicial: item['cantidad_inicial']?.toDouble(),
               cantidadFinal: item['cantidad_final']?.toDouble(),
+              entradasProducto: item['entradas_producto']?.toDouble(),
               // Mapear ingredientes consolidados
               ingredientes: ingredientes,
             );

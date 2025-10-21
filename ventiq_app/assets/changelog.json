@@ -1,11 +1,55 @@
 {
-  "current_version": "1.3.2",
-  "build": 105,
+  "current_version": "1.3.3",
+  "build": 233,
   "app_name":"ventiq_app",
   "changelogs": [
     {
+      "version": "1.3.3",
+      "date": "2025-10-21",
+      "title": "📊 Control de Inventario Mejorado en Reportes",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nueva Columna de Entradas de Mercancía",
+          "description": "Ahora puedes ver cuánta mercancía recibiste de cada producto en tus reportes de ventas diarios"
+        },
+        {
+          "type": "feature",
+          "title": "Seguimiento Completo de Inventario",
+          "description": "Controla mejor tu negocio viendo qué entra, qué vendes y qué te queda de cada producto en una sola tabla"
+        },
+        {
+          "type": "improvement",
+          "title": "Reportes Más Completos",
+          "description": "Los reportes de venta ahora incluyen información de recepción de mercancía para un mejor control de inventario"
+        },
+        {
+          "type": "improvement",
+          "title": "Información Clara por Tipo de Producto",
+          "description": "Los productos elaborados (como comidas preparadas) se muestran de forma diferente a los productos normales para mayor claridad"
+        },
+        {
+          "type": "improvement",
+          "title": "Diseño Visual Mejorado",
+          "description": "Nueva columna con color distintivo que hace más fácil identificar las entradas de mercancía en tus reportes"
+        }
+      ]
+    },
+    {
+      "version": "1.3.2",
+      "date": "2025-10-20",
+      "title": "🔧 Corrección de Errores en las ventas totales",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Corrección de Errores en las ventas totales",
+          "description": "Solucionado problema que la función debería proporcionar mayor consistencia en los reportes."
+        }
+      ]
+    },
+    {
       "version": "1.3.1",
-      "date": "2024-10-20",
+      "date": "2025-10-20",
       "title": "🔧 Corrección de Persistencia de Datos en Navegación",
       "changes": [
         {
@@ -27,7 +71,7 @@
     },
     {
       "version": "1.3.0",
-      "date": "2024-10-02",
+      "date": "2025-10-02",
       "title": "🔄 Modo Offline Completo + Sincronización Inteligente",
       "changes": [
         {
@@ -74,7 +118,7 @@
     },
     {
       "version": "1.2.0",
-      "date": "2024-08-30",
+      "date": "2025-08-30",
       "title": "💰 Sistema de Turnos y Egresos + Precios Dinámicos",
       "changes": [
         {
@@ -121,7 +165,7 @@
     },
     {
       "version": "1.1.0",
-      "date": "2024-08-18",
+      "date": "2025-08-18",
       "title": "📊 Resumen de Ventas Avanzado",
       "changes": [
         {
@@ -158,7 +202,7 @@
     },
     {
       "version": "1.0.0",
-      "date": "2024-08-17",
+      "date": "2025-08-17",
       "title": "🎉 Lanzamiento Inicial de VentIQ",
       "changes": [
         {

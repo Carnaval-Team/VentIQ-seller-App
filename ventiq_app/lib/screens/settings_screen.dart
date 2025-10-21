@@ -44,10 +44,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isSmartServicesInitialized = false;
   String? _lastSmartEvent;
 
+  // Variable para la versión dinámica
+  String _appVersion = 'Cargando...';
+
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadAppVersion();
     _initializeSmartServices();
   }
 
@@ -57,6 +61,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _integrationSubscription?.cancel();
     _integrationSubscription = null;
     super.dispose();
+  }
+
+  /// Cargar versión de la app desde changelog.json
+  Future<void> _loadAppVersion() async {
+    try {
+      final String changelogString = await rootBundle.loadString('assets/changelog.json');
+      final Map<String, dynamic> changelog = json.decode(changelogString);
+      final String version = changelog['current_version'] ?? '1.0.0';
+      
+      if (mounted) {
+        setState(() {
+          _appVersion = 'v$version';
+        });
+      }
+      
+      print('✅ Versión de la app cargada: $_appVersion');
+    } catch (e) {
+      print('❌ Error cargando versión desde changelog.json: $e');
+      if (mounted) {
+        setState(() {
+          _appVersion = 'v1.0.0'; // Fallback
+        });
+      }
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -493,9 +521,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _buildDivider(),
             _buildSettingsTile(
+              icon: Icons.download_outlined,
+              title: 'Compartir Aplicación',
+              subtitle: 'Código QR para descargar la app',
+              onTap: () => _showDownloadDialog(),
+            ),
+            _buildDivider(),
+            _buildSettingsTile(
               icon: Icons.info_outline,
               title: 'Acerca de',
-              subtitle: 'VentIQ v1.0.0',
+              subtitle: 'Vendedor Cuba $_appVersion',
               onTap: () => _showAboutDialog(),
             ),
           ]),
@@ -1473,11 +1508,260 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// Mostrar QR a pantalla completa para facilitar el escaneo
+  void _showFullScreenQR() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(
+                Icons.close,
+                color: Colors.white,
+                size: 28,
+              ),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            title: const Text(
+              'Código QR - VentIQ',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            centerTitle: true,
+          ),
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // QR a pantalla completa
+                Container(
+                  margin: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.white.withOpacity(0.1),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: Image.asset(
+                    'assets/Lk1KNR.png',
+                    width: MediaQuery.of(context).size.width * 0.8,
+                    height: MediaQuery.of(context).size.width * 0.8,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Información
+                Text(
+                  'Escanea este código para descargar VentIQ',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'VentIQ $_appVersion',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                // Botón para cerrar
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close, size: 20),
+                  label: const Text(
+                    'Cerrar',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4A90E2),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                    elevation: 5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Mostrar diálogo con QR para descargar la aplicación
+  void _showDownloadDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A90E2).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.download_outlined,
+                  color: Color(0xFF4A90E2),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Descargar App Vendedor',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Escanea el código QR para descargar la aplicación VentIQ en tu dispositivo:',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF6B7280),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              // Imagen del QR (clickeable para pantalla completa)
+              GestureDetector(
+                onTap: () => _showFullScreenQR(),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.grey[300]!,
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(
+                          'assets/Lk1KNR.png',
+                          width: 200,
+                          height: 200,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      // Indicador de que es clickeable
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.fullscreen,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Toca la imagen para ver a pantalla completa',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF9CA3AF),
+                  fontStyle: FontStyle.italic,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'VentIQ $_appVersion',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF9CA3AF),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF4A90E2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+              child: const Text(
+                'Cerrar',
+                style: TextStyle(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showAboutDialog() {
     showAboutDialog(
       context: context,
       applicationName: 'VentIQ',
-      applicationVersion: '1.0.0',
+      applicationVersion: _appVersion,
       applicationIcon: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(

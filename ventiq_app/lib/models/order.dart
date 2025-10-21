@@ -128,6 +128,8 @@ class OrderItem {
   // Nuevos campos para inventario
   final double? cantidadInicial;
   final double? cantidadFinal;
+  // Campo para entradas del producto
+  final double? entradasProducto;
   // Campo para ingredientes de productos elaborados
   final List<dynamic>? ingredientes;
 
@@ -144,6 +146,7 @@ class OrderItem {
     this.promotionData,
     this.cantidadInicial,
     this.cantidadFinal,
+    this.entradasProducto,
     this.ingredientes,
   });
 
@@ -204,6 +207,7 @@ class OrderItem {
     Map<String, dynamic>? promotionData,
     double? cantidadInicial,
     double? cantidadFinal,
+    double? entradasProducto,
     List<dynamic>? ingredientes,
   }) {
     return OrderItem(
@@ -219,6 +223,7 @@ class OrderItem {
       promotionData: promotionData ?? this.promotionData,
       cantidadInicial: cantidadInicial ?? this.cantidadInicial,
       cantidadFinal: cantidadFinal ?? this.cantidadFinal,
+      entradasProducto: entradasProducto ?? this.entradasProducto,
       ingredientes: ingredientes ?? this.ingredientes,
     );
   }
@@ -238,6 +243,7 @@ class OrderItem {
       'promotionData': promotionData,
       'cantidadInicial': cantidadInicial,
       'cantidadFinal': cantidadFinal,
+      'entradasProducto': entradasProducto,
       'ingredientes': ingredientes,
     };
   }
@@ -266,6 +272,9 @@ class OrderItem {
           : null,
       cantidadFinal: json['cantidadFinal'] != null
           ? (json['cantidadFinal'] as num).toDouble()
+          : null,
+      entradasProducto: json['entradasProducto'] != null
+          ? (json['entradasProducto'] as num).toDouble()
           : null,
       ingredientes: json['ingredientes'] as List<dynamic>?,
     );
