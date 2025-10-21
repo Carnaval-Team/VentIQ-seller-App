@@ -522,7 +522,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildDivider(),
             _buildSettingsTile(
               icon: Icons.download_outlined,
-              title: 'Descargar Aplicación',
+              title: 'Compartir Aplicación',
               subtitle: 'Código QR para descargar la app',
               onTap: () => _showDownloadDialog(),
             ),
