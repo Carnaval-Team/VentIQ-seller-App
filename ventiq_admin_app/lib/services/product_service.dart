@@ -1875,4 +1875,36 @@ class ProductService {
       return 17;
     }
   }
+
+  /// Obtiene los productos que usan este producto como ingrediente
+  static Future<List<Map<String, dynamic>>> getProductsUsingThisIngredient(
+    String productId,
+  ) async {
+    try {
+      print('🔍 Obteniendo productos que usan el ingrediente: $productId');
+
+      final response = await _supabase.rpc(
+        'obtener_productos_que_usan_ingrediente_detallado',
+        params: {
+          'p_id_producto_ingrediente': int.parse(productId),
+        },
+      );
+
+      print('📦 Respuesta RPC recibida: ${response.toString()}');
+      
+      if (response == null) {
+        print('⚠️ Respuesta nula de la función RPC');
+        return [];
+      }
+
+      final List<dynamic> productosData = response as List<dynamic>;
+      print('📊 Total productos encontrados que usan este ingrediente: ${productosData.length}');
+
+      return productosData.cast<Map<String, dynamic>>();
+    } catch (e, stackTrace) {
+      print('❌ Error obteniendo productos que usan este ingrediente: $e');
+      print('📍 StackTrace: $stackTrace');
+      return [];
+    }
+  }
 }

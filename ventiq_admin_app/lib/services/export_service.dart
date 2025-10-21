@@ -963,16 +963,7 @@ class ExportService {
         final periodCell = sheet.cell(
           CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
         );
-        String periodText;
-        if (filterDateFrom != null && filterDateTo != null) {
-          periodText = 'Período: ${DateFormat('dd/MM/yyyy').format(filterDateFrom)} - ${DateFormat('dd/MM/yyyy').format(filterDateTo)}';
-        } else if (filterDateFrom != null) {
-          periodText = 'Desde: ${DateFormat('dd/MM/yyyy').format(filterDateFrom)}';
-        } else if (filterDateTo != null) {
-          periodText = 'Hasta: ${DateFormat('dd/MM/yyyy').format(filterDateTo)}';
-        } else {
-          periodText = 'Fecha: ${DateFormat('dd/MM/yyyy').format(DateTime.now())}';
-        }
+        final periodText = _buildPeriodText(filterDateFrom, filterDateTo, DateFormat('dd/MM/yyyy'), now);
         periodCell.value = TextCellValue(periodText);
         periodCell.cellStyle = CellStyle(bold: true, fontSize: 12);
         currentRow += 2;
