@@ -34,28 +34,38 @@ class UserPreferencesService {
   static const String _promotionCodeKey = 'promotion_code';
   static const String _promotionValueKey = 'promotion_value';
   static const String _promotionTypeKey = 'promotion_type';
-  
+
   // Data usage keys
   static const String _limitDataUsageKey = 'limit_data_usage';
-  
+
   // Fluid mode keys
   static const String _fluidModeKey = 'fluid_mode_enabled';
-  
+
   // Offline mode keys
   static const String _offlineModeKey = 'offline_mode_enabled';
   static const String _offlineDataKey = 'offline_data';
-  static const String _offlineUsersKey = 'offline_users'; // Array de usuarios offline
-  static const String _pendingOrdersKey = 'pending_orders'; // Órdenes pendientes de sincronización
-  static const String _pendingOperationsKey = 'pending_operations'; // Operaciones pendientes (apertura/cierre/cambio estado)
-  static const String _offlineTurnoKey = 'offline_turno'; // Turno abierto offline
-  static const String _turnoResumenKey = 'turno_resumen_cache'; // Cache del resumen de turno anterior
-  static const String _resumenCierreKey = 'resumen_cierre_cache'; // Cache del resumen de cierre diario
-  static const String _egresosOfflineKey = 'egresos_offline'; // Egresos creados offline
-  static const String _egresosCacheKey = 'egresos_cache'; // Cache de egresos para modo offline
-  static const String _storeConfigKey = 'store_config'; // Configuración de la tienda
-  
+  static const String _offlineUsersKey =
+      'offline_users'; // Array de usuarios offline
+  static const String _pendingOrdersKey =
+      'pending_orders'; // Órdenes pendientes de sincronización
+  static const String _pendingOperationsKey =
+      'pending_operations'; // Operaciones pendientes (apertura/cierre/cambio estado)
+  static const String _offlineTurnoKey =
+      'offline_turno'; // Turno abierto offline
+  static const String _turnoResumenKey =
+      'turno_resumen_cache'; // Cache del resumen de turno anterior
+  static const String _resumenCierreKey =
+      'resumen_cierre_cache'; // Cache del resumen de cierre diario
+  static const String _egresosOfflineKey =
+      'egresos_offline'; // Egresos creados offline
+  static const String _egresosCacheKey =
+      'egresos_cache'; // Cache de egresos para modo offline
+  static const String _storeConfigKey =
+      'store_config'; // Configuración de la tienda
+
   // Persistent preorder keys
-  static const String _persistentPreorderKey = 'persistent_preorder'; // Preorden persistente
+  static const String _persistentPreorderKey =
+      'persistent_preorder'; // Preorden persistente
 
   // Guardar datos del usuario
   Future<void> saveUserData({
@@ -212,42 +222,44 @@ class UserPreferencesService {
   // Verificar si es la primera vez que se abre la app o hay una nueva versión
   Future<bool> isFirstTimeOpening([String? currentVersion]) async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Si no hay versión guardada, es primera vez
     if (!prefs.containsKey(_appVersionKey)) {
       return true;
     }
-    
+
     // Si se proporciona una versión actual, comparar
     if (currentVersion != null) {
       final savedVersion = prefs.getString(_appVersionKey);
       if (savedVersion == null) {
         return true;
       }
-      
+
       // Comparar versiones usando comparación semántica
       return _isNewerVersion(currentVersion, savedVersion);
     }
-    
+
     // Si no se proporciona versión, usar lógica anterior
     return false;
   }
-  
+
   // Comparar si la versión actual es más nueva que la guardada
   bool _isNewerVersion(String currentVersion, String savedVersion) {
     try {
       // Limpiar versiones (remover caracteres no numéricos excepto puntos)
       final cleanCurrent = currentVersion.replaceAll(RegExp(r'[^\d\.]'), '');
       final cleanSaved = savedVersion.replaceAll(RegExp(r'[^\d\.]'), '');
-      
+
       // Dividir en partes (major.minor.patch)
-      final currentParts = cleanCurrent.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-      final savedParts = cleanSaved.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-      
+      final currentParts =
+          cleanCurrent.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+      final savedParts =
+          cleanSaved.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+
       // Asegurar que ambas listas tengan al menos 3 elementos
       while (currentParts.length < 3) currentParts.add(0);
       while (savedParts.length < 3) savedParts.add(0);
-      
+
       // Comparar major.minor.patch
       for (int i = 0; i < 3; i++) {
         if (currentParts[i] > savedParts[i]) {
@@ -257,7 +269,7 @@ class UserPreferencesService {
         }
         // Si son iguales, continuar con el siguiente número
       }
-      
+
       // Si llegamos aquí, las versiones son iguales
       return false;
     } catch (e) {
@@ -438,22 +450,22 @@ class UserPreferencesService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_printEnabledKey) ?? true; // Por defecto habilitado
   }
-  
+
   // Data usage settings methods
   Future<void> setLimitDataUsage(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_limitDataUsageKey, enabled);
-    print(
-      'UserPreferencesService: Límite de datos actualizado: $enabled',
-    );
+    print('UserPreferencesService: Límite de datos actualizado: $enabled');
   }
+
   Future<bool> isLimitDataUsageEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_limitDataUsageKey) ?? false; // Por defecto deshabilitado
+    return prefs.getBool(_limitDataUsageKey) ??
+        false; // Por defecto deshabilitado
   }
 
   // ==================== MODO FLUIDO ====================
-  
+
   /// Habilitar o deshabilitar el modo fluido
   Future<void> setFluidModeEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
@@ -468,28 +480,59 @@ class UserPreferencesService {
   }
 
   // ==================== MODO OFFLINE ====================
-  
+
   /// Habilitar o deshabilitar el modo offline
   Future<void> setOfflineMode(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_offlineModeKey, enabled);
-    print(
-      'UserPreferencesService: Modo offline actualizado: $enabled',
-    );
+    print('UserPreferencesService: Modo offline actualizado: $enabled');
   }
 
   Future<bool> isOfflineModeEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_offlineModeKey) ?? false; // Por defecto deshabilitado
   }
-  
+
   // Guardar datos offline completos
   Future<void> saveOfflineData(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_offlineDataKey, jsonEncode(data));
     print('UserPreferencesService: Datos offline guardados');
   }
-  
+
+  // Hacer merge inteligente de datos offline (preserva datos existentes)
+  Future<void> mergeOfflineData(Map<String, dynamic> newData) async {
+    // Obtener datos existentes
+    final existingData = await getOfflineData() ?? {};
+    
+    // Hacer merge preservando datos importantes
+    final mergedData = Map<String, dynamic>.from(existingData);
+    
+    // Log de datos existentes importantes
+    print('📋 Datos existentes antes del merge:');
+    print('  - Categorías: ${existingData['categories'] != null ? (existingData['categories'] is List ? existingData['categories'].length : 'Sí') : 'No'}');
+    print('  - Productos: ${existingData['products'] != null ? 'Sí' : 'No'}');
+    
+    // Merge cada sección individualmente
+    newData.forEach((key, value) {
+      if (value != null) {
+        mergedData[key] = value;
+        print('📝 Actualizando sección offline: $key');
+      } else {
+        print('⏭️ Omitiendo sección nula: $key');
+      }
+    });
+    
+    // Log de datos finales después del merge
+    print('📋 Datos finales después del merge:');
+    print('  - Categorías: ${mergedData['categories'] != null ? (mergedData['categories'] is List ? mergedData['categories'].length : 'Sí') : 'No'}');
+    print('  - Productos: ${mergedData['products'] != null ? 'Sí' : 'No'}');
+    
+    // Guardar datos merged
+    await saveOfflineData(mergedData);
+    print('🔄 Merge de datos offline completado');
+  }
+
   // Obtener datos offline
   Future<Map<String, dynamic>?> getOfflineData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -499,38 +542,43 @@ class UserPreferencesService {
     }
     return null;
   }
-  
+
   // Verificar si hay datos offline disponibles
   Future<bool> hasOfflineData() async {
     final prefs = await SharedPreferences.getInstance();
     final dataString = prefs.getString(_offlineDataKey);
-    
+
     if (dataString == null || dataString.isEmpty) {
       return false;
     }
-    
+
     try {
       final data = jsonDecode(dataString) as Map<String, dynamic>;
-      
+
       // Verificar que hay datos esenciales para modo offline
       final hasCredentials = data['credentials'] != null;
-      final hasCategories = data['categories'] != null && (data['categories'] as List).isNotEmpty;
-      final hasProducts = data['products'] != null && (data['products'] as Map).isNotEmpty;
-      
+      final hasCategories =
+          data['categories'] != null && (data['categories'] as List).isNotEmpty;
+      final hasProducts =
+          data['products'] != null && (data['products'] as Map).isNotEmpty;
+
       print('📊 Verificación de datos offline:');
       print('  - Credenciales: ${hasCredentials ? "✅" : "❌"}');
-      print('  - Categorías: ${hasCategories ? "✅" : "❌"} (${hasCategories ? (data['categories'] as List).length : 0})');
-      print('  - Productos: ${hasProducts ? "✅" : "❌"} (${hasProducts ? (data['products'] as Map).keys.length : 0} categorías)');
-      
+      print(
+        '  - Categorías: ${hasCategories ? "✅" : "❌"} (${hasCategories ? (data['categories'] as List).length : 0})',
+      );
+      print(
+        '  - Productos: ${hasProducts ? "✅" : "❌"} (${hasProducts ? (data['products'] as Map).keys.length : 0} categorías)',
+      );
+
       // Requiere al menos credenciales y categorías para funcionar offline
       return hasCredentials && hasCategories;
-      
     } catch (e) {
       print('❌ Error verificando datos offline: $e');
       return false;
     }
   }
-  
+
   // Limpiar datos offline
   Future<void> clearOfflineData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -538,9 +586,9 @@ class UserPreferencesService {
     await prefs.setBool(_offlineModeKey, false);
     print('UserPreferencesService: Datos offline eliminados');
   }
-  
+
   // ============= MÉTODOS PARA MÚLTIPLES USUARIOS OFFLINE =============
-  
+
   /// Guardar credenciales de un usuario para modo offline
   /// Mantiene un array de usuarios con sus credenciales y datos necesarios
   Future<void> saveOfflineUser({
@@ -549,7 +597,7 @@ class UserPreferencesService {
     required String userId,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Obtener datos actuales del usuario de SharedPreferences
     final idTienda = prefs.getInt(_idTiendaKey);
     final idTpv = prefs.getInt(_idTpvKey);
@@ -558,19 +606,22 @@ class UserPreferencesService {
     final nombres = prefs.getString(_nombresKey);
     final apellidos = prefs.getString(_apellidosKey);
     final idRoll = prefs.getInt(_idRollKey);
-    
+
     // Obtener lista actual de usuarios offline
     final usersJson = prefs.getString(_offlineUsersKey);
     List<Map<String, dynamic>> offlineUsers = [];
-    
+
     if (usersJson != null) {
       final decoded = jsonDecode(usersJson) as List<dynamic>;
-      offlineUsers = decoded.map((item) => item as Map<String, dynamic>).toList();
+      offlineUsers =
+          decoded.map((item) => item as Map<String, dynamic>).toList();
     }
-    
+
     // Verificar si el usuario ya existe (por email)
-    final existingIndex = offlineUsers.indexWhere((user) => user['email'] == email);
-    
+    final existingIndex = offlineUsers.indexWhere(
+      (user) => user['email'] == email,
+    );
+
     final userData = {
       'email': email,
       'password': password,
@@ -584,7 +635,7 @@ class UserPreferencesService {
       'idRoll': idRoll,
       'lastSync': DateTime.now().toIso8601String(),
     };
-    
+
     if (existingIndex != -1) {
       // Actualizar usuario existente
       offlineUsers[existingIndex] = userData;
@@ -594,26 +645,29 @@ class UserPreferencesService {
       offlineUsers.add(userData);
       print('✅ Nuevo usuario offline guardado: $email');
     }
-    
+
     // Guardar array actualizado
     await prefs.setString(_offlineUsersKey, jsonEncode(offlineUsers));
     print('📱 Total de usuarios offline: ${offlineUsers.length}');
-    print('📊 Datos guardados: idTienda=$idTienda, idTpv=$idTpv, idTrabajador=$idTrabajador');
+    print(
+      '📊 Datos guardados: idTienda=$idTienda, idTpv=$idTpv, idTrabajador=$idTrabajador',
+    );
   }
-  
+
   /// Verificar si un usuario tiene credenciales guardadas para modo offline
   Future<bool> hasOfflineUser(String email) async {
     final prefs = await SharedPreferences.getInstance();
     final usersJson = prefs.getString(_offlineUsersKey);
-    
+
     if (usersJson == null) return false;
-    
+
     final decoded = jsonDecode(usersJson) as List<dynamic>;
-    final offlineUsers = decoded.map((item) => item as Map<String, dynamic>).toList();
-    
+    final offlineUsers =
+        decoded.map((item) => item as Map<String, dynamic>).toList();
+
     return offlineUsers.any((user) => user['email'] == email);
   }
-  
+
   /// Validar credenciales de un usuario offline
   /// Retorna todos los datos del usuario si las credenciales son válidas
   Future<Map<String, dynamic>?> validateOfflineUser({
@@ -622,26 +676,27 @@ class UserPreferencesService {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final usersJson = prefs.getString(_offlineUsersKey);
-    
+
     if (usersJson == null) {
       print('❌ No hay usuarios offline guardados');
       return null;
     }
-    
+
     final decoded = jsonDecode(usersJson) as List<dynamic>;
-    final offlineUsers = decoded.map((item) => item as Map<String, dynamic>).toList();
-    
+    final offlineUsers =
+        decoded.map((item) => item as Map<String, dynamic>).toList();
+
     // Buscar usuario por email
     final user = offlineUsers.firstWhere(
       (user) => user['email'] == email,
       orElse: () => {},
     );
-    
+
     if (user.isEmpty) {
       print('❌ Usuario no encontrado en modo offline: $email');
       return null;
     }
-    
+
     // Validar password
     if (user['password'] == password) {
       print('✅ Credenciales offline válidas para: $email');
@@ -663,45 +718,46 @@ class UserPreferencesService {
       return null;
     }
   }
-  
+
   /// Obtener todos los usuarios offline guardados
   Future<List<Map<String, dynamic>>> getOfflineUsers() async {
     final prefs = await SharedPreferences.getInstance();
     final usersJson = prefs.getString(_offlineUsersKey);
-    
+
     if (usersJson == null) return [];
-    
+
     final decoded = jsonDecode(usersJson) as List<dynamic>;
     return decoded.map((item) => item as Map<String, dynamic>).toList();
   }
-  
+
   /// Eliminar un usuario offline específico
   Future<void> removeOfflineUser(String email) async {
     final prefs = await SharedPreferences.getInstance();
     final usersJson = prefs.getString(_offlineUsersKey);
-    
+
     if (usersJson == null) return;
-    
+
     final decoded = jsonDecode(usersJson) as List<dynamic>;
-    final offlineUsers = decoded.map((item) => item as Map<String, dynamic>).toList();
-    
+    final offlineUsers =
+        decoded.map((item) => item as Map<String, dynamic>).toList();
+
     // Filtrar para remover el usuario
     offlineUsers.removeWhere((user) => user['email'] == email);
-    
+
     // Guardar array actualizado
     await prefs.setString(_offlineUsersKey, jsonEncode(offlineUsers));
     print('🗑️ Usuario offline eliminado: $email');
   }
-  
+
   /// Limpiar todos los usuarios offline
   Future<void> clearAllOfflineUsers() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_offlineUsersKey);
     print('🗑️ Todos los usuarios offline eliminados');
   }
-  
+
   // ==================== MÉTODOS DE PAGO OFFLINE ====================
-  
+
   /// Obtener métodos de pago desde cache offline
   Future<List<Map<String, dynamic>>> getPaymentMethodsOffline() async {
     final offlineData = await getOfflineData();
@@ -710,122 +766,143 @@ class UserPreferencesService {
     }
     return [];
   }
-  
+
   // ==================== ÓRDENES PENDIENTES DE SINCRONIZACIÓN ====================
-  
+
   /// Guardar una orden pendiente de sincronización
   Future<void> savePendingOrder(Map<String, dynamic> orderData) async {
     final prefs = await SharedPreferences.getInstance();
     final pendingOrdersJson = prefs.getString(_pendingOrdersKey);
-    
+
     List<Map<String, dynamic>> pendingOrders = [];
     if (pendingOrdersJson != null) {
       final decoded = jsonDecode(pendingOrdersJson) as List<dynamic>;
-      pendingOrders = decoded.map((item) => item as Map<String, dynamic>).toList();
+      pendingOrders =
+          decoded.map((item) => item as Map<String, dynamic>).toList();
     }
-    
+
     // Agregar nueva orden con timestamp y flag de pendiente
     orderData['is_pending_sync'] = true;
     orderData['created_offline_at'] = DateTime.now().toIso8601String();
     pendingOrders.add(orderData);
-    
+
     await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
-    print('💾 Orden pendiente guardada. Total pendientes: ${pendingOrders.length}');
+    print(
+      '💾 Orden pendiente guardada. Total pendientes: ${pendingOrders.length}',
+    );
   }
-  
+
   /// Obtener todas las órdenes pendientes de sincronización
   Future<List<Map<String, dynamic>>> getPendingOrders() async {
     final prefs = await SharedPreferences.getInstance();
     final pendingOrdersJson = prefs.getString(_pendingOrdersKey);
-    
+
     if (pendingOrdersJson == null) return [];
-    
+
     final decoded = jsonDecode(pendingOrdersJson) as List<dynamic>;
     return decoded.map((item) => item as Map<String, dynamic>).toList();
   }
-  
+
   /// Eliminar una orden pendiente específica (después de sincronizar)
   Future<void> removePendingOrder(String orderId) async {
     final prefs = await SharedPreferences.getInstance();
     final pendingOrdersJson = prefs.getString(_pendingOrdersKey);
-    
+
     if (pendingOrdersJson == null) return;
-    
+
     final decoded = jsonDecode(pendingOrdersJson) as List<dynamic>;
-    final pendingOrders = decoded.map((item) => item as Map<String, dynamic>).toList();
-    
+    final pendingOrders =
+        decoded.map((item) => item as Map<String, dynamic>).toList();
+
     // Filtrar para remover la orden
     pendingOrders.removeWhere((order) => order['id'] == orderId);
-    
+
     await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
-    print('🗑️ Orden pendiente eliminada: $orderId. Restantes: ${pendingOrders.length}');
+    print(
+      '🗑️ Orden pendiente eliminada: $orderId. Restantes: ${pendingOrders.length}',
+    );
   }
-  
+
   /// Limpiar todas las órdenes pendientes
   Future<void> clearPendingOrders() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_pendingOrdersKey);
     print('🗑️ Todas las órdenes pendientes eliminadas');
   }
-  
+
   /// Obtener número de órdenes pendientes
   Future<int> getPendingOrdersCount() async {
     final pendingOrders = await getPendingOrders();
     return pendingOrders.length;
   }
-  
+
   // ==================== ACTUALIZACIÓN DE CACHE DE PRODUCTOS ====================
-  
+
   /// Actualizar inventario de productos en cache (descontar cantidades)
-  Future<void> updateProductInventoryInCache(int productId, int variantId, int quantityToSubtract) async {
+  Future<void> updateProductInventoryInCache(
+    int productId,
+    int variantId,
+    int quantityToSubtract,
+  ) async {
     final offlineData = await getOfflineData();
     if (offlineData == null || offlineData['products'] == null) return;
-    
+
     final productsData = Map<String, dynamic>.from(offlineData['products']);
     bool updated = false;
-    
+
     // Buscar el producto en todas las categorías
     for (var categoryKey in productsData.keys) {
-      final categoryProducts = List<Map<String, dynamic>>.from(productsData[categoryKey]);
-      
+      final categoryProducts = List<Map<String, dynamic>>.from(
+        productsData[categoryKey],
+      );
+
       for (int i = 0; i < categoryProducts.length; i++) {
         if (categoryProducts[i]['id'] == productId) {
           // Actualizar cantidad total del producto
           final currentQty = categoryProducts[i]['cantidad'] as num;
-          categoryProducts[i]['cantidad'] = (currentQty - quantityToSubtract).clamp(0, double.infinity);
-          
+          categoryProducts[i]['cantidad'] = (currentQty - quantityToSubtract)
+              .clamp(0, double.infinity);
+
           // Actualizar inventario en detalles_completos
           if (categoryProducts[i]['detalles_completos'] != null) {
-            final detalles = Map<String, dynamic>.from(categoryProducts[i]['detalles_completos']);
-            final inventarioList = List<Map<String, dynamic>>.from(detalles['inventario']);
-            
+            final detalles = Map<String, dynamic>.from(
+              categoryProducts[i]['detalles_completos'],
+            );
+            final inventarioList = List<Map<String, dynamic>>.from(
+              detalles['inventario'],
+            );
+
             // Buscar y actualizar la variante específica
             for (int j = 0; j < inventarioList.length; j++) {
               final inv = inventarioList[j];
               final varianteData = inv['variante'] as Map<String, dynamic>?;
-              
+
               if (varianteData != null && varianteData['id'] == variantId) {
                 final currentInvQty = inv['cantidad_disponible'] as num;
-                inv['cantidad_disponible'] = (currentInvQty - quantityToSubtract).clamp(0, double.infinity);
+                inv['cantidad_disponible'] = (currentInvQty -
+                        quantityToSubtract)
+                    .clamp(0, double.infinity);
                 inventarioList[j] = inv;
-                print('📦 Inventario actualizado - Producto: $productId, Variante: $variantId, Descontado: $quantityToSubtract');
+                print(
+                  '📦 Inventario actualizado - Producto: $productId, Variante: $variantId, Descontado: $quantityToSubtract',
+                );
                 break;
               }
             }
-            
+
             detalles['inventario'] = inventarioList;
             categoryProducts[i]['detalles_completos'] = detalles;
           }
-          
+
           productsData[categoryKey] = categoryProducts;
           updated = true;
           break;
         }
       }
-      
+
       if (updated) break;
     }
-    
+
     if (updated) {
       // Guardar cache actualizado
       offlineData['products'] = productsData;
@@ -833,81 +910,85 @@ class UserPreferencesService {
       print('✅ Cache de productos actualizado');
     }
   }
-  
+
   // ==================== OPERACIONES PENDIENTES ====================
-  
+
   /// Guardar una operación pendiente (apertura/cierre/cambio estado)
   Future<void> savePendingOperation(Map<String, dynamic> operation) async {
     final prefs = await SharedPreferences.getInstance();
     final operationsJson = prefs.getString(_pendingOperationsKey);
-    
+
     List<Map<String, dynamic>> operations = [];
     if (operationsJson != null) {
       final decoded = jsonDecode(operationsJson) as List<dynamic>;
       operations = decoded.map((item) => item as Map<String, dynamic>).toList();
     }
-    
+
     // Agregar timestamp
     operation['created_at'] = DateTime.now().toIso8601String();
     operations.add(operation);
-    
+
     await prefs.setString(_pendingOperationsKey, jsonEncode(operations));
     print('💾 Operación pendiente guardada: ${operation['type']}');
   }
-  
+
   /// Obtener todas las operaciones pendientes
   Future<List<Map<String, dynamic>>> getPendingOperations() async {
     final prefs = await SharedPreferences.getInstance();
     final operationsJson = prefs.getString(_pendingOperationsKey);
-    
+
     if (operationsJson == null) return [];
-    
+
     final decoded = jsonDecode(operationsJson) as List<dynamic>;
     return decoded.map((item) => item as Map<String, dynamic>).toList();
   }
-  
+
   /// Limpiar operaciones pendientes
   Future<void> clearPendingOperations() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_pendingOperationsKey);
     print('🗑️ Operaciones pendientes eliminadas');
   }
-  
+
   // ==================== TURNO OFFLINE ====================
-  
+
   /// Guardar turno abierto offline
   Future<void> saveOfflineTurno(Map<String, dynamic> turnoData) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_offlineTurnoKey, jsonEncode(turnoData));
     print('💾 Turno offline guardado');
   }
-  
+
   /// Obtener turno offline
   Future<Map<String, dynamic>?> getOfflineTurno() async {
     final prefs = await SharedPreferences.getInstance();
     final turnoJson = prefs.getString(_offlineTurnoKey);
-    
+
     if (turnoJson == null) return null;
-    
+
     return jsonDecode(turnoJson) as Map<String, dynamic>;
   }
-  
+
   /// Limpiar turno offline
   Future<void> clearOfflineTurno() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_offlineTurnoKey);
     print('🗑️ Turno offline eliminado');
   }
-  
+
   /// Actualizar estado de orden pendiente
-  Future<void> updatePendingOrderStatus(String orderId, String newStatus, Map<String, dynamic>? additionalData) async {
+  Future<void> updatePendingOrderStatus(
+    String orderId,
+    String newStatus,
+    Map<String, dynamic>? additionalData,
+  ) async {
     final pendingOrders = await getPendingOrders();
-    
+
     for (var order in pendingOrders) {
       if (order['id'] == orderId) {
         order['estado'] = newStatus;
         order['last_modified'] = DateTime.now().toIso8601String();
-        
+
         // Guardar operación de cambio de estado
         await savePendingOperation({
           'type': 'order_status_change',
@@ -915,11 +996,11 @@ class UserPreferencesService {
           'new_status': newStatus,
           'additional_data': additionalData,
         });
-        
+
         break;
       }
     }
-    
+
     // Guardar órdenes actualizadas
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_pendingOrdersKey, jsonEncode(pendingOrders));
@@ -936,7 +1017,7 @@ class UserPreferencesService {
   Future<Map<String, dynamic>?> getOfflineTurnoInfo() async {
     final turno = await getOfflineTurno();
     if (turno == null) return null;
-    
+
     return {
       'id': turno['id'],
       'fecha_apertura': turno['fecha_apertura'],
@@ -952,14 +1033,14 @@ class UserPreferencesService {
       final credentials = await getSavedCredentials();
       final email = credentials['email'];
       final password = credentials['password'];
-      
+
       if (email == null || password == null) {
         throw Exception('No hay credenciales guardadas para relogin');
       }
-      
+
       print('🔐 Reautenticando con credenciales guardadas...');
       print('  - Email: $email');
-      
+
       // Aquí se haría la llamada real a Supabase Auth
       // Por ahora simulamos el éxito
       return {
@@ -969,10 +1050,7 @@ class UserPreferencesService {
       };
     } catch (e) {
       print('❌ Error en reautenticación: $e');
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -981,15 +1059,18 @@ class UserPreferencesService {
     final pendingOrders = await getPendingOrders();
     final pendingOperations = await getPendingOperations();
     final turno = await getOfflineTurno();
-    
+
     return {
       'pending_orders_count': pendingOrders.length,
       'pending_operations_count': pendingOperations.length,
       'has_open_turno': turno != null,
-      'turno_info': turno != null ? {
-        'fecha_apertura': turno['fecha_apertura'],
-        'efectivo_inicial': turno['efectivo_inicial'],
-      } : null,
+      'turno_info':
+          turno != null
+              ? {
+                'fecha_apertura': turno['fecha_apertura'],
+                'efectivo_inicial': turno['efectivo_inicial'],
+              }
+              : null,
     };
   }
 
@@ -1021,14 +1102,14 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final resumenJson = prefs.getString(_turnoResumenKey);
-      
+
       if (resumenJson != null) {
         final resumenData = jsonDecode(resumenJson) as Map<String, dynamic>;
         print('📱 Resumen de turno cargado desde cache offline');
         print('📊 Datos disponibles: ${resumenData.keys.toList()}');
         return resumenData;
       }
-      
+
       print('⚠️ No hay resumen de turno en cache offline');
       return null;
     } catch (e) {
@@ -1079,14 +1160,14 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final resumenJson = prefs.getString(_resumenCierreKey);
-      
+
       if (resumenJson != null) {
         final resumenData = jsonDecode(resumenJson) as Map<String, dynamic>;
         print('📱 Resumen de cierre cargado desde cache offline');
         print('📊 Datos cargados: ${resumenData.keys.toList()}');
         return resumenData;
       }
-      
+
       print('ℹ️ No hay resumen de cierre en cache offline');
       return null;
     } catch (e) {
@@ -1131,11 +1212,16 @@ class UserPreferencesService {
       // Obtener órdenes offline pendientes
       final orderService = OrderService();
       final ordenes = orderService.orders;
-      
+
       // Filtrar órdenes offline (las que no han sido sincronizadas)
-      final ordenesOffline = ordenes.where((orden) => 
-        orden.status.name == 'pendienteDeSincronizacion' || orden.status.name == 'enviada'
-      ).toList();
+      final ordenesOffline =
+          ordenes
+              .where(
+                (orden) =>
+                    orden.status.name == 'pendienteDeSincronizacion' ||
+                    orden.status.name == 'enviada',
+              )
+              .toList();
 
       if (ordenesOffline.isEmpty) {
         print('ℹ️ No hay órdenes offline para agregar al resumen');
@@ -1150,8 +1236,11 @@ class UserPreferencesService {
 
       for (final orden in ordenesOffline) {
         ventasOffline += orden.total;
-        productosVendidosOffline += orden.items.fold<int>(0, (sum, item) => sum + item.cantidad);
-        
+        productosVendidosOffline += orden.items.fold<int>(
+          0,
+          (sum, item) => sum + item.cantidad,
+        );
+
         // Estimar método de pago (70% efectivo, 30% transferencias)
         final efectivoOrden = orden.total * 0.7;
         final transferenciasOrden = orden.total * 0.3;
@@ -1161,25 +1250,33 @@ class UserPreferencesService {
 
       // Crear resumen actualizado
       final resumenActualizado = Map<String, dynamic>.from(resumenBase);
-      
+
       // Sumar valores offline a los existentes usando los nombres correctos del cache
-      final ventasBase = (resumenBase['ventas_totales'] ?? resumenBase['total_ventas'] ?? 0.0) as double;
-      final efectivoBase = (resumenBase['efectivo_real'] ?? resumenBase['total_efectivo'] ?? 0.0) as double;
-      final transferenciasBase = (resumenBase['total_transferencias'] ?? 0.0) as double;
+      final ventasBase =
+          (resumenBase['ventas_totales'] ?? resumenBase['total_ventas'] ?? 0.0)
+              as double;
+      final efectivoBase =
+          (resumenBase['efectivo_real'] ?? resumenBase['total_efectivo'] ?? 0.0)
+              as double;
+      final transferenciasBase =
+          (resumenBase['total_transferencias'] ?? 0.0) as double;
       final productosBase = (resumenBase['productos_vendidos'] ?? 0) as int;
-      
+
       // Actualizar con nombres consistentes (usar los del cache original)
       resumenActualizado['ventas_totales'] = ventasBase + ventasOffline;
       resumenActualizado['efectivo_real'] = efectivoBase + efectivoOffline;
-      resumenActualizado['total_transferencias'] = transferenciasBase + transferenciasOffline;
-      resumenActualizado['productos_vendidos'] = productosBase + productosVendidosOffline;
+      resumenActualizado['total_transferencias'] =
+          transferenciasBase + transferenciasOffline;
+      resumenActualizado['productos_vendidos'] =
+          productosBase + productosVendidosOffline;
       resumenActualizado['ordenes_offline'] = ordenesOffline.length;
       resumenActualizado['ventas_offline'] = ventasOffline;
-      
+
       // Recalcular totales
       final totalVentas = resumenActualizado['ventas_totales'] as double;
       final totalProductos = resumenActualizado['productos_vendidos'] as int;
-      resumenActualizado['ticket_promedio'] = totalProductos > 0 ? totalVentas / totalProductos : 0.0;
+      resumenActualizado['ticket_promedio'] =
+          totalProductos > 0 ? totalVentas / totalProductos : 0.0;
 
       print('📊 Resumen de cierre actualizado con órdenes offline:');
       print('  - Órdenes offline: ${ordenesOffline.length}');
@@ -1188,7 +1285,6 @@ class UserPreferencesService {
       print('  - Productos vendidos: $totalProductos');
 
       return resumenActualizado;
-      
     } catch (e) {
       print('❌ Error actualizando resumen con órdenes offline: $e');
       return await getResumenCierreCache(); // Fallback al resumen base
@@ -1202,13 +1298,13 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final egresosOffline = await getEgresosOffline();
-      
+
       // Agregar timestamp de creación offline
       egresoData['created_offline_at'] = DateTime.now().toIso8601String();
       egresoData['offline_id'] = '${DateTime.now().millisecondsSinceEpoch}';
-      
+
       egresosOffline.add(egresoData);
-      
+
       await prefs.setString(_egresosOfflineKey, jsonEncode(egresosOffline));
       print('💾 Egreso guardado offline: ${egresoData['offline_id']}');
     } catch (e) {
@@ -1222,12 +1318,12 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final egresosJson = prefs.getString(_egresosOfflineKey);
-      
+
       if (egresosJson != null) {
         final List<dynamic> egresosData = jsonDecode(egresosJson);
         return egresosData.cast<Map<String, dynamic>>();
       }
-      
+
       return [];
     } catch (e) {
       print('❌ Error obteniendo egresos offline: $e');
@@ -1262,12 +1358,12 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final egresosJson = prefs.getString(_egresosCacheKey);
-      
+
       if (egresosJson != null) {
         final List<dynamic> egresosData = jsonDecode(egresosJson);
         return egresosData.cast<Map<String, dynamic>>();
       }
-      
+
       return [];
     } catch (e) {
       print('❌ Error obteniendo cache de egresos: $e');
@@ -1316,11 +1412,11 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final configJson = prefs.getString(_storeConfigKey);
-      
+
       if (configJson != null) {
         return jsonDecode(configJson) as Map<String, dynamic>;
       }
-      
+
       return null;
     } catch (e) {
       print('❌ Error obteniendo configuración de tienda: $e');
@@ -1369,14 +1465,14 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final orderJson = prefs.getString(_persistentPreorderKey);
-      
+
       if (orderJson != null) {
         final orderData = jsonDecode(orderJson) as Map<String, dynamic>;
         print('📱 Preorden cargada desde cache persistente');
         print('📦 Items en preorden: ${orderData['items']?.length ?? 0}');
         return orderData;
       }
-      
+
       print('📱 No hay preorden persistente guardada');
       return null;
     } catch (e) {
@@ -1389,7 +1485,8 @@ class UserPreferencesService {
   Future<bool> hasPersistentPreorder() async {
     try {
       final preorder = await getPersistentPreorder();
-      return preorder != null && (preorder['items'] as List?)?.isNotEmpty == true;
+      return preorder != null &&
+          (preorder['items'] as List?)?.isNotEmpty == true;
     } catch (e) {
       print('❌ Error verificando preorden persistente: $e');
       return false;

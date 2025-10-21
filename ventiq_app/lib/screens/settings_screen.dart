@@ -1526,7 +1526,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () => Navigator.of(context).pop(),
             ),
             title: const Text(
-              'Código QR - VentIQ',
+              'Código QR - Vendedor Cuba',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 18,
@@ -1564,7 +1564,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 24),
                 // Información
                 Text(
-                  'Escanea este código para descargar VentIQ',
+                  'Escanea este código para descargar Vendedor Cuba',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.9),
                     fontSize: 16,
@@ -1574,7 +1574,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'VentIQ $_appVersion',
+                  'Vendedor Cuba $_appVersion',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.7),
                     fontSize: 14,
@@ -1653,7 +1653,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Escanea el código QR para descargar la aplicación VentIQ en tu dispositivo:',
+                'Escanea el código QR para descargar la aplicación Vendedor Cuba en tu dispositivo:',
                 style: TextStyle(
                   fontSize: 14,
                   color: Color(0xFF6B7280),
@@ -1725,7 +1725,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                'VentIQ $_appVersion',
+                'Vendedor Cuba $_appVersion',
                 style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF9CA3AF),
@@ -1760,7 +1760,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showAboutDialog() {
     showAboutDialog(
       context: context,
-      applicationName: 'VentIQ',
+      applicationName: 'Vendedor Cuba',
       applicationVersion: _appVersion,
       applicationIcon: Container(
         padding: const EdgeInsets.all(8),
@@ -3890,15 +3890,13 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
       if (response is List && response.isNotEmpty) {
         print('✅ Nuevas órdenes descargadas: ${response.length}');
 
-        // Obtener datos offline actuales
-        final offlineData =
-            await widget.userPreferencesService.getOfflineData() ?? {};
+        // Hacer merge de las nuevas órdenes con datos existentes
+        final newOrdersData = {
+          'orders': response.cast<Map<String, dynamic>>(),
+        };
 
-        // Actualizar las órdenes en el cache offline
-        offlineData['orders'] = response.cast<Map<String, dynamic>>();
-
-        // Guardar los datos actualizados
-        await widget.userPreferencesService.saveOfflineData(offlineData);
+        // Usar merge para preservar otros datos offline
+        await widget.userPreferencesService.mergeOfflineData(newOrdersData);
 
         print('💾 Cache de órdenes actualizado con ${response.length} órdenes');
       } else {
