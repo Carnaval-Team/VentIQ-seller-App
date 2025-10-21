@@ -547,22 +547,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: _buildKPICard(
                 title: 'Ventas Total',
                 value:
-                    '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}',
+                    '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)} - ${_dashboardData['totalOrders'] ?? 0} órdenes',
                 subtitle:
                     '${(_dashboardData['salesChange'] ?? 0.0) >= 0 ? '+' : '-'} ${(_dashboardData['salesChange'] ?? 0.0).toStringAsFixed(2)}% ${_getPreviousPeriodLabel()}',
                 icon: Icons.trending_up,
                 color: AppColors.success,
                 onTap: () => Navigator.pushNamed(context, '/sales'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildKPICard(
-                title: 'Productos',
-                value: '${_dashboardData['totalProducts'] ?? 0}',
-                subtitle: '${_dashboardData['outOfStock'] ?? 0} sin stock',
-                icon: Icons.inventory,
-                color: AppColors.warning,
               ),
             ),
           ],
@@ -572,11 +562,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Expanded(
               child: _buildKPICard(
-                title: 'Órdenes',
-                value: '${_dashboardData['totalOrders'] ?? 0}',
-                subtitle: 'Completadas',
-                icon: Icons.receipt_long,
-                color: AppColors.info,
+                title: 'Productos',
+                value: '${_dashboardData['totalProducts'] ?? 0}',
+                subtitle: '${_dashboardData['outOfStock'] ?? 0} sin stock',
+                icon: Icons.inventory,
+                color: AppColors.warning,
+                onTap: () => Navigator.pushNamed(context, '/products'),
               ),
             ),
             const SizedBox(width: 12),
@@ -587,6 +578,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
                 subtitle: _getPeriodLabel(),
                 icon: Icons.money_off,
+                onTap: () => Navigator.pushNamed(context, '/sales'),
                 color: AppColors.error,
               ),
             ),

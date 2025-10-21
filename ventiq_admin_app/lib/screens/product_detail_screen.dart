@@ -33,6 +33,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   List<Map<String, dynamic>> _ingredientes = [];
   bool _isLoadingIngredients = false;
   bool _isLoadingPromotions = false; // ✅ AGREGAR ESTA LÍNEA
+  List<Map<String, dynamic>> _productsUsingThisIngredient = [];
+  bool _isLoadingProductsUsingIngredient = false;
   final PermissionsService _permissionsService = PermissionsService();
   bool _canEditProduct = false;
   // Pagination and filtering for reception operations
@@ -78,6 +80,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       _loadPromotionalPrices(),
       _loadStockHistory(),
       if (_product.esElaborado) _loadIngredients(),
+      _loadProductsUsingThisIngredient(),
     ]);
 
     print('✅ Carga de datos adicionales completada');
@@ -99,6 +102,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       _ingredientes = [];
     } finally {
       setState(() => _isLoadingIngredients = false);
+    }
+  }
+
+  Future<void> _loadProductsUsingThisIngredient() async {
+    setState(() => _isLoadingProductsUsingIngredient = true);
+    try {
+      print('🔍 Cargando productos que usan este producto como ingrediente...');
+      _productsUsingThisIngredient = await ProductService.getProductsUsingThisIngredient(_product.id);
+      print('📊 Productos encontrados que usan este ingrediente: ${_productsUsingThisIngredient.length}');
+    } catch (e) {
+      print('Error loading products using this ingredient: $e');
+      _productsUsingThisIngredient = [];
+    } finally {
+      setState(() => _isLoadingProductsUsingIngredient = false);
     }
   }
 
@@ -305,6 +322,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     _buildMultimediaSection(),
                     const SizedBox(height: 20),
                     _buildTagsSection(),
+                    const SizedBox(height: 20),
+                    _buildIsIngredientSection(),
                   ],
                 ),
               ),
@@ -1811,6 +1830,235 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
+  Widget _buildIsIngredientSection() {
+    return _buildInfoCard(
+      title: 'Es Ingrediente${_productsUsingThisIngredient.isNotEmpty ? ' (${_productsUsingThisIngredient.length})' : ''}',
+      icon: Icons.restaurant,
+      children: [
+        if (_isLoadingProductsUsingIngredient)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: CircularProgressIndicator(),
+            ),
+          )
+        else if (_productsUsingThisIngredient.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Icon(Icons.info_outline, size: 48, color: Colors.grey[400]),
+                const SizedBox(height: 12),
+                Text(
+                  'Este producto no es utilizado como ingrediente en otros productos',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                ),
+              ],
+            ),
+          )
+        else ...[
+          // Lista de productos que usan este ingrediente
+          ..._productsUsingThisIngredient
+              .map(
+                (product) => InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  hoverColor: Colors.orange[50],
+                  splashColor: Colors.orange[100],
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey[200]!),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          spreadRadius: 1,
+                          blurRadius: 3,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                    children: [
+                      // Icono del producto
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Icon(
+                          product['es_elaborado'] == true 
+                            ? Icons.restaurant_menu 
+                            : product['es_servicio'] == true
+                              ? Icons.room_service
+                              : Icons.inventory_2,
+                          color: Colors.grey[400],
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+
+                      // Información del producto
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              product['denominacion_producto'] ?? 'Producto sin nombre',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            if (product['sku_producto'] != null &&
+                                product['sku_producto'].toString().isNotEmpty)
+                              Text(
+                                'SKU: ${product['sku_producto']}',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 13,
+                                ),
+                              ),
+                            const SizedBox(height: 8),
+
+                            // Cantidad necesaria y unidad
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange[50],
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: Colors.orange[200]!),
+                                  ),
+                                  child: Text(
+                                    '${product['cantidad_necesaria']} ${product['unidad_medida']}',
+                                    style: TextStyle(
+                                      color: Colors.orange[700],
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // Tipo de producto
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: product['es_elaborado'] == true
+                                        ? Colors.green[50]
+                                        : product['es_servicio'] == true
+                                          ? Colors.blue[50]
+                                          : Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    product['es_elaborado'] == true
+                                        ? 'Elaborado'
+                                        : product['es_servicio'] == true
+                                          ? 'Servicio'
+                                          : 'Producto',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: product['es_elaborado'] == true
+                                          ? Colors.green[700]
+                                          : product['es_servicio'] == true
+                                            ? Colors.blue[700]
+                                            : Colors.grey[700],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+
+          // Resumen de productos
+          if (_productsUsingThisIngredient.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.orange[50]!, Colors.orange[100]!],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.summarize, color: Colors.orange[700], size: 24),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Resumen de Uso',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange[800],
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Este producto es ingrediente en ${_productsUsingThisIngredient.length} producto(s)',
+                          style: TextStyle(color: Colors.orange[700], fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[600],
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${_productsUsingThisIngredient.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
   Widget _buildInfoCard({
     required String title,
     required IconData icon,
@@ -1881,6 +2129,61 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _navigateToProductDetail(Map<String, dynamic> productData) async {
+    try {
+      print('🔍 Navegando al detalle del producto: ${productData['denominacion_producto']}');
+      print('🔍 ID del producto: ${productData['id_producto_elaborado']}');
+      
+      // Mostrar indicador de carga
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Obtener el producto completo por ID
+      final product = await ProductService.getProductoCompletoById(
+        productData['id_producto_elaborado'],
+      );
+
+      // Cerrar el indicador de carga
+      Navigator.pop(context);
+
+      if (product != null) {
+        // Navegar al detalle del producto
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductDetailScreen(product: product),
+          ),
+        );
+      } else {
+        // Mostrar error si no se pudo cargar el producto
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo cargar el detalle del producto'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      // Cerrar el indicador de carga si está abierto
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+      
+      print('❌ Error navegando al detalle del producto: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al cargar el producto: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   void _editProduct() {

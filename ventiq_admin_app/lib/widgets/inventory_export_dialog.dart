@@ -124,7 +124,8 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         context: context,
         inventoryData: inventoryData,
         warehouseName: _selectedWarehouseName,
-        // filterDate: _selectedDateTo,
+        filterDateFrom: _selectedDate,
+        filterDateTo: _selectedDateTo,
         format: _selectedExportMethod == 'excel' ? 'excel' : 'pdf',
       );
 

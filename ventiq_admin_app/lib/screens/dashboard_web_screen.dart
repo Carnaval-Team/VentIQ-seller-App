@@ -368,7 +368,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                 child: _buildCompactKPICard(
                   title: 'Ventas Total',
                   value:
-                      '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)}',
+                      '\$${_formatCurrency(_dashboardData['totalSales']?.toDouble() ?? 0.0)} - ${_dashboardData['totalOrders'] ?? 0} órdenes',
                   subtitle:
                       '${_dashboardData['salesChange'] >= 0 ? '+' : '-'} ${_dashboardData['salesChange']?.toStringAsFixed(2) ?? '0.00'}% vs anterior',
                   icon: Icons.trending_up,
@@ -384,16 +384,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                   subtitle: '${_dashboardData['outOfStock'] ?? 0} sin stock',
                   icon: Icons.inventory,
                   color: AppColors.warning,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildCompactKPICard(
-                  title: 'Órdenes',
-                  value: '${_dashboardData['totalOrders'] ?? 0}',
-                  subtitle: 'Completadas',
-                  icon: Icons.receipt_long,
-                  color: AppColors.info,
+                  onTap: () => Navigator.pushNamed(context, '/products'),
                 ),
               ),
               const SizedBox(width: 12),
