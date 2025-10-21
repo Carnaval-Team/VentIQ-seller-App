@@ -1016,7 +1016,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                       pauseDuration: const Duration(seconds: 2),
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   // Precio y rating/stock
                   Flexible(
                     child: Row(

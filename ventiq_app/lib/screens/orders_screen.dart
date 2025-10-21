@@ -1134,6 +1134,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           case OrderStatus.devuelta:
             statusMessage = 'Orden marcada como devuelta';
             break;
+          case OrderStatus.completada:
           case OrderStatus.pagoConfirmado:
             statusMessage = 'Pago confirmado exitosamente';
             // Verificar si la impresión está habilitada antes de mostrar el diálogo
