@@ -6,6 +6,8 @@ import '../widgets/admin_bottom_navigation.dart';
 import '../services/dashboard_service.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/changelog_service.dart';
+import '../widgets/changelog_dialog.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -21,6 +23,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final DashboardService _dashboardService = DashboardService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
+  final ChangelogService _changelogService = ChangelogService();
 
   String _currentStoreName = 'Cargando...';
   List<Map<String, dynamic>> _userStores = [];
@@ -43,6 +46,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _loadStoreInfo();
     _loadDashboardData(); // Ya incluye _loadUsdRate() después de actualizar las tasas
+    _checkForChangelog();
   }
 
   Future<void> _loadStoreInfo() async {
@@ -1402,5 +1406,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _checkForChangelog() async {
+    try {
+      // Obtener el changelog más reciente para obtener la versión actual
+      final changelog = await _changelogService.getLatestChangelog();
+      if (changelog == null) return;
+      
+      // Verificar si es primera vez o hay nueva versión
+      final shouldShowChangelog = await _userPreferencesService.isFirstTimeOpening(changelog.version);
+
+      if (shouldShowChangelog) {
+        // Wait a bit for the screen to load
+        await Future.delayed(const Duration(milliseconds: 1500));
+        
+        if (mounted) {
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => ChangelogDialog(changelog: changelog),
+          );
+
+          // Guardar la versión actual del changelog
+          await _userPreferencesService.saveAppVersion(changelog.version);
+          print('📱 Changelog mostrado y versión guardada: ${changelog.version}');
+        }
+      } else {
+        print('📱 Changelog no mostrado - Versión actual: ${changelog.version}');
+      }
+    } catch (e) {
+      debugPrint('Error checking changelog: $e');
+    }
   }
 }

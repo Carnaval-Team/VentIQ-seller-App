@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:convert';
 import '../config/app_colors.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../services/changelog_service.dart';
+import '../services/update_service.dart';
+import '../widgets/changelog_dialog.dart';
+import '../widgets/update_dialog.dart';
 import '../utils/navigation_guard.dart';
 
 class AdminDrawer extends StatefulWidget {
@@ -15,11 +21,14 @@ class _AdminDrawerState extends State<AdminDrawer> {
   String _userName = '';
   String _userEmail = '';
   bool _isLoading = true;
+  String _appVersion = 'v1.0.0';
+  final ChangelogService _changelogService = ChangelogService();
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadAppVersion();
   }
 
   Future<void> _loadUserData() async {
@@ -59,6 +68,31 @@ class _AdminDrawerState extends State<AdminDrawer> {
         _userEmail = 'admin@ventiq.com';
         _isLoading = false;
       });
+    }
+  }
+
+  /// Cargar versión de la app desde changelog.json
+  Future<void> _loadAppVersion() async {
+    try {
+      final String changelogString = await rootBundle.loadString('assets/changelog.json');
+      final Map<String, dynamic> changelog = json.decode(changelogString);
+      final String version = changelog['current_version'] ?? '1.0.0';
+      final int build = changelog['build'] ?? 100;
+      
+      if (mounted) {
+        setState(() {
+          _appVersion = 'v$version';
+        });
+      }
+      
+      print('✅ Versión de la app cargada: $_appVersion');
+    } catch (e) {
+      print('❌ Error cargando versión desde changelog.json: $e');
+      if (mounted) {
+        setState(() {
+          _appVersion = 'v1.0.0 (100)'; // Fallback
+        });
+      }
     }
   }
 
@@ -415,13 +449,40 @@ class _AdminDrawerState extends State<AdminDrawer> {
             decoration: BoxDecoration(
               border: Border(top: BorderSide(color: Colors.grey[300]!)),
             ),
-            child: Row(
+            child: Column(
               children: [
-                Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
-                const SizedBox(width: 8),
-                Text(
-                  'Vendedor Cuba Admin v1.0',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'VentIQ Admin $_appVersion',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: _checkForUpdates,
+                    icon: Icon(Icons.system_update, size: 16, color: AppColors.primary),
+                    label: Text(
+                      'Ver Novedades',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -429,6 +490,70 @@ class _AdminDrawerState extends State<AdminDrawer> {
         ],
       ),
     );
+  }
+
+  /// Verificar actualizaciones disponibles
+  Future<void> _checkForUpdates() async {
+    // Mostrar diálogo de carga
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Verificando actualizaciones...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final updateInfo = await UpdateService.checkForUpdates();
+      
+      // Cerrar diálogo de carga
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (updateInfo['hay_actualizacion'] == true) {
+        // Hay actualización disponible
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: updateInfo['obligatoria'] != true,
+            builder: (context) => UpdateDialog(updateInfo: updateInfo),
+          );
+        }
+      } else {
+        // No hay actualizaciones, mostrar changelog actual
+        final changelog = await _changelogService.getLatestChangelog();
+        if (changelog != null && mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: true,
+            builder: (context) => ChangelogDialog(changelog: changelog),
+          );
+        }
+      }
+    } catch (e) {
+      // Cerrar diálogo de carga
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      
+      print('Error checking for updates: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al verificar actualizaciones: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   // Mostrar diálogo de confirmación para cerrar sesión

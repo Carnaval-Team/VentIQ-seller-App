@@ -2,9 +2,31 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:ventiq_admin_app/services/inventory_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+
+/// Clase para manejar archivos de forma compatible con web y escritorio
+class ExcelFileWrapper {
+  final String name;
+  final Uint8List bytes;
+  final File? file; // Solo disponible en escritorio
+
+  ExcelFileWrapper({
+    required this.name,
+    required this.bytes,
+    this.file,
+  });
+
+  factory ExcelFileWrapper.fromPlatformFile(PlatformFile platformFile) {
+    return ExcelFileWrapper(
+      name: platformFile.name,
+      bytes: platformFile.bytes!,
+      file: kIsWeb ? null : File(platformFile.path!),
+    );
+  }
+}
 
 class ExcelImportService {
   static const int maxBatchSize = 50; // Procesar en lotes de 50 productos
@@ -109,7 +131,7 @@ class ExcelImportService {
   };
 
   /// Selecciona archivo Excel
-  static Future<File?> pickExcelFile() async {
+  static Future<ExcelFileWrapper?> pickExcelFile() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -117,8 +139,27 @@ class ExcelImportService {
         allowMultiple: false,
       );
 
-      if (result != null && result.files.single.path != null) {
-        return File(result.files.single.path!);
+      if (result != null && result.files.isNotEmpty) {
+        final platformFile = result.files.single;
+        
+        // En web, bytes siempre está disponible
+        // En escritorio, necesitamos leer los bytes si no están disponibles
+        Uint8List bytes;
+        if (platformFile.bytes != null) {
+          bytes = platformFile.bytes!;
+        } else if (platformFile.path != null && !kIsWeb) {
+          // Solo en escritorio, leer desde el path
+          final file = File(platformFile.path!);
+          bytes = await file.readAsBytes();
+        } else {
+          throw Exception('No se pudieron obtener los datos del archivo');
+        }
+        
+        return ExcelFileWrapper(
+          name: platformFile.name,
+          bytes: bytes,
+          file: kIsWeb ? null : (platformFile.path != null ? File(platformFile.path!) : null),
+        );
       }
       return null;
     } catch (e) {
@@ -127,11 +168,10 @@ class ExcelImportService {
   }
 
   /// Lee y analiza el archivo Excel
-  static Future<ExcelAnalysisResult> analyzeExcelFile(File file) async {
+  static Future<ExcelAnalysisResult> analyzeExcelFile(ExcelFileWrapper fileWrapper) async {
     try {
-      final bytes = await file.readAsBytes();
-      print('lol');
-      final excel = Excel.decodeBytes(bytes);
+      print('📊 Analizando archivo: ${fileWrapper.name}');
+      final excel = Excel.decodeBytes(fileWrapper.bytes);
 
 
       if (excel.tables.isEmpty) {
@@ -180,7 +220,7 @@ class ExcelImportService {
       );
 
       return ExcelAnalysisResult(
-        fileName: file.path.split('/').last,
+        fileName: fileWrapper.name,
         totalRows: dataRows.length,
         headers: headers,
         columnAnalysis: columnAnalysis,
@@ -280,7 +320,7 @@ class ExcelImportService {
 
   /// Procesa e importa los productos
   static Future<ImportResult> importProducts(
-    File file,
+    ExcelFileWrapper fileWrapper,
     Map<String, String> finalColumnMapping, {
     Map<String, dynamic>? defaultValues,
     bool importWithStock = false,
@@ -288,8 +328,8 @@ class ExcelImportService {
     Function(int, int)? onProgress,
   }) async {
     try {
-      final bytes = await file.readAsBytes();
-      final excel = Excel.decodeBytes(bytes);
+      print('📦 Importando productos desde: ${fileWrapper.name}');
+      final excel = Excel.decodeBytes(fileWrapper.bytes);
       final sheetName = excel.tables.keys.first;
       final sheet = excel.tables[sheetName]!;
 
