@@ -8,6 +8,7 @@ import 'product_details_screen.dart';
 import 'barcode_scanner_screen.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/sales_monitor_fab.dart';
+import '../widgets/marquee_text.dart';
 import '../utils/connection_error_handler.dart';
 
 class ProductsScreen extends StatefulWidget {
@@ -752,7 +753,7 @@ class _SubcategorySection extends StatelessWidget {
     // Para más de 3 productos, usar el layout horizontal original
     return SizedBox(
       height:
-          252, // Altura optimizada: 3 productos (80px) + espaciado (6px entre cards)
+          228, // Altura optimizada: 3 productos (70px) + espaciado (6px entre cards) = 3*70 + 2*6 = 222px + padding
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -929,7 +930,7 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
         );
       },
       child: Container(
-        height: 80, // Altura aumentada para mejor separación
+        height: 70, // Altura reducida sin la descripción
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1001,37 +1002,21 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Nombre del producto
+                  // Nombre del producto con efecto marquee
                   Flexible(
-                    child: Text(
-                      widget.product.denominacion,
+                    child: MarqueeText(
+                      text: widget.product.denominacion,
                       style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w500,
                         color: Color(0xFF1F2937),
                         height: 1.2,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.visible,
-                      softWrap: true,
+                      scrollSpeed: 30.0,
+                      pauseDuration: const Duration(seconds: 2),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  // Descripción/Categoría
-                  Flexible(
-                    child: Text(
-                      widget.product.descripcion ?? widget.product.categoria,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[600],
-                        height: 1.4,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.visible,
-                      softWrap: true,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 8),
                   // Precio y rating/stock
                   Flexible(
                     child: Row(
@@ -1344,18 +1329,18 @@ class _ProductCardState extends State<_ProductCard>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Denominación
-                          Text(
-                            widget.product.denominacion,
+                          // Denominación con efecto marquee
+                          MarqueeText(
+                            text: widget.product.denominacion,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                               color: Color(0xFF2C3E50),
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                            scrollSpeed: 30.0,
+                            pauseDuration: const Duration(seconds: 2),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 12),
                           // Cantidad y precio
                           Row(
                             children: [

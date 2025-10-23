@@ -299,10 +299,10 @@ class AutoSyncService {
         }
       }
 
-      // Guardar datos sincronizados para uso offline futuro
+      // Hacer merge inteligente de datos sincronizados para uso offline futuro
       if (syncedData.isNotEmpty) {
-        await _userPreferencesService.saveOfflineData(syncedData);
-        print('  💾 Datos guardados para uso offline futuro');
+        await _userPreferencesService.mergeOfflineData(syncedData);
+        print('  💾 Datos merged para uso offline futuro');
       }
 
       _lastSyncTime = DateTime.now();
