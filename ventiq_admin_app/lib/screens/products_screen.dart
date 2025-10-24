@@ -1144,7 +1144,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }
   }
 
-  void _showDeleteConfirmation(Product product) {
+  void _showDeleteConfirmation(Product product) async {
+    // Verificar si el producto tiene stock antes de mostrar el diálogo
+    if (await _hasStock(product)) {
+      _showStockWarningDialog(product);
+      return;
+    }
+
     bool isDeleting = false;
 
     showDialog(
@@ -1213,9 +1219,42 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             ],
                           ),
                         ),
+                        const SizedBox(height: 8),
+
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.warning.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: AppColors.warning.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '⚠️ ES NECESARIO',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.warning,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Para poder eliminar el producto no debe tener inventario disponible o ser parte de un producto elaborado o un servicio.',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         const Text(
-                          'Esta acción eliminará TODOS los datos relacionados:',
+                          'Esta acción eliminará TODOS los datos relacionados a:',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             color: AppColors.textPrimary,
@@ -1529,5 +1568,189 @@ class _ProductsScreenState extends State<ProductsScreen> {
         Navigator.pushNamed(context, '/settings');
         break;
     }
+  }
+
+  /// Verificar si el producto tiene stock disponible
+  Future<bool> _hasStock(Product product) async {
+    try {
+      // Verificar primero el stock disponible del producto
+      if (product.stockDisponible > 0) {
+        print('🔍 Producto ${product.denominacion} tiene stock: ${product.stockDisponible}');
+        return true;
+      }
+
+      // Verificar también las ubicaciones de stock para mayor precisión
+      final stockLocations = await ProductService.getProductStockLocations(product.id.toString());
+      
+      for (var location in stockLocations) {
+        final cantidad = (location['cantidad_final'] ?? 0).toDouble();
+        if (cantidad > 0) {
+          print('🔍 Producto ${product.denominacion} tiene stock en ubicación: $cantidad');
+          return true;
+        }
+      }
+
+      print('✅ Producto ${product.denominacion} no tiene stock disponible');
+      return false;
+    } catch (e) {
+      print('❌ Error verificando stock del producto: $e');
+      // En caso de error, asumir que tiene stock para prevenir eliminaciones accidentales
+      return true;
+    }
+  }
+
+  /// Mostrar diálogo de advertencia cuando el producto tiene stock
+  void _showStockWarningDialog(Product product) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: AppColors.warning, size: 28),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'No se puede eliminar',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.warning,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.warning.withOpacity(0.3),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '📦 PRODUCTO CON STOCK',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.warning,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'El producto "${product.denominacion}" tiene stock disponible (${product.stockDisponible.toStringAsFixed(0)} unidades).',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Para poder eliminar este producto, primero debes:',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildRequirementItem('📤 Realizar extracciones de inventario'),
+            _buildRequirementItem('🔄 Transferir el stock a otros productos'),
+            _buildRequirementItem('📊 Ajustar el inventario a cero'),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.info.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.info.withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    color: AppColors.info,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Puedes gestionar el inventario desde la sección "Inventario" del menú principal.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.info,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Entendido'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.pushNamed(context, '/inventory');
+            },
+            icon: const Icon(Icons.inventory_2, size: 18),
+            label: const Text('Ir a Inventario'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Widget helper para mostrar elementos de requisitos
+  Widget _buildRequirementItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 6, right: 8),
+            width: 4,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textSecondary,
+              shape: BoxShape.circle,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

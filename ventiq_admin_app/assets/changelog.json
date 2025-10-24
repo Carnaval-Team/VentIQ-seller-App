@@ -1,0 +1,54 @@
+{
+  "current_version": "1.0.0",
+  "build": 99,
+  "app_name": "ventiq_admin",
+  "changelogs": [
+    {
+      "version": "1.0.0",
+      "date": "2025-10-21",
+      "title": "🎉 Lanzamiento Inicial de VentIQ Admin",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Panel de Administración Completo",
+          "description": "Sistema completo de administración empresarial con dashboard, gestión de productos, inventario y reportes avanzados"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión Avanzada de Productos",
+          "description": "Creación, edición y gestión completa de productos con ingredientes, presentaciones, variantes y multimedia"
+        },
+        {
+          "type": "feature",
+          "title": "Control de Inventario Inteligente",
+          "description": "Sistema de inventario con ubicaciones, operaciones de entrada/salida, históricos y reportes detallados"
+        },
+        {
+          "type": "feature",
+          "title": "Dashboard Empresarial",
+          "description": "Métricas en tiempo real de ventas, productos, gastos y análisis de rendimiento del negocio"
+        },
+        {
+          "type": "feature",
+          "title": "Sistema de Permisos y Roles",
+          "description": "Control granular de acceso basado en roles (Gerente, Supervisor, Empleado) con navegación protegida"
+        },
+        {
+          "type": "feature",
+          "title": "Exportación de Reportes",
+          "description": "Exportación de inventarios y reportes en formatos Excel y PDF con filtros de fecha personalizables"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de Almacenes",
+          "description": "Control completo de múltiples almacenes con ubicaciones específicas y seguimiento de stock por ubicación"
+        },
+        {
+          "type": "feature",
+          "title": "Sección 'Es Ingrediente'",
+          "description": "Visualización de productos que utilizan un ingrediente específico con navegación directa al detalle"
+        }
+      ]
+    }
+  ]
+}

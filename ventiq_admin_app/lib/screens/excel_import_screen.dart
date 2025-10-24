@@ -16,7 +16,7 @@ class ExcelImportScreen extends StatefulWidget {
 
 class _ExcelImportScreenState extends State<ExcelImportScreen> {
   int _currentStep = 0;
-  File? _selectedFile;
+  ExcelFileWrapper? _selectedFile;
   ExcelAnalysisResult? _analysisResult;
   Map<String, String> _finalColumnMapping = {};
   Set<String> _discardedColumns = {}; // Columnas descartadas
@@ -221,7 +221,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Archivo seleccionado: ${_selectedFile!.path.split('/').last}',
+                      'Archivo seleccionado: ${_selectedFile!.name}',
                       style: TextStyle(color: AppColors.success),
                     ),
                   ),
@@ -243,12 +243,26 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_isAnalyzing) ...[
-            const Center(
+            Center(
               child: Column(
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Analizando archivo Excel...'),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Analizando archivo Excel...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Detectando columnas y validando datos',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -256,7 +270,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
             _buildAnalysisResults(),
           ] else ...[
             const Text(
-              'Haz clic en "Analizar" para revisar el contenido del archivo Excel.',
+              'El archivo se analizará automáticamente después de seleccionarlo.',
               style: TextStyle(fontSize: 16),
             ),
           ],
@@ -868,10 +882,10 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
 
   Future<void> _selectFile() async {
     try {
-      final file = await ExcelImportService.pickExcelFile();
-      if (file != null) {
+      final fileWrapper = await ExcelImportService.pickExcelFile();
+      if (fileWrapper != null) {
         setState(() {
-          _selectedFile = file;
+          _selectedFile = fileWrapper;
           _analysisResult = null;
           _finalColumnMapping.clear();
           _discardedColumns.clear();
@@ -879,6 +893,16 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
           _subcategoriesCache.clear(); // AGREGAR ESTA LÍNEA
           _importResult = null;
         });
+        
+        // Analizar automáticamente el archivo después de seleccionarlo
+        await _analyzeFile();
+        
+        // Si el análisis fue exitoso, avanzar automáticamente al siguiente paso
+        if (_analysisResult != null && mounted) {
+          setState(() {
+            _currentStep = 1; // Avanzar al paso de mapeo de columnas
+          });
+        }
       }
     } catch (e) {
       _showError('Error al seleccionar archivo: $e');
@@ -925,6 +949,27 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
         _categories = categories;
         _units = units;
       });
+      
+      // Mostrar mensaje de éxito
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Archivo analizado exitosamente. ${result.totalRows} filas detectadas.',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } catch (e) {
       _showError('Error al analizar archivo: $e');
     } finally {
@@ -1001,9 +1046,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
   }
 
   void _proceedToNextStep(int currentStep) {
-    if (currentStep == 1 && _selectedFile != null) {
-      _analyzeFile();
-    }
+    // Ya no es necesario analizar aquí porque se hace automáticamente al seleccionar archivo
     setState(() => _currentStep = currentStep + 1);
   }
 
