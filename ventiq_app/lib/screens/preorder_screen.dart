@@ -10,6 +10,7 @@ import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/scrolling_text.dart';
+import '../widgets/notification_widget.dart';
 import 'checkout_screen.dart';
 import 'dart:convert';
 
@@ -197,6 +198,7 @@ class _PreorderScreenState extends State<PreorderScreen> {
         ),
         centerTitle: true,
         actions: [
+          const NotificationWidget(),
           if (currentOrder != null && currentOrder.items.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.clear_all, color: Colors.white),

@@ -1,8 +1,75 @@
 {
-  "current_version": "1.3.3",
-  "build": 233,
+  "current_version": "1.4.0",
+  "build": 400,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.4.0",
+      "date": "2025-10-23",
+      "title": "🔔 Sistema de Notificaciones en Tiempo Real y 📅 Gestión de Trabajadores de Turno",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Notificaciones en Tiempo Real",
+          "description": "Recibe alertas instantáneas sobre productos agotados, cambios de inventario y eventos importantes de tu negocio"
+        },
+        {
+          "type": "feature",
+          "title": "Notificaciones Push en Android",
+          "description": "Las notificaciones ahora aparecen en la barra de notificaciones de tu teléfono, incluso cuando la app está cerrada"
+        },
+        {
+          "type": "feature",
+          "title": "Centro de Notificaciones",
+          "description": "Nuevo botón en todas las pantallas para ver y gestionar tus notificaciones con contador de mensajes sin leer"
+        },
+        {
+          "type": "feature",
+          "title": "Alertas de Productos Agotados",
+          "description": "Recibe notificaciones automáticas cuando un producto se agota completamente en tu inventario"
+        },
+        {
+          "type": "feature",
+          "title": "Notificaciones Personalizadas",
+          "description": "Diferentes tipos de alertas con colores e iconos distintivos: inventario, ventas, sistema, promociones y más"
+        },
+        {
+          "type": "improvement",
+          "title": "Gestión de Notificaciones",
+          "description": "Marca notificaciones como leídas, elimínalas con un deslizamiento o marca todas como leídas de una vez"
+        },
+        {
+          "type": "improvement",
+          "title": "Prioridades Inteligentes",
+          "description": "Las notificaciones urgentes aparecen como emergentes en tu pantalla para que no te pierdas nada importante"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de Trabajadores de Turno",
+          "description": "Registra la entrada y salida de tus empleados en cada turno con cálculo automático de horas trabajadas"
+        },
+        {
+          "type": "feature",
+          "title": "Control de Asistencia en Tiempo Real",
+          "description": "Visualiza las horas trabajadas de cada empleado actualizándose automáticamente cada minuto mientras están activos"
+        },
+        {
+          "type": "feature",
+          "title": "Cierre Automático de Trabajadores",
+          "description": "Al cerrar el turno, todos los empleados activos se cierran automáticamente con la hora de cierre registrada"
+        },
+        {
+          "type": "improvement",
+          "title": "Registro Múltiple de Salidas",
+          "description": "Marca la salida de varios trabajadores al mismo tiempo con un solo clic para mayor rapidez"
+        },
+        {
+          "type": "improvement",
+          "title": "Soporte Offline para Trabajadores",
+          "description": "Gestiona la asistencia de tu equipo sin conexión, los datos se sincronizan automáticamente cuando vuelva el internet"
+        }
+      ]
+    },
     {
       "version": "1.3.3",
       "date": "2025-10-21",

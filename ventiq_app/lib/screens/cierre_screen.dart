@@ -8,6 +8,7 @@ import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../services/inventory_service.dart';
+import '../services/shift_workers_service.dart';
 
 class CierreScreen extends StatefulWidget {
   const CierreScreen({Key? key}) : super(key: key);
@@ -56,6 +57,9 @@ class _CierreScreenState extends State<CierreScreen> {
   String _conciliacionEstado = '';
   double _efectivoRealAjustado = 0.0;
   double _diferenciaAjustada = 0.0;
+  
+  // Shift workers closed
+  int _trabajadoresCerrados = 0;
 
   // Orders data
   int _ordenesAbiertas = 0;
@@ -1533,6 +1537,9 @@ class _CierreScreenState extends State<CierreScreen> {
       print('📦 Productos para cierre: $productos'); // Debug log
       print('📊 Total productos: ${productos.length}'); // Debug log
 
+      // Cerrar trabajadores activos antes de cerrar el turno
+      await _closeActiveWorkers();
+
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
       
@@ -1573,6 +1580,56 @@ class _CierreScreenState extends State<CierreScreen> {
       setState(() {
         _isProcessing = false;
       });
+    }
+  }
+
+  /// Cerrar automáticamente todos los trabajadores activos del turno
+  Future<void> _closeActiveWorkers() async {
+    try {
+      print('👥 Verificando trabajadores activos para cerrar...');
+      
+      // Obtener turno abierto
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+      if (turnoAbierto == null) {
+        print('⚠️ No hay turno abierto, omitiendo cierre de trabajadores');
+        return;
+      }
+
+      final idTurno = turnoAbierto['id'] as int;
+      
+      // Obtener trabajadores del turno
+      final workers = await ShiftWorkersService.getShiftWorkers(idTurno);
+      
+      // Filtrar solo los trabajadores activos (sin hora de salida)
+      final activeWorkers = workers.where((w) => w.isActive).toList();
+      
+      if (activeWorkers.isEmpty) {
+        print('✅ No hay trabajadores activos para cerrar');
+        return;
+      }
+
+      print('👥 Cerrando ${activeWorkers.length} trabajador(es) activo(s)...');
+      
+      // Hora de cierre del turno (ahora)
+      final horaCierre = DateTime.now();
+      
+      // Registrar salida de todos los trabajadores activos
+      final idsRegistros = activeWorkers.map((w) => w.id!).toList();
+      final result = await ShiftWorkersService.registerWorkersExit(
+        idsRegistros: idsRegistros,
+        horaSalida: horaCierre,
+      );
+
+      if (result['success'] == true) {
+        _trabajadoresCerrados = activeWorkers.length;
+        print('✅ $_trabajadoresCerrados trabajador(es) cerrado(s) automáticamente');
+        print('⏰ Hora de cierre: ${horaCierre.toIso8601String()}');
+      } else {
+        print('⚠️ Error cerrando trabajadores: ${result['message']}');
+      }
+    } catch (e) {
+      print('❌ Error al cerrar trabajadores activos: $e');
+      // No lanzar error para no interrumpir el cierre del turno
     }
   }
 
@@ -1629,6 +1686,8 @@ class _CierreScreenState extends State<CierreScreen> {
                 if (diferencia.abs() > 0.01)
                   Text('Diferencia: \$${diferencia.toStringAsFixed(2)}'),
                 Text('Órdenes cerradas: ${_ordenesPendientes.length}'),
+                if (_trabajadoresCerrados > 0)
+                  Text('Trabajadores cerrados: $_trabajadoresCerrados'),
                 Text('Fecha: ${_formatDate(DateTime.now())}'),
                 Text('Hora: ${_formatTime(DateTime.now())}'),
               ],

@@ -9,6 +9,7 @@ import '../utils/platform_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
+import '../widgets/notification_widget.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({Key? key}) : super(key: key);
@@ -253,6 +254,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         foregroundColor: Colors.white,
         centerTitle: true,
         actions: [
+          const NotificationWidget(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _refreshOrders,

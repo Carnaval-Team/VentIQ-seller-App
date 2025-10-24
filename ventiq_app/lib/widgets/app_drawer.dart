@@ -241,6 +241,18 @@ class _AppDrawerState extends State<AppDrawer> {
 
                 _buildDrawerItem(
                   context,
+                  icon: Icons.people,
+                  title: 'Trabajadores de Turno',
+                  subtitle: 'Gestionar trabajadores del turno',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/shift-workers');
+                  },
+                ),
+                const Divider(height: 1),
+
+                _buildDrawerItem(
+                  context,
                   icon: Icons.logout,
                   title: 'Cerrar Sesión',
                   subtitle: 'Salir de la aplicación',

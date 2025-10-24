@@ -12,6 +12,8 @@ import '../services/currency_service.dart';
 import '../services/update_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
+import '../widgets/notification_widget.dart';
+import '../services/notification_service.dart';
 import '../utils/connection_error_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -27,6 +29,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   final CategoryService _categoryService = CategoryService();
   final UserPreferencesService _preferencesService = UserPreferencesService();
   final ChangelogService _changelogService = ChangelogService();
+  final NotificationService _notificationService = NotificationService();
   List<Category> _categories = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -52,6 +55,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     _loadDataUsageSettings();
     _loadFluidModeSettings();
     _loadOfflineModeSettings();
+    // Inicializar servicio de notificaciones
+    _notificationService.initialize();
     // Verificar actualizaciones después de que el frame esté completamente renderizado
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdatesAfterNavigation();
@@ -88,6 +93,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _notificationService.dispose();
     super.dispose();
   }
 
@@ -384,11 +390,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
               tooltip: 'Modo ahorro de datos activado',
             ),
           IconButton(
-            icon: const Icon(
-              Icons.qr_code_scanner,
-              color: Colors.white,
-              size: 28,
-            ),
+            icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
             onPressed: () {
               Navigator.push(
                 context,
@@ -399,6 +401,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
             },
             tooltip: 'Escanear código de barras',
           ),
+          // Widget de notificaciones
+          const NotificationWidget(),
           Builder(
             builder:
                 (context) => IconButton(

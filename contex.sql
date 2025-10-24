@@ -522,6 +522,26 @@ CREATE TABLE public.app_dat_layout_condiciones (
   CONSTRAINT app_dat_layout_condiciones_id_layout_fkey FOREIGN KEY (id_layout) REFERENCES public.app_dat_layout_almacen(id),
   CONSTRAINT app_dat_layout_condiciones_id_condicion_fkey FOREIGN KEY (id_condicion) REFERENCES public.app_nom_tipo_condicion(id)
 );
+CREATE TABLE public.app_dat_notificaciones (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  user_id uuid NOT NULL,
+  tipo character varying NOT NULL CHECK (tipo::text = ANY (ARRAY['alerta'::character varying, 'info'::character varying, 'warning'::character varying, 'success'::character varying, 'error'::character varying, 'promocion'::character varying, 'sistema'::character varying, 'pedido'::character varying, 'inventario'::character varying, 'venta'::character varying]::text[])),
+  titulo character varying NOT NULL,
+  mensaje text NOT NULL,
+  data jsonb DEFAULT '{}'::jsonb,
+  prioridad character varying DEFAULT 'normal'::character varying CHECK (prioridad::text = ANY (ARRAY['baja'::character varying, 'normal'::character varying, 'alta'::character varying, 'urgente'::character varying]::text[])),
+  leida boolean DEFAULT false,
+  archivada boolean DEFAULT false,
+  accion character varying,
+  icono character varying,
+  color character varying CHECK (color IS NULL OR color::text ~ '^#[0-9A-Fa-f]{6}$'::text),
+  fecha_expiracion timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  leida_at timestamp with time zone,
+  CONSTRAINT app_dat_notificaciones_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_notificaciones_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.app_dat_operacion_extraccion (
   id_operacion bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   id_motivo_operacion bigint NOT NULL,
@@ -900,6 +920,7 @@ CREATE TABLE public.app_dat_trabajadores (
   apellidos character varying,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   uuid uuid,
+  deleted_at timestamp with time zone,
   CONSTRAINT app_dat_trabajadores_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_trabajadores_id_roll_fkey FOREIGN KEY (id_roll) REFERENCES public.seg_roll(id),
   CONSTRAINT app_dat_trabajadores_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
@@ -1272,6 +1293,18 @@ CREATE TABLE public.app_suscripciones_plan (
   es_activo boolean NOT NULL DEFAULT true,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_suscripciones_plan_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.app_versiones (
+  id integer NOT NULL DEFAULT nextval('app_versiones_id_seq'::regclass),
+  app_name character varying NOT NULL,
+  version_actual character varying NOT NULL,
+  version_minima character varying NOT NULL,
+  version_maxima character varying,
+  build_number integer NOT NULL,
+  actualizacion_obligatoria boolean DEFAULT false,
+  fecha_lanzamiento timestamp without time zone DEFAULT now(),
+  activa boolean DEFAULT true,
+  CONSTRAINT app_versiones_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.monedas (
   codigo character NOT NULL,

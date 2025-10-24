@@ -7,6 +7,7 @@ import 'payment_method_service.dart';
 import 'turno_service.dart';
 import 'reauthentication_service.dart';
 import 'store_config_service.dart';
+import 'shift_workers_service.dart';
 
 /// Servicio para sincronización automática periódica de datos
 /// Se ejecuta cuando el modo offline NO está activado para mantener datos actualizados
@@ -297,6 +298,18 @@ class AutoSyncService {
         } catch (e) {
           print('  ❌ Error sincronizando órdenes: $e');
         }
+      }
+
+      // 12. Sincronizar operaciones pendientes de trabajadores de turno
+      try {
+        final syncedWorkers = await ShiftWorkersService.syncPendingOperations();
+        if (syncedWorkers > 0) {
+          syncedData['shift_workers_synced'] = syncedWorkers;
+          syncedItems.add('trabajadores de turno ($syncedWorkers)');
+          print('  ✅ $syncedWorkers operaciones de trabajadores sincronizadas');
+        }
+      } catch (e) {
+        print('  ❌ Error sincronizando trabajadores de turno: $e');
       }
 
       // Hacer merge inteligente de datos sincronizados para uso offline futuro

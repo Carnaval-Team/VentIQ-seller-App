@@ -9,6 +9,7 @@ import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/elaborated_product_chip.dart';
 import '../utils/connection_error_handler.dart';
+import '../widgets/notification_widget.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
   final Product product;
@@ -654,6 +655,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               },
               tooltip: 'Modo ahorro de datos activado',
             ),
+          const NotificationWidget(),
         ],
       ),
       bottomNavigationBar: AppBottomNavigation(

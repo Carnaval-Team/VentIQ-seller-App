@@ -10,6 +10,7 @@ import '../widgets/bottom_navigation.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../widgets/marquee_text.dart';
 import '../utils/connection_error_handler.dart';
+import '../widgets/notification_widget.dart';
 
 class ProductsScreen extends StatefulWidget {
   final int categoryId;
@@ -353,6 +354,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
               },
               tooltip: 'Modo ahorro de datos activado',
             ),
+          const NotificationWidget(),
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white, size: 28),
             onPressed: _toggleSearch,

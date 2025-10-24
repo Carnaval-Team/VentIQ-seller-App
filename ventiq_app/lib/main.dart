@@ -11,6 +11,7 @@ import 'screens/apertura_screen.dart';
 import 'screens/egreso_screen.dart';
 import 'screens/venta_total_screen.dart';
 import 'screens/cierre_screen.dart';
+import 'screens/shift_workers_screen.dart';
 import 'services/auth_service.dart';
 import 'utils/platform_utils.dart';
 
@@ -52,6 +53,7 @@ class MyApp extends StatelessWidget {
         '/egreso': (context) => const EgresoScreen(),
         '/venta-total': (context) => const VentaTotalScreen(),
         '/cierre': (context) => const CierreScreen(),
+        '/shift-workers': (context) => const ShiftWorkersScreen(),
       },
     );
   }
