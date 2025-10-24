@@ -571,6 +571,14 @@ class _CategoriesScreenState extends State<CategoriesScreen>
         return;
       }
 
+      // ✅ NUEVO: Verificar si se debe mostrar el diálogo según el tiempo transcurrido
+      final shouldShow = await _preferencesService.shouldShowUpdateDialog();
+      
+      if (!shouldShow) {
+        print('⏳ Diálogo de actualización omitido - Aún no ha pasado el tiempo necesario');
+        return;
+      }
+
       final updateInfo = await UpdateService.checkForUpdates();
 
       if (updateInfo['hay_actualizacion'] == true && mounted) {
@@ -602,6 +610,9 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     }
 
     print('📱 Mostrando diálogo de actualización desde CategoriesScreen');
+    
+    // ✅ NUEVO: Marcar que el diálogo fue mostrado
+    _preferencesService.markUpdateDialogShown();
 
     showDialog(
       context: context,

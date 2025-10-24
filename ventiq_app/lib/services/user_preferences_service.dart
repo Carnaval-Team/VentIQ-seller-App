@@ -1503,4 +1503,99 @@ class UserPreferencesService {
       print('❌ Error limpiando preorden persistente: $e');
     }
   }
+
+  // ==================== CONTROL DE DIÁLOGO DE ACTUALIZACIÓN ====================
+
+  static const String _lastUpdateDialogShownKey = 'last_update_dialog_shown';
+  static const int _updateDialogIntervalHours = 3; // Mostrar cada 3 horas
+
+  /// Verificar si se debe mostrar el diálogo de actualización
+  /// Retorna true si:
+  /// - Es la primera vez (nunca se ha mostrado)
+  /// - Han pasado más de 3 horas desde la última vez
+  Future<bool> shouldShowUpdateDialog() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastShownTimestamp = prefs.getInt(_lastUpdateDialogShownKey);
+
+      if (lastShownTimestamp == null) {
+        // Primera vez - mostrar diálogo
+        print('🆕 Primera vez que se verifica actualización - Mostrar diálogo');
+        return true;
+      }
+
+      final lastShownTime = DateTime.fromMillisecondsSinceEpoch(lastShownTimestamp);
+      final now = DateTime.now();
+      final difference = now.difference(lastShownTime);
+
+      final shouldShow = difference.inHours >= _updateDialogIntervalHours;
+
+      if (shouldShow) {
+        print('⏰ Han pasado ${difference.inHours} horas desde el último diálogo - Mostrar actualización');
+      } else {
+        final hoursRemaining = _updateDialogIntervalHours - difference.inHours;
+        final minutesRemaining = (difference.inMinutes % 60);
+        print('⏳ Faltan ${hoursRemaining}h ${60 - minutesRemaining}min para mostrar próximo diálogo de actualización');
+      }
+
+      return shouldShow;
+    } catch (e) {
+      print('❌ Error verificando si mostrar diálogo de actualización: $e');
+      // En caso de error, permitir mostrar el diálogo
+      return true;
+    }
+  }
+
+  /// Guardar timestamp de cuando se mostró el diálogo de actualización
+  Future<void> markUpdateDialogShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await prefs.setInt(_lastUpdateDialogShownKey, now);
+      print('✅ Diálogo de actualización marcado como mostrado: ${DateTime.now()}');
+    } catch (e) {
+      print('❌ Error guardando timestamp de diálogo de actualización: $e');
+    }
+  }
+
+  /// Obtener información del último diálogo mostrado (para debugging)
+  Future<Map<String, dynamic>> getUpdateDialogInfo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastShownTimestamp = prefs.getInt(_lastUpdateDialogShownKey);
+
+      if (lastShownTimestamp == null) {
+        return {
+          'ever_shown': false,
+          'message': 'Nunca se ha mostrado el diálogo de actualización',
+        };
+      }
+
+      final lastShownTime = DateTime.fromMillisecondsSinceEpoch(lastShownTimestamp);
+      final now = DateTime.now();
+      final difference = now.difference(lastShownTime);
+
+      return {
+        'ever_shown': true,
+        'last_shown': lastShownTime.toIso8601String(),
+        'hours_since_last_shown': difference.inHours,
+        'minutes_since_last_shown': difference.inMinutes,
+        'should_show_now': difference.inHours >= _updateDialogIntervalHours,
+      };
+    } catch (e) {
+      print('❌ Error obteniendo información de diálogo de actualización: $e');
+      return {'error': e.toString()};
+    }
+  }
+
+  /// Resetear el control del diálogo de actualización (útil para testing)
+  Future<void> resetUpdateDialogControl() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_lastUpdateDialogShownKey);
+      print('🔄 Control de diálogo de actualización reseteado');
+    } catch (e) {
+      print('❌ Error reseteando control de diálogo: $e');
+    }
+  }
 }
