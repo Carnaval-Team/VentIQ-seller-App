@@ -3,12 +3,21 @@ import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../models/worker_models.dart';
+import '../models/hr_models.dart';
 import '../services/worker_service.dart';
 import '../services/store_service.dart';
+import '../services/hr_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/navigation_guard.dart';
 import '../utils/screen_protection_mixin.dart';
 import 'edit_worker_multi_role_screen.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:io';
+import 'dart:typed_data';
 
 class WorkersScreen extends StatefulWidget {
   const WorkersScreen({super.key});
@@ -45,13 +54,24 @@ class _WorkersScreenState extends State<WorkersScreen>
   int? _storeId;
   String? _userUuid;
 
+  // Estados para el tab de RR.HH.
+  List<ShiftWithWorkers> _shifts = [];
+  bool _isLoadingShifts = false;
+  DateTime _fechaDesde = DateTime.now().subtract(const Duration(days: 7));
+  DateTime _fechaHasta = DateTime.now();
+  HRSummary? _hrSummary;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: 2,
+      length: 3, // Personal, Roles y Rec. Hum.
       vsync: this,
-    ); // Solo Personal y Roles
+    );
+    // Listener para actualizar el FAB cuando cambia de tab
+    _tabController.addListener(() {
+      setState(() {});
+    });
     _initializeData();
   }
 
@@ -210,14 +230,33 @@ class _WorkersScreenState extends State<WorkersScreen>
               text: 'Roles',
               icon: Icon(Icons.admin_panel_settings, size: 18),
             ),
+            Tab(
+              text: 'Rec. Hum.',
+              icon: Icon(Icons.attach_money, size: 18),
+            ),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [_buildWorkersTab(), _buildRolesTab()],
+        children: [
+          _buildWorkersTab(),
+          _buildRolesTab(),
+          _buildHRTab(), // 💰 Nuevo tab de Recursos Humanos
+        ],
       ),
       endDrawer: const AdminDrawer(),
+      floatingActionButton: _tabController.index == 2 && _shifts.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: _exportHRReportToPDF,
+              backgroundColor: AppColors.primary,
+              icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
+              label: const Text(
+                'Exportar PDF',
+                style: TextStyle(color: Colors.white),
+              ),
+            )
+          : null,
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 3,
         onTap: _onBottomNavTap,
@@ -396,6 +435,26 @@ class _WorkersScreenState extends State<WorkersScreen>
                     // 🆕 NUEVO: Etiquetas múltiples de roles
                     _buildRoleTags(worker),
                     const SizedBox(height: 4),
+                    // 💰 NUEVO: Mostrar salario por hora
+                    if (worker.salarioHoras > 0)
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.attach_money,
+                            size: 14,
+                            color: Colors.green[700],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Salario: \$${worker.salarioHoras.toStringAsFixed(2)}/h',
+                            style: TextStyle(
+                              color: Colors.green[700],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     // Mostrar detalles de vendedor si es vendedor
                     if (worker.esVendedor && worker.tpvDenominacion != null)
                       Row(
@@ -406,11 +465,14 @@ class _WorkersScreenState extends State<WorkersScreen>
                             color: Colors.grey[600],
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            'TPV: ${worker.tpvDenominacion}',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 12,
+                          Expanded(
+                            child: Text(
+                              'TPV: ${worker.tpvDenominacion}',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -426,11 +488,14 @@ class _WorkersScreenState extends State<WorkersScreen>
                             color: Colors.grey[600],
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            'Almacén: ${worker.almacenDenominacion}',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 12,
+                          Expanded(
+                            child: Text(
+                              'Almacén: ${worker.almacenDenominacion}',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -959,6 +1024,7 @@ class _WorkersScreenState extends State<WorkersScreen>
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
     final numeroConfirmacionController = TextEditingController();
+    final salarioHorasController = TextEditingController(text: '0'); // 💰 NUEVO
     bool crearUsuario = false;
     bool asignarRolEspecifico = false;
     String? selectedRole;
@@ -1010,6 +1076,19 @@ class _WorkersScreenState extends State<WorkersScreen>
                             prefixIcon: Icon(Icons.person_outline),
                             border: OutlineInputBorder(),
                           ),
+                        ),
+                        const SizedBox(height: 12),
+                        // 💰 NUEVO: Campo de salario por hora
+                        TextField(
+                          controller: salarioHorasController,
+                          decoration: const InputDecoration(
+                            labelText: 'Salario por Hora',
+                            prefixIcon: Icon(Icons.attach_money),
+                            border: OutlineInputBorder(),
+                            hintText: '0.00',
+                            helperText: 'Salario en moneda local por hora trabajada',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         ),
                         const SizedBox(height: 16),
                         const Divider(),
@@ -1300,6 +1379,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                           () => _createWorkerFlexible(
                             nombres: nombresController.text,
                             apellidos: apellidosController.text,
+                            salarioHoras: double.tryParse(salarioHorasController.text) ?? 0.0, // 💰 NUEVO
                             crearUsuario: crearUsuario,
                             email: emailController.text,
                             password: passwordController.text,
@@ -1498,6 +1578,7 @@ class _WorkersScreenState extends State<WorkersScreen>
   Future<void> _createWorkerFlexible({
     required String nombres,
     required String apellidos,
+    double salarioHoras = 0.0, // 💰 NUEVO: Salario por hora
     required bool crearUsuario,
     String? email,
     String? password,
@@ -1607,6 +1688,7 @@ class _WorkersScreenState extends State<WorkersScreen>
             apellidos: apellidos,
             tipoRol: tipoRol,
             usuarioUuid: userUuid,
+            salarioHoras: salarioHoras, // 💰 NUEVO
             tpvId: tpvId,
             almacenId: almacenId,
             numeroConfirmacion: numeroConfirmacion,
@@ -1623,6 +1705,7 @@ class _WorkersScreenState extends State<WorkersScreen>
             nombres: nombres,
             apellidos: apellidos,
             usuarioUuid: userUuid,
+            salarioHoras: salarioHoras, // 💰 NUEVO
             rolId: rolGeneralId,
           );
 
@@ -1640,6 +1723,7 @@ class _WorkersScreenState extends State<WorkersScreen>
           apellidos: apellidos,
           usuarioUuid: null,
           rolId: rolGeneralId,
+          salarioHoras: salarioHoras, // 💰 NUEVO
         );
 
         if (!success) {
@@ -2800,6 +2884,893 @@ class _WorkersScreenState extends State<WorkersScreen>
         }
       }
     }
+  }
+
+  // 💰 NUEVO: Tab de Recursos Humanos
+  Widget _buildHRTab() {
+    return Column(
+      children: [
+        // Filtros de fecha
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Filtrar por Período',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildDateField(
+                      label: 'Desde',
+                      date: _fechaDesde,
+                      onTap: () => _selectDate(context, true),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildDateField(
+                      label: 'Hasta',
+                      date: _fechaHasta,
+                      onTap: () => _selectDate(context, false),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: _loadHRData,
+                    icon: const Icon(Icons.search, size: 18),
+                    label: const Text('Buscar'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // Resumen
+        // if (_hrSummary != null) _buildHRSummaryCard(),
+
+        // Lista de turnos
+        Expanded(
+          child: _isLoadingShifts
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: AppColors.primary),
+                      SizedBox(height: 16),
+                      Text(
+                        'Cargando datos de RR.HH...',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                )
+              : _shifts.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.calendar_today_outlined,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'No hay turnos en este período',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Selecciona otro rango de fechas',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _shifts.length,
+                      itemBuilder: (context, index) {
+                        final shift = _shifts[index];
+                        return _buildShiftCard(shift);
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateField({
+    required String label,
+    required DateTime date,
+    required VoidCallback onTap,
+  }) {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    return InkWell(
+      onTap: onTap,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          prefixIcon: const Icon(Icons.calendar_today, size: 18),
+        ),
+        child: Text(
+          dateFormat.format(date),
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _selectDate(BuildContext context, bool isFromDate) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: isFromDate ? _fechaDesde : _fechaHasta,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      locale: const Locale('es', 'ES'),
+    );
+
+    if (picked != null) {
+      setState(() {
+        if (isFromDate) {
+          _fechaDesde = picked;
+          // Asegurar que fechaDesde no sea mayor que fechaHasta
+          if (_fechaDesde.isAfter(_fechaHasta)) {
+            _fechaHasta = _fechaDesde;
+          }
+        } else {
+          _fechaHasta = picked;
+          // Asegurar que fechaHasta no sea menor que fechaDesde
+          if (_fechaHasta.isBefore(_fechaDesde)) {
+            _fechaDesde = _fechaHasta;
+          }
+        }
+      });
+    }
+  }
+
+  Future<void> _loadHRData() async {
+    if (_storeId == null) return;
+
+    setState(() => _isLoadingShifts = true);
+
+    try {
+      final shifts = await HRService.getShiftsWithWorkers(
+        idTienda: _storeId!,
+        fechaDesde: _fechaDesde,
+        fechaHasta: _fechaHasta,
+      );
+
+      final summary = await HRService.getHRSummary(
+        idTienda: _storeId!,
+        fechaDesde: _fechaDesde,
+        fechaHasta: _fechaHasta,
+      );
+
+      setState(() {
+        _shifts = shifts;
+        _hrSummary = summary;
+        _isLoadingShifts = false;
+      });
+    } catch (e) {
+      print('❌ Error cargando datos de RR.HH.: $e');
+      setState(() => _isLoadingShifts = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar datos: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+ 
+  
+  Widget _buildShiftCard(ShiftWithWorkers shift) {
+    final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
+    final hasWorkers = shift.trabajadores.isNotEmpty;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: const EdgeInsets.all(16),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: shift.isOpen
+                  ? Colors.green.withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              shift.isOpen ? Icons.lock_open : Icons.lock,
+              color: shift.isOpen ? Colors.green : Colors.grey,
+            ),
+          ),
+          title: Text(
+            'Turno #${shift.turnoId} - ${shift.tpvDenominacion}',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Text(
+                'Vendedor: ${shift.vendedorNombre}',
+                style: const TextStyle(fontSize: 12),
+              ),
+              Text(
+                'Apertura: ${dateFormat.format(shift.fechaApertura)}',
+                style: const TextStyle(fontSize: 12),
+              ),
+              if (!shift.isOpen)
+                Text(
+                  'Cierre: ${dateFormat.format(shift.fechaCierre!)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+            ],
+          ),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: hasWorkers
+                      ? Colors.blue.withOpacity(0.1)
+                      : Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${shift.trabajadores.length} trabajador${shift.trabajadores.length != 1 ? 'es' : ''}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: hasWorkers ? Colors.blue : Colors.orange,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                shift.duracionTurno,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          children: [
+            if (hasWorkers) ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text(
+                'Trabajadores del Turno',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...shift.trabajadores.map((worker) => _buildWorkerHoursCard(worker)),
+            ] else
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'No hay trabajadores registrados en este turno',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkerHoursCard(ShiftWorkerHours worker) {
+    final timeFormat = DateFormat('HH:mm');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: AppColors.primary.withOpacity(0.1),
+            child: Text(
+              worker.trabajadorNombre.substring(0, 1).toUpperCase(),
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  worker.trabajadorNombre,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  worker.rolNombre,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.login, size: 12, color: Colors.grey[600]),
+                    const SizedBox(width: 4),
+                    Text(
+                      timeFormat.format(worker.horaEntrada),
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
+                    if (worker.horaSalida != null) ...[
+                      const SizedBox(width: 8),
+                      Icon(Icons.logout, size: 12, color: Colors.grey[600]),
+                      const SizedBox(width: 4),
+                      Text(
+                        timeFormat.format(worker.horaSalida!),
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: worker.isWorking
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  worker.horasTrabajadasFormatted,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: worker.isWorking ? Colors.green : Colors.blue,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '\$${worker.salarioHora.toStringAsFixed(2)}/h',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                worker.salarioTotalFormatted,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 📄 NUEVO: Exportar reporte de RR.HH. a PDF
+  Future<void> _exportHRReportToPDF() async {
+    if (_shifts.isEmpty || _hrSummary == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay datos para exportar'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Mostrar loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+
+      // Generar PDF
+      final pdfBytes = await _generateHRPDF();
+
+      // Cerrar loading
+      if (mounted) Navigator.pop(context);
+
+      // Guardar y compartir archivo
+      final tempDir = await getTemporaryDirectory();
+      final dateStr = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final fileName = 'Desglose_Salarios_$dateStr.pdf';
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(pdfBytes);
+
+      // Compartir archivo
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/pdf')],
+        subject: 'Desglose de Salarios por Trabajadores',
+        text: 'Reporte generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ PDF generado y compartido exitosamente'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      // Cerrar loading si está abierto
+      if (mounted) Navigator.pop(context);
+
+      print('❌ Error al exportar PDF: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar PDF: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Genera el PDF con el desglose de salarios
+  Future<Uint8List> _generateHRPDF() async {
+    final pdf = pw.Document();
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    final timeFormat = DateFormat('HH:mm');
+    final now = DateTime.now();
+
+    // Calcular resumen por trabajador
+    final trabajadoresMap = <int, Map<String, dynamic>>{};
+    
+    for (final shift in _shifts) {
+      for (final worker in shift.trabajadores) {
+        if (!trabajadoresMap.containsKey(worker.idTrabajador)) {
+          trabajadoresMap[worker.idTrabajador] = {
+            'nombre': worker.trabajadorNombre,
+            'rol': worker.rolNombre,
+            'salarioHora': worker.salarioHora,
+            'totalHoras': 0.0,
+            'totalSalario': 0.0,
+          };
+        }
+        
+        if (worker.horasTrabajadas != null) {
+          trabajadoresMap[worker.idTrabajador]!['totalHoras'] += worker.horasTrabajadas!;
+          trabajadoresMap[worker.idTrabajador]!['totalSalario'] += worker.salarioTotal;
+        }
+      }
+    }
+
+    final trabajadoresList = trabajadoresMap.values.toList();
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (pw.Context context) {
+          return [
+            // Encabezado
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'DESGLOSE DE SALARIOS POR TRABAJADORES',
+                  style: pw.TextStyle(
+                    fontSize: 20,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Text(
+                  'Período: ${dateFormat.format(_fechaDesde)} - ${dateFormat.format(_fechaHasta)}',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  'Generado: ${dateFormat.format(now)} ${timeFormat.format(now)}',
+                  style: const pw.TextStyle(fontSize: 12),
+                ),
+                pw.SizedBox(height: 20),
+              ],
+            ),
+
+            // Resumen general
+            pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey200,
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'RESUMEN GENERAL',
+                    style: pw.TextStyle(
+                      fontSize: 14,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text('Total Turnos: ${_hrSummary!.totalTurnos}'),
+                      pw.Text('Total Trabajadores: ${_hrSummary!.totalTrabajadores}'),
+                    ],
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text('Total Horas: ${_hrSummary!.totalHorasTrabajadas.toStringAsFixed(2)}h'),
+                      pw.Text(
+                        'Total Salarios: ${_hrSummary!.totalSalariosFormatted}',
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            pw.SizedBox(height: 20),
+
+            // Listado de trabajadores
+            pw.Text(
+              'DETALLE POR TRABAJADOR',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 12),
+
+            // Tabla de trabajadores
+            pw.Table(
+              border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(3),
+                1: const pw.FlexColumnWidth(2),
+                2: const pw.FlexColumnWidth(1.5),
+                3: const pw.FlexColumnWidth(1.5),
+                4: const pw.FlexColumnWidth(2),
+              },
+              children: [
+                // Encabezado
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey300),
+                  children: [
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        'Trabajador',
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                      ),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        'Rol',
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                      ),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        'Horas',
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                        textAlign: pw.TextAlign.center,
+                      ),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        '\$/Hora',
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                        textAlign: pw.TextAlign.right,
+                      ),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        'Total',
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                        textAlign: pw.TextAlign.right,
+                      ),
+                    ),
+                  ],
+                ),
+                // Filas de trabajadores
+                ...trabajadoresList.map((trabajador) {
+                  return pw.TableRow(
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          trabajador['nombre'],
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          trabajador['rol'],
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          '${trabajador['totalHoras'].toStringAsFixed(2)}h',
+                          style: const pw.TextStyle(fontSize: 9),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          '\$${trabajador['salarioHora'].toStringAsFixed(2)}',
+                          style: const pw.TextStyle(fontSize: 9),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          '\$${trabajador['totalSalario'].toStringAsFixed(2)}',
+                          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+
+            pw.SizedBox(height: 24),
+
+            // Desglose por turnos
+            pw.Text(
+              'DESGLOSE POR TURNOS',
+              style: pw.TextStyle(
+                fontSize: 14,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 12),
+
+            // Lista de turnos
+            ..._shifts.map((shift) {
+              return pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(8),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.grey100,
+                      borderRadius: pw.BorderRadius.circular(4),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          'Turno #${shift.turnoId} - ${shift.tpvDenominacion}',
+                          style: pw.TextStyle(
+                            fontSize: 11,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.Text(
+                          'Vendedor: ${shift.vendedorNombre}',
+                          style: const pw.TextStyle(fontSize: 10),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(left: 8),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Apertura: ${dateFormat.format(shift.fechaApertura)} ${timeFormat.format(shift.fechaApertura)}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                        if (!shift.isOpen)
+                          pw.Text(
+                            'Cierre: ${dateFormat.format(shift.fechaCierre!)} ${timeFormat.format(shift.fechaCierre!)}',
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+
+                  // Tabla de trabajadores del turno
+                  if (shift.trabajadores.isNotEmpty)
+                    pw.Table(
+                      border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                      columnWidths: {
+                        0: const pw.FlexColumnWidth(3),
+                        1: const pw.FlexColumnWidth(1.5),
+                        2: const pw.FlexColumnWidth(1.5),
+                        3: const pw.FlexColumnWidth(1.5),
+                        4: const pw.FlexColumnWidth(1.5),
+                      },
+                      children: [
+                        pw.TableRow(
+                          decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                          children: [
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(4),
+                              child: pw.Text(
+                                'Trabajador',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(4),
+                              child: pw.Text(
+                                'Entrada',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                                textAlign: pw.TextAlign.center,
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(4),
+                              child: pw.Text(
+                                'Salida',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                                textAlign: pw.TextAlign.center,
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(4),
+                              child: pw.Text(
+                                'Horas',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                                textAlign: pw.TextAlign.center,
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(4),
+                              child: pw.Text(
+                                'Salario',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                                textAlign: pw.TextAlign.right,
+                              ),
+                            ),
+                          ],
+                        ),
+                        ...shift.trabajadores.map((worker) {
+                          return pw.TableRow(
+                            children: [
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(4),
+                                child: pw.Text(
+                                  worker.trabajadorNombre,
+                                  style: const pw.TextStyle(fontSize: 8),
+                                ),
+                              ),
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(4),
+                                child: pw.Text(
+                                  timeFormat.format(worker.horaEntrada),
+                                  style: const pw.TextStyle(fontSize: 8),
+                                  textAlign: pw.TextAlign.center,
+                                ),
+                              ),
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(4),
+                                child: pw.Text(
+                                  worker.horaSalida != null
+                                      ? timeFormat.format(worker.horaSalida!)
+                                      : 'En turno',
+                                  style: const pw.TextStyle(fontSize: 8),
+                                  textAlign: pw.TextAlign.center,
+                                ),
+                              ),
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(4),
+                                child: pw.Text(
+                                  worker.horasTrabajadasFormatted,
+                                  style: const pw.TextStyle(fontSize: 8),
+                                  textAlign: pw.TextAlign.center,
+                                ),
+                              ),
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.all(4),
+                                child: pw.Text(
+                                  worker.salarioTotalFormatted,
+                                  style: const pw.TextStyle(fontSize: 8),
+                                  textAlign: pw.TextAlign.right,
+                                ),
+                              ),
+                            ],
+                          );
+                        }),
+                      ],
+                    ),
+                  pw.SizedBox(height: 16),
+                ],
+              );
+            }),
+          ];
+        },
+      ),
+    );
+
+    return pdf.save();
   }
 
   // Navegación del bottom navigation

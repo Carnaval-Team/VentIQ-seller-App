@@ -47,6 +47,7 @@ BEGIN
             t.nombres,
             t.apellidos,
             t.created_at as fecha_creacion,
+            t.salario_horas, -- 💰 NUEVO: Salario por hora
             r.denominacion as rol_nombre,
             r.id as rol_id,
             -- Datos específicos según el rol
@@ -96,6 +97,7 @@ BEGIN
             'nombres', trabajador_record.nombres,
             'apellidos', trabajador_record.apellidos,
             'fecha_creacion', trabajador_record.fecha_creacion,
+            'salario_horas', trabajador_record.salario_horas, -- 💰 NUEVO: Salario por hora
             'rol_id', trabajador_record.rol_id,
             'rol_nombre', trabajador_record.rol_nombre,
             'tipo_rol', trabajador_record.tipo_rol,

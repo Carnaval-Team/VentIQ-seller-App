@@ -34,6 +34,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
   late TextEditingController _nombresController;
   late TextEditingController _apellidosController;
   late TextEditingController _uuidController;
+  late TextEditingController _salarioHorasController; // 💰 NUEVO
 
   // Estado de roles
   late Set<String> _activeRoles;
@@ -56,6 +57,9 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     _uuidController = TextEditingController(
       text: widget.worker.usuarioUuid ?? '',
     );
+    _salarioHorasController = TextEditingController(
+      text: widget.worker.salarioHoras.toStringAsFixed(2), // 💰 NUEVO
+    );
 
     // Inicializar roles activos
     _activeRoles = Set.from(widget.worker.rolesActivos);
@@ -67,6 +71,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     print('  - tpvId: ${widget.worker.tpvId}');
     print('  - numeroConfirmacion: ${widget.worker.numeroConfirmacion}');
     print('  - almacenId: ${widget.worker.almacenId}');
+    print('  - 💰 salarioHoras: ${widget.worker.salarioHoras}'); // 💰 NUEVO DEBUG
 
     // Inicializar datos específicos
     _vendedorTpvId = widget.worker.tpvId;
@@ -83,6 +88,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     _nombresController.dispose();
     _apellidosController.dispose();
     _uuidController.dispose();
+    _salarioHorasController.dispose(); // 💰 NUEVO
     super.dispose();
   }
 
@@ -149,6 +155,19 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
               prefixIcon: Icon(Icons.person_outline),
               border: OutlineInputBorder(),
             ),
+          ),
+          const SizedBox(height: 16),
+          // 💰 NUEVO: Campo de salario por hora
+          TextField(
+            controller: _salarioHorasController,
+            decoration: const InputDecoration(
+              labelText: 'Salario por Hora',
+              prefixIcon: Icon(Icons.attach_money),
+              border: OutlineInputBorder(),
+              hintText: '0.00',
+              helperText: 'Salario en moneda local por hora trabajada',
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
           const SizedBox(height: 24),
           const Text(
@@ -502,6 +521,7 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
         apellidos: _apellidosController.text.trim(),
         tipoRol: widget.worker.tipoRol, // Mantener el rol principal
         usuarioUuid: _uuidController.text.isEmpty ? null : _uuidController.text,
+        salarioHoras: double.tryParse(_salarioHorasController.text) ?? 0.0, // 💰 NUEVO
       );
 
       // 2. Gestionar roles: agregar nuevos y eliminar desactivados

@@ -1,8 +1,60 @@
 {
-  "current_version": "1.0.0",
-  "build": 99,
+  "current_version": "1.1.0",
+  "build": 110,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.1.0",
+      "date": "2025-10-25",
+      "title": "💰 Módulo de Recursos Humanos y Desglose de Salarios",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Tab de Recursos Humanos",
+          "description": "Nuevo módulo completo para gestión de salarios y horas trabajadas con filtros de período personalizable"
+        },
+        {
+          "type": "feature",
+          "title": "Desglose de Salarios por Trabajador",
+          "description": "Visualización detallada de horas trabajadas, salario por hora y salario total por cada trabajador en el período seleccionado"
+        },
+        {
+          "type": "feature",
+          "title": "Desglose por Turnos",
+          "description": "Vista expandible de cada turno mostrando todos los trabajadores con sus horarios de entrada/salida y salarios calculados"
+        },
+        {
+          "type": "feature",
+          "title": "Exportación de Reportes de Salarios a PDF",
+          "description": "Botón flotante para exportar desglose completo de salarios en PDF con resumen general, detalle por trabajador y desglose por turnos"
+        },
+        {
+          "type": "feature",
+          "title": "Campo de Salario por Hora",
+          "description": "Nuevo campo en la creación/edición de trabajadores para especificar el salario por hora de cada empleado"
+        },
+        {
+          "type": "feature",
+          "title": "Visualización de Salarios en Listado",
+          "description": "Indicador visual del salario por hora en las tarjetas de trabajadores del módulo Personal"
+        },
+        {
+          "type": "improvement",
+          "title": "Cálculo Automático de Salarios",
+          "description": "Sistema automático que calcula el salario total multiplicando horas trabajadas por salario/hora configurado"
+        },
+        {
+          "type": "improvement",
+          "title": "Filtros de Fecha Mejorados",
+          "description": "Filtros de fecha ajustados para incluir todo el día desde 00:00:00 hasta 23:59:59 en consultas de turnos"
+        },
+        {
+          "type": "improvement",
+          "title": "Resumen Estadístico de RR.HH.",
+          "description": "Tarjeta de resumen con total de turnos, trabajadores, horas trabajadas y salarios totales del período"
+        }
+      ]
+    },
     {
       "version": "1.0.0",
       "date": "2025-10-21",

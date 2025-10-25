@@ -46,6 +46,7 @@ class WorkerService {
             print('   - datos_especificos: ${workerJson['datos_especificos']}');
             print('   - es_vendedor: ${workerJson['es_vendedor']}');
             print('   - es_almacenero: ${workerJson['es_almacenero']}');
+            print('   - 💰 salario_horas: ${workerJson['salario_horas']}'); // 💰 DEBUG
 
             final worker = WorkerData.fromJson(workerJson);
             workers.add(worker);
@@ -100,13 +101,16 @@ class WorkerService {
     required String apellidos,
     required String tipoRol,
     required String usuarioUuid,
+    double salarioHoras = 0.0, // 💰 NUEVO: Salario por hora
     int? tpvId,
     int? almacenId,
     String? numeroConfirmacion,
   }) async {
     try {
       print('➕ Creando trabajador: $nombres $apellidos, rol: $tipoRol');
+      print('💰 Salario/Hora: $salarioHoras');
 
+      // 1. Crear trabajador con RPC existente
       final response = await _supabase.rpc(
         'fn_insertar_trabajador_completo',
         params: {
@@ -123,11 +127,22 @@ class WorkerService {
 
       print('📋 Respuesta de creación: $response');
 
-      if (response['success'] == true) {
-        return true;
-      } else {
+      if (response['success'] != true) {
         throw Exception(response['message'] ?? 'Error al crear trabajador');
       }
+
+      // 2. 💰 Actualizar salario_horas si es mayor a 0
+      if (salarioHoras > 0 && response['trabajador_id'] != null) {
+        final trabajadorId = response['trabajador_id'] as int;
+        print('💰 Actualizando salario_horas: $salarioHoras para trabajador $trabajadorId');
+        await _supabase
+            .from('app_dat_trabajadores')
+            .update({'salario_horas': salarioHoras})
+            .eq('id', trabajadorId);
+        print('✅ Salario actualizado correctamente');
+      }
+
+      return true;
     } catch (e) {
       print('❌ Error en createWorker: $e');
       throw Exception('Error al crear trabajador: $e');
@@ -141,11 +156,14 @@ class WorkerService {
     required String apellidos,
     String? usuarioUuid,
     int? rolId,
+    double salarioHoras = 0.0, // 💰 NUEVO: Salario por hora
   }) async {
     try {
       print('➡️ Creando trabajador básico: $nombres $apellidos');
       print('   UUID: ${usuarioUuid ?? "null"}, Rol ID: $rolId');
+      print('💰 Salario/Hora: $salarioHoras');
 
+      // 1. Crear trabajador con RPC existente
       final response = await _supabase.rpc(
         'fn_insertar_trabajador_basico',
         params: {
@@ -159,11 +177,22 @@ class WorkerService {
 
       print('📋 Respuesta de creación básica: $response');
 
-      if (response['success'] == true) {
-        return true;
-      } else {
+      if (response['success'] != true) {
         throw Exception(response['message'] ?? 'Error al crear trabajador');
       }
+
+      // 2. 💰 Actualizar salario_horas si es mayor a 0
+      if (salarioHoras > 0 && response['trabajador_id'] != null) {
+        final trabajadorId = response['trabajador_id'] as int;
+        print('💰 Actualizando salario_horas: $salarioHoras para trabajador $trabajadorId');
+        await _supabase
+            .from('app_dat_trabajadores')
+            .update({'salario_horas': salarioHoras})
+            .eq('id', trabajadorId);
+        print('✅ Salario actualizado correctamente');
+      }
+
+      return true;
     } catch (e) {
       print('❌ Error en createWorkerBasic: $e');
       throw Exception('Error al crear trabajador: $e');
@@ -179,6 +208,7 @@ class WorkerService {
     required String apellidos,
     String? tipoRol, // Deprecated - mantenido por compatibilidad
     String? usuarioUuid,
+    double? salarioHoras, // 💰 NUEVO: Salario por hora (opcional para edición)
     int? tpvId, // Deprecated - usar updateRoleSpecificData
     int? almacenId, // Deprecated - usar updateRoleSpecificData
     String? numeroConfirmacion, // Deprecated - usar updateRoleSpecificData
@@ -188,7 +218,9 @@ class WorkerService {
       print('  - Nombres: $nombres');
       print('  - Apellidos: $apellidos');
       print('  - UUID: $usuarioUuid');
+      print('  - Salario/Hora: ${salarioHoras ?? "sin cambios"}'); // 💰 NUEVO
 
+      // 1. Editar datos básicos con RPC existente
       final response = await _supabase.rpc(
         'fn_editar_trabajador_basico',
         params: {
@@ -201,11 +233,21 @@ class WorkerService {
 
       print('📋 Respuesta de edición: $response');
 
-      if (response['success'] == true) {
-        return true;
-      } else {
+      if (response['success'] != true) {
         throw Exception(response['message'] ?? 'Error al editar trabajador');
       }
+
+      // 2. 💰 Actualizar salario_horas directamente si se proporcionó
+      if (salarioHoras != null) {
+        print('💰 Actualizando salario_horas: $salarioHoras');
+        await _supabase
+            .from('app_dat_trabajadores')
+            .update({'salario_horas': salarioHoras})
+            .eq('id', workerId);
+        print('✅ Salario actualizado correctamente');
+      }
+
+      return true;
     } catch (e) {
       print('❌ Error en editWorker: $e');
       throw Exception('Error al editar trabajador: $e');

@@ -926,6 +926,24 @@ CREATE TABLE public.app_dat_trabajadores (
   CONSTRAINT app_dat_trabajadores_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_dat_trabajadores_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
 );
+CREATE TABLE public.app_dat_turno_trabajadores (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_turno bigint NOT NULL,
+  id_trabajador bigint NOT NULL,
+  hora_entrada timestamp with time zone NOT NULL DEFAULT now(),
+  hora_salida timestamp with time zone,
+  horas_trabajadas numeric DEFAULT 
+CASE
+    WHEN (hora_salida IS NOT NULL) THEN (EXTRACT(epoch FROM (hora_salida - hora_entrada)) / (3600)::numeric)
+    ELSE NULL::numeric
+END,
+  observaciones text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_turno_trabajadores_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_turno_trabajadores_id_turno_fkey FOREIGN KEY (id_turno) REFERENCES public.app_dat_caja_turno(id),
+  CONSTRAINT app_dat_turno_trabajadores_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id)
+);
 CREATE TABLE public.app_dat_variantes (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   id_sub_categoria bigint NOT NULL,
