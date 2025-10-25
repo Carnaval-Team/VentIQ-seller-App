@@ -69,6 +69,12 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/images/ventas_admin.png"
   min_sdk_android: 21
+  # Optimizaciones para reducir tamaño
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/ventas_admin.png"
+  remove_alpha_ios: true
+  # Solo generar tamaños necesarios
+  android_13_icon: true
 
   # To add custom fonts to your application, add a fonts section here,
   # in this "flutter" section. Each entry in this list should have a
