@@ -40,6 +40,7 @@ class WorkerData {
   final String tipoRol;
   final Map<String, dynamic> datosEspecificos;
   final String? usuarioUuid;
+  final double salarioHoras; // 💰 Salario por hora del trabajador
 
   // 🆕 Nuevos campos para roles múltiples
   final bool tieneUsuario;
@@ -58,6 +59,7 @@ class WorkerData {
     required this.tipoRol,
     required this.datosEspecificos,
     this.usuarioUuid,
+    this.salarioHoras = 0.0, // Valor por defecto 0
     this.tieneUsuario = false,
     this.esGerente = false,
     this.esSupervisor = false,
@@ -77,6 +79,7 @@ class WorkerData {
       datosEspecificos:
           json['datos_especificos'] as Map<String, dynamic>? ?? {},
       usuarioUuid: json['usuario_uuid'] as String?,
+      salarioHoras: (json['salario_horas'] as num?)?.toDouble() ?? 0.0, // 💰 Parsear salario
       // 🆕 Parsear nuevos campos de roles múltiples
       tieneUsuario: json['tiene_usuario'] as bool? ?? false,
       esGerente: json['es_gerente'] as bool? ?? false,
@@ -126,6 +129,7 @@ class WorkerData {
       'tipo_rol': tipoRol,
       'datos_especificos': datosEspecificos,
       'usuario_uuid': usuarioUuid,
+      'salario_horas': salarioHoras, // 💰 Incluir salario en JSON
       // 🆕 Incluir nuevos campos en JSON
       'tiene_usuario': tieneUsuario,
       'es_gerente': esGerente,
