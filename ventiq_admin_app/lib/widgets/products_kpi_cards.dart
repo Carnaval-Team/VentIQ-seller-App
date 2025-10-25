@@ -17,41 +17,74 @@ class ProductsKPICards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isLargeScreen = screenWidth > 1200;
+    final isMediumScreen = screenWidth > 800;
+    
+    // Determinar el número de columnas basado en el tamaño de pantalla
+    int crossAxisCount;
+    double childAspectRatio;
+    
+    if (isLargeScreen) {
+      // En pantallas grandes, mostrar las 4 cartas principales en una fila
+      crossAxisCount = 4;
+      childAspectRatio = 1.2;
+    } else if (isMediumScreen) {
+      // En pantallas medianas, mostrar 3 columnas
+      crossAxisCount = 3;
+      childAspectRatio = 1.1;
+    } else {
+      // En pantallas pequeñas, mantener 2 columnas
+      crossAxisCount = 2;
+      childAspectRatio = 1.3;
+    }
+
     if (isLoading) {
       return GridView.count(
-        crossAxisCount: 2,
+        crossAxisCount: crossAxisCount,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        childAspectRatio: 1.5,
+        childAspectRatio: childAspectRatio,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
         children: List.generate(6, (index) => _buildLoadingCard()),
       );
     }
 
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 1.3,
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 18,
-      children: [
-        _buildKPICard(
-          context,
-          'Total Productos',
-          '${kpis['totalProductos'] ?? 0}',
-          Icons.inventory_2,
-          Colors.blue,
-        ),
-        _buildKPICard(
-          context,
-          'Con Stock',
-          '${kpis['productosConStock'] ?? 0}',
-          Icons.check_circle,
-          Colors.green,
-          percentage: kpis['porcentajeConStock']?.toDouble(),
-        ),
+    // Lista de todas las cartas KPI
+    final kpiCards = [
+      _buildKPICard(
+        context,
+        'Total Productos',
+        '${kpis['totalProductos'] ?? 0}',
+        Icons.inventory_2,
+        Colors.blue,
+      ),
+      _buildKPICard(
+        context,
+        'Con Stock',
+        '${kpis['productosConStock'] ?? 0}',
+        Icons.check_circle,
+        Colors.green,
+        percentage: kpis['porcentajeConStock']?.toDouble(),
+      ),
+      _buildKPICard(
+        context,
+        'Stock Bajo',
+        '${kpis['productosStockBajo'] ?? 0}',
+        Icons.warning,
+        Colors.red,
+        percentage: kpis['porcentajeStockBajo']?.toDouble(),
+      ),
+      _buildKPICard(
+        context,
+        'Valor Inventario',
+        'CUP \$${NumberFormatter.formatCurrency(kpis['valorTotalInventario'] ?? 0.0)}',
+        Icons.attach_money,
+        Colors.green,
+      ),
+      // Cartas adicionales para pantallas más pequeñas
+      if (!isLargeScreen) ...[
         _buildKPICard(
           context,
           'Productos Elaborados',
@@ -61,29 +94,82 @@ class ProductsKPICards extends StatelessWidget {
         ),
         _buildKPICard(
           context,
-          'Stock Bajo',
-          '${kpis['productosStockBajo'] ?? 0}',
-          Icons.warning,
-          Colors.red,
-          percentage: kpis['porcentajeStockBajo']?.toDouble(),
-        ),
-        _buildKPICard(
-          context,
           'Sin Movimiento',
           '${kpis['productosSinMovimiento'] ?? 0}',
           Icons.pause_circle,
           Colors.grey,
           percentage: kpis['porcentajeSinMovimiento']?.toDouble(),
         ),
-        _buildKPICard(
-          context,
-          'Valor Inventario',
-          'CUP \$${NumberFormatter.formatCurrency(kpis['valorTotalInventario'] ?? 0.0)}',
-          Icons.attach_money,
-          Colors.green,
-        ),
       ],
-    );
+    ];
+
+    if (isLargeScreen) {
+      // En pantallas grandes, mostrar las 4 cartas principales en una sola fila
+      return Column(
+        children: [
+          // Primera fila con las 4 cartas principales
+          SizedBox(
+            height: 140,
+            child: Row(
+              children: kpiCards.take(4).map((card) => Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: card,
+                ),
+              )).toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Segunda fila con las cartas adicionales
+          SizedBox(
+            height: 140,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: _buildKPICard(
+                      context,
+                      'Productos Elaborados',
+                      '${kpis['productosElaborados'] ?? 0}',
+                      Icons.construction,
+                      Colors.orange,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: _buildKPICard(
+                      context,
+                      'Sin Movimiento',
+                      '${kpis['productosSinMovimiento'] ?? 0}',
+                      Icons.pause_circle,
+                      Colors.grey,
+                      percentage: kpis['porcentajeSinMovimiento']?.toDouble(),
+                    ),
+                  ),
+                ),
+                // Espacios vacíos para mantener la alineación
+                const Expanded(child: SizedBox()),
+                const Expanded(child: SizedBox()),
+              ],
+            ),
+          ),
+        ],
+      );
+    } else {
+      // Para pantallas medianas y pequeñas, usar GridView
+      return GridView.count(
+        crossAxisCount: crossAxisCount,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        childAspectRatio: childAspectRatio,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 18,
+        children: kpiCards,
+      );
+    }
   }
 
   Widget _buildKPICard(
