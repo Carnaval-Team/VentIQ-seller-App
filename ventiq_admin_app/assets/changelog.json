@@ -1,8 +1,20 @@
 {
-  "current_version": "1.1.1",
-  "build": 111,
+  "current_version": "1.1.2",
+  "build": 112,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.1.2",
+      "date": "2025-10-26",
+      "title": "🔧 Corrección de Productos Duplicados",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Productos Duplicados en Órdenes",
+          "description": "Eliminados productos duplicados en el detalle de órdenes del módulo de Ventas"
+        }
+      ]
+    },
     {
       "version": "1.1.1",
       "date": "2025-10-25",
