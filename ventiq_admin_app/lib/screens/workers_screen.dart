@@ -3027,7 +3027,8 @@ class _WorkersScreenState extends State<WorkersScreen>
       initialDate: isFromDate ? _fechaDesde : _fechaHasta,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
-      locale: const Locale('es', 'ES'),
+      // ✅ CORREGIDO: Removido locale para evitar pantalla en blanco
+      // El locale se debe configurar en MaterialApp, no aquí
     );
 
     if (picked != null) {
@@ -3091,6 +3092,10 @@ class _WorkersScreenState extends State<WorkersScreen>
   Widget _buildShiftCard(ShiftWithWorkers shift) {
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
     final hasWorkers = shift.trabajadores.isNotEmpty;
+    
+    // ✅ Convertir fechas UTC a hora de La Habana (UTC-4)
+    final fechaAperturaLocal = shift.fechaApertura.toUtc().subtract(const Duration(hours: 4));
+    final fechaCierreLocal = shift.fechaCierre?.toUtc().subtract(const Duration(hours: 4));
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -3127,12 +3132,12 @@ class _WorkersScreenState extends State<WorkersScreen>
                 style: const TextStyle(fontSize: 12),
               ),
               Text(
-                'Apertura: ${dateFormat.format(shift.fechaApertura)}',
+                'Apertura: ${dateFormat.format(fechaAperturaLocal)}',
                 style: const TextStyle(fontSize: 12),
               ),
               if (!shift.isOpen)
                 Text(
-                  'Cierre: ${dateFormat.format(shift.fechaCierre!)}',
+                  'Cierre: ${dateFormat.format(fechaCierreLocal!)}',
                   style: const TextStyle(fontSize: 12),
                 ),
             ],
@@ -3200,6 +3205,10 @@ class _WorkersScreenState extends State<WorkersScreen>
 
   Widget _buildWorkerHoursCard(ShiftWorkerHours worker) {
     final timeFormat = DateFormat('HH:mm');
+    
+    // ✅ Convertir horas UTC a hora de La Habana (UTC-4)
+    final horaEntradaLocal = worker.horaEntrada.toUtc().subtract(const Duration(hours: 4));
+    final horaSalidaLocal = worker.horaSalida?.toUtc().subtract(const Duration(hours: 4));
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -3247,7 +3256,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                     Icon(Icons.login, size: 12, color: Colors.grey[600]),
                     const SizedBox(width: 4),
                     Text(
-                      timeFormat.format(worker.horaEntrada),
+                      timeFormat.format(horaEntradaLocal),
                       style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                     ),
                     if (worker.horaSalida != null) ...[
@@ -3255,7 +3264,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                       Icon(Icons.logout, size: 12, color: Colors.grey[600]),
                       const SizedBox(width: 4),
                       Text(
-                        timeFormat.format(worker.horaSalida!),
+                        timeFormat.format(horaSalidaLocal!),
                         style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                       ),
                     ],
@@ -3610,6 +3619,10 @@ class _WorkersScreenState extends State<WorkersScreen>
 
             // Lista de turnos
             ..._shifts.map((shift) {
+              // Convertir fechas UTC a hora de La Habana (UTC-4) para PDF
+              final fechaAperturaLocal = shift.fechaApertura.toUtc().subtract(const Duration(hours: 4));
+              final fechaCierreLocal = shift.fechaCierre?.toUtc().subtract(const Duration(hours: 4));
+
               return pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
@@ -3643,12 +3656,12 @@ class _WorkersScreenState extends State<WorkersScreen>
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text(
-                          'Apertura: ${dateFormat.format(shift.fechaApertura)} ${timeFormat.format(shift.fechaApertura)}',
+                          'Apertura: ${dateFormat.format(fechaAperturaLocal)} ${timeFormat.format(fechaAperturaLocal)}',
                           style: const pw.TextStyle(fontSize: 9),
                         ),
-                        if (!shift.isOpen)
+                        if (!shift.isOpen && fechaCierreLocal != null)
                           pw.Text(
-                            'Cierre: ${dateFormat.format(shift.fechaCierre!)} ${timeFormat.format(shift.fechaCierre!)}',
+                            'Cierre: ${dateFormat.format(fechaCierreLocal)} ${timeFormat.format(fechaCierreLocal)}',
                             style: const pw.TextStyle(fontSize: 9),
                           ),
                       ],
@@ -3713,6 +3726,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                           ],
                         ),
                         ...shift.trabajadores.map((worker) {
+                          // Convertir horas UTC a hora de La Habana (UTC-4) para PDF
+                          final horaEntradaLocal = worker.horaEntrada.toUtc().subtract(const Duration(hours: 4));
+                          final horaSalidaLocal = worker.horaSalida?.toUtc().subtract(const Duration(hours: 4));
+
                           return pw.TableRow(
                             children: [
                               pw.Padding(
@@ -3725,7 +3742,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                               pw.Padding(
                                 padding: const pw.EdgeInsets.all(4),
                                 child: pw.Text(
-                                  timeFormat.format(worker.horaEntrada),
+                                  timeFormat.format(horaEntradaLocal),
                                   style: const pw.TextStyle(fontSize: 8),
                                   textAlign: pw.TextAlign.center,
                                 ),
@@ -3734,7 +3751,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                                 padding: const pw.EdgeInsets.all(4),
                                 child: pw.Text(
                                   worker.horaSalida != null
-                                      ? timeFormat.format(worker.horaSalida!)
+                                      ? timeFormat.format(horaSalidaLocal!)
                                       : 'En turno',
                                   style: const pw.TextStyle(fontSize: 8),
                                   textAlign: pw.TextAlign.center,
