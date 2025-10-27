@@ -467,7 +467,11 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
           const SizedBox(height: 16),
         ],
 
+        // Sección de categoría/subcategoría OBLIGATORIA
+        _buildMandatoryCategorySection(),
+        
         // Valores por defecto
+        const SizedBox(height: 16),
         _buildDefaultValuesSection(),
         
         // Sección de importación de stock
@@ -642,7 +646,37 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
           'Vista previa de los datos a importar:',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        // Mostrar información de categoría seleccionada
+        if (_defaultValues.containsKey('id_categoria') && _defaultValues['id_categoria'] != null) ...
+        [
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              border: Border.all(color: Colors.green.withOpacity(0.4)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green.shade700),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '✅ Categoría asignada: ${_getCategoryName(_defaultValues['id_categoria'] as int)}${_defaultValues.containsKey('id_subcategoria') ? ' > ${_getCategoryName(_defaultValues['id_subcategoria'] as int)}' : ''}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.green.shade900,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
@@ -676,6 +710,35 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Mostrar información de categoría seleccionada
+        if (_defaultValues.containsKey('id_categoria') && _defaultValues['id_categoria'] != null) ...
+        [
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue.shade700),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Todos los productos se importarán con: ${_getCategoryName(_defaultValues['id_categoria'] as int)}${_defaultValues.containsKey('id_subcategoria') ? ' > ${_getCategoryName(_defaultValues['id_subcategoria'] as int)}' : ''}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.blue.shade900,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         if (_isImporting) ...[
           const Text('Importando productos...', style: TextStyle(fontSize: 16)),
           const SizedBox(height: 16),
@@ -980,6 +1043,12 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
   Future<void> _startImport() async {
     if (_selectedFile == null || _finalColumnMapping.isEmpty) return;
     
+    // Validar que se haya seleccionado categoría/subcategoría (OBLIGATORIO)
+    if (!_defaultValues.containsKey('id_categoria') || _defaultValues['id_categoria'] == null) {
+      _showError('Debe seleccionar una Categoría y Subcategoría para todos los productos');
+      return;
+    }
+    
     // Validar configuración de stock si está activada
     if (_importWithStock) {
       if (_selectedLocationId == null) {
@@ -1037,7 +1106,10 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
       case 1:
         return _selectedFile != null; // Permitir análisis si hay archivo
       case 2:
-        return _finalColumnMapping.isNotEmpty || _defaultValues.isNotEmpty;
+        // Validar que haya mapeo de columnas Y que se haya seleccionado categoría/subcategoría
+        final hasCategorySelected = _defaultValues.containsKey('id_categoria') && 
+                                     _defaultValues['id_categoria'] != null;
+        return (_finalColumnMapping.isNotEmpty || _defaultValues.isNotEmpty) && hasCategorySelected;
       case 3:
         return true;
       default:
@@ -1046,6 +1118,13 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
   }
 
   void _proceedToNextStep(int currentStep) {
+    // Validar categoría antes de avanzar desde el paso 2 (mapeo de columnas)
+    if (currentStep == 2) {
+      if (!_defaultValues.containsKey('id_categoria') || _defaultValues['id_categoria'] == null) {
+        _showError('Debe seleccionar una Categoría y Subcategoría antes de continuar');
+        return;
+      }
+    }
     // Ya no es necesario analizar aquí porque se hace automáticamente al seleccionar archivo
     setState(() => _currentStep = currentStep + 1);
   }
@@ -1143,12 +1222,59 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
     );
   }
 
+  Widget _buildMandatoryCategorySection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.05),
+        border: Border.all(color: Colors.red.withOpacity(0.4), width: 2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.category, color: Colors.red.shade700, size: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Categoría y Subcategoría (OBLIGATORIO)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Todos los productos importados se asignarán a la categoría/subcategoría seleccionada',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildCategorySelector('categoria_id'),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDefaultValuesSection() {
     // Campos obligatorios que podrían necesitar valores por defecto
+    // NOTA: categoria_id es obligatorio pero se maneja por separado con dropdowns
     final requiredFields = [
       'denominacion',
       'descripcion',
-      'categoria_id', // Mantener este
       'sku',
       'precio_venta',
     ];
@@ -1191,6 +1317,11 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
 
   Widget _buildDefaultValueRow(String field) {
     print('Construyendo campo: $field con valor: ${_defaultValues[field]}');
+    
+    // Saltar categoria_id porque se maneja en la sección obligatoria
+    if (field == 'categoria_id') {
+      return const SizedBox.shrink();
+    }
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -1208,12 +1339,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
             style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
           ),
           const SizedBox(height: 8),
-
-          // Widget específico para categorías
-          if (field == 'categoria_id')
-            _buildCategorySelector(field)
-          else
-            _buildDefaultTextField(field),
+          _buildDefaultTextField(field),
         ],
       ),
     );
@@ -1519,12 +1645,20 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
             setState(() {
               if (newValue != null) {
                 _selectedMainCategoryId = newValue; // Guardar categoría principal
-                _defaultValues[field] = newValue; // Inicialmente usar la categoría principal
+                _defaultValues['id_categoria'] = newValue; // Guardar como id_categoria
+                _defaultValues.remove('id_subcategoria'); // Limpiar subcategoría anterior
                 // Limpiar caché de subcategorías para forzar recarga
                 _subcategoriesCache.remove(newValue);
+                print('🏷️ CATEGORÍA PRINCIPAL SELECCIONADA:');
+                print('   ID: $newValue');
+                print('   Nombre: ${_getCategoryName(newValue)}');
+                print('   _defaultValues["id_categoria"]: ${_defaultValues['id_categoria']}');
+                print('   _defaultValues["id_subcategoria"]: ${_defaultValues['id_subcategoria']}');
               } else {
                 _selectedMainCategoryId = null;
-                _defaultValues.remove(field);
+                _defaultValues.remove('id_categoria');
+                _defaultValues.remove('id_subcategoria');
+                print('❌ CATEGORÍA PRINCIPAL DESELECCIONADA');
               }
             });
           },
@@ -1563,11 +1697,12 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
         }
 
         final subcategories = snapshot.data ?? [];
-        final currentValue = _defaultValues[field] as int?;
+        // Obtener el valor de id_subcategoria (no de field que es 'categoria_id')
+        final currentSubcategoryValue = _defaultValues['id_subcategoria'] as int?;
 
         // Verificar si el valor actual es una subcategoría
         final selectedSubcategory = subcategories.firstWhere(
-          (sub) => sub['id'] == currentValue,
+          (sub) => sub['id'] == currentSubcategoryValue,
           orElse: () => <String, dynamic>{},
         );
 
@@ -1598,7 +1733,7 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
         }
 
         return DropdownButtonFormField<int>(
-          value: isSubcategorySelected ? currentValue : null,
+          value: isSubcategorySelected ? currentSubcategoryValue : null,
           decoration: const InputDecoration(
             labelText: 'Subcategoría *',
             border: OutlineInputBorder(),
@@ -1627,7 +1762,16 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
           onChanged: (int? newValue) {
             setState(() {
               if (newValue != null) {
-                _defaultValues[field] = newValue;
+                // Guardar AMBOS: id_categoria (padre) e id_subcategoria
+                _defaultValues['id_categoria'] = _selectedMainCategoryId!;
+                _defaultValues['id_subcategoria'] = newValue;
+                print('📂 SUBCATEGORÍA SELECCIONADA:');
+                print('   ID Subcategoría: $newValue');
+                print('   Nombre Subcategoría: ${_getCategoryName(newValue)}');
+                print('   ID Categoría Padre: $_selectedMainCategoryId');
+                print('   Nombre Categoría Padre: ${_getCategoryName(_selectedMainCategoryId!)}');
+                print('   _defaultValues["id_categoria"]: ${_defaultValues['id_categoria']}');
+                print('   _defaultValues["id_subcategoria"]: ${_defaultValues['id_subcategoria']}');
               }
             });
           },
@@ -1638,8 +1782,22 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
 
   String _getCategoryName(int categoryId) {
     try {
-      final category = _categories.firstWhere((cat) => cat['id'] == categoryId);
-      return category['denominacion'] as String? ?? 'Sin nombre';
+      // Buscar primero en categorías principales
+      try {
+        final category = _categories.firstWhere((cat) => cat['id'] == categoryId);
+        return category['denominacion'] as String? ?? 'Sin nombre';
+      } catch (e) {
+        // Si no se encuentra, buscar en subcategorías
+        for (final subcatList in _subcategoriesCache.values) {
+          try {
+            final subcat = subcatList.firstWhere((sub) => sub['id'] == categoryId);
+            return subcat['denominacion'] as String? ?? 'Sin nombre';
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+      return 'Categoría no encontrada';
     } catch (e) {
       return 'Categoría no encontrada';
     }

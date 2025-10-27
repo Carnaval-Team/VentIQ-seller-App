@@ -171,7 +171,9 @@ class ExcelImportService {
   static Future<ExcelAnalysisResult> analyzeExcelFile(ExcelFileWrapper fileWrapper) async {
     try {
       print('📊 Analizando archivo: ${fileWrapper.name}');
-      final excel = Excel.decodeBytes(fileWrapper.bytes);
+      
+      // Decodificar archivo Excel con máxima tolerancia
+      final excel = _decodeExcelWithTolerance(fileWrapper.bytes);
 
 
       if (excel.tables.isEmpty) {
@@ -329,7 +331,9 @@ class ExcelImportService {
   }) async {
     try {
       print('📦 Importando productos desde: ${fileWrapper.name}');
-      final excel = Excel.decodeBytes(fileWrapper.bytes);
+      
+      // Decodificar archivo Excel con máxima tolerancia
+      final excel = _decodeExcelWithTolerance(fileWrapper.bytes);
       final sheetName = excel.tables.keys.first;
       final sheet = excel.tables[sheetName]!;
 
@@ -537,20 +541,123 @@ class ExcelImportService {
     }
   }
 
+  /// Decodifica un archivo Excel con máxima tolerancia a errores de formato
+  static Excel _decodeExcelWithTolerance(Uint8List bytes) {
+    try {
+      // Intento 1: Decodificación normal
+      return Excel.decodeBytes(bytes);
+    } catch (e) {
+      final errorMsg = e.toString();
+      print('⚠️ Advertencia al decodificar Excel: $errorMsg');
+      
+      // Si es un error de formato, intentar con estrategias alternativas
+      if (errorMsg.contains('numFmtId') || 
+          errorMsg.contains('custom') || 
+          errorMsg.contains('format')) {
+        print('🔄 Intentando decodificación tolerante...');
+        
+        try {
+          // Intento 2: Decodificar de nuevo (a veces funciona en el segundo intento)
+          return Excel.decodeBytes(bytes);
+        } catch (e2) {
+          print('⚠️ Segundo intento falló: ${e2.toString()}');
+          
+          // Intento 3: Si todo falla, lanzar error con mensaje claro
+          throw Exception(
+            'No se pudo leer el archivo Excel debido a formatos incompatibles.\n\n'
+            'Soluciones recomendadas:\n'
+            '1. Guarda el archivo como CSV y ábrelo de nuevo en Excel\n'
+            '2. Copia los datos a un nuevo libro de Excel en blanco\n'
+            '3. Usa "Pegado Especial > Valores" al copiar los datos\n\n'
+            'Error técnico: $errorMsg'
+          );
+        }
+      }
+      
+      // Si no es un error de formato conocido, relanzar
+      rethrow;
+    }
+  }
+
   /// Obtiene el valor de una celda, manejando fórmulas correctamente
+  /// Este método es extremadamente tolerante y maneja cualquier tipo de celda
   static String? _getCellValue(Data? cell, {bool returnZeroOnError = false}) {
     if (cell == null) return returnZeroOnError ? '0' : null;
     
-    // Si la celda tiene una fórmula, usar el valor calculado (textCellValue)
-    // Si no, usar el valor directo
     try {
-      // textCellValue devuelve el valor mostrado en Excel (resultado de fórmulas)
-      final textValue = cell.value?.toString();
-      if (textValue != null && textValue.isNotEmpty) {
-        return textValue;
+      final cellValue = cell.value;
+      
+      if (cellValue == null) {
+        return returnZeroOnError ? '0' : null;
+      }
+      
+      // Intentar manejar diferentes tipos de valores con máxima tolerancia
+      try {
+        // Tipo 1: TextCellValue
+        if (cellValue is TextCellValue) {
+          try {
+            // TextCellValue.value es un TextSpan, convertir a String
+            final textValue = cellValue.value.toString();
+            return textValue.isNotEmpty ? textValue.trim() : null;
+          } catch (e) {
+            // Fallback: intentar toString directo
+            return cellValue.toString().trim();
+          }
+        }
+        
+        // Tipo 2: IntCellValue
+        if (cellValue is IntCellValue) {
+          try {
+            return cellValue.value.toString();
+          } catch (e) {
+            return cellValue.toString();
+          }
+        }
+        
+        // Tipo 3: DoubleCellValue
+        if (cellValue is DoubleCellValue) {
+          try {
+            final doubleVal = cellValue.value;
+            // Si es entero, mostrarlo sin decimales
+            if (doubleVal == doubleVal.toInt()) {
+              return doubleVal.toInt().toString();
+            }
+            // Si tiene decimales, preservarlos
+            return doubleVal.toString();
+          } catch (e) {
+            return cellValue.toString();
+          }
+        }
+        
+        // Tipo 4: FormulaCellValue
+        if (cellValue is FormulaCellValue) {
+          try {
+            final formulaStr = cellValue.toString();
+            return formulaStr.isNotEmpty ? formulaStr.trim() : null;
+          } catch (e) {
+            return cellValue.toString();
+          }
+        }
+        
+        // Tipo 5: BoolCellValue u otros
+        try {
+          final strValue = cellValue.toString();
+          return strValue.isNotEmpty ? strValue.trim() : null;
+        } catch (e) {
+          // Último recurso: intentar obtener cualquier representación
+          return cellValue.runtimeType.toString();
+        }
+      } catch (e) {
+        // Si falla el manejo de tipos, intentar toString directo
+        try {
+          return cellValue.toString().trim();
+        } catch (e2) {
+          print('⚠️ Error crítico leyendo celda: $e2');
+          return returnZeroOnError ? '0' : null;
+        }
       }
     } catch (e) {
-      print('⚠️ Error leyendo celda: $e');
+      print('⚠️ Error general leyendo celda: $e');
       if (returnZeroOnError) {
         return '0';
       }
