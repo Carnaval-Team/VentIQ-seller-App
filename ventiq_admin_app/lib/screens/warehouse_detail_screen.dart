@@ -727,7 +727,6 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                         ),
                         const SizedBox(height: 8),
                         ...products
-                            .take(5)
                             .map(
                               (product) => Padding(
                                 padding: const EdgeInsets.only(bottom: 4),
@@ -763,18 +762,6 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                                 ),
                               ),
                             ),
-                        if (products.length > 5)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              '... y ${products.length - 5} productos más',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontStyle: FontStyle.italic,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
                       ],
                     ),
                   ),
