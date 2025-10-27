@@ -1,8 +1,42 @@
 {
-  "current_version": "1.1.0",
-  "build": 110,
+  "current_version": "1.1.2",
+  "build": 112,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.1.2",
+      "date": "2025-10-26",
+      "title": "🔧 Corrección de Productos Duplicados",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Productos Duplicados en Órdenes",
+          "description": "Eliminados productos duplicados en el detalle de órdenes del módulo de Ventas"
+        }
+      ]
+    },
+    {
+      "version": "1.1.1",
+      "date": "2025-10-25",
+      "title": "🔧 Correcciones de Validación y Selección de Fechas",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Validación de Roles sin UUID",
+          "description": "Corregida validación en edición de trabajadores para permitir guardar sin roles cuando no tienen cuenta de usuario (UUID)"
+        },
+        {
+          "type": "fix",
+          "title": "Selector de Fechas en RR.HH.",
+          "description": "Solucionado problema de pantalla en blanco al seleccionar fechas en el módulo de Recursos Humanos"
+        },
+        {
+          "type": "fix",
+          "title": "Zona Horaria de La Habana en Vista y PDF",
+          "description": "Corregida conversión de fechas y horas UTC a zona horaria de Cuba (UTC-4) en la vista de turnos, trabajadores y exportación PDF del módulo de Recursos Humanos"
+        }
+      ]
+    },
     {
       "version": "1.1.0",
       "date": "2025-10-25",

@@ -861,9 +861,9 @@ class _SalesScreenState extends State<SalesScreen>
                               '\$${analysis.gananciaCup.toStringAsFixed(2)}',
                               style: TextStyle(
                                 color:
-                                analysis.gananciaCup >= 0
-                                    ? AppColors.success
-                                    : AppColors.error,
+                                    analysis.gananciaCup >= 0
+                                        ? AppColors.success
+                                        : AppColors.error,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -1747,106 +1747,111 @@ class _SalesScreenState extends State<SalesScreen>
                                                       if (order
                                                               .detalles['items'] !=
                                                           null)
-                                                        ...List.generate(
-                                                              (order.detalles['items']
-                                                                      as List)
-                                                                  .length,
-                                                              (itemIndex) {
-                                                                final item =
-                                                                    order
-                                                                        .detalles['items'][itemIndex];
-                                                                // Filtrar productos con precio_unitario = 0.0 o 0
-                                                                final precioUnitario =
-                                                                    (item['precio_unitario'] ??
-                                                                            0.0)
-                                                                        .toDouble();
-                                                                if (precioUnitario ==
-                                                                    0.0) {
-                                                                  return const SizedBox.shrink(); // No mostrar el producto
-                                                                }
-
-                                                                return Container(
-                                                                  margin:
-                                                                      const EdgeInsets.only(
-                                                                        bottom:
-                                                                            6,
+                                                        ...() {
+                                                          // Obtener lista de items
+                                                          final items = order.detalles['items'] as List;
+                                                          
+                                                          // Filtrar productos con precio_unitario = 0.0 y eliminar duplicados
+                                                          final seenProductIds = <dynamic>{};
+                                                          final uniqueItems = items.where((item) {
+                                                            final precioUnitario = (item['precio_unitario'] ?? 0.0).toDouble();
+                                                            
+                                                            // Filtrar productos con precio 0
+                                                            if (precioUnitario == 0.0) {
+                                                              return false;
+                                                            }
+                                                            
+                                                            // Obtener ID del producto para verificar duplicados
+                                                            final productId = item['id_producto'] ?? item['producto_id'] ?? item['id'];
+                                                            
+                                                            // Si ya vimos este producto, no lo incluimos
+                                                            if (seenProductIds.contains(productId)) {
+                                                              return false;
+                                                            }
+                                                            
+                                                            // Agregar a la lista de vistos
+                                                            seenProductIds.add(productId);
+                                                            return true;
+                                                          }).toList();
+                                                          
+                                                          // Generar widgets para items únicos
+                                                          return uniqueItems.map((item) {
+                                                            return Container(
+                                                              margin:
+                                                                  const EdgeInsets.only(
+                                                                    bottom:
+                                                                        6,
+                                                                  ),
+                                                              padding:
+                                                                  const EdgeInsets.all(
+                                                                    12,
+                                                                  ),
+                                                              decoration: BoxDecoration(
+                                                                color:
+                                                                    Colors
+                                                                        .grey[50],
+                                                                borderRadius:
+                                                                    BorderRadius.circular(
+                                                                      8,
+                                                                    ),
+                                                                border: Border.all(
+                                                                  color:
+                                                                      Colors
+                                                                          .grey[200]!,
+                                                                ),
+                                                              ),
+                                                              child: Row(
+                                                                children: [
+                                                                  Expanded(
+                                                                    flex: 3,
+                                                                    child: Text(
+                                                                      item['producto_nombre'] ??
+                                                                          item['nombre'] ??
+                                                                          'Producto',
+                                                                      style: const TextStyle(
+                                                                        fontSize:
+                                                                            13,
+                                                                        fontWeight:
+                                                                            FontWeight.w500,
                                                                       ),
-                                                                  padding:
-                                                                      const EdgeInsets.all(
-                                                                        12,
-                                                                      ),
-                                                                  decoration: BoxDecoration(
-                                                                    color:
-                                                                        Colors
-                                                                            .grey[50],
-                                                                    borderRadius:
-                                                                        BorderRadius.circular(
-                                                                          8,
-                                                                        ),
-                                                                    border: Border.all(
-                                                                      color:
-                                                                          Colors
-                                                                              .grey[200]!,
                                                                     ),
                                                                   ),
-                                                                  child: Row(
-                                                                    children: [
-                                                                      Expanded(
-                                                                        flex: 3,
-                                                                        child: Text(
-                                                                          item['producto_nombre'] ??
-                                                                              item['nombre'] ??
-                                                                              'Producto',
-                                                                          style: const TextStyle(
-                                                                            fontSize:
-                                                                                13,
-                                                                            fontWeight:
-                                                                                FontWeight.w500,
-                                                                          ),
-                                                                        ),
+                                                                  Expanded(
+                                                                    flex: 1,
+                                                                    child: Text(
+                                                                      'x${item['cantidad']}',
+                                                                      textAlign:
+                                                                          TextAlign.center,
+                                                                      style: TextStyle(
+                                                                        fontSize:
+                                                                            13,
+                                                                        color:
+                                                                            Colors.grey[600],
                                                                       ),
-                                                                      Expanded(
-                                                                        flex: 1,
-                                                                        child: Text(
-                                                                          'x${item['cantidad']}',
-                                                                          textAlign:
-                                                                              TextAlign.center,
-                                                                          style: TextStyle(
-                                                                            fontSize:
-                                                                                13,
-                                                                            color:
-                                                                                Colors.grey[600],
-                                                                          ),
-                                                                        ),
-                                                                      ),
-                                                                      Expanded(
-                                                                        flex: 1,
-                                                                        child: Text(
-                                                                          '\$${(item['importe'] ?? 0.0).toStringAsFixed(2)}',
-                                                                          textAlign:
-                                                                              TextAlign.right,
-                                                                          style: const TextStyle(
-                                                                            fontWeight:
-                                                                                FontWeight.w600,
-                                                                            fontSize:
-                                                                                13,
-                                                                            color: Color(
-                                                                              0xFF4A90E2,
-                                                                            ),
-                                                                          ),
-                                                                        ),
-                                                                      ),
-                                                                    ],
+                                                                    ),
                                                                   ),
-                                                                );
-                                                              },
-                                                            )
-                                                            .where(
-                                                              (widget) =>
-                                                                  widget
-                                                                      is! SizedBox,
-                                                            )
-                                                            .toList(),
+                                                                  Expanded(
+                                                                    flex: 1,
+                                                                    child: Text(
+                                                                      '\$${(item['importe'] ?? 0.0).toStringAsFixed(2)}',
+                                                                      textAlign:
+                                                                          TextAlign.right,
+                                                                      style: const TextStyle(
+                                                                        fontWeight:
+                                                                            FontWeight.w600,
+                                                                        fontSize:
+                                                                            13,
+                                                                        color: Color(
+                                                                          0xFF4A90E2,
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            );
+                                                          }).toList();
+                                                        }(),
                                                     ],
                                                   ),
                                                 ),
@@ -2240,14 +2245,16 @@ class _SalesScreenState extends State<SalesScreen>
   void _showVendorOrdenesPendientesDetail(SalesVendorReport vendor) async {
     try {
       final dateRange = _getDateRange();
-      
+
       // Llamar al método getVendorOrders con id_estado_param = 1 para órdenes pendientes
       final response = await Supabase.instance.client.rpc(
         'listar_ordenes',
         params: {
           'con_inventario_param': false,
-          'fecha_desde_param': dateRange['start']!.toIso8601String().split('T')[0],
-          'fecha_hasta_param': dateRange['end']!.toIso8601String().split('T')[0],
+          'fecha_desde_param':
+              dateRange['start']!.toIso8601String().split('T')[0],
+          'fecha_hasta_param':
+              dateRange['end']!.toIso8601String().split('T')[0],
           'id_estado_param': 1, // Solo órdenes pendientes
           'id_tienda_param': await UserPreferencesService().getIdTienda(),
           'id_tipo_operacion_param': null,
@@ -2281,14 +2288,15 @@ class _SalesScreenState extends State<SalesScreen>
       // Calcular totales
       double totalEfectivo = 0.0;
       double totalTransferencias = 0.0;
-      
+
       for (final order in pendingOrders) {
         if (order.detalles['pagos'] != null) {
           final pagos = order.detalles['pagos'] as List;
           for (final pago in pagos) {
-            final metodoPago = pago['medio_pago']?.toString().toLowerCase() ?? '';
+            final metodoPago =
+                pago['medio_pago']?.toString().toLowerCase() ?? '';
             final total = (pago['total'] ?? 0.0).toDouble();
-            
+
             if (metodoPago.contains('efectivo')) {
               totalEfectivo += total;
             } else if (metodoPago.contains('transferencia')) {
@@ -2302,346 +2310,402 @@ class _SalesScreenState extends State<SalesScreen>
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (context) => DraggableScrollableSheet(
-          initialChildSize: 0.8,
-          maxChildSize: 0.95,
-          minChildSize: 0.5,
-          builder: (context, scrollController) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(20),
-              ),
-            ),
-            child: Column(
-              children: [
-                // Handle
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Órdenes Pendientes de ${vendor.nombreCompleto}',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1F2937),
-                              ),
-                            ),
-                            Text(
-                              '${pendingOrders.length} órdenes pendientes',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            // Totales
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.success.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: AppColors.success.withOpacity(0.3),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.attach_money,
-                                        size: 16,
-                                        color: AppColors.success,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Efectivo: \$${totalEfectivo.toStringAsFixed(2)}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.success,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.info.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: AppColors.info.withOpacity(0.3),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.account_balance,
-                                        size: 16,
-                                        color: AppColors.info,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.info,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+        builder:
+            (context) => DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              maxChildSize: 0.95,
+              minChildSize: 0.5,
+              builder:
+                  (context, scrollController) => Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20),
                       ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                // Content
-                Expanded(
-                  child: pendingOrders.isEmpty
-                      ? const Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.pending_actions_outlined,
-                                size: 64,
-                                color: Colors.grey,
-                              ),
-                              SizedBox(height: 16),
-                              Text(
-                                'No hay órdenes pendientes',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                              SizedBox(height: 8),
-                              Text(
-                                'No se encontraron órdenes pendientes\npara este vendedor en el período seleccionado',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ],
+                    ),
+                    child: Column(
+                      children: [
+                        // Handle
+                        Container(
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2),
                           ),
-                        )
-                      : ListView.builder(
-                          controller: scrollController,
+                        ),
+                        // Header
+                        Padding(
                           padding: const EdgeInsets.all(16),
-                          itemCount: pendingOrders.length,
-                          itemBuilder: (context, index) {
-                            final order = pendingOrders[index];
-
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: AppColors.warning.withOpacity(0.3),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.grey.withOpacity(0.1),
-                                    spreadRadius: 1,
-                                    blurRadius: 3,
-                                    offset: const Offset(0, 1),
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Orden #${order.idOperacion}',
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF1F2937),
-                                        ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Órdenes Pendientes de ${vendor.nombreCompleto}',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1F2937),
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.warning
-                                              .withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color: AppColors.warning
-                                                .withOpacity(0.3),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          order.estadoNombre,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                            color: AppColors.warning,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.access_time,
-                                        size: 16,
+                                    ),
+                                    Text(
+                                      '${pendingOrders.length} órdenes pendientes',
+                                      style: TextStyle(
+                                        fontSize: 14,
                                         color: Colors.grey[600],
                                       ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        _formatDateTime(order.fechaOperacion),
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      Icon(
-                                        Icons.shopping_cart,
-                                        size: 16,
-                                        color: Colors.grey[600],
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${order.cantidadItems} items',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'TPV: ${order.tpvNombre}',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey[700],
-                                        ),
-                                      ),
-                                      Text(
-                                        '\$${order.totalOperacion.toStringAsFixed(2)}',
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Fila con observaciones y botón de productos
-                                  Row(
-                                    children: [
-                                      // Observaciones (si existen)
-                                      if (order.observaciones != null &&
-                                          order.observaciones!.isNotEmpty)
-                                        Expanded(
-                                          child: Container(
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey[100],
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: Text(
-                                              'Obs: ${order.observaciones}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[700],
-                                                fontStyle: FontStyle.italic,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      
-                                      // Espaciado si hay observaciones
-                                      if (order.observaciones != null &&
-                                          order.observaciones!.isNotEmpty)
-                                        const SizedBox(width: 8),
-                                      
-                                      // Botón de productos
-                                      ElevatedButton.icon(
-                                        onPressed: () => _showOrderProductsDetail(order),
-                                        icon: const Icon(Icons.inventory_2, size: 16),
-                                        label: const Text(
-                                          'Productos',
-                                          style: TextStyle(fontSize: 12),
-                                        ),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: AppColors.primary,
-                                          foregroundColor: Colors.white,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    // Totales
+                                    Row(
+                                      children: [
+                                        Container(
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 12,
                                             vertical: 6,
                                           ),
-                                          minimumSize: Size.zero,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.success
+                                                .withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.success
+                                                  .withOpacity(0.3),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.attach_money,
+                                                size: 16,
+                                                color: AppColors.success,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                'Efectivo: \$${totalEfectivo.toStringAsFixed(2)}',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.success,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.info.withOpacity(
+                                              0.1,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.info.withOpacity(
+                                                0.3,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.account_balance,
+                                                size: 16,
+                                                color: AppColors.info,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.info,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            );
-                          },
+                              IconButton(
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(Icons.close),
+                              ),
+                            ],
+                          ),
                         ),
-                ),
-              ],
+                        const Divider(height: 1),
+                        // Content
+                        Expanded(
+                          child:
+                              pendingOrders.isEmpty
+                                  ? const Center(
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.pending_actions_outlined,
+                                          size: 64,
+                                          color: Colors.grey,
+                                        ),
+                                        SizedBox(height: 16),
+                                        Text(
+                                          'No hay órdenes pendientes',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                        SizedBox(height: 8),
+                                        Text(
+                                          'No se encontraron órdenes pendientes\npara este vendedor en el período seleccionado',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(color: Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                  : ListView.builder(
+                                    controller: scrollController,
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: pendingOrders.length,
+                                    itemBuilder: (context, index) {
+                                      final order = pendingOrders[index];
+
+                                      return Container(
+                                        margin: const EdgeInsets.only(
+                                          bottom: 12,
+                                        ),
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: AppColors.warning
+                                                .withOpacity(0.3),
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.grey.withOpacity(
+                                                0.1,
+                                              ),
+                                              spreadRadius: 1,
+                                              blurRadius: 3,
+                                              offset: const Offset(0, 1),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                Text(
+                                                  'Orden #${order.idOperacion}',
+                                                  style: const TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF1F2937),
+                                                  ),
+                                                ),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: AppColors.warning
+                                                        .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          6,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: AppColors.warning
+                                                          .withOpacity(0.3),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    order.estadoNombre,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color: AppColors.warning,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.access_time,
+                                                  size: 16,
+                                                  color: Colors.grey[600],
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  _formatDateTime(
+                                                    order.fechaOperacion,
+                                                  ),
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    color: Colors.grey[600],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 16),
+                                                Icon(
+                                                  Icons.shopping_cart,
+                                                  size: 16,
+                                                  color: Colors.grey[600],
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '${order.cantidadItems} items',
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    color: Colors.grey[600],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                Text(
+                                                  'TPV: ${order.tpvNombre}',
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    color: Colors.grey[700],
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '\$${order.totalOperacion.toStringAsFixed(2)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: AppColors.primary,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            // Fila con observaciones y botón de productos
+                                            Row(
+                                              children: [
+                                                // Observaciones (si existen)
+                                                if (order.observaciones !=
+                                                        null &&
+                                                    order
+                                                        .observaciones!
+                                                        .isNotEmpty)
+                                                  Expanded(
+                                                    child: Container(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                            8,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.grey[100],
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              6,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        'Obs: ${order.observaciones}',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color:
+                                                              Colors.grey[700],
+                                                          fontStyle:
+                                                              FontStyle.italic,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+
+                                                // Espaciado si hay observaciones
+                                                if (order.observaciones !=
+                                                        null &&
+                                                    order
+                                                        .observaciones!
+                                                        .isNotEmpty)
+                                                  const SizedBox(width: 8),
+
+                                                // Botón de productos
+                                                ElevatedButton.icon(
+                                                  onPressed:
+                                                      () =>
+                                                          _showOrderProductsDetail(
+                                                            order,
+                                                          ),
+                                                  icon: const Icon(
+                                                    Icons.inventory_2,
+                                                    size: 16,
+                                                  ),
+                                                  label: const Text(
+                                                    'Productos',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        AppColors.primary,
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 6,
+                                                        ),
+                                                    minimumSize: Size.zero,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
             ),
-          ),
-        ),
       );
     } catch (e) {
       print('Error loading pending orders: $e');
@@ -2661,125 +2725,132 @@ class _SalesScreenState extends State<SalesScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.4,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(20),
-            ),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Productos - Orden #${order.idOperacion}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1F2937),
-                            ),
-                          ),
-                          Text(
-                            'TPV: ${order.tpvNombre}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: AppColors.primary.withOpacity(0.3),
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            maxChildSize: 0.9,
+            minChildSize: 0.4,
+            builder:
+                (context, scrollController) => Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      // Handle
+                      Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Productos - Orden #${order.idOperacion}',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1F2937),
+                                    ),
+                                  ),
+                                  Text(
+                                    'TPV: ${order.tpvNombre}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: AppColors.primary.withOpacity(
+                                          0.3,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.attach_money,
+                                          size: 16,
+                                          color: AppColors.primary,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.attach_money,
-                                  size: 16,
-                                  color: AppColors.primary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ],
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
+                      const Divider(height: 1),
+                      // Content
+                      Expanded(
+                        child: _buildOrderProductsAccordion(
+                          order,
+                          scrollController,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const Divider(height: 1),
-              // Content
-              Expanded(
-                child: _buildOrderProductsAccordion(order, scrollController),
-              ),
-            ],
           ),
-        ),
-      ),
     );
   }
 
-  Widget _buildOrderProductsAccordion(VendorOrder order, ScrollController scrollController) {
+  Widget _buildOrderProductsAccordion(
+    VendorOrder order,
+    ScrollController scrollController,
+  ) {
     // Extraer productos de order.detalles
     final items = order.detalles['items'] as List<dynamic>? ?? [];
     final pagos = order.detalles['pagos'] as List<dynamic>? ?? [];
     final cliente = order.detalles['cliente'] as Map<String, dynamic>? ?? {};
 
+    
     if (items.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.inventory_2_outlined,
-              size: 64,
-              color: Colors.grey,
-            ),
+            Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey),
             SizedBox(height: 16),
             Text(
               'No hay productos',
@@ -2814,20 +2885,14 @@ class _SalesScreenState extends State<SalesScreen>
               decoration: BoxDecoration(
                 color: AppColors.info.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.info.withOpacity(0.3),
-                ),
+                border: Border.all(color: AppColors.info.withOpacity(0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        Icons.person,
-                        size: 16,
-                        color: AppColors.info,
-                      ),
+                      Icon(Icons.person, size: 16, color: AppColors.info),
                       const SizedBox(width: 6),
                       Text(
                         'Cliente',
@@ -2847,13 +2912,11 @@ class _SalesScreenState extends State<SalesScreen>
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  if (cliente['telefono'] != null && cliente['telefono'].toString().isNotEmpty)
+                  if (cliente['telefono'] != null &&
+                      cliente['telefono'].toString().isNotEmpty)
                     Text(
                       'Tel: ${cliente['telefono']}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                 ],
               ),
@@ -2869,10 +2932,7 @@ class _SalesScreenState extends State<SalesScreen>
             ),
             child: ExpansionTile(
               initiallyExpanded: true,
-              leading: Icon(
-                Icons.inventory_2,
-                color: AppColors.primary,
-              ),
+              leading: Icon(Icons.inventory_2, color: AppColors.primary),
               title: Text(
                 'Productos (${items.length})',
                 style: const TextStyle(
@@ -2885,13 +2945,17 @@ class _SalesScreenState extends State<SalesScreen>
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: items.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  separatorBuilder:
+                      (context, index) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final item = items[index] as Map<String, dynamic>;
                     final cantidad = (item['cantidad'] ?? 0).toDouble();
-                    final precioUnitario = (item['precio_unitario'] ?? 0.0).toDouble();
+                    final precioUnitario =
+                        (item['precio_unitario'] ?? 0.0).toDouble();
                     final importe = (item['importe'] ?? 0.0).toDouble();
-                    final productoNombre = item['producto_nombre']?.toString() ?? 'Producto sin nombre';
+                    final productoNombre =
+                        item['producto_nombre']?.toString() ??
+                        'Producto sin nombre';
                     final variante = item['variante']?.toString();
                     final presentacion = item['presentacion']?.toString();
 
@@ -2933,7 +2997,8 @@ class _SalesScreenState extends State<SalesScreen>
                                     color: Color(0xFF1F2937),
                                   ),
                                 ),
-                                if (variante != null && variante.isNotEmpty) ...[
+                                if (variante != null &&
+                                    variante.isNotEmpty) ...[
                                   const SizedBox(height: 2),
                                   Text(
                                     'Variante: $variante',
@@ -2943,7 +3008,8 @@ class _SalesScreenState extends State<SalesScreen>
                                     ),
                                   ),
                                 ],
-                                if (presentacion != null && presentacion.isNotEmpty) ...[
+                                if (presentacion != null &&
+                                    presentacion.isNotEmpty) ...[
                                   const SizedBox(height: 2),
                                   Text(
                                     'Presentación: $presentacion',
@@ -2955,7 +3021,8 @@ class _SalesScreenState extends State<SalesScreen>
                                 ],
                                 const SizedBox(height: 4),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       'Precio unitario: \$${precioUnitario.toStringAsFixed(2)}',
@@ -2996,10 +3063,7 @@ class _SalesScreenState extends State<SalesScreen>
                 border: Border.all(color: AppColors.border),
               ),
               child: ExpansionTile(
-                leading: Icon(
-                  Icons.payment,
-                  color: AppColors.success,
-                ),
+                leading: Icon(Icons.payment, color: AppColors.success),
                 title: Text(
                   'Métodos de Pago (${pagos.length})',
                   style: const TextStyle(
@@ -3012,11 +3076,13 @@ class _SalesScreenState extends State<SalesScreen>
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: pagos.length,
-                    separatorBuilder: (context, index) => const Divider(height: 1),
+                    separatorBuilder:
+                        (context, index) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final pago = pagos[index] as Map<String, dynamic>;
                       final total = (pago['total'] ?? 0.0).toDouble();
-                      final medioPago = pago['medio_pago']?.toString() ?? 'Sin especificar';
+                      final medioPago =
+                          pago['medio_pago']?.toString() ?? 'Sin especificar';
                       final esEfectivo = pago['es_efectivo'] == true;
                       final esDigital = pago['es_digital'] == true;
                       final referencia = pago['referencia_pago']?.toString();
@@ -3031,24 +3097,26 @@ class _SalesScreenState extends State<SalesScreen>
                               width: 40,
                               height: 40,
                               decoration: BoxDecoration(
-                                color: esEfectivo 
-                                  ? AppColors.success.withOpacity(0.1)
-                                  : esDigital 
-                                    ? AppColors.info.withOpacity(0.1)
-                                    : AppColors.warning.withOpacity(0.1),
+                                color:
+                                    esEfectivo
+                                        ? AppColors.success.withOpacity(0.1)
+                                        : esDigital
+                                        ? AppColors.info.withOpacity(0.1)
+                                        : AppColors.warning.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Icon(
-                                esEfectivo 
-                                  ? Icons.attach_money
-                                  : esDigital 
+                                esEfectivo
+                                    ? Icons.attach_money
+                                    : esDigital
                                     ? Icons.smartphone
                                     : Icons.account_balance,
-                                color: esEfectivo 
-                                  ? AppColors.success
-                                  : esDigital 
-                                    ? AppColors.info
-                                    : AppColors.warning,
+                                color:
+                                    esEfectivo
+                                        ? AppColors.success
+                                        : esDigital
+                                        ? AppColors.info
+                                        : AppColors.warning,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -3064,7 +3132,8 @@ class _SalesScreenState extends State<SalesScreen>
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  if (referencia != null && referencia.isNotEmpty) ...[
+                                  if (referencia != null &&
+                                      referencia.isNotEmpty) ...[
                                     const SizedBox(height: 2),
                                     Text(
                                       'Ref: $referencia',
@@ -3074,7 +3143,8 @@ class _SalesScreenState extends State<SalesScreen>
                                       ),
                                     ),
                                   ],
-                                  if (fechaPago != null && fechaPago.isNotEmpty) ...[
+                                  if (fechaPago != null &&
+                                      fechaPago.isNotEmpty) ...[
                                     const SizedBox(height: 2),
                                     Text(
                                       'Fecha: ${_formatDateTime(DateTime.parse(fechaPago))}',
@@ -3405,13 +3475,16 @@ class _SalesScreenState extends State<SalesScreen>
                                                     Icon(
                                                       Icons.attach_money,
                                                       size: 16,
-                                                      color: AppColors.textSecondary,
+                                                      color:
+                                                          AppColors
+                                                              .textSecondary,
                                                     ),
                                                     const SizedBox(width: 4),
                                                     Text(
                                                       'Total: \$${order.totalOperacion.toStringAsFixed(2)}',
                                                       style: const TextStyle(
-                                                        fontWeight: FontWeight.w600,
+                                                        fontWeight:
+                                                            FontWeight.w600,
                                                         fontSize: 15,
                                                       ),
                                                     ),
@@ -3424,7 +3497,9 @@ class _SalesScreenState extends State<SalesScreen>
                                                     const SizedBox(width: 4),
                                                     Text(
                                                       '${order.cantidadItems} prod.',
-                                                      style: const TextStyle(fontSize: 14),
+                                                      style: const TextStyle(
+                                                        fontSize: 14,
+                                                      ),
                                                     ),
                                                   ],
                                                 ),
@@ -3439,7 +3514,9 @@ class _SalesScreenState extends State<SalesScreen>
                                                     ),
                                                     const SizedBox(width: 4),
                                                     Text(
-                                                      _formatOrderDate(order.fechaOperacion),
+                                                      _formatOrderDate(
+                                                        order.fechaOperacion,
+                                                      ),
                                                       style: TextStyle(
                                                         color: Colors.grey[600],
                                                         fontSize: 12,

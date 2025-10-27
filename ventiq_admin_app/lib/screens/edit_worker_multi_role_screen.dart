@@ -493,8 +493,10 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
       return;
     }
 
-    if (_activeRoles.isEmpty) {
-      _showError('Debes seleccionar al menos un rol');
+    // ✅ CORREGIDO: Permitir guardar sin roles si no tiene UUID
+    // Solo validar roles si tiene UUID
+    if (_uuidController.text.trim().isNotEmpty && _activeRoles.isEmpty) {
+      _showError('Si el trabajador tiene cuenta de usuario, debe tener al menos un rol');
       return;
     }
 

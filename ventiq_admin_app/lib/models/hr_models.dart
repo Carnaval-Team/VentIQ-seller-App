@@ -27,12 +27,16 @@ class ShiftWithWorkers {
   });
 
   factory ShiftWithWorkers.fromJson(Map<String, dynamic> json) {
+    // ✅ Convertir fechas UTC a zona horaria de La Habana (UTC-4)
+    final fechaAperturaUtc = DateTime.parse(json['fecha_apertura'] as String).toUtc();
+    final fechaCierreUtc = json['fecha_cierre'] != null
+        ? DateTime.parse(json['fecha_cierre'] as String).toUtc()
+        : null;
+
     return ShiftWithWorkers(
       turnoId: json['turno_id'] as int,
-      fechaApertura: DateTime.parse(json['fecha_apertura'] as String),
-      fechaCierre: json['fecha_cierre'] != null
-          ? DateTime.parse(json['fecha_cierre'] as String)
-          : null,
+      fechaApertura: fechaAperturaUtc.subtract(const Duration(hours: 4)).toLocal(),
+      fechaCierre: fechaCierreUtc?.subtract(const Duration(hours: 4)).toLocal(),
       estadoNombre: json['estado_nombre'] as String? ?? 'Desconocido',
       tpvDenominacion: json['tpv_denominacion'] as String? ?? 'N/A',
       vendedorNombre: json['vendedor_nombre'] as String? ?? 'N/A',
@@ -90,16 +94,20 @@ class ShiftWorkerHours {
     final salarioHora = (json['salario_hora'] as num?)?.toDouble() ?? 0.0;
     final salarioTotal = horasTrabajadas != null ? horasTrabajadas * salarioHora : 0.0;
 
+    // ✅ Convertir horas UTC a zona horaria de La Habana (UTC-4)
+    final horaEntradaUtc = DateTime.parse(json['hora_entrada'] as String).toUtc();
+    final horaSalidaUtc = json['hora_salida'] != null
+        ? DateTime.parse(json['hora_salida'] as String).toUtc()
+        : null;
+
     return ShiftWorkerHours(
       id: json['id'] as int,
       idTurno: json['id_turno'] as int,
       idTrabajador: json['id_trabajador'] as int,
       trabajadorNombre: json['trabajador_nombre'] as String? ?? 'Desconocido',
       rolNombre: json['rol_nombre'] as String? ?? 'N/A',
-      horaEntrada: DateTime.parse(json['hora_entrada'] as String),
-      horaSalida: json['hora_salida'] != null
-          ? DateTime.parse(json['hora_salida'] as String)
-          : null,
+      horaEntrada: horaEntradaUtc.subtract(const Duration(hours: 4)).toLocal(),
+      horaSalida: horaSalidaUtc?.subtract(const Duration(hours: 4)).toLocal(),
       horasTrabajadas: horasTrabajadas,
       salarioHora: salarioHora,
       salarioTotal: salarioTotal,
@@ -156,9 +164,13 @@ class HRSummary {
   });
 
   factory HRSummary.fromJson(Map<String, dynamic> json) {
+    // ✅ Convertir fechas UTC a zona horaria de La Habana (UTC-4)
+    final fechaDesdeUtc = DateTime.parse(json['fecha_desde'] as String).toUtc();
+    final fechaHastaUtc = DateTime.parse(json['fecha_hasta'] as String).toUtc();
+
     return HRSummary(
-      fechaDesde: DateTime.parse(json['fecha_desde'] as String),
-      fechaHasta: DateTime.parse(json['fecha_hasta'] as String),
+      fechaDesde: fechaDesdeUtc.subtract(const Duration(hours: 4)).toLocal(),
+      fechaHasta: fechaHastaUtc.subtract(const Duration(hours: 4)).toLocal(),
       totalTurnos: json['total_turnos'] as int? ?? 0,
       totalTrabajadores: json['total_trabajadores'] as int? ?? 0,
       totalHorasTrabajadas:
