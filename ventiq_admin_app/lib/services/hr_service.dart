@@ -88,6 +88,7 @@ class HRService {
             hora_salida,
             horas_trabajadas,
             observaciones,
+            manual_changed,
             app_dat_trabajadores(
               nombres,
               apellidos,
@@ -131,6 +132,7 @@ class HRService {
           salarioHora: salarioHora,
           salarioTotal: salarioTotal, // ✅ CORREGIDO: Calcular correctamente
           observaciones: trabajadorData['observaciones'] as String?,
+          manualChanged: trabajadorData['manual_changed'] as String?,
         );
 
         if (!trabajadoresPorTurno.containsKey(idTurno)) {
@@ -172,6 +174,78 @@ class HRService {
       return shifts;
     } catch (e) {
       print('❌ Error obteniendo turnos con trabajadores: $e');
+      rethrow;
+    }
+  }
+
+  /// Actualiza manualmente las horas trabajadas de un trabajador en un turno
+  /// Ajusta la hora_salida para que las horas_trabajadas calculadas coincidan con las nuevas horas
+  /// Registra el UUID del usuario que realizó el cambio manual
+  static Future<bool> updateWorkerHoursManually({
+    required int idRegistro,
+    required double newHours,
+    required String userUuid,
+    required DateTime horaEntrada,
+    required double currentHours,
+    DateTime? horaSalida,
+  }) async {
+    try {
+      print('✏️ Actualizando horas trabajadas manualmente...');
+      print('  - ID Registro: $idRegistro');
+      print('  - Horas actuales: $currentHours');
+      print('  - Nuevas horas: $newHours');
+      print('  - Usuario: $userUuid');
+
+      // Calcular la diferencia de horas
+      final diferencia = newHours - currentHours;
+      print('  - Diferencia: $diferencia horas');
+
+      // Calcular la nueva hora de salida
+      DateTime nuevaHoraSalida;
+      
+      if (horaSalida == null) {
+        // Si no hay hora de salida, calcular desde hora_entrada + nuevas horas
+        nuevaHoraSalida = horaEntrada.add(Duration(
+          hours: newHours.floor(),
+          minutes: ((newHours - newHours.floor()) * 60).round(),
+        ));
+        print('  - No había hora_salida, calculando desde hora_entrada');
+      } else {
+        // Si hay hora de salida, ajustarla según la diferencia
+        if (diferencia > 0) {
+          // Nuevas horas son mayores: hora_salida + diferencia
+          nuevaHoraSalida = horaSalida.add(Duration(
+            hours: diferencia.floor(),
+            minutes: ((diferencia - diferencia.floor()) * 60).round(),
+          ));
+          print('  - Aumentando hora_salida en $diferencia horas');
+        } else {
+          // Nuevas horas son menores: hora_salida - diferencia
+          final diferenciaAbsoluta = diferencia.abs();
+          nuevaHoraSalida = horaSalida.subtract(Duration(
+            hours: diferenciaAbsoluta.floor(),
+            minutes: ((diferenciaAbsoluta - diferenciaAbsoluta.floor()) * 60).round(),
+          ));
+          print('  - Reduciendo hora_salida en ${diferenciaAbsoluta} horas');
+        }
+      }
+
+      print('  - Nueva hora_salida: $nuevaHoraSalida');
+
+      // Actualizar hora_salida y manual_changed
+      await _supabase
+          .from('app_dat_turno_trabajadores')
+          .update({
+            'hora_salida': nuevaHoraSalida.toUtc().toIso8601String(),
+            'manual_changed': userUuid,
+          })
+          .eq('id', idRegistro);
+
+      print('✅ Hora de salida ajustada correctamente');
+      print('  - Las horas_trabajadas se calcularán automáticamente como: $newHours');
+      return true;
+    } catch (e) {
+      print('❌ Error actualizando horas trabajadas: $e');
       rethrow;
     }
   }

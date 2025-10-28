@@ -74,6 +74,7 @@ class ShiftWorkerHours {
   final double salarioHora;
   final double salarioTotal;
   final String? observaciones;
+  final String? manualChanged; // UUID del usuario que editó manualmente
 
   ShiftWorkerHours({
     required this.id,
@@ -87,6 +88,7 @@ class ShiftWorkerHours {
     required this.salarioHora,
     required this.salarioTotal,
     this.observaciones,
+    this.manualChanged,
   });
 
   factory ShiftWorkerHours.fromJson(Map<String, dynamic> json) {
@@ -112,10 +114,13 @@ class ShiftWorkerHours {
       salarioHora: salarioHora,
       salarioTotal: salarioTotal,
       observaciones: json['observaciones'] as String?,
+      manualChanged: json['manual_changed'] as String?,
     );
   }
 
   bool get isWorking => horaSalida == null;
+  
+  bool get isManuallyEdited => manualChanged != null;
 
   String get horasTrabajadasFormatted {
     if (horasTrabajadas == null) return 'En turno';
@@ -139,6 +144,7 @@ class ShiftWorkerHours {
       'salario_hora': salarioHora,
       'salario_total': salarioTotal,
       'observaciones': observaciones,
+      'manual_changed': manualChanged,
     };
   }
 }

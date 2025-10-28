@@ -2886,6 +2886,273 @@ class _WorkersScreenState extends State<WorkersScreen>
     }
   }
 
+  // ✏️ Mostrar diálogo para editar horas trabajadas manualmente
+  Future<void> _showEditHoursDialog(ShiftWorkerHours worker) async {
+    final hoursController = TextEditingController(
+      text: worker.horasTrabajadas?.toStringAsFixed(2) ?? '0.00',
+    );
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.edit, color: AppColors.primary),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text('Editar Horas Trab.'),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+            // Información del trabajador
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.person, size: 16, color: Colors.blue.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          worker.trabajadorNombre,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.badge, size: 16, color: Colors.blue.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        worker.rolNombre,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.attach_money, size: 16, color: Colors.green.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        '\$${worker.salarioHora.toStringAsFixed(2)}/hora',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Campo de horas
+            TextField(
+              controller: hoursController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Horas Trabajadas',
+                hintText: '0.00',
+                prefixIcon: const Icon(Icons.access_time),
+                suffixText: 'horas',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            
+            // Cálculo de salario
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Salario Total:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green.shade900,
+                    ),
+                  ),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: hoursController,
+                    builder: (context, value, child) {
+                      final hours = double.tryParse(value.text) ?? 0.0;
+                      final total = hours * worker.salarioHora;
+                      return Text(
+                        '\$${total.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade700,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            
+            // Advertencia
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber, size: 16, color: Colors.orange.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Este cambio quedará registrado como edición manual',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              final newHours = double.tryParse(hoursController.text);
+              if (newHours == null || newHours < 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Por favor ingresa un valor válido'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(context, true);
+            },
+            icon: const Icon(Icons.save, size: 18),
+            label: const Text('Guardar'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true && mounted) {
+      final newHours = double.tryParse(hoursController.text);
+      if (newHours != null && _userUuid != null) {
+        await _updateWorkerHours(worker, newHours);
+      }
+    }
+  }
+
+  // Actualizar horas trabajadas en la base de datos
+  Future<void> _updateWorkerHours(ShiftWorkerHours worker, double newHours) async {
+    try {
+      // Mostrar loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+
+      // Actualizar en la base de datos
+      await HRService.updateWorkerHoursManually(
+        idRegistro: worker.id,
+        newHours: newHours,
+        userUuid: _userUuid!,
+        horaEntrada: worker.horaEntrada,
+        currentHours: worker.horasTrabajadas ?? 0.0,
+        horaSalida: worker.horaSalida,
+      );
+
+      // Cerrar loading
+      if (mounted) Navigator.pop(context);
+
+      // Mostrar confirmación
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Horas actualizadas: ${newHours.toStringAsFixed(2)}h',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        // Recargar datos
+        await _loadHRData();
+      }
+    } catch (e) {
+      // Cerrar loading si está abierto
+      if (mounted) Navigator.pop(context);
+
+      print('❌ Error actualizando horas: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar horas: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
   // 💰 NUEVO: Tab de Recursos Humanos
   Widget _buildHRTab() {
     return Column(
@@ -3210,15 +3477,24 @@ class _WorkersScreenState extends State<WorkersScreen>
     final horaEntradaLocal = worker.horaEntrada.toUtc().subtract(const Duration(hours: 4));
     final horaSalidaLocal = worker.horaSalida?.toUtc().subtract(const Duration(hours: 4));
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: Row(
+    return InkWell(
+      onTap: () => _showEditHoursDialog(worker),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        clipBehavior: Clip.hardEdge,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(0),
+              child: Row(
         children: [
           CircleAvatar(
             radius: 20,
@@ -3313,6 +3589,48 @@ class _WorkersScreenState extends State<WorkersScreen>
             ],
           ),
         ],
+      ),
+            ),
+            // Badge "MANUAL" diagonal por delante (como "new product")
+            if (worker.isManuallyEdited)
+              Positioned(
+                top: 0,
+                left: -35,
+                child: Transform.rotate(
+                  angle: -0.785398, // -45 grados en radianes (-π/4) para diagonal izquierda
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Colors.amber.shade600,
+                          Colors.amber.shade400,
+                        ],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.amber.withOpacity(0.4),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Text(
+                      'MANUAL',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
