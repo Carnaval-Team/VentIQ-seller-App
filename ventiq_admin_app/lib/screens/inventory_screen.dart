@@ -422,25 +422,9 @@ class _InventoryScreenState extends State<InventoryScreen>
       floatingActionButton: _buildFloatingActionButton(),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
-        currentIndex: 2,
+        currentRoute: '/inventory',
         onTap: (index) {
-          switch (index) {
-            case 0: // Dashboard
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                '/dashboard',
-                (route) => false,
-              );
-              break;
-            case 1: // Productos
-              Navigator.pushNamed(context, '/products-dashboard');
-              break;
-            case 2: // Inventario (current)
-              break;
-            case 3: // Configuración
-              Navigator.pushNamed(context, '/settings');
-              break;
-          }
+          // El AdminBottomNavigation ya maneja la navegación automáticamente
         },
       ),
     );

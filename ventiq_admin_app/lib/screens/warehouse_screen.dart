@@ -217,27 +217,16 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
             ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
-        currentIndex: 2,
+        currentRoute: '/warehouse',
         onTap: _onBottomNavTap,
       ),
     );
   }
 
   void _onBottomNavTap(int index) {
-    switch (index) {
-      case 0: // Dashboard
-        Navigator.pushNamedAndRemoveUntil(context, '/dashboard', (route) => false);
-        break;
-      case 1: // Productos
-        Navigator.pushNamed(context, '/products-dashboard');
-        break;
-      case 2: // Inventario
-        Navigator.pushNamed(context, '/inventory');
-        break;
-      case 3: // Configuración
-        Navigator.pushNamed(context, '/settings');
-        break;
-    }
+    // El AdminBottomNavigation ya maneja la navegación automáticamente
+    // Esta función se mantiene por compatibilidad pero no es necesaria
+    // ya que AdminBottomNavigation usa _handleTap internamente
   }
 
   Widget _buildFilters() {
