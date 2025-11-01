@@ -31,6 +31,20 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
       final costCenters = await _financialService.getCostCenters();
       final products = await _financialService.getProducts();
       
+      // Debug: Verificar datos cargados
+      print('🏢 Centros de costo cargados: ${costCenters.length}');
+      print('📊 Tipos de costo cargados: ${costTypes.length}');
+      print('📦 Productos cargados: ${products.length}');
+      
+      if (costCenters.isEmpty) {
+        print('⚠️ No se encontraron centros de costo');
+      } else {
+        print('✅ Centros de costo disponibles:');
+        for (var center in costCenters) {
+          print('  - ID: ${center['id']}, Nombre: ${center['denominacion']}');
+        }
+      }
+      
       setState(() {
         _assignments = assignments;
         _costTypes = costTypes;
@@ -39,6 +53,7 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
         _isLoading = false;
       });
     } catch (e) {
+      print('❌ Error cargando datos: $e');
       setState(() => _isLoading = false);
       _showErrorSnackBar('Error cargando datos: $e');
     }
@@ -317,6 +332,12 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
     final isEditing = assignment != null;
     final formKey = GlobalKey<FormState>();
     
+    // Debug: Verificar estado de los datos al abrir el diálogo
+    print('🔧 Abriendo diálogo de asignación:');
+    print('  - Centros de costo disponibles: ${_costCenters.length}');
+    print('  - Tipos de costo disponibles: ${_costTypes.length}');
+    print('  - Productos disponibles: ${_products.length}');
+    
     int? selectedCostTypeId = assignment?['id_tipo_costo'];
     int? selectedCostCenterId = assignment?['id_centro_costo'];
     int? selectedProductId = assignment?['id_producto'];
@@ -330,15 +351,18 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(isEditing ? 'Editar Asignación' : 'Nueva Asignación'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width * 0.9,
+            child: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   // Tipo de Costo
                   DropdownButtonFormField<int>(
                     value: selectedCostTypeId,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Tipo de Costo *',
                       border: OutlineInputBorder(),
@@ -346,7 +370,13 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
                     items: _costTypes.map((type) {
                       return DropdownMenuItem<int>(
                         value: type['id'],
-                        child: Text(type['denominacion'] ?? 'Sin nombre'),
+                        child: SizedBox(
+                          width: MediaQuery.of(context).size.width * 0.6,
+                          child: Text(
+                            type['denominacion'] ?? 'Sin nombre',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       );
                     }).toList(),
                     onChanged: (value) {
@@ -366,23 +396,39 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
                   // Centro de Costo
                   DropdownButtonFormField<int>(
                     value: selectedCostCenterId,
-                    decoration: const InputDecoration(
+                    isExpanded: true,
+                    decoration: InputDecoration(
                       labelText: 'Centro de Costo',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      helperText: _costCenters.isEmpty ? 'No hay centros de costo disponibles' : null,
+                      helperStyle: TextStyle(color: AppColors.error),
                     ),
-                    items: [
-                      const DropdownMenuItem<int>(
-                        value: null,
-                        child: Text('Sin centro específico'),
-                      ),
-                      ..._costCenters.map((center) {
-                        return DropdownMenuItem<int>(
-                          value: center['id'],
-                          child: Text(center['denominacion'] ?? 'Sin nombre'),
-                        );
-                      }).toList(),
-                    ],
-                    onChanged: (value) {
+                    items: _costCenters.isEmpty 
+                      ? [
+                          const DropdownMenuItem<int>(
+                            value: null,
+                            child: Text('No hay centros disponibles'),
+                          ),
+                        ]
+                      : [
+                          const DropdownMenuItem<int>(
+                            value: null,
+                            child: Text('Sin centro específico'),
+                          ),
+                          ..._costCenters.map((center) {
+                            return DropdownMenuItem<int>(
+                              value: center['id'],
+                              child: SizedBox(
+                                width: MediaQuery.of(context).size.width * 0.6,
+                                child: Text(
+                                  center['denominacion'] ?? 'Sin nombre',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ],
+                    onChanged: _costCenters.isEmpty ? null : (value) {
                       setDialogState(() {
                         selectedCostCenterId = value;
                       });
@@ -393,6 +439,7 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
                   // Producto (opcional)
                   DropdownButtonFormField<int>(
                     value: selectedProductId,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Producto (Opcional)',
                       border: OutlineInputBorder(),
@@ -405,7 +452,13 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
                       ..._products.map((product) {
                         return DropdownMenuItem<int>(
                           value: product['id'],
-                          child: Text(product['denominacion'] ?? 'Sin nombre'),
+                          child: SizedBox(
+                            width: MediaQuery.of(context).size.width * 0.6,
+                            child: Text(
+                              product['denominacion'] ?? 'Sin nombre',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         );
                       }).toList(),
                     ],
@@ -445,6 +498,7 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
                   // Método de Asignación
                   DropdownButtonFormField<int>(
                     value: method,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Método de Asignación *',
                       border: OutlineInputBorder(),
@@ -460,7 +514,8 @@ class _CostAssignmentsManagementScreenState extends State<CostAssignmentsManagem
                       });
                     },
                   ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

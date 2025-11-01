@@ -2186,6 +2186,7 @@ class _FinancialExpensesScreenState extends State<FinancialExpensesScreen>
                           );
                           _loadDataForCurrentTab();
                         } catch (e) {
+                          print(e);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text('Error al agregar gasto: $e'),
