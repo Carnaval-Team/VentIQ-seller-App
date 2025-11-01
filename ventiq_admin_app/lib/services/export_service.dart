@@ -47,8 +47,29 @@ class ExportService {
 
       // Manejar descarga según la plataforma
       if (kIsWeb) {
-        // Descarga directa en web
-        _downloadFileWeb(fileBytes, fileName, mimeType);
+        // Descarga directa en web con manejo de errores mejorado
+        try {
+          _downloadFileWeb(fileBytes, fileName, mimeType);
+        } catch (webError) {
+          print('Error específico de descarga web: $webError');
+          // Mostrar mensaje específico para problemas de navegador
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Problema de compatibilidad del navegador. Intenta con Edge o actualiza tu navegador.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'Reintentar',
+                  onPressed: () => _downloadFileWeb(fileBytes, fileName, mimeType),
+                ),
+              ),
+            );
+          }
+          return; // Salir temprano si hay error web
+        }
       } else {
         // Guardar archivo temporalmente y compartir en móvil
         final tempDir = await getTemporaryDirectory();
@@ -1322,8 +1343,29 @@ class ExportService {
 
       // Manejar descarga según la plataforma
       if (kIsWeb) {
-        // Descarga directa en web
-        _downloadFileWeb(fileBytes, fileName, mimeType);
+        // Descarga directa en web con manejo de errores mejorado
+        try {
+          _downloadFileWeb(fileBytes, fileName, mimeType);
+        } catch (webError) {
+          print('Error específico de descarga web: $webError');
+          // Mostrar mensaje específico para problemas de navegador
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Problema de compatibilidad del navegador. Intenta con Edge o actualiza tu navegador.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'Reintentar',
+                  onPressed: () => _downloadFileWeb(fileBytes, fileName, mimeType),
+                ),
+              ),
+            );
+          }
+          return; // Salir temprano si hay error web
+        }
       } else {
         // Guardar archivo temporalmente y compartir en móvil
         final tempDir = await getTemporaryDirectory();
