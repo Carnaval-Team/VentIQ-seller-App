@@ -6,7 +6,7 @@
     {
       "version": "1.4.1",
       "date": "2025-11-03",
-      "title": "⚡ Mejoras de Velocidad y Conexión",
+      "title": "⚡ Mejoras de Velocidad y Conexión y manejo de Ingredientes.",
       "changes": [
         {
           "type": "fix",
@@ -32,6 +32,21 @@
           "type": "improvement",
           "title": "Mejor Rendimiento en Tiendas Grandes",
           "description": "Si tu tienda tiene 600 productos o más, notarás que la sincronización que antes tomaba 5 minutos ahora se completa en aproximadamente 1 minuto"
+        },
+        {
+          "type": "feature",
+          "title": "Control de Ingredientes en Tiempo Real",
+          "description": "Para productos elaborados (como comidas preparadas), ahora puedes ver cuánto ingrediente tienes disponible en tu inventario directamente desde el detalle del producto"
+        },
+        {
+          "type": "feature",
+          "title": "Alertas de Ingredientes Bajos",
+          "description": "La app te avisa con colores si tienes suficientes ingredientes para preparar el producto: verde cuando hay suficiente, rojo cuando está por acabarse o no alcanza"
+        },
+        {
+          "type": "improvement",
+          "title": "Comparación Automática de Ingredientes",
+          "description": "Compara automáticamente cuánto ingrediente necesitas versus cuánto tienes disponible, para que sepas si puedes preparar el producto sin problemas"
         }
       ]
     },
