@@ -6,6 +6,7 @@ import '../services/promotion_service.dart';
 import '../services/store_config_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
+import '../services/connectivity_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,6 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _sellerService = SellerService();
   final _promotionService = PromotionService();
   final _integrationService = SettingsIntegrationService();
+  final _connectivityService = ConnectivityService();
   bool _isLoading = false;
   bool _obscure = true;
   bool _rememberMe = false;
@@ -62,23 +64,39 @@ class _LoginScreenState extends State<LoginScreen> {
 
       FocusScope.of(context).unfocus();
 
-      // PASO 1: Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
+      // PASO 1: Verificar si hay conexión real a internet
+      print('🔍 Verificando conexión a internet...');
+      final hasInternetConnection = await _connectivityService.checkConnectivity();
       
-      if (isOfflineModeEnabled) {
-        print('🔌 Modo offline activado - Verificando credenciales locales...');
+      if (hasInternetConnection) {
+        // ✅ HAY CONEXIÓN: Desactivar modo offline automáticamente y hacer login normal
+        print('✅ Conexión a internet detectada');
+        
+        // Verificar si el modo offline estaba activado
+        final wasOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
+        
+        if (wasOfflineModeEnabled) {
+          print('🔄 Desactivando modo offline automáticamente (hay conexión disponible)');
+          await _userPreferencesService.setOfflineMode(false);
+        }
+        
+        // Continuar con login online normal
+        print('🌐 Modo online - Autenticando con Supabase...');
+      } else {
+        // ❌ NO HAY CONEXIÓN: Intentar login offline
+        print('📵 Sin conexión a internet - Intentando login offline...');
         
         // Verificar si el usuario existe en el array de usuarios offline
         final hasOfflineUser = await _userPreferencesService.hasOfflineUser(
           _emailController.text.trim(),
         );
-        
+
         if (hasOfflineUser) {
           print('📱 Usuario encontrado en modo offline');
-          
+
           // Intentar login offline
           final offlineLoginSuccess = await _attemptOfflineLogin();
-          
+
           if (offlineLoginSuccess) {
             return; // Login offline exitoso
           } else {
@@ -92,16 +110,16 @@ class _LoginScreenState extends State<LoginScreen> {
         } else {
           print('⚠️ Usuario no encontrado en modo offline - Requiere conexión');
           setState(() {
-            _errorMessage = 'Usuario no sincronizado. Requiere conexión a internet para primer login.';
+            _errorMessage =
+                'Usuario no sincronizado. Requiere conexión a internet para primer login.';
             _isLoading = false;
           });
           return;
         }
       }
-      
+
       // PASO 2: Login normal con conexión (modo online)
-      print('🌐 Modo online - Autenticando con Supabase...');
-      
+
       try {
         final response = await _authService.signInWithEmailAndPassword(
           email: _emailController.text.trim(),
@@ -210,13 +228,21 @@ class _LoginScreenState extends State<LoginScreen> {
             // Cargar configuración de tienda
             try {
               print('🔧 Cargando configuración de tienda...');
-              final storeConfig = await StoreConfigService.getStoreConfig(idTienda);
+              final storeConfig = await StoreConfigService.getStoreConfig(
+                idTienda,
+              );
               if (storeConfig != null) {
                 print('✅ Configuración de tienda cargada exitosamente');
-                print('  - need_master_password_to_cancel: ${storeConfig['need_master_password_to_cancel']}');
-                print('  - need_all_orders_completed_to_continue: ${storeConfig['need_all_orders_completed_to_continue']}');
+                print(
+                  '  - need_master_password_to_cancel: ${storeConfig['need_master_password_to_cancel']}',
+                );
+                print(
+                  '  - need_all_orders_completed_to_continue: ${storeConfig['need_all_orders_completed_to_continue']}',
+                );
               } else {
-                print('⚠️ No se pudo cargar configuración de tienda - usando valores por defecto');
+                print(
+                  '⚠️ No se pudo cargar configuración de tienda - usando valores por defecto',
+                );
               }
             } catch (e) {
               print('❌ Error cargando configuración de tienda: $e');
@@ -267,44 +293,45 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<bool> _attemptOfflineLogin() async {
     try {
       print('🔐 Intentando login offline...');
-      
+
       // Validar credenciales contra el array de usuarios offline
       final offlineUser = await _userPreferencesService.validateOfflineUser(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      
+
       if (offlineUser == null) {
         print('❌ Credenciales offline inválidas');
         return false;
       }
-      
+
       print('✅ Credenciales offline válidas');
       print('  - Email: ${offlineUser['email']}');
       print('  - UserId: ${offlineUser['userId']}');
       print('  - idTienda: ${offlineUser['idTienda']}');
       print('  - idTpv: ${offlineUser['idTpv']}');
       print('  - Última sincronización: ${offlineUser['lastSync']}');
-      
+
       // Cargar datos offline del usuario
       final offlineData = await _userPreferencesService.getOfflineData();
-      
+
       if (offlineData == null) {
         print('❌ No hay datos offline guardados');
         setState(() {
-          _errorMessage = 'No hay datos sincronizados. Active modo offline con conexión primero.';
+          _errorMessage =
+              'No hay datos sincronizados. Active modo offline con conexión primero.';
           _isLoading = false;
         });
         return false;
       }
-      
+
       // Restaurar TODOS los datos del usuario en SharedPreferences
       await _userPreferencesService.saveUserData(
         userId: offlineUser['userId'],
         email: offlineUser['email'],
         accessToken: 'offline_mode', // Token especial para modo offline
       );
-      
+
       // Restaurar datos del vendedor
       if (offlineUser['idTpv'] != null && offlineUser['idTrabajador'] != null) {
         await _userPreferencesService.saveSellerData(
@@ -312,16 +339,16 @@ class _LoginScreenState extends State<LoginScreen> {
           idTrabajador: offlineUser['idTrabajador'],
         );
       }
-      
+
       // Restaurar ID del vendedor
       if (offlineUser['idSeller'] != null) {
         await _userPreferencesService.saveIdSeller(offlineUser['idSeller']);
       }
-      
+
       // Restaurar perfil del trabajador
-      if (offlineUser['nombres'] != null && 
-          offlineUser['apellidos'] != null && 
-          offlineUser['idTienda'] != null && 
+      if (offlineUser['nombres'] != null &&
+          offlineUser['apellidos'] != null &&
+          offlineUser['idTienda'] != null &&
           offlineUser['idRoll'] != null) {
         await _userPreferencesService.saveWorkerProfile(
           nombres: offlineUser['nombres'],
@@ -330,13 +357,13 @@ class _LoginScreenState extends State<LoginScreen> {
           idRoll: offlineUser['idRoll'],
         );
       }
-      
+
       print('✅ Login offline exitoso - Todos los datos restaurados');
       print('🔌 Trabajando en modo offline');
-      
+
       // Inicializar servicios inteligentes en segundo plano (también funciona en offline)
       _initializeSmartServices();
-      
+
       // Navegar a categorías
       if (mounted) {
         setState(() {
@@ -344,7 +371,7 @@ class _LoginScreenState extends State<LoginScreen> {
         });
         Navigator.of(context).pushReplacementNamed('/categories');
       }
-      
+
       return true;
     } catch (e) {
       print('❌ Error en login offline: $e');
@@ -360,25 +387,30 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _initializeSmartServices() async {
     try {
       print('🚀 Inicializando servicios inteligentes después del login...');
-      
+
       // ✅ MEJORADO: Ejecutar primera sincronización inmediatamente
       // Inicializar el servicio de integración en segundo plano
-      _integrationService.initialize().then((_) {
-        print('✅ Servicios inteligentes inicializados correctamente');
-      }).catchError((e) {
-        print('❌ Error inicializando servicios inteligentes: $e');
-        // No mostramos error al usuario ya que no es crítico para el login
-      });
-      
+      _integrationService
+          .initialize()
+          .then((_) {
+            print('✅ Servicios inteligentes inicializados correctamente');
+          })
+          .catchError((e) {
+            print('❌ Error inicializando servicios inteligentes: $e');
+            // No mostramos error al usuario ya que no es crítico para el login
+          });
+
       // Ejecutar primera sincronización inmediatamente sin esperar la inicialización completa
       print('⚡ Ejecutando primera sincronización inmediata...');
       final autoSyncService = AutoSyncService();
-      autoSyncService.performImmediateSync().then((_) {
-        print('✅ Primera sincronización inmediata completada');
-      }).catchError((e) {
-        print('❌ Error en primera sincronización inmediata: $e');
-      });
-      
+      autoSyncService
+          .performImmediateSync()
+          .then((_) {
+            print('✅ Primera sincronización inmediata completada');
+          })
+          .catchError((e) {
+            print('❌ Error en primera sincronización inmediata: $e');
+          });
     } catch (e) {
       print('❌ Error configurando servicios inteligentes: $e');
       // No lanzamos el error para no afectar el flujo de login
