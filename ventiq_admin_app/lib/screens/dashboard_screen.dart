@@ -394,7 +394,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
-        currentIndex: 0,
+        currentRoute: '/dashboard',
         onTap: _onBottomNavTap,
       ),
     );
@@ -1351,19 +1351,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _onBottomNavTap(int index) {
-    switch (index) {
-      case 0: // Dashboard (current)
-        break;
-      case 1: // Productos
-        Navigator.pushNamed(context, '/products-dashboard');
-        break;
-      case 2: // Inventario
-        Navigator.pushNamed(context, '/inventory');
-        break;
-      case 3: // Configuración
-        Navigator.pushNamed(context, '/settings');
-        break;
-    }
+    // El AdminBottomNavigation ya maneja la navegación automáticamente
+    // Esta función se mantiene por compatibilidad pero no es necesaria
+    // ya que AdminBottomNavigation usa _handleTap internamente
   }
 
   Widget _buildUsdRateChip() {

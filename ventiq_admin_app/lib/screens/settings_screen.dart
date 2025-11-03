@@ -109,7 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
-        currentIndex: 3,
+        currentRoute: '/settings',
         onTap: _onBottomNavTap,
       ),
       floatingActionButton: FloatingActionButton(
@@ -156,22 +156,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   void _onBottomNavTap(int index) {
-    switch (index) {
-      case 0:
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/dashboard',
-          (route) => false,
-        );
-        break;
-      case 1:
-        Navigator.pushNamed(context, '/products-dashboard');
-        break;
-      case 2:
-        Navigator.pushNamed(context, '/inventory');
-        break;
-      case 3:
-        break;
-    }
+    // El AdminBottomNavigation ya maneja la navegación automáticamente
+    // Esta función se mantiene por compatibilidad pero no es necesaria
+    // ya que AdminBottomNavigation usa _handleTap internamente
   }
 }
