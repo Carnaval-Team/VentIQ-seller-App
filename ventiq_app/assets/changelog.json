@@ -1,8 +1,40 @@
 {
-  "current_version": "1.4.0",
-  "build": 400,
+  "current_version": "1.4.1",
+  "build": 401,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.4.1",
+      "date": "2025-11-03",
+      "title": "⚡ Mejoras de Velocidad y Conexión",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Inicio de Sesión Más Inteligente",
+          "description": "Ahora la app detecta automáticamente si tienes internet al iniciar sesión. Si hay conexión, inicia sesión normal aunque el modo sin conexión esté activado"
+        },
+        {
+          "type": "fix",
+          "title": "Sin Errores de Usuario No Sincronizado",
+          "description": "Solucionado el problema donde la app pedía sincronización aunque tuvieras internet disponible. Ahora solo usa el modo sin conexión cuando realmente no hay internet"
+        },
+        {
+          "type": "improvement",
+          "title": "Desactivación Automática del Modo Sin Conexión",
+          "description": "Cuando recuperas la conexión a internet, el modo sin conexión se desactiva automáticamente para que puedas trabajar con datos actualizados"
+        },
+        {
+          "type": "improvement",
+          "title": "Carga de Productos 5 Veces Más Rápida",
+          "description": "La sincronización de productos ahora es mucho más rápida. En lugar de cargar un producto a la vez, carga 5 productos al mismo tiempo. Ideal para tiendas con muchos productos"
+        },
+        {
+          "type": "improvement",
+          "title": "Mejor Rendimiento en Tiendas Grandes",
+          "description": "Si tu tienda tiene 600 productos o más, notarás que la sincronización que antes tomaba 5 minutos ahora se completa en aproximadamente 1 minuto"
+        }
+      ]
+    },
     {
       "version": "1.4.0",
       "date": "2025-10-23",

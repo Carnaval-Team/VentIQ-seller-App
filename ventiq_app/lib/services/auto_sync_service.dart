@@ -426,43 +426,68 @@ class AutoSyncService {
         final products = entry.value;
 
         print('    📦 Subcategoría "$subcategory": ${products.length} productos');
-        for (var prod in products) {
-          // Aumentar límite a 50 productos por subcategoría para mejor cobertura
-          try {
-            // Obtener detalles completos usando RPC
-            final detailResponse = await Supabase.instance.client.rpc(
-              'get_detalle_producto',
-              params: {'id_producto_param': prod.id},
-            );
+        
+        // 🚀 PROCESAMIENTO CONCURRENTE: Procesar productos en lotes de 5
+        const batchSize = 5;
+        for (var i = 0; i < products.length; i += batchSize) {
+          final endIndex = (i + batchSize < products.length) ? i + batchSize : products.length;
+          final batch = products.sublist(i, endIndex);
+          
+          print('      🔄 Procesando lote ${(i ~/ batchSize) + 1} (${batch.length} productos)...');
+          
+          // Procesar todos los productos del lote en paralelo
+          final batchResults = await Future.wait(
+            batch.map((prod) async {
+              try {
+                // Obtener detalles completos usando RPC
+                final detailResponse = await Supabase.instance.client.rpc(
+                  'get_detalle_producto',
+                  params: {'id_producto_param': prod.id},
+                );
 
-            final productWithDetails = {
-              'id': prod.id,
-              'denominacion': prod.denominacion,
-              'precio': prod.precio,
-              'foto': prod.foto,
-              'categoria': prod.categoria,
-              'descripcion': prod.descripcion,
-              'cantidad': prod.cantidad,
-              'subcategoria': subcategory,
-              'detalles_completos': detailResponse,
-            };
-
-            allProducts.add(productWithDetails);
-            print('      ✅ ${prod.denominacion} (ID: ${prod.id}) - Detalles obtenidos');
-          } catch (e) {
-            // En caso de error, guardar solo datos básicos
-            allProducts.add({
-              'id': prod.id,
-              'denominacion': prod.denominacion,
-              'precio': prod.precio,
-              'foto': prod.foto,
-              'categoria': prod.categoria,
-              'descripcion': prod.descripcion,
-              'cantidad': prod.cantidad,
-              'subcategoria': subcategory,
-            });
-            print('      ⚠️ ${prod.denominacion} (ID: ${prod.id}) - Solo datos básicos: $e');
+                print('      ✅ ${prod.denominacion} (ID: ${prod.id}) - Detalles obtenidos');
+                
+                return {
+                  'success': true,
+                  'data': {
+                    'id': prod.id,
+                    'denominacion': prod.denominacion,
+                    'precio': prod.precio,
+                    'foto': prod.foto,
+                    'categoria': prod.categoria,
+                    'descripcion': prod.descripcion,
+                    'cantidad': prod.cantidad,
+                    'subcategoria': subcategory,
+                    'detalles_completos': detailResponse,
+                  },
+                };
+              } catch (e) {
+                // En caso de error, retornar solo datos básicos
+                print('      ⚠️ ${prod.denominacion} (ID: ${prod.id}) - Solo datos básicos: $e');
+                
+                return {
+                  'success': false,
+                  'data': {
+                    'id': prod.id,
+                    'denominacion': prod.denominacion,
+                    'precio': prod.precio,
+                    'foto': prod.foto,
+                    'categoria': prod.categoria,
+                    'descripcion': prod.descripcion,
+                    'cantidad': prod.cantidad,
+                    'subcategoria': subcategory,
+                  },
+                };
+              }
+            }),
+          );
+          
+          // Agregar todos los resultados del lote a la lista
+          for (var result in batchResults) {
+            allProducts.add(result['data'] as Map<String, dynamic>);
           }
+          
+          print('      ✅ Lote completado: ${batchResults.length} productos procesados');
         }
       }
 
