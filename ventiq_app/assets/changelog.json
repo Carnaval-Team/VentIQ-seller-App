@@ -1,8 +1,45 @@
 {
-  "current_version": "1.4.1",
-  "build": 401,
+  "current_version": "1.4.2",
+  "build": 402,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.4.2",
+      "date": "2025-11-04",
+      "title": "🍽️ Control Inteligente de Productos Elaborados",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Procesamiento Más Rápido",
+          "description": "Solucionado: La app ya no muestra el mensaje 'Elaborando productos...' cuando vendes productos simples. Ahora solo aparece cuando realmente hay productos elaborados en tu orden"
+        },
+        {
+          "type": "feature",
+          "title": "Alertas de Ingredientes Bajos",
+          "description": "Antes de finalizar una venta con productos elaborados, la app te avisa si algún ingrediente está próximo a agotarse o no tiene suficiente stock"
+        },
+        {
+          "type": "feature",
+          "title": "Alertas con Colores Inteligentes",
+          "description": "Alertas rojas cuando un ingrediente no alcanza para preparar el producto, y alertas naranjas cuando está próximo a acabarse (menos del 20% extra de lo necesario)"
+        },
+        {
+          "type": "feature",
+          "title": "Información Detallada de Stock",
+          "description": "Cada alerta muestra: nombre del ingrediente, para qué producto es, cuánto necesitas y cuánto tienes disponible, todo en una vista clara y fácil de entender"
+        },
+        {
+          "type": "improvement",
+          "title": "Modo Sin Conexión Optimizado",
+          "description": "En modo offline, la app asume que tienes stock disponible y no hace verificaciones innecesarias, permitiéndote trabajar más rápido sin conexión"
+        },
+        {
+          "type": "improvement",
+          "title": "Mensajes Más Claros",
+          "description": "Los mensajes de éxito ahora solo aparecen cuando realmente se procesan productos elaborados, evitando confusiones"
+        }
+      ]
+    },
     {
       "version": "1.4.1",
       "date": "2025-11-03",

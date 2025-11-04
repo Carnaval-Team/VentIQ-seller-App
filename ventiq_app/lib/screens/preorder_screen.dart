@@ -865,6 +865,28 @@ class _PreorderScreenState extends State<PreorderScreen> {
         _elaboratingProducts = true;
       });
 
+      // Verificar si hay productos elaborados en la orden
+      final productosElaborados = <Map<String, dynamic>>[];
+      for (final item in order.items) {
+        final productId = item.producto.id;
+        final isElaborated = await _productDetailService.isProductElaborated(productId);
+        if (isElaborated) {
+          productosElaborados.add({
+            'id_producto': productId,
+            'cantidad': item.cantidad,
+            'nombre': item.nombre,
+          });
+        }
+      }
+
+      // Si no hay productos elaborados, salir temprano
+      if (productosElaborados.isEmpty) {
+        debugPrint('✅ No hay productos elaborados en la orden - saltando proceso');
+        return;
+      }
+
+      debugPrint('🔍 Productos elaborados encontrados: ${productosElaborados.length}');
+
       // Show loading dialog
       showDialog(
         context: context,
@@ -892,6 +914,15 @@ class _PreorderScreenState extends State<PreorderScreen> {
           );
         },
       );
+
+      // Verificar disponibilidad de ingredientes solo en modo ONLINE
+      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
+      if (!isOfflineModeEnabled) {
+        debugPrint('🌐 Modo online - Verificando disponibilidad de ingredientes');
+        await _checkIngredientsAvailability(productosElaborados);
+      } else {
+        debugPrint('🔌 Modo offline - Saltando verificación de disponibilidad');
+      }
 
       // Convert order items to the format expected by decomposition functions
       final productos = order.items.map((item) {
@@ -926,45 +957,49 @@ class _PreorderScreenState extends State<PreorderScreen> {
       final simpleCount = productosDescompuestos.length - elaboratedCount;
 
       // Close loading dialog
-      Navigator.of(context).pop();
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
 
-      // Show success message with details
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.white),
-                  const SizedBox(width: 8),
-                  const Text('Productos elaborados procesados'),
-                ],
-              ),
-              if (elaboratedCount > 0) ...[
+      // Show success message with details solo si hay productos elaborados
+      if (elaboratedCount > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.white),
+                    const SizedBox(width: 8),
+                    const Text('Productos elaborados procesados'),
+                  ],
+                ),
+                if (elaboratedCount > 0) ...[
                 const SizedBox(height: 4),
                 Text(
                   '🍽️ $elaboratedCount ingredientes de productos elaborados',
                   style: const TextStyle(fontSize: 12),
                 ),
               ],
-              if (simpleCount > 0) ...[
+                if (simpleCount > 0) ...[
                 const SizedBox(height: 4),
                 Text(
                   '📦 $simpleCount productos simples',
                   style: const TextStyle(fontSize: 12),
                 ),
+                ],
               ],
-            ],
+            ),
+            backgroundColor: Colors.green[600],
+            duration: const Duration(seconds: 3),
           ),
-          backgroundColor: Colors.green[600],
-          duration: const Duration(seconds: 3),
-        ),
-      );
+        );
+      }
 
     } catch (e) {
-      // Close loading dialog if still open
+      // Close loading dialog if still open (solo si se mostró)
       if (Navigator.canPop(context)) {
         Navigator.of(context).pop();
       }
@@ -1412,6 +1447,207 @@ class _PreorderScreenState extends State<PreorderScreen> {
     });
   }
 
+
+  /// Verifica la disponibilidad de ingredientes para productos elaborados
+  Future<void> _checkIngredientsAvailability(
+    List<Map<String, dynamic>> productosElaborados,
+  ) async {
+    try {
+      final ingredientesProximosAgotar = <Map<String, dynamic>>[];
+      final ingredientesSinStock = <Map<String, dynamic>>[];
+
+      for (final producto in productosElaborados) {
+        final productId = producto['id_producto'] as int;
+        final cantidadProducto = (producto['cantidad'] as num).toDouble();
+        final nombreProducto = producto['nombre'] as String;
+
+        final ingredientes = await _productDetailService.getProductIngredients(productId);
+
+        for (final ingrediente in ingredientes) {
+          final cantidadNecesaria = (ingrediente['cantidad_necesaria'] as num).toDouble();
+          final cantidadDisponible = ingrediente['cantidad_disponible'] as double?;
+          final nombreIngrediente = ingrediente['producto_nombre'] as String;
+          final unidadMedida = ingrediente['unidad_medida'] as String;
+
+          final cantidadTotalNecesaria = cantidadNecesaria * cantidadProducto;
+
+          if (cantidadDisponible == null) {
+            debugPrint('⚠️ Ingrediente sin datos de inventario: $nombreIngrediente');
+            continue;
+          }
+
+          // Verificar si no hay stock suficiente
+          if (cantidadDisponible < cantidadTotalNecesaria) {
+            ingredientesSinStock.add({
+              'nombre': nombreIngrediente,
+              'producto': nombreProducto,
+              'necesaria': cantidadTotalNecesaria,
+              'disponible': cantidadDisponible,
+              'unidad': unidadMedida,
+            });
+          }
+          // Verificar si está próximo a agotarse (menos del 20% extra de lo necesario)
+          else if (cantidadDisponible < cantidadTotalNecesaria * 1.2) {
+            ingredientesProximosAgotar.add({
+              'nombre': nombreIngrediente,
+              'producto': nombreProducto,
+              'necesaria': cantidadTotalNecesaria,
+              'disponible': cantidadDisponible,
+              'unidad': unidadMedida,
+            });
+          }
+        }
+      }
+
+      // Mostrar alertas si hay problemas
+      if (ingredientesSinStock.isNotEmpty) {
+        _showStockAlert(
+          title: '⚠️ Stock Insuficiente',
+          message: 'Los siguientes ingredientes no tienen stock suficiente:',
+          ingredientes: ingredientesSinStock,
+          isError: true,
+        );
+      } else if (ingredientesProximosAgotar.isNotEmpty) {
+        _showStockAlert(
+          title: '⚡ Ingredientes Próximos a Agotarse',
+          message: 'Los siguientes ingredientes están próximos a agotarse:',
+          ingredientes: ingredientesProximosAgotar,
+          isError: false,
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error verificando disponibilidad de ingredientes: $e');
+    }
+  }
+
+  /// Muestra alerta de stock de ingredientes
+  void _showStockAlert({
+    required String title,
+    required String message,
+    required List<Map<String, dynamic>> ingredientes,
+    required bool isError,
+  }) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                isError ? Icons.error_outline : Icons.warning_amber_rounded,
+                color: isError ? Colors.red : Colors.orange,
+                size: 28,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isError ? Colors.red : Colors.orange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  message,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...ingredientes.map((ing) {
+                  final nombre = ing['nombre'] as String;
+                  final producto = ing['producto'] as String;
+                  final necesaria = ing['necesaria'] as double;
+                  final disponible = ing['disponible'] as double;
+                  final unidad = ing['unidad'] as String;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isError ? Colors.red[50] : Colors.orange[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isError ? Colors.red[200]! : Colors.orange[200]!,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.inventory_2,
+                              size: 16,
+                              color: isError ? Colors.red[700] : Colors.orange[700],
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                nombre,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isError ? Colors.red[900] : Colors.orange[900],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Para: $producto',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Necesario: ${necesaria.toStringAsFixed(2)} $unidad',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            Text(
+                              'Disponible: ${disponible.toStringAsFixed(2)} $unidad',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isError ? Colors.red[700] : Colors.orange[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Entendido'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   void _onBottomNavTap(int index) {
     switch (index) {
