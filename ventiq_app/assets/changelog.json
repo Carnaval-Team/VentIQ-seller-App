@@ -1,8 +1,45 @@
 {
-  "current_version": "1.4.2",
-  "build": 402,
+  "current_version": "1.4.3",
+  "build": 403,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.4.3",
+      "date": "2025-11-04",
+      "title": "🖨️ Impresión Optimizada - Ahorra Papel",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Facturas Más Compactas",
+          "description": "Las facturas ahora usan 50% menos papel. Hemos reducido espacios innecesarios y optimizado el formato sin perder información importante"
+        },
+        {
+          "type": "improvement",
+          "title": "Guías de Almacén Reducidas",
+          "description": "Las guías de picking ahora son más cortas y directas. Solo la información esencial para el almacén, ahorrando hasta 60% de papel"
+        },
+        {
+          "type": "improvement",
+          "title": "Textos Más Concisos",
+          "description": "Usamos abreviaturas claras (ORD, CLI, TEL) y eliminamos líneas vacías extras para hacer cada ticket más eficiente"
+        },
+        {
+          "type": "improvement",
+          "title": "Menos Gasto, Mismo Servicio",
+          "description": "Ahorra en rollos de papel térmico sin sacrificar la calidad de tus facturas. Toda la información sigue ahí, solo más compacta"
+        },
+        {
+          "type": "feature",
+          "title": "Notificaciones Expandibles",
+          "description": "Ahora puedes tocar cualquier notificación para ver su contenido completo. Las notificaciones largas se expanden con animación suave mostrando todo el mensaje"
+        },
+        {
+          "type": "improvement",
+          "title": "Ver Más / Ver Menos",
+          "description": "Cada notificación muestra un indicador 'Ver más' o 'Ver menos' para que sepas si hay más información disponible. Toca para expandir o contraer"
+        }
+      ]
+    },
     {
       "version": "1.4.2",
       "date": "2025-11-04",
