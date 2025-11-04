@@ -510,7 +510,7 @@ class BluetoothPrinterService {
       List<int> bytes = [];
       
       bytes += _addCustomerReceipt(generator, order);
-      bytes += generator.emptyLines(3);
+      bytes += generator.emptyLines(1);
       bytes += generator.cut();
       
       debugPrint('📤 Sending customer receipt (${bytes.length} bytes)...');
@@ -528,7 +528,7 @@ class BluetoothPrinterService {
       List<int> bytes = [];
       
       bytes += _addWarehousePickingSlip(generator, order);
-      bytes += generator.emptyLines(3);
+      bytes += generator.emptyLines(1);
       bytes += generator.cut();
       
       debugPrint('📤 Sending warehouse slip (${bytes.length} bytes)...');
@@ -581,59 +581,51 @@ class BluetoothPrinterService {
   List<int> _addCustomerReceipt(Generator generator, Order order) {
     List<int> bytes = [];
 
-    // Header
-    bytes += generator.text('VENTIQ', styles: PosStyles(align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2));
-    bytes += generator.text('Sistema de Ventas', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('FACTURA DE VENTA', styles: PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.text('================================', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.emptyLines(1);
+    // Header compacto
+    bytes += generator.text('VENTIQ', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('FACTURA', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
 
-    // Order information
-    bytes += generator.text('ORDEN: ${order.id}', styles: PosStyles(align: PosAlign.left, bold: true));
+    // Order information compacta
+    bytes += generator.text('ORD: ${order.id.length > 20 ? order.id.substring(0, 20) : order.id}', styles: PosStyles(align: PosAlign.left, bold: true));
     
     if (order.buyerName != null && order.buyerName!.isNotEmpty) {
-      bytes += generator.text('CLIENTE: ${order.buyerName}', styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text('CLI: ${order.buyerName}', styles: PosStyles(align: PosAlign.left));
     }
     
     if (order.buyerPhone != null && order.buyerPhone!.isNotEmpty) {
-      bytes += generator.text('TELEFONO: ${order.buyerPhone}', styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text('TEL: ${order.buyerPhone}', styles: PosStyles(align: PosAlign.left));
     }
     
-    bytes += generator.text('FECHA: ${_formatDateForPrint(order.fechaCreacion)}', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('PAGO: ${order.paymentMethod ?? 'Completado'}', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.emptyLines(1);
+    bytes += generator.text('${_formatDateForPrint(order.fechaCreacion)}', styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
 
-    // Products header
-    bytes += generator.text('PRODUCTOS:', styles: PosStyles(align: PosAlign.left, bold: true));
-    bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
-
-    // Products
+    // Products compactos
     double subtotal = 0;
     for (var item in order.items) {
       double itemTotal = item.cantidad * item.precioUnitario;
       subtotal += itemTotal;
       
-      bytes += generator.text('${item.cantidad}x ${item.producto.denominacion}', styles: PosStyles(align: PosAlign.left));
-      bytes += generator.text('\$${item.precioUnitario.toStringAsFixed(0)} c/u = \$${itemTotal.toStringAsFixed(0)}', 
+      // Nombre del producto en una línea
+      String prodName = item.producto.denominacion;
+      if (prodName.length > 28) prodName = prodName.substring(0, 25) + '...';
+      bytes += generator.text('${item.cantidad}x $prodName', styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text('  \$${item.precioUnitario.toStringAsFixed(0)} = \$${itemTotal.toStringAsFixed(0)}', 
                              styles: PosStyles(align: PosAlign.right));
     }
 
-    // Totals
-    bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('SUBTOTAL: \$${subtotal.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.right, bold: true));
-    bytes += generator.text('TOTAL: \$${order.total.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.right, bold: true, height: PosTextSize.size2));
-    bytes += generator.emptyLines(1);
+    // Totals compactos
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text('TOTAL: \$${order.total.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.right, bold: true));
 
-    // Footer
-    bytes += generator.text('¡Gracias por su compra!', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('VENTIQ - Sistema de Ventas', styles: PosStyles(align: PosAlign.center));
+    // Footer compacto
+    bytes += generator.text('Gracias por su compra', styles: PosStyles(align: PosAlign.center));
     
     if (order.notas != null && order.notas!.isNotEmpty) {
-      bytes += generator.emptyLines(1);
-      bytes += generator.text('Notas: ${order.notas}', styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text('Nota: ${order.notas}', styles: PosStyles(align: PosAlign.left));
     }
     
-    bytes += generator.emptyLines(2);
+    bytes += generator.emptyLines(1);
     
     return bytes;
   }
@@ -656,33 +648,24 @@ class BluetoothPrinterService {
 
     debugPrint('🏭 Creating warehouse picking slip for order ${order.id}');
     
-    // Header
-    bytes += generator.text('VENTIQ', styles: PosStyles(align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2));
-    bytes += generator.text('COMPROBANTE DE ALMACEN', styles: PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.text('GUIA DE PICKING', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('================================', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.emptyLines(1);
+    // Header compacto
+    bytes += generator.text('VENTIQ', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('GUIA ALMACEN', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
     
     debugPrint('📋 Warehouse header added');
 
-    // Order information
-    bytes += generator.text('ORDEN: ${order.id}', styles: PosStyles(align: PosAlign.left, bold: true));
-    bytes += generator.text('FECHA: ${_formatDateForPrint(order.fechaCreacion)}', styles: PosStyles(align: PosAlign.left));
+    // Order information compacta
+    bytes += generator.text('ORD: ${order.id.length > 20 ? order.id.substring(0, 20) : order.id}', styles: PosStyles(align: PosAlign.left, bold: true));
+    bytes += generator.text('${_formatDateForPrint(order.fechaCreacion)}', styles: PosStyles(align: PosAlign.left));
     
     if (order.buyerName != null && order.buyerName!.isNotEmpty) {
-      bytes += generator.text('CLIENTE: ${order.buyerName}', styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text('CLI: ${order.buyerName}', styles: PosStyles(align: PosAlign.left));
     }
     
-    bytes += generator.text('ESTADO: ${order.status.displayName.toUpperCase()}', styles: PosStyles(align: PosAlign.left));
-    bytes += generator.emptyLines(1);
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
 
-    // Products header for picking
-    bytes += generator.text('PRODUCTOS A RECOGER:', styles: PosStyles(align: PosAlign.left, bold: true));
-    bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('CANT | PRODUCTO | UBICACION', styles: PosStyles(align: PosAlign.left, bold: true));
-    bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
-
-    // Products with warehouse locations
+    // Products compactos
     debugPrint('📦 Adding ${order.items.length} products to warehouse slip');
     for (int i = 0; i < order.items.length; i++) {
       var item = order.items[i];
@@ -691,44 +674,22 @@ class BluetoothPrinterService {
       
       debugPrint('📋 Product ${i + 1}: ${item.cantidad}x $productName @ $ubicacion');
       
-      // Truncate product name if too long
-      if (productName.length > 15) {
-        productName = productName.substring(0, 15) + '...';
+      // Truncar nombre si es muy largo
+      if (productName.length > 22) {
+        productName = productName.substring(0, 19) + '...';
       }
       
-      bytes += generator.text('${item.cantidad.toString().padLeft(3)} | $productName', styles: PosStyles(align: PosAlign.left));
-      bytes += generator.text('    | Ubic: $ubicacion', styles: PosStyles(align: PosAlign.left));
-      bytes += generator.text('    | \$${item.precioUnitario.toStringAsFixed(0)} c/u', styles: PosStyles(align: PosAlign.left));
-      bytes += generator.emptyLines(1);
+      bytes += generator.text('${item.cantidad}x $productName', styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text('  Ubic: $ubicacion', styles: PosStyles(align: PosAlign.left));
     }
     debugPrint('✅ All warehouse products added');
 
-    // Summary
-    bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('TOTAL PRODUCTOS: ${order.totalItems}', styles: PosStyles(align: PosAlign.left, bold: true));
-    bytes += generator.text('VALOR TOTAL: \$${order.total.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left, bold: true));
-    bytes += generator.emptyLines(1);
+    // Summary compacto
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text('TOT: ${order.totalItems} prod - \$${order.total.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left, bold: true));
 
-    // Instructions
-    // bytes += generator.text('INSTRUCCIONES:', styles: PosStyles(align: PosAlign.left, bold: true));
-    // bytes += generator.text('1. Verificar cantidad y producto', styles: PosStyles(align: PosAlign.left));
-    // bytes += generator.text('2. Confirmar ubicacion en almacen', styles: PosStyles(align: PosAlign.left));
-    // bytes += generator.text('3. Marcar como completado', styles: PosStyles(align: PosAlign.left));
-    // bytes += generator.emptyLines(1);
-
-    // Signature section
-    // bytes += generator.text('--------------------------------', styles: PosStyles(align: PosAlign.center));
-    // bytes += generator.text('FIRMA ALMACENERO:', styles: PosStyles(align: PosAlign.left, bold: true));
-    // bytes += generator.emptyLines(3);
-    // bytes += generator.text('_________________________', styles: PosStyles(align: PosAlign.left));
-    // bytes += generator.text('Nombre y Firma', styles: PosStyles(align: PosAlign.left));
-    // bytes += generator.emptyLines(1);
-    
-    // bytes += generator.text('HORA COMPLETADO: ___________', styles: PosStyles(align: PosAlign.left));
-    // bytes += generator.emptyLines(1);
-
-    // Footer
-    bytes += generator.text('VENTIQ - Sistema de Almacen', styles: PosStyles(align: PosAlign.center));
+    // Footer compacto
+    bytes += generator.text('VENTIQ Almacen', styles: PosStyles(align: PosAlign.center));
     
     debugPrint('🏭 Warehouse picking slip completed (${bytes.length} bytes)');
     return bytes;

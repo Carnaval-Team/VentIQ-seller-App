@@ -12,7 +12,6 @@ import '../widgets/app_drawer.dart';
 import '../widgets/scrolling_text.dart';
 import '../widgets/notification_widget.dart';
 import 'checkout_screen.dart';
-import 'dart:convert';
 
 class PreorderScreen extends StatefulWidget {
   const PreorderScreen({Key? key}) : super(key: key);

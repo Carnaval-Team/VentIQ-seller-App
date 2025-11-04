@@ -324,8 +324,8 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
   }
 }
 
-/// Item individual de notificación
-class NotificationItem extends StatelessWidget {
+/// Item individual de notificación con funcionalidad de acordeón
+class NotificationItem extends StatefulWidget {
   final NotificationModel notification;
   final VoidCallback onTap;
   final VoidCallback onDismiss;
@@ -338,14 +338,21 @@ class NotificationItem extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<NotificationItem> createState() => _NotificationItemState();
+}
+
+class _NotificationItemState extends State<NotificationItem> {
+  bool _isExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    final color = notification.getColor();
-    final icon = notification.getIcon();
+    final color = widget.notification.getColor();
+    final icon = widget.notification.getIcon();
 
     return Dismissible(
-      key: Key('notification_${notification.id}'),
+      key: Key('notification_${widget.notification.id}'),
       direction: DismissDirection.endToStart,
-      onDismissed: (_) => onDismiss(),
+      onDismissed: (_) => widget.onDismiss(),
       background: Container(
         color: const Color(0xFFF44336), // Rojo
         alignment: Alignment.centerRight,
@@ -357,10 +364,20 @@ class NotificationItem extends StatelessWidget {
         ),
       ),
       child: InkWell(
-        onTap: onTap,
-        child: Container(
+        onTap: () {
+          setState(() {
+            _isExpanded = !_isExpanded;
+          });
+          // Marcar como leída al expandir
+          if (!_isExpanded && !widget.notification.leida) {
+            widget.onTap();
+          }
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          color: notification.leida
+          color: widget.notification.leida
               ? Colors.white
               : color.withOpacity(0.05),
           child: Row(
@@ -391,19 +408,19 @@ class NotificationItem extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            notification.titulo,
+                            widget.notification.titulo,
                             style: TextStyle(
                               fontSize: 15,
-                              fontWeight: notification.leida
+                              fontWeight: widget.notification.leida
                                   ? FontWeight.w500
                                   : FontWeight.bold,
                               color: const Color(0xFF212121),
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                            maxLines: _isExpanded ? null : 2,
+                            overflow: _isExpanded ? null : TextOverflow.ellipsis,
                           ),
                         ),
-                        if (notification.isUrgent)
+                        if (widget.notification.isUrgent)
                           Container(
                             margin: const EdgeInsets.only(left: 8),
                             padding: const EdgeInsets.symmetric(
@@ -426,19 +443,33 @@ class NotificationItem extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    // Mensaje
-                    Text(
-                      notification.mensaje,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[700],
-                        height: 1.3,
+                    // Mensaje con animación de expansión
+                    AnimatedCrossFade(
+                      firstChild: Text(
+                        widget.notification.mensaje,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                          height: 1.3,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
+                      secondChild: Text(
+                        widget.notification.mensaje,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                          height: 1.3,
+                        ),
+                      ),
+                      crossFadeState: _isExpanded
+                          ? CrossFadeState.showSecond
+                          : CrossFadeState.showFirst,
+                      duration: const Duration(milliseconds: 300),
                     ),
                     const SizedBox(height: 6),
-                    // Tiempo y estado
+                    // Tiempo, estado e indicador de expansión
                     Row(
                       children: [
                         Icon(
@@ -448,14 +479,29 @@ class NotificationItem extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          timeago.format(notification.createdAt, locale: 'es'),
+                          timeago.format(widget.notification.createdAt, locale: 'es'),
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        // Indicador de expansión
+                        Icon(
+                          _isExpanded ? Icons.expand_less : Icons.expand_more,
+                          size: 18,
+                          color: color,
+                        ),
+                        Text(
+                          _isExpanded ? 'Ver menos' : 'Ver más',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: color,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                         const Spacer(),
-                        if (!notification.leida)
+                        if (!widget.notification.leida)
                           Container(
                             width: 8,
                             height: 8,
