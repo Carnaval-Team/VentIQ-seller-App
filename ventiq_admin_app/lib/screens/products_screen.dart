@@ -199,7 +199,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: 'Buscar productos...',
+          hintText: 'Buscar por nombre, SKU o nombre comercial...',
           prefixIcon: const Icon(Icons.search, color: AppColors.primary),
           suffixIcon:
               _searchQuery.isNotEmpty
@@ -304,7 +304,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
               product.categoryName.toLowerCase().contains(
                 _searchQuery.toLowerCase(),
               ) ||
-              product.brand.toLowerCase().contains(_searchQuery.toLowerCase());
+              product.brand.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+              product.sku.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+              (product.nombreComercial?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false);
 
           // El filtro de categoría ya se aplica en la carga de datos
           return matchesSearch;
@@ -505,6 +507,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         const SizedBox(height: 2),
                         Text(
                           'SKU: ${product.sku}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                        if(product.nombreComercial != null)
+                        const SizedBox(height: 2),
+                        if(product.nombreComercial != null)
+                        Text(
+                          '${product.nombreComercial}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textLight,
