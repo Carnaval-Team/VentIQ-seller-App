@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
@@ -11,6 +13,15 @@ import '../widgets/sales_monitor_fab.dart';
 import '../widgets/marquee_text.dart';
 import '../utils/connection_error_handler.dart';
 import '../widgets/notification_widget.dart';
+
+// Configuración personalizada de scroll para web
+class WebScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+      };
+}
 
 class ProductsScreen extends StatefulWidget {
   final int categoryId;
@@ -756,45 +767,88 @@ class _SubcategorySection extends StatelessWidget {
     return SizedBox(
       height:
           228, // Altura optimizada: 3 productos (70px) + espaciado (6px entre cards) = 3*70 + 2*6 = 222px + padding
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount:
-            (products.length / 3).ceil(), // Número de columnas de 3 productos
-        itemBuilder: (context, columnIndex) {
-          // Calcular productos para esta columna
-          final startIndex = columnIndex * 3;
-          final endIndex = (startIndex + 3).clamp(0, products.length);
-          final columnProducts = products.sublist(startIndex, endIndex);
+      child: kIsWeb
+          ? ScrollConfiguration(
+              behavior: WebScrollBehavior(),
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount:
+                    (products.length / 3).ceil(), // Número de columnas de 3 productos
+                itemBuilder: (context, columnIndex) {
+                  // Calcular productos para esta columna
+                  final startIndex = columnIndex * 3;
+                  final endIndex = (startIndex + 3).clamp(0, products.length);
+                  final columnProducts = products.sublist(startIndex, endIndex);
 
-          return Container(
-            width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
-            margin: const EdgeInsets.only(right: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children:
-                  columnProducts.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final product = entry.value;
-                    return Container(
-                      margin: EdgeInsets.only(
-                        bottom:
-                            index < columnProducts.length - 1
-                                ? 6
-                                : 0, // Solo espaciado entre cards, no al final
-                      ),
-                      child: _PlayStoreProductCard(
-                        product: product,
-                        categoryColor: categoryColor,
-                        promotionData: promotionData,
-                        isLimitDataUsageEnabled: isLimitDataUsageEnabled,
-                      ),
-                    );
-                  }).toList(),
+                  return Container(
+                    width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
+                    margin: const EdgeInsets.only(right: 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children:
+                          columnProducts.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final product = entry.value;
+                            return Container(
+                              margin: EdgeInsets.only(
+                                bottom:
+                                    index < columnProducts.length - 1
+                                        ? 6
+                                        : 0, // Solo espaciado entre cards, no al final
+                              ),
+                              child: _PlayStoreProductCard(
+                                product: product,
+                                categoryColor: categoryColor,
+                                promotionData: promotionData,
+                                isLimitDataUsageEnabled: isLimitDataUsageEnabled,
+                              ),
+                            );
+                          }).toList(),
+                    ),
+                  );
+                },
+              ),
+            )
+          : ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount:
+                  (products.length / 3).ceil(), // Número de columnas de 3 productos
+              itemBuilder: (context, columnIndex) {
+                // Calcular productos para esta columna
+                final startIndex = columnIndex * 3;
+                final endIndex = (startIndex + 3).clamp(0, products.length);
+                final columnProducts = products.sublist(startIndex, endIndex);
+
+                return Container(
+                  width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
+                  margin: const EdgeInsets.only(right: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children:
+                        columnProducts.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final product = entry.value;
+                          return Container(
+                            margin: EdgeInsets.only(
+                              bottom:
+                                  index < columnProducts.length - 1
+                                      ? 6
+                                      : 0, // Solo espaciado entre cards, no al final
+                            ),
+                            child: _PlayStoreProductCard(
+                              product: product,
+                              categoryColor: categoryColor,
+                              promotionData: promotionData,
+                              isLimitDataUsageEnabled: isLimitDataUsageEnabled,
+                            ),
+                          );
+                        }).toList(),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 }
