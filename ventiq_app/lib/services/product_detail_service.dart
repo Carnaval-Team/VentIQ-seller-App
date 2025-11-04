@@ -258,7 +258,7 @@ class ProductDetailService {
     }
   }
 
-  /// Obtiene los ingredientes de un producto elaborado
+  /// Obtiene los ingredientes de un producto elaborado con su cantidad disponible actual
   Future<List<Map<String, dynamic>>> getProductIngredients(
     int productId,
   ) async {
@@ -273,6 +273,7 @@ class ProductDetailService {
             id,
             cantidad_necesaria,
             unidad_medida,
+            id_ingrediente,
             app_dat_producto!app_dat_producto_ingredientes_ingrediente_fkey(
               id,
               denominacion,
@@ -289,23 +290,45 @@ class ProductDetailService {
         return [];
       }
 
-      // Transform the response to match the expected format
-      final ingredients =
-          response.map((item) {
-            final producto =
-                item['app_dat_producto'] as Map<String, dynamic>? ?? {};
-            return {
-              'producto_id': producto['id'],
-              'producto_nombre':
-                  producto['denominacion'] ?? 'Ingrediente desconocido',
-              'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
-              'unidad_medida': item['unidad_medida'] ?? '',
-              'sku': producto['sku'] ?? '',
-              'imagen': producto['imagen'],
-            };
-          }).toList();
+      // Transform the response and fetch inventory for each ingredient
+      final List<Map<String, dynamic>> ingredients = [];
+      
+      for (final item in response) {
+        final producto = item['app_dat_producto'] as Map<String, dynamic>? ?? {};
+        final idIngrediente = item['id_ingrediente'] as int?;
+        
+        // Obtener cantidad disponible actual del inventario
+        double? cantidadDisponible;
+        if (idIngrediente != null) {
+          try {
+            final inventoryResponse = await _supabase
+                .from('app_dat_inventario_productos')
+                .select('cantidad_final')
+                .eq('id_producto', idIngrediente)
+                .order('created_at', ascending: false)
+                .limit(1);
+            
+            if (inventoryResponse.isNotEmpty) {
+              cantidadDisponible = (inventoryResponse.first['cantidad_final'] as num?)?.toDouble();
+              debugPrint('📊 Ingrediente ${producto['denominacion']}: cantidad disponible = $cantidadDisponible');
+            }
+          } catch (e) {
+            debugPrint('⚠️ Error obteniendo inventario para ingrediente $idIngrediente: $e');
+          }
+        }
+        
+        ingredients.add({
+          'producto_id': producto['id'],
+          'producto_nombre': producto['denominacion'] ?? 'Ingrediente desconocido',
+          'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
+          'unidad_medida': item['unidad_medida'] ?? '',
+          'sku': producto['sku'] ?? '',
+          'imagen': producto['imagen'],
+          'cantidad_disponible': cantidadDisponible, // Cantidad actual en inventario
+        });
+      }
 
-      debugPrint('✅ Encontrados ${ingredients.length} ingredientes');
+      debugPrint('✅ Encontrados ${ingredients.length} ingredientes con inventario');
 
       return ingredients;
     } catch (e) {
@@ -363,17 +386,25 @@ class ProductDetailService {
                         final nombre =
                             ingredient['producto_nombre'] ??
                             'Ingrediente desconocido';
-                        final cantidad = ingredient['cantidad_necesaria'] ?? 0;
+                        final cantidadNecesaria = ingredient['cantidad_necesaria'] ?? 0;
                         final unidad = ingredient['unidad_medida'] ?? '';
+                        final cantidadDisponible = ingredient['cantidad_disponible'] as double?;
+                        
+                        // Determinar si hay suficiente stock
+                        final bool tieneSuficiente = cantidadDisponible != null && 
+                            cantidadDisponible >= cantidadNecesaria;
+                        final Color statusColor = cantidadDisponible == null 
+                            ? Colors.grey 
+                            : (tieneSuficiente ? Colors.green : Colors.red);
 
                         return Card(
                           margin: const EdgeInsets.symmetric(vertical: 4),
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: Colors.orange[100],
+                              backgroundColor: statusColor.withOpacity(0.2),
                               child: Icon(
                                 Icons.inventory_2,
-                                color: Colors.orange[600],
+                                color: statusColor,
                                 size: 20,
                               ),
                             ),
@@ -383,10 +414,34 @@ class ProductDetailService {
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                            subtitle: Text(
-                              'Cantidad: $cantidad $unidad',
-                              style: TextStyle(color: Colors.grey[600]),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Necesario: $cantidadNecesaria $unidad',
+                                  style: TextStyle(color: Colors.grey[600]),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  cantidadDisponible != null
+                                      ? 'Disponible: ${cantidadDisponible.toStringAsFixed(2)} $unidad'
+                                      : 'Disponible: Sin datos',
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
+                            trailing: cantidadDisponible != null
+                                ? Icon(
+                                    tieneSuficiente 
+                                        ? Icons.check_circle 
+                                        : Icons.warning,
+                                    color: statusColor,
+                                    size: 20,
+                                  )
+                                : null,
                           ),
                         );
                       },
