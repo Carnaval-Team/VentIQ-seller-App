@@ -1,8 +1,50 @@
 {
-  "current_version": "1.4.3",
-  "build": 403,
+  "current_version": "1.4.4",
+  "build": 404,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.4.4",
+      "date": "2025-11-05",
+      "title": "📊 Indicador de Sincronización en Tiempo Real",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Indicador Visual de Sincronización",
+          "description": "Ahora puedes ver en tiempo real cuando la app está guardando tus datos. Un pequeño indicador aparece en la esquina inferior izquierda mostrando el progreso de sincronización"
+        },
+        {
+          "type": "feature",
+          "title": "Progreso Detallado",
+          "description": "El indicador muestra exactamente qué se está sincronizando: credenciales, promociones, productos, categorías, etc. Sabrás en todo momento qué información se está actualizando"
+        },
+        {
+          "type": "feature",
+          "title": "Confirmación Visual",
+          "description": "Cuando termina de sincronizar, el indicador se pone verde y muestra 'Sincronizado' para que sepas que todos tus datos están guardados correctamente"
+        },
+        {
+          "type": "improvement",
+          "title": "Disponible en Todas las Pantallas",
+          "description": "El indicador de sincronización está visible en las pantallas principales: categorías, productos, órdenes y configuración. Siempre sabrás el estado de tus datos"
+        },
+        {
+          "type": "improvement",
+          "title": "Se Oculta Automáticamente",
+          "description": "Una vez que termina de sincronizar, el indicador se oculta solo después de 3 segundos para no estorbar tu trabajo. Reaparece automáticamente en la siguiente sincronización"
+        },
+        {
+          "type": "improvement",
+          "title": "Modo Sin Conexión Más Inteligente",
+          "description": "El modo sin conexión ahora se desactiva automáticamente cuando recuperas internet, y solo se activa cuando realmente pierdes la conexión por más de 30 segundos"
+        },
+        {
+          "type": "fix",
+          "title": "Sincronización Más Confiable",
+          "description": "Corregido problema donde el indicador no aparecía en sincronizaciones posteriores. Ahora funciona correctamente cada vez que la app guarda datos"
+        }
+      ]
+    },
     {
       "version": "1.4.3",
       "date": "2025-11-04",

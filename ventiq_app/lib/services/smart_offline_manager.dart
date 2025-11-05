@@ -27,7 +27,7 @@ class SmartOfflineManager {
   DateTime? _lastAutoActivation;
 
   // Configuración
-  static const Duration _connectionLostThreshold = Duration(seconds: 10);
+  static const Duration _connectionLostThreshold = Duration(seconds: 10); // Aumentado de 10 a 30 segundos para evitar falsos positivos
   static const Duration _autoActivationCooldown = Duration(minutes: 5);
 
   // Stream para notificar eventos del manager
@@ -215,16 +215,28 @@ class SmartOfflineManager {
     }
 
     // Esperar un poco para confirmar que la conexión realmente se perdió
+    print('⏳ Esperando ${_connectionLostThreshold.inSeconds}s para confirmar pérdida de conexión...');
     await Future.delayed(_connectionLostThreshold);
 
     // Verificar nuevamente el estado de conexión
+    print('🔍 Verificando estado de conexión después del threshold...');
     final isStillDisconnected = !_connectivityService.isConnected;
 
     if (isStillDisconnected) {
-      print(
-        '🚨 Conexión perdida confirmada - Activando modo offline automáticamente',
-      );
-      await _activateOfflineModeAutomatically();
+      // Verificación adicional: intentar hacer una petición real
+      print('🌐 Haciendo verificación adicional de conectividad real...');
+      final hasRealConnection = await _connectivityService.checkConnectivity();
+      
+      if (!hasRealConnection) {
+        print(
+          '🚨 Conexión perdida confirmada (verificación doble) - Activando modo offline automáticamente',
+        );
+        await _activateOfflineModeAutomatically();
+      } else {
+        print(
+          '✅ Conexión real detectada en verificación adicional - No activando modo offline',
+        );
+      }
     } else {
       print(
         '📶 Conexión restaurada durante verificación - No activando modo offline',
