@@ -1646,6 +1646,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
     if (_selectedSubcategorias.isNotEmpty) {
       subcategoriasData =
           _selectedSubcategorias.map((id) => {'id_sub_categoria': id}).toList();
+    } else {
+      throw Exception('Debe seleccionar al menos una subcategoría');
     }
 
     // Preparar etiquetas
