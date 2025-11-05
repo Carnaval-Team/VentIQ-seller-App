@@ -8,6 +8,8 @@ import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/changelog_service.dart';
 import '../widgets/changelog_dialog.dart';
+import '../widgets/notification_widget.dart';
+import '../services/notification_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -24,6 +26,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   final ChangelogService _changelogService = ChangelogService();
+  final NotificationService _notificationService = NotificationService();
 
   String _currentStoreName = 'Cargando...';
   List<Map<String, dynamic>> _userStores = [];
@@ -47,6 +50,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadStoreInfo();
     _loadDashboardData(); // Ya incluye _loadUsdRate() después de actualizar las tasas
     _checkForChangelog();
+    // Inicializar servicio de notificaciones para suscribirse a Realtime
+    _notificationService.initialize();
   }
 
   Future<void> _loadStoreInfo() async {
@@ -375,6 +380,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               onPressed: _showStoreSelectionDialog,
               tooltip: 'Seleccionar Tienda: $_currentStoreName',
             ),
+          // Notification widget
+          const NotificationWidget(),
           Builder(
             builder:
                 (context) => IconButton(

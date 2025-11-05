@@ -12,6 +12,7 @@ import 'inventory_adjustment_screen.dart'; // Importar la pantalla de ajuste de 
 import 'elaborated_products_extraction_screen.dart'; // Nueva pantalla
 import 'inventory_extractionbysale_screen.dart'; // Venta por Acuerdo
 import 'inventory_dashboard.dart';
+import '../widgets/notification_widget.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -359,6 +360,8 @@ class _InventoryScreenState extends State<InventoryScreen>
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          // Notification widget
+          const NotificationWidget(),
           Builder(
             builder:
                 (context) => IconButton(
