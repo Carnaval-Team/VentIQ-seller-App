@@ -13,6 +13,7 @@ import '../widgets/sales_monitor_fab.dart';
 import '../widgets/marquee_text.dart';
 import '../utils/connection_error_handler.dart';
 import '../widgets/notification_widget.dart';
+import '../widgets/sync_status_chip.dart';
 
 // Configuración personalizada de scroll para web
 class WebScrollBehavior extends MaterialScrollBehavior {
@@ -608,6 +609,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ),
           // USD Rate Chip positioned at bottom left
           Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
+          // Sync Status Chip positioned at bottom left
+          const Positioned(
+            bottom: 80,
+            left: 16,
+            child: SyncStatusChip(),
+          ),
         ],
       ),
     );

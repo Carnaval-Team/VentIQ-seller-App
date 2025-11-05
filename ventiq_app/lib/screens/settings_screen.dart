@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/connection_status_widget.dart';
+import '../services/connectivity_service.dart';
 import 'dart:async';
 
 class SettingsScreen extends StatefulWidget {
@@ -25,7 +26,7 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
   final OrderService _orderService = OrderService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
@@ -50,6 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
     _loadAppVersion();
     _initializeSmartServices();
@@ -57,10 +59,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Cancelar suscripción de manera segura
     _integrationSubscription?.cancel();
     _integrationSubscription = null;
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      print('📱 App reanudada en Settings - Verificando estado de conexión...');
+      
+      // Verificar conexión cuando la app se reanuda
+      _checkConnectionAfterResume();
+      
+      // Recargar configuraciones
+      _loadSettings();
+    } else if (state == AppLifecycleState.paused) {
+      print('⏸️ App suspendida desde Settings');
+    }
+  }
+
+  /// Verificar conexión después de que la app se reanuda
+  Future<void> _checkConnectionAfterResume() async {
+    try {
+      // Esperar un poco para que el sistema restaure la conexión
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Verificar si hay conexión real
+      final connectivityService = ConnectivityService();
+      final hasConnection = await connectivityService.checkConnectivity();
+      
+      // Verificar si el modo offline está activado
+      final isOfflineMode = await _userPreferencesService.isOfflineModeEnabled();
+      
+      if (hasConnection && isOfflineMode) {
+        print('🔄 Conexión detectada después de reanudar - Modo offline puede ser innecesario');
+        
+        // Mostrar notificación al usuario
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('📶 Conexión disponible - Puede desactivar modo offline'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        
+        // Recargar configuraciones para reflejar el estado actual
+        _loadSettings();
+      } else if (hasConnection) {
+        print('✅ Conexión confirmada después de reanudar - Modo online activo');
+      } else {
+        print('📵 Sin conexión después de reanudar');
+      }
+    } catch (e) {
+      print('❌ Error verificando conexión después de reanudar: $e');
+    }
   }
 
   /// Cargar versión de la app desde changelog.json

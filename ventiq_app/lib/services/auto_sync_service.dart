@@ -172,6 +172,13 @@ class AutoSyncService {
 
       // 1. Sincronizar credenciales y datos del usuario
       try {
+        _syncEventController.add(
+          AutoSyncEvent(
+            type: AutoSyncEventType.syncProgress,
+            timestamp: DateTime.now(),
+            message: 'Credenciales',
+          ),
+        );
         syncedData['credentials'] = await _syncCredentials();
         syncedItems.add('credenciales');
         print('  ✅ Credenciales sincronizadas');
@@ -181,6 +188,13 @@ class AutoSyncService {
 
       // 2. Sincronizar promociones globales
       try {
+        _syncEventController.add(
+          AutoSyncEvent(
+            type: AutoSyncEventType.syncProgress,
+            timestamp: DateTime.now(),
+            message: 'Promociones',
+          ),
+        );
         syncedData['promotions'] = await _syncPromotions();
         syncedItems.add('promociones');
         print('  ✅ Promociones sincronizadas');
@@ -190,6 +204,13 @@ class AutoSyncService {
 
       // 3. Sincronizar configuración de tienda
       try {
+        _syncEventController.add(
+          AutoSyncEvent(
+            type: AutoSyncEventType.syncProgress,
+            timestamp: DateTime.now(),
+            message: 'Configuración',
+          ),
+        );
         await _syncStoreConfig();
         syncedItems.add('configuración de tienda');
         print('  ✅ Configuración de tienda sincronizada');
@@ -199,6 +220,13 @@ class AutoSyncService {
 
       // 4. Sincronizar métodos de pago
       try {
+        _syncEventController.add(
+          AutoSyncEvent(
+            type: AutoSyncEventType.syncProgress,
+            timestamp: DateTime.now(),
+            message: 'Métodos de pago',
+          ),
+        );
         syncedData['payment_methods'] = await _syncPaymentMethods();
         syncedItems.add('métodos de pago');
         print('  ✅ Métodos de pago sincronizados');
@@ -209,6 +237,13 @@ class AutoSyncService {
       // 5. Sincronizar categorías (siempre en primera sincronización, luego cada 3 sincronizaciones)
       if (_syncCount == 0 || _syncCount % 3 == 0) {
         try {
+          _syncEventController.add(
+            AutoSyncEvent(
+              type: AutoSyncEventType.syncProgress,
+              timestamp: DateTime.now(),
+              message: 'Categorías',
+            ),
+          );
           final isFirstSync = _syncCount == 0;
           print('  📂 Sincronizando categorías (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})');
           syncedData['categories'] = await _syncCategories();
@@ -224,6 +259,13 @@ class AutoSyncService {
       // 6. Sincronizar productos (siempre en primera sincronización, luego cada 5 sincronizaciones)
       if (_syncCount == 0 || _syncCount % 5 == 0) {
         try {
+          _syncEventController.add(
+            AutoSyncEvent(
+              type: AutoSyncEventType.syncProgress,
+              timestamp: DateTime.now(),
+              message: 'Productos',
+            ),
+          );
           final isFirstSync = _syncCount == 0;
           print('  📦 Sincronizando productos (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})');
           syncedData['products'] = await _syncProducts();
@@ -238,8 +280,15 @@ class AutoSyncService {
 
       // 7. Sincronizar turno y resumen
       try {
+        _syncEventController.add(
+          AutoSyncEvent(
+            type: AutoSyncEventType.syncProgress,
+            timestamp: DateTime.now(),
+            message: 'Turno',
+          ),
+        );
         final turnoData = await _syncTurno();
-        syncedData['turno'] = turnoData;
+        syncedData['turno'] = turnoData; // Para datos offline generales
         
         // ✅ CORREGIDO: También guardar en la clave específica de turno offline
         if (turnoData != null) {
@@ -248,7 +297,6 @@ class AutoSyncService {
         }
         
         await _syncTurnoResumen();
-        // Sincronizar resumen de cierre diario para CierreScreen y VentaTotalScreen
         await _syncResumenCierre();
         syncedItems.add('turno');
         print('  ✅ Turno y resúmenes sincronizados');
@@ -985,6 +1033,7 @@ enum AutoSyncEventType {
   started,
   stopped,
   syncStarted,
+  syncProgress, // Evento de progreso durante la sincronización
   syncCompleted,
   syncFailed,
 }

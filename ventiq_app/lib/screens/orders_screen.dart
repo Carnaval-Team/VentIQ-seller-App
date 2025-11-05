@@ -10,6 +10,7 @@ import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../widgets/notification_widget.dart';
+import '../widgets/sync_status_chip.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({Key? key}) : super(key: key);
@@ -270,7 +271,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ],
       ),
-      body:
+      body: Stack(
+        children: [
           _isLoading
               ? Center(
                 child: Column(
@@ -303,6 +305,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ],
                 ),
               ),
+          // Sync Status Chip positioned at bottom left
+          const Positioned(
+            bottom: 10,
+            left: 16,
+            child: SyncStatusChip(),
+          ),
+        ],
+      ),
       endDrawer: const AppDrawer(),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: 2, // Órdenes tab

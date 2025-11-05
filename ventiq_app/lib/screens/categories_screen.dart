@@ -13,9 +13,13 @@ import '../services/update_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../widgets/notification_widget.dart';
+import '../widgets/sync_status_chip.dart';
 import '../services/notification_service.dart';
 import '../utils/connection_error_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/smart_offline_manager.dart';
+import '../services/connectivity_service.dart';
+import 'dart:async';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -30,6 +34,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   final UserPreferencesService _preferencesService = UserPreferencesService();
   final ChangelogService _changelogService = ChangelogService();
   final NotificationService _notificationService = NotificationService();
+  final SmartOfflineManager _smartOfflineManager = SmartOfflineManager();
+  StreamSubscription<SmartOfflineEvent>? _smartOfflineSubscription;
   List<Category> _categories = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -57,6 +63,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     _loadOfflineModeSettings();
     // Inicializar servicio de notificaciones
     _notificationService.initialize();
+    // Escuchar eventos del SmartOfflineManager
+    _setupSmartOfflineListener();
     // Verificar actualizaciones después de que el frame esté completamente renderizado
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdatesAfterNavigation();
@@ -90,21 +98,143 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     }
   }
 
+  /// Configurar listener para eventos del SmartOfflineManager
+  void _setupSmartOfflineListener() {
+    _smartOfflineSubscription = _smartOfflineManager.eventStream.listen((event) {
+      print('📡 Evento SmartOffline recibido: ${event.type} - ${event.message}');
+      
+      // Manejar eventos específicos
+      switch (event.type) {
+        case SmartOfflineEventType.offlineModeAutoDeactivated:
+          // Modo offline desactivado automáticamente
+          print('✅ Modo offline desactivado automáticamente - Actualizando UI');
+          _loadOfflineModeSettings();
+          break;
+          
+        case SmartOfflineEventType.offlineModeAutoActivated:
+          // Modo offline activado automáticamente
+          print('🔌 Modo offline activado automáticamente - Actualizando UI');
+          _loadOfflineModeSettings();
+          break;
+          
+        case SmartOfflineEventType.connectionRestoredWhileOffline:
+          // Conexión restaurada mientras está en modo offline
+          print('📶 Conexión restaurada - Verificando si desactivar modo offline');
+          _handleConnectionRestored();
+          break;
+          
+        default:
+          // Otros eventos no requieren acción en el UI
+          break;
+      }
+    });
+  }
+
+  /// Manejar restauración de conexión
+  Future<void> _handleConnectionRestored() async {
+    // Verificar si hay conexión real
+    final isConnected = await _checkInternetConnection();
+    
+    if (isConnected) {
+      print('✅ Conexión confirmada - Desactivando modo offline');
+      
+      // Desactivar modo offline
+      await _preferencesService.setOfflineMode(false);
+      
+      // Notificar al SmartOfflineManager que fue desactivado manualmente
+      await _smartOfflineManager.onOfflineModeManuallyDisabled();
+      
+      // Actualizar UI
+      await _loadOfflineModeSettings();
+      
+      // Mostrar mensaje al usuario
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🌐 Conexión restaurada - Modo online activado'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      
+      // Recargar categorías desde el servidor
+      _loadCategories(forceRefresh: true);
+    } else {
+      print('❌ Sin conexión real - Manteniendo modo offline');
+    }
+  }
+
+  /// Verificar conexión a internet real
+  Future<bool> _checkInternetConnection() async {
+    try {
+      // Usar ConnectivityService para verificar conexión real
+      final connectivityService = ConnectivityService();
+      final hasConnection = await connectivityService.checkConnectivity();
+      
+      if (hasConnection) {
+        print('🌐 Verificación de internet: ✅ Conectado');
+      } else {
+        print('🌐 Verificación de internet: ❌ Sin conexión');
+      }
+      
+      return hasConnection;
+    } catch (e) {
+      print('❌ Error verificando conexión: $e');
+      return false;
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _notificationService.dispose();
+    _smartOfflineSubscription?.cancel();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      print('📱 App reanudada - Verificando estado de conexión...');
+      
+      // Verificar conexión cuando la app se reanuda
+      _checkConnectionAfterResume();
+      
       // Refresh the screen when returning from other screens
       _loadDataUsageSettings();
       _loadFluidModeSettings();
       _loadOfflineModeSettings();
       setState(() {});
+    } else if (state == AppLifecycleState.paused) {
+      print('⏸️ App suspendida');
+    }
+  }
+
+  /// Verificar conexión después de que la app se reanuda
+  Future<void> _checkConnectionAfterResume() async {
+    try {
+      // Esperar un poco para que el sistema restaure la conexión
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Verificar si hay conexión real
+      final hasConnection = await _checkInternetConnection();
+      
+      // Verificar si el modo offline está activado
+      final isOfflineMode = await _preferencesService.isOfflineModeEnabled();
+      
+      if (hasConnection && isOfflineMode) {
+        print('🔄 Conexión detectada después de reanudar - Verificando si desactivar modo offline');
+        
+        // Si hay conexión y el modo offline está activo, manejarlo
+        _handleConnectionRestored();
+      } else if (hasConnection) {
+        print('✅ Conexión confirmada después de reanudar - Modo online activo');
+      } else {
+        print('📵 Sin conexión después de reanudar');
+      }
+    } catch (e) {
+      print('❌ Error verificando conexión después de reanudar: $e');
     }
   }
 
@@ -418,6 +548,12 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           _buildBody(),
           // USD Rate Chip positioned at bottom left
           Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
+          // Sync Status Chip positioned at bottom left, above USD chip
+          const Positioned(
+            bottom: 80, // Encima del USD chip
+            left: 16,
+            child: SyncStatusChip(),
+          ),
         ],
       ),
       endDrawer: const AppDrawer(),
