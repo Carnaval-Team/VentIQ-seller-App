@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../models/warehouse.dart';
 import '../models/inventory.dart';
@@ -428,12 +429,13 @@ class _InventoryExtractionBySaleScreenState
       final userUuid = await userPrefs.getUserId();
       final userData = await userPrefs.getUserData();
       final idTienda = userData['idTienda'] as int?;
+      final idTpv = _selectedTPV!['id'] as int;
 
       if (userUuid == null || idTienda == null) {
         throw Exception('No se encontró información del usuario o tienda');
       }
 
-      // Preparar productos
+      // Preparar productos usando el mismo formato que order_service.dart
       final productos = _selectedProducts.map((product) {
         return {
           'id_producto': product['id_producto'],
@@ -443,8 +445,9 @@ class _InventoryExtractionBySaleScreenState
           'id_presentacion': product['id_presentacion'] ?? 1,
           'cantidad': product['cantidad'],
           'precio_unitario': product['precio_unitario'],
-          'sku_producto': product['sku_producto'],
+          'sku_producto': product['sku_producto'] ?? product['id_producto'].toString(),
           'sku_ubicacion': product['sku_ubicacion'],
+          'es_producto_venta': true, // Mark as sales product like in order_service
         };
       }).toList();
 
@@ -458,95 +461,90 @@ class _InventoryExtractionBySaleScreenState
         observaciones += _observacionesController.text;
       }
 
-      // Usar el ID del motivo de venta seleccionado
-      final idMotivoOperacion = _selectedMotivoVenta!['id'] as int;
       final tipoVenta = _selectedMotivoVenta!['denominacion'] ?? 'Venta';
 
-      print('📝 Registrando venta:');
-      print('   - Tipo: $tipoVenta (ID: $idMotivoOperacion)');
+      print('📝 Registrando venta usando fn_registrar_venta:');
+      print('   - Tipo: $tipoVenta');
       print('   - Productos: ${productos.length}');
       print('   - Total: CUP ${_calculateTotal().toStringAsFixed(2)}');
+      print('   - TPV ID: $idTpv');
 
-      final result = await InventoryService.insertCompleteExtraction(
-        autorizadoPor: _clienteController.text.isEmpty
-            ? 'Venta directa'
-            : _clienteController.text,
-        estadoInicial: 1,
-        idMotivoOperacion: idMotivoOperacion,
-        idTienda: idTienda,
-        observaciones: observaciones,
-        productos: productos,
-        uuid: userUuid,
+      // Usar fn_registrar_venta como en order_service.dart
+      final rpcParams = {
+        'p_codigo_promocion': null,
+        'p_denominacion': 'Venta por Acuerdo - ${DateTime.now().millisecondsSinceEpoch}',
+        'p_estado_inicial': 1,
+        'p_id_tpv': idTpv,
+        'p_observaciones': observaciones,
+        'p_productos': productos,
+        'p_uuid': userUuid,
+        'p_id_cliente': null,
+      };
+
+      print('=== PARAMETROS RPC fn_registrar_venta ===');
+      print('p_codigo_promocion: ${rpcParams['p_codigo_promocion']}');
+      print('p_denominacion: ${rpcParams['p_denominacion']}');
+      print('p_estado_inicial: ${rpcParams['p_estado_inicial']}');
+      print('p_id_tpv: ${rpcParams['p_id_tpv']}');
+      print('p_observaciones: ${rpcParams['p_observaciones']}');
+      print('p_uuid: ${rpcParams['p_uuid']}');
+      print('p_productos (${productos.length} items): $productos');
+      print('========================================');
+
+      // Llamar a fn_registrar_venta usando Supabase directamente
+      final response = await Supabase.instance.client.rpc(
+        'fn_registrar_venta',
+        params: rpcParams,
       );
 
-      if (result['status'] != 'success') {
-        throw Exception(result['message'] ?? 'Error desconocido');
-      }
+      print('Respuesta fn_registrar_venta: $response');
 
-      final operationId = result['id_operacion'];
-      print('✅ Venta por acuerdo registrada con ID: $operationId');
-
-      // Completar operación automáticamente
-      if (operationId != null) {
-        try {
-          final completeResult = await InventoryService.completeOperation(
-            idOperacion: operationId,
-            comentario: 'Venta por acuerdo completada - $observaciones',
-            uuid: userUuid,
-          );
-
-          if (completeResult['status'] == 'success') {
-            print('✅ Operación completada exitosamente');
-          }
-        } catch (completeError) {
-          print('❌ Error al completar operación: $completeError');
+      if (response != null && response['status'] == 'success') {
+        final operationId = response['id_operacion'] as int?;
+        if (operationId == null) {
+          throw Exception('No se recibió ID de operación válido del servidor');
         }
 
-        // Registrar el pago de la venta
+        print('✅ Venta registrada con ID: $operationId');
+
+        // Registrar pagos usando fn_registrar_pago_venta como en order_service.dart
         try {
           final totalVenta = _calculateTotal();
-          final idTpv = _selectedTPV!['id'] as int;
           final idMedioPago = _selectedMedioPago!['id'];
-          final tpvNombre = _selectedTPV!['denominacion'] ?? 'Desconocido';
           final medioPagoNombre = _selectedMedioPago!['denominacion'] ?? 'Desconocido';
 
           print('💳 Registrando pago:');
-          print('   - TPV: $tpvNombre (ID: $idTpv)');
           print('   - Monto: CUP ${totalVenta.toStringAsFixed(2)}');
-          print('   - Medio: $medioPagoNombre (ID: $idMedioPago, tipo: ${idMedioPago.runtimeType})');
-          print('   - UUID: $userUuid');
+          print('   - Medio: $medioPagoNombre (ID: $idMedioPago)');
 
-          // Crear registro en app_dat_operacion_venta
-          print('🔹 Paso 1: Creando operación de venta...');
-          final ventaResult = await InventoryService.createOperacionVenta(
-            idOperacion: operationId,
-            idTpv: idTpv,
-            importeTotal: totalVenta,
+          // Preparar array de pagos
+          List<Map<String, dynamic>> pagos = [{
+            'id_medio_pago': idMedioPago,
+            'monto': totalVenta,
+            'referencia_pago': 'Venta por Acuerdo - ${DateTime.now().millisecondsSinceEpoch}',
+          }];
+
+          // Llamar a fn_registrar_pago_venta
+          final pagoResponse = await Supabase.instance.client.rpc(
+            'fn_registrar_pago_venta',
+            params: {
+              'p_id_operacion_venta': operationId,
+              'p_pagos': pagos,
+            },
           );
 
-          print('🔹 Resultado operación venta: $ventaResult');
-          
-          if (ventaResult['id_operacion'] != null) {
-            final idOperacionVenta = ventaResult['id_operacion'] as int;
-            print('🔹 Paso 2: Registrando pago con id_operacion_venta: $idOperacionVenta');
-            
-            // Registrar el pago
-            final pagoResult = await InventoryService.registerPagoVenta(
-              idOperacionVenta: idOperacionVenta,
-              idMedioPago: idMedioPago,
-              monto: totalVenta,
-              uuid: userUuid,
-            );
+          print('Respuesta fn_registrar_pago_venta: $pagoResponse');
 
-            print('✅ Pago registrado exitosamente: $pagoResult');
+          if (pagoResponse == true) {
+            print('✅ Pago registrado exitosamente');
           } else {
-            print('❌ No se obtuvo id_operacion de la venta');
+            print('⚠️ Advertencia: Respuesta inesperada del registro de pago: $pagoResponse');
           }
         } catch (pagoError, stackTrace) {
           print('❌ Error al registrar pago: $pagoError');
           print('🔴 Stack trace: $stackTrace');
           
-          // Mostrar el error al usuario
+          // Mostrar advertencia pero no fallar la operación
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -557,18 +555,41 @@ class _InventoryExtractionBySaleScreenState
             );
           }
         }
-      }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Venta por acuerdo registrada exitosamente'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        Navigator.pop(context);
+        // Completar operación automáticamente usando fn_registrar_cambio_estado_operacion
+        try {
+          print('🔄 Completando operación automáticamente...');
+          
+          final completeResponse = await Supabase.instance.client.rpc(
+            'fn_registrar_cambio_estado_operacion',
+            params: {
+              'p_id_operacion': operationId,
+              'p_nuevo_estado': 2, // Estado completado
+              'p_uuid_usuario': userUuid,
+            },
+          );
+
+          print('Respuesta fn_registrar_cambio_estado_operacion: $completeResponse');
+          print('✅ Operación completada automáticamente');
+        } catch (completeError) {
+          print('❌ Error al completar operación: $completeError');
+          // No fallar la operación principal por esto
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Venta por acuerdo registrada y completada exitosamente'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          Navigator.pop(context);
+        }
+      } else {
+        throw Exception(response?['message'] ?? 'Error en el registro de venta');
       }
     } catch (e) {
+      print('❌ Error en _submitExtraction: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al registrar venta: $e')),
@@ -1185,11 +1206,13 @@ class _ProductQuantityWithPriceDialogState
       'cantidad': quantity,
       'precio_unitario': price,
       'sku_producto': widget.product['sku'] ?? '',
+      'denominacion_corta': widget.product['denominacion_corta'] ?? '',
       'sku_ubicacion': widget.sourceLocation?.name ?? '',
       'denominacion':
           widget.product['denominacion'] ?? widget.product['nombre_producto'] ?? '',
       'variante': _selectedVariant!['variante'] ?? '',
       'zona_nombre': widget.sourceLocation?.name ?? '',
+      'meta': widget.product,
     };
 
     widget.onProductAdded(productData);
@@ -1236,9 +1259,17 @@ class _ProductQuantityWithPriceDialogState
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        if (widget.product['sku'] != null)
+                        if (widget.product['sku_producto'] != null)
                           Text(
-                            'SKU: ${widget.product['sku']}',
+                            'SKU: ${widget.product['sku_producto']}',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+
+                          Text(
+                            'SKU: ${widget.product['meta']}',
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 12,
