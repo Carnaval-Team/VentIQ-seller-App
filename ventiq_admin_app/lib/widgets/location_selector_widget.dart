@@ -101,6 +101,17 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
       if (widget.onDestinationLocationChanged != null) {
         widget.onDestinationLocationChanged!(null);
       }
+
+      // ✅ SELECCIÓN AUTOMÁTICA: Si solo hay un almacén, seleccionarlo automáticamente
+      if (allLocations.length == 1 && widget.type == LocationSelectorType.single) {
+        final singleLocation = allLocations.first;
+        if (widget.onLocationChanged != null) {
+          // Usar Future.microtask para evitar problemas de setState durante build
+          Future.microtask(() {
+            widget.onLocationChanged!(singleLocation);
+          });
+        }
+      }
     } catch (e) {
       setState(() {
         _errorMessage = 'Error al cargar ubicaciones: $e';
