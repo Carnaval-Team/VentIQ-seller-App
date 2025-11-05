@@ -292,6 +292,10 @@ class _InventoryExtractionBySaleScreenState
                         productData['denominacion'] ?? 'Sin nombre',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
+                      Text('SKU: ${productData['sku_producto']}'
+                         ?? 'Sin nombre',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
                       if (productData['variante'] != null &&
                           productData['variante'].toString().isNotEmpty)
                         Text('Variante: ${productData['variante']}',
@@ -1400,8 +1404,8 @@ class _ProductQuantityWithPriceDialogState
                             return 'Ingrese un precio';
                           }
                           final price = double.tryParse(value);
-                          if (price == null || price <= 0) {
-                            return 'El precio debe ser mayor a 0';
+                          if (price == null) {
+                            return 'Ingrese un precio';
                           }
                           return null;
                         },
