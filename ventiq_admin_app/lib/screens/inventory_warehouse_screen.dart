@@ -1085,6 +1085,27 @@ class _InventoryWarehouseScreenState extends State<InventoryWarehouseScreen> {
     // Encontrar el warehouse completo
     final warehouse = _warehouses.firstWhere((w) => w.id == warehouseId);
     
+    // Verificar si hay más de 400 productos
+    if (products.length > 400) {
+      // Mostrar mensaje informativo y exportar directamente en Excel
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Hay ${products.length} productos. Por rendimiento, se exportará automáticamente en Excel.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      
+      // Exportar directamente en Excel
+      await _exportProducts(warehouse.name, zone.name, products, ExportFormat.excel);
+      return;
+    }
+    
+    // Si hay 400 o menos productos, mostrar el diálogo normal
     await showExportDialog(
       context: context,
       warehouseName: warehouse.name,

@@ -73,6 +73,9 @@ class InventoryProduct {
   final String presentacion;
   final double cantidadInicial;
   final double cantidadFinal;
+  final double? entradasPeriodo;
+  final double? extraccionesPeriodo;
+  final double? ventasPeriodo;
   final double stockDisponible;
   final double stockReservado;
   final double stockDisponibleAjustado;
@@ -129,6 +132,9 @@ class InventoryProduct {
     required this.presentacion,
     required this.cantidadInicial,
     required this.cantidadFinal,
+    this.entradasPeriodo,
+    this.extraccionesPeriodo,
+    this.ventasPeriodo,
     required this.stockDisponible,
     required this.stockReservado,
     required this.stockDisponibleAjustado,
@@ -209,6 +215,9 @@ class InventoryProduct {
       presentacion: map['presentacion'] ?? 'Unidad',
       cantidadInicial: (map['cantidad_inicial'] ?? 0).toDouble(),
       cantidadFinal: (map['cantidad_final'] ?? 0).toDouble(),
+      entradasPeriodo: map['entradas_periodo'] != null ? (map['entradas_periodo']).toDouble() : null,
+      extraccionesPeriodo: map['extracciones_periodo'] != null ? (map['extracciones_periodo']).toDouble() : null,
+      ventasPeriodo: map['ventas_periodo'] != null ? (map['ventas_periodo']).toDouble() : null,
       stockDisponible: (map['stock_disponible'] ?? 0).toDouble(),
       stockReservado: (map['stock_reservado'] ?? 0).toDouble(),
       stockDisponibleAjustado:
@@ -254,28 +263,31 @@ class InventoryProduct {
       presentacion: row[18] ?? 'Unidad',
       cantidadInicial: (row[19] ?? 0).toDouble(),
       cantidadFinal: (row[20] ?? 0).toDouble(),
-      stockDisponible: (row[21] ?? 0).toDouble(),
-      stockReservado: (row[22] ?? 0).toDouble(),
-      stockDisponibleAjustado: (row[23] ?? 0).toDouble(),
-      esVendible: row[24] ?? false,
-      esInventariable: row[25] ?? false,
-      esElaborado: row[26] ?? false,
-      precioVenta: row[27]?.toDouble(),
-      costoPromedio: row[28]?.toDouble(),
-      margenActual: row[29]?.toDouble(),
-      clasificacionAbc: row[30] ?? 3,
-      abcDescripcion: row[31] ?? 'No clasificado',
+      entradasPeriodo: row.length > 21 && row[21] != null ? (row[21]).toDouble() : null,
+      extraccionesPeriodo: row.length > 22 && row[22] != null ? (row[22]).toDouble() : null,
+      ventasPeriodo: row.length > 23 && row[23] != null ? (row[23]).toDouble() : null,
+      stockDisponible: (row[24] ?? 0).toDouble(),
+      stockReservado: (row[25] ?? 0).toDouble(),
+      stockDisponibleAjustado: (row[26] ?? 0).toDouble(),
+      esVendible: row[27] ?? false,
+      esInventariable: row[28] ?? false,
+      esElaborado: row[29] ?? false,
+      precioVenta: row[30]?.toDouble(),
+      costoPromedio: row[31]?.toDouble(),
+      margenActual: row[32]?.toDouble(),
+      clasificacionAbc: row[33] ?? 3,
+      abcDescripcion: row[34] ?? 'No clasificado',
       fechaUltimaActualizacion: DateTime.parse(
-        row[32] ?? DateTime.now().toIso8601String(),
+        row[35] ?? DateTime.now().toIso8601String(),
       ),
-      totalCount: row[33] ?? 0,
+      totalCount: row[36] ?? 0,
       resumenInventario:
-          row.length > 34 && row[34] != null
-              ? InventorySummary.fromJson(Map<String, dynamic>.from(row[34]))
+          row.length > 37 && row[37] != null
+              ? InventorySummary.fromJson(Map<String, dynamic>.from(row[37]))
               : null,
       infoPaginacion:
-          row.length > 35 && row[35] != null
-              ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[35]))
+          row.length > 38 && row[38] != null
+              ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[38]))
               : null,
     );
   }

@@ -933,178 +933,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   void _showEditProductDialog(Product product) {
-    final TextEditingController priceController = TextEditingController(
-      text: product.basePrice.toString(),
-    );
-    bool isUpdating = false;
-
-    showDialog(
-      context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setState) => AlertDialog(
-                  title: const Text(
-                    'Editar Producto',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  content: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Product info (read-only)
-                        _buildReadOnlyField('Nombre', product.name),
-                        const SizedBox(height: 12),
-                        _buildReadOnlyField('SKU', product.sku),
-                        const SizedBox(height: 12),
-                        _buildReadOnlyField('Categoría', product.categoryName),
-                        const SizedBox(height: 12),
-                        _buildReadOnlyField('Descripción', product.description),
-                        const SizedBox(height: 12),
-                        _buildReadOnlyField(
-                          'Estado',
-                          product.isActive ? 'Activo' : 'Inactivo',
-                        ),
-                        const SizedBox(height: 12),
-                        _buildReadOnlyField(
-                          'Stock',
-                          product.tieneStock ? 'Disponible' : 'Sin Stock',
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Editable price field
-                        const Text(
-                          'Precio de Venta (CUP)',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: priceController,
-                          keyboardType: TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: InputDecoration(
-                            prefixText: '\$ ',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(
-                                color: AppColors.primary,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'El precio es requerido';
-                            }
-                            final price = double.tryParse(value.trim());
-                            if (price == null || price <= 0) {
-                              return 'Ingrese un precio válido';
-                            }
-                            return null;
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed:
-                          isUpdating ? null : () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      onPressed:
-                          isUpdating
-                              ? null
-                              : () async {
-                                final newPriceText =
-                                    priceController.text.trim();
-                                final newPrice = double.tryParse(newPriceText);
-
-                                if (newPrice == null || newPrice <= 0) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Ingrese un precio válido'),
-                                      backgroundColor: AppColors.error,
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                setState(() {
-                                  isUpdating = true;
-                                });
-
-                                try {
-                                  await _updateProductPrice(
-                                    int.parse(product.id),
-                                    newPrice,
-                                  );
-
-                                  if (mounted) {
-                                    Navigator.pop(context);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Precio actualizado exitosamente',
-                                        ),
-                                        backgroundColor: AppColors.success,
-                                      ),
-                                    );
-                                    _loadProducts(); // Refresh the products list
-                                  }
-                                } catch (e) {
-                                  setState(() {
-                                    isUpdating = false;
-                                  });
-
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Error al actualizar precio: $e',
-                                        ),
-                                        backgroundColor: AppColors.error,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                      ),
-                      child:
-                          isUpdating
-                              ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
-                              )
-                              : const Text('Guardar'),
-                    ),
-                  ],
-                ),
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddProductScreen(
+          product: product,
+          onProductSaved: () {
+            // Recargar la lista de productos después de editar
+            _loadProducts();
+          },
+        ),
+      ),
     );
   }
 
@@ -1138,23 +977,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
-  Future<void> _updateProductPrice(int productId, double newPrice) async {
-    try {
-      final supabase = Supabase.instance.client;
-      final response =
-          await supabase
-              .from('app_dat_precio_venta')
-              .update({'precio_venta_cup': newPrice})
-              .eq('id_producto', productId)
-              .select();
-
-      if (response.isEmpty) {
-        throw Exception('No se encontró el producto para actualizar');
-      }
-    } catch (e) {
-      throw Exception('Error al actualizar el precio: $e');
-    }
-  }
 
   void _showDeleteConfirmation(Product product) async {
     // Verificar si el producto tiene stock antes de mostrar el diálogo

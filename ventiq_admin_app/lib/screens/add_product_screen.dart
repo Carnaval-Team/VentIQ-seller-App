@@ -133,6 +133,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
           widget.product!.diasAlertCaducidad?.toString() ?? '';
       _codigoBarrasController.text = widget.product!.codigoBarras ?? '';
 
+      // Debug: Verificar carga de campos específicos
+      print('📝 Campos cargados para edición:');
+      print('  • Nombre comercial: "${_nombreComercialController.text}"');
+      print('  • Denominación corta: "${_denominacionCortaController.text}"');
+      print('  • Descripción corta: "${_descripcionCortaController.text}"');
+      print('  • Código de barras: "${_codigoBarrasController.text}"');
+
       // Cargar precio de venta desde el modelo Product
       if (widget.product!.basePrice > 0) {
         _precioVentaController.text = widget.product!.basePrice.toString();
@@ -378,7 +385,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('🏷️ Cargando categoría y subcategorías existentes...');
 
       // Cargar categoría usando categoryId del producto
+      print('🔍 Product categoryId string: "${widget.product!.categoryId}"');
       final categoryId = int.tryParse(widget.product!.categoryId);
+      print('🔍 Parsed categoryId: $categoryId');
+      
       if (categoryId != null) {
         setState(() {
           _selectedCategoryId = categoryId;
@@ -646,16 +656,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        // SKU - Visible pero auto-generado
+        // SKU - Editable en creación, solo lectura en edición
         TextFormField(
           controller: _skuController,
           decoration: InputDecoration(
             labelText: 'SKU *',
-            hintText: 'Se genera automáticamente',
+            hintText: widget.product != null 
+                ? 'SKU del producto (no editable)'
+                : 'Se genera automáticamente',
             border: const OutlineInputBorder(),
-            suffixIcon: Icon(Icons.auto_awesome, color: AppColors.primary),
+            suffixIcon: Icon(
+              widget.product != null ? Icons.lock : Icons.auto_awesome, 
+              color: AppColors.primary
+            ),
           ),
-          readOnly: true,
+          readOnly: widget.product != null, // Solo lectura si estamos editando
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'El SKU es requerido';
@@ -706,6 +721,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 );
               }).toList(),
           onChanged: (value) {
+            print('🏷️ Categoría cambiada de $_selectedCategoryId a $value');
             setState(() {
               _selectedCategoryId = value;
               _selectedSubcategorias.clear();
@@ -1866,19 +1882,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       'sku': _skuController.text,
       'id_categoria': _selectedCategoryId,
       'denominacion': _denominacionController.text,
-      'nombre_comercial':
-          _nombreComercialController.text.isNotEmpty
-              ? _nombreComercialController.text
-              : _denominacionController.text,
-      'denominacion_corta':
-          _denominacionCortaController.text.isNotEmpty
-              ? _denominacionCortaController.text
-              : _denominacionController.text.substring(
-                0,
-                _denominacionController.text.length > 20
-                    ? 20
-                    : _denominacionController.text.length,
-              ),
+      'nombre_comercial': _nombreComercialController.text,
+      'denominacion_corta': _denominacionCortaController.text,
       'descripcion': _descripcionController.text,
       'descripcion_corta': _descripcionCortaController.text,
       'um':
@@ -1902,15 +1907,32 @@ class _AddProductScreenState extends State<AddProductScreen> {
     };
 
     print('🔄 Datos del producto a actualizar: ${jsonEncode(productoData)}');
+    print('🏷️ Categoría seleccionada: $_selectedCategoryId');
+    print('🏷️ Subcategorías seleccionadas: $_selectedSubcategorias');
+    
+    // Debug: Verificar campos específicos antes de enviar
+    print('📤 Campos específicos a actualizar:');
+    print('  • Nombre comercial: "${productoData['nombre_comercial']}"');
+    print('  • Denominación corta: "${productoData['denominacion_corta']}"');
+    print('  • Descripción corta: "${productoData['descripcion_corta']}"');
+    print('  • Código de barras: "${productoData['codigo_barras']}"');
 
     try {
       // Actualizar datos básicos del producto
-      await _supabase
+      final updateResult = await _supabase
           .from('app_dat_producto')
           .update(productoData)
           .eq('id', productId);
+      
+      print('✅ Resultado de actualización: $updateResult');
 
       print('✅ Datos básicos del producto actualizados');
+
+      // Actualizar subcategorías
+      await _updateSubcategorias(productId);
+
+      // Actualizar precio de venta
+      await _updatePrecioVenta(productId);
 
       // Actualizar unidades de medida por presentación
       await _updatePresentacionUnidadMedida(productId);
@@ -2049,6 +2071,97 @@ class _AddProductScreenState extends State<AddProductScreen> {
       throw Exception(
         'Error al actualizar unidades de medida por presentación: $e',
       );
+    }
+  }
+
+  Future<void> _updateSubcategorias(int productId) async {
+    try {
+      print('🏷️ Actualizando subcategorías del producto...');
+
+      // Eliminar subcategorías existentes
+      await _supabase
+          .from('app_dat_productos_subcategorias')
+          .delete()
+          .eq('id_producto', productId);
+
+      print('🗑️ Subcategorías anteriores eliminadas');
+
+      // Insertar nuevas subcategorías si hay seleccionadas
+      if (_selectedSubcategorias.isNotEmpty) {
+        final subcategoriasData = _selectedSubcategorias.map((id) => {
+          'id_producto': productId,
+          'id_sub_categoria': id,
+        }).toList();
+
+        await _supabase
+            .from('app_dat_productos_subcategorias')
+            .insert(subcategoriasData);
+
+        print('✅ Subcategorías actualizadas exitosamente: ${_selectedSubcategorias.length}');
+        for (final subId in _selectedSubcategorias) {
+          final subcat = _subcategorias.firstWhere(
+            (s) => s['id'] == subId,
+            orElse: () => {'denominacion': 'Desconocida'},
+          );
+          print('   - ${subcat['denominacion']} (ID: $subId)');
+        }
+      } else {
+        print('ℹ️ No hay subcategorías seleccionadas para actualizar');
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error al actualizar subcategorías: $e');
+      print('📍 StackTrace: $stackTrace');
+      throw Exception('Error al actualizar subcategorías: $e');
+    }
+  }
+
+  Future<void> _updatePrecioVenta(int productId) async {
+    try {
+      print('💰 Actualizando precio de venta del producto...');
+
+      if (_precioVentaController.text.isEmpty) {
+        print('⚠️ No hay precio de venta para actualizar');
+        return;
+      }
+
+      final precioVenta = double.parse(_precioVentaController.text);
+      print('💰 Nuevo precio: $precioVenta CUP');
+
+      // Verificar si ya existe un precio para este producto
+      final existingPrice = await _supabase
+          .from('app_dat_precio_venta')
+          .select('id')
+          .eq('id_producto', productId)
+          .maybeSingle();
+
+      if (existingPrice != null) {
+        // Actualizar precio existente
+        await _supabase
+            .from('app_dat_precio_venta')
+            .update({
+              'precio_venta_cup': precioVenta,
+              'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
+            })
+            .eq('id_producto', productId);
+
+        print('✅ Precio de venta actualizado');
+      } else {
+        // Insertar nuevo precio
+        await _supabase
+            .from('app_dat_precio_venta')
+            .insert({
+              'id_producto': productId,
+              'precio_venta_cup': precioVenta,
+              'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
+              'id_variante': null,
+            });
+
+        print('✅ Precio de venta insertado');
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error al actualizar precio de venta: $e');
+      print('📍 StackTrace: $stackTrace');
+      throw Exception('Error al actualizar precio de venta: $e');
     }
   }
 
