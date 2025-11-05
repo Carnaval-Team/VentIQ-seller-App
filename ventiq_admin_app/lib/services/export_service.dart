@@ -961,11 +961,8 @@ class ExportService {
       late String fileName;
 
       if (format == 'excel') {
-        // Convertir datos a InventoryProduct para usar la misma estructura que PDF
-        final products = _convertMapDataToInventoryProducts(inventoryData);
-        
-        // Generar Excel con la misma estructura que PDF
-        fileBytes = await _generateSimpleExcel(warehouseName, products);
+        // Generar Excel con páginas separadas por almacén y ubicación
+        fileBytes = await _generateSimpleExcel(warehouseName, inventoryData);
         mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         fileName = 'inventario_${cleanWarehouse}_$dateStr.xlsx';
       } else {
@@ -1333,73 +1330,193 @@ class ExportService {
     }).toList();
   }
   
-  /// Genera Excel con la misma estructura que PDF (6 columnas)
+  /// Genera Excel con páginas separadas por almacén y ubicación
   Future<Uint8List> _generateSimpleExcel(
     String warehouseName,
-    List<InventoryProduct> products,
+    List<Map<String, dynamic>> inventoryData,
   ) async {
     final excel = Excel.createExcel();
-    final sheet = excel['Inventario'];
+    
+    // Eliminar la hoja por defecto
+    excel.delete('Sheet1');
+    
+    // Agrupar datos por almacén y ubicación usando método común
+    final groupedData = _groupInventoryData(inventoryData);
+    
+    // Crear una página de resumen general
+    _createSummarySheet(excel, warehouseName, inventoryData);
+    
+    // Crear una página para cada almacén-ubicación
+    for (final almacenEntry in groupedData.entries) {
+      final almacenName = almacenEntry.key;
+      final ubicaciones = almacenEntry.value;
+      
+      for (final ubicacionEntry in ubicaciones.entries) {
+        final ubicacionName = ubicacionEntry.key;
+        final productos = ubicacionEntry.value;
+        
+        // Convertir a InventoryProduct para usar la misma lógica
+        final inventoryProducts = _convertMapDataToInventoryProducts(productos);
+        
+        // Crear nombre de hoja (limitado a 31 caracteres por Excel)
+        final sheetName = _createSheetName(almacenName, ubicacionName);
+        
+        // Crear la hoja
+        final sheet = excel[sheetName];
+        _populateSheet(sheet, almacenName, ubicacionName, inventoryProducts);
+      }
+    }
 
-    // Configurar el ancho de las columnas (igual que PDF)
-    sheet.setColumnWidth(0, 30); // Nombre del Producto
-    sheet.setColumnWidth(1, 15); // SKU
-    sheet.setColumnWidth(2, 12); // Cant. Inicial
-    sheet.setColumnWidth(3, 12); // Cant. Actual
-    sheet.setColumnWidth(4, 15); // Precio Unitario
-    sheet.setColumnWidth(5, 15); // Presentación
-
+    return Uint8List.fromList(excel.encode()!);
+  }
+  
+  /// Crea una hoja de resumen general
+  void _createSummarySheet(Excel excel, String warehouseName, List<Map<String, dynamic>> inventoryData) {
+    final sheet = excel['RESUMEN GENERAL'];
+    
+    // Configurar anchos de columna
+    sheet.setColumnWidth(0, 25);
+    sheet.setColumnWidth(1, 25);
+    sheet.setColumnWidth(2, 15);
+    sheet.setColumnWidth(3, 15);
+    
     int currentRow = 0;
-
+    
     // Título principal
-    final titleCell = sheet.cell(
-      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
-    );
-    titleCell.value = TextCellValue('REPORTE DE INVENTARIO');
-    titleCell.cellStyle = CellStyle(
-      bold: true,
-      fontSize: 16,
-      horizontalAlign: HorizontalAlign.Left,
-    );
+    final titleCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    titleCell.value = TextCellValue('RESUMEN GENERAL DE INVENTARIO');
+    titleCell.cellStyle = CellStyle(bold: true, fontSize: 16);
     currentRow += 2;
-
-    // Información del almacén
-    final warehouseCell = sheet.cell(
-      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
-    );
+    
+    // Información general
+    final warehouseCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
     warehouseCell.value = TextCellValue('Almacén: $warehouseName');
     warehouseCell.cellStyle = CellStyle(bold: true, fontSize: 14);
-    currentRow += 2;
-
-    // Información adicional
-    final infoCell = sheet.cell(
-      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
-    );
-    infoCell.value = TextCellValue('Total de productos: ${products.length}');
     currentRow++;
-
-    final dateCell = sheet.cell(
-      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
-    );
-    dateCell.value = TextCellValue(
-      'Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
-    );
+    
+    final dateCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    dateCell.value = TextCellValue('Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}');
     currentRow += 2;
-
-    // Encabezados de la tabla actualizados
-    final headers = [
-      'Nombre',
-      'Cant. Inicial',
-      'Entradas',
-      'Extracciones',
-      'Ventas',
-      'Cant. Final',
-    ];
-
+    
+    // Agrupar datos para el resumen
+    final groupedData = _groupInventoryData(inventoryData);
+    
+    // Encabezados de resumen
+    final headers = ['Almacén', 'Ubicación', 'Total Productos', 'Con Stock'];
     for (int i = 0; i < headers.length; i++) {
-      final cell = sheet.cell(
-        CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
-      );
+      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
+      cell.value = TextCellValue(headers[i]);
+      cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.grey50);
+    }
+    currentRow++;
+    
+    // Datos del resumen
+    for (final almacenEntry in groupedData.entries) {
+      final almacenName = almacenEntry.key;
+      final ubicaciones = almacenEntry.value;
+      
+      for (final ubicacionEntry in ubicaciones.entries) {
+        final ubicacionName = ubicacionEntry.key;
+        final productos = ubicacionEntry.value;
+        final inventoryProducts = _convertMapDataToInventoryProducts(productos);
+        
+        final rowData = [
+          almacenName,
+          ubicacionName,
+          inventoryProducts.length.toString(),
+          inventoryProducts.where((p) => p.cantidadFinal > 0).length.toString(),
+        ];
+        
+        for (int i = 0; i < rowData.length; i++) {
+          final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
+          cell.value = TextCellValue(rowData[i]);
+        }
+        currentRow++;
+      }
+    }
+    
+    // Totales generales
+    currentRow += 2;
+    final totalProducts = inventoryData.length;
+    final convertedProducts = _convertMapDataToInventoryProducts(inventoryData);
+    final productsWithStock = convertedProducts.where((p) => p.cantidadFinal > 0).length;
+    
+    final totalCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    totalCell.value = TextCellValue('TOTALES GENERALES');
+    totalCell.cellStyle = CellStyle(bold: true, fontSize: 14);
+    currentRow++;
+    
+    final totalProductsCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    totalProductsCell.value = TextCellValue('• Total de productos: $totalProducts');
+    currentRow++;
+    
+    final stockProductsCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    stockProductsCell.value = TextCellValue('• Productos con stock: $productsWithStock');
+    currentRow++;
+    
+    final noStockProductsCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    noStockProductsCell.value = TextCellValue('• Productos sin stock: ${totalProducts - productsWithStock}');
+  }
+  
+  /// Crea un nombre de hoja válido para Excel
+  String _createSheetName(String almacen, String ubicacion) {
+    // Excel limita los nombres de hoja a 31 caracteres
+    final combined = '${almacen}_$ubicacion';
+    if (combined.length <= 31) {
+      return combined;
+    }
+    
+    // Truncar manteniendo información importante
+    final maxAlmacenLength = 15;
+    final maxUbicacionLength = 15;
+    
+    final truncatedAlmacen = almacen.length > maxAlmacenLength 
+        ? almacen.substring(0, maxAlmacenLength)
+        : almacen;
+    final truncatedUbicacion = ubicacion.length > maxUbicacionLength
+        ? ubicacion.substring(0, maxUbicacionLength)
+        : ubicacion;
+        
+    return '${truncatedAlmacen}_$truncatedUbicacion';
+  }
+  
+  /// Puebla una hoja con datos de inventario
+  void _populateSheet(Sheet sheet, String almacenName, String ubicacionName, List<InventoryProduct> products) {
+    // Configurar anchos de columna
+    sheet.setColumnWidth(0, 30); // Nombre del Producto
+    sheet.setColumnWidth(1, 12); // Cant. Inicial
+    sheet.setColumnWidth(2, 12); // Entradas
+    sheet.setColumnWidth(3, 12); // Extracciones
+    sheet.setColumnWidth(4, 12); // Ventas
+    sheet.setColumnWidth(5, 12); // Cant. Final
+    
+    int currentRow = 0;
+    
+    // Título de la sección
+    final titleCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    titleCell.value = TextCellValue('INVENTARIO DETALLADO');
+    titleCell.cellStyle = CellStyle(bold: true, fontSize: 16);
+    currentRow += 2;
+    
+    // Información del almacén y ubicación
+    final almacenCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    almacenCell.value = TextCellValue('Almacén: $almacenName');
+    almacenCell.cellStyle = CellStyle(bold: true, fontSize: 14);
+    currentRow++;
+    
+    final ubicacionCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    ubicacionCell.value = TextCellValue('Ubicación: $ubicacionName');
+    ubicacionCell.cellStyle = CellStyle(bold: true, fontSize: 14);
+    currentRow++;
+    
+    final dateCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    dateCell.value = TextCellValue('Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}');
+    currentRow += 2;
+    
+    // Encabezados de la tabla
+    final headers = ['Nombre', 'Cant. Inicial', 'Entradas', 'Extracciones', 'Ventas', 'Cant. Final'];
+    for (int i = 0; i < headers.length; i++) {
+      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
       cell.value = TextCellValue(headers[i]);
       cell.cellStyle = CellStyle(
         bold: true,
@@ -1408,8 +1525,8 @@ class ExportService {
       );
     }
     currentRow++;
-
-    // Datos de los productos con los nuevos campos
+    
+    // Datos de los productos
     for (final product in products) {
       final rowData = [
         product.nombreProducto,
@@ -1419,16 +1536,13 @@ class ExportService {
         (product.ventasPeriodo ?? 0).toStringAsFixed(1),
         product.cantidadFinal.toStringAsFixed(1),
       ];
-
+      
       for (int i = 0; i < rowData.length; i++) {
-        final cell = sheet.cell(
-          CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
-        );
+        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
         cell.value = TextCellValue(rowData[i]);
-
+        
         // Aplicar color basado en el stock en la columna Cant. Final
         if (i == 5) {
-          // Columna de cantidad final (índice 5)
           final cantidad = product.cantidadFinal;
           if (cantidad <= 0) {
             cell.cellStyle = CellStyle(backgroundColorHex: ExcelColor.red);
@@ -1441,46 +1555,28 @@ class ExportService {
       }
       currentRow++;
     }
-
-    // Resumen al final
+    
+    // Resumen de la ubicación
     currentRow += 2;
-    final summaryCell = sheet.cell(
-      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
-    );
-    summaryCell.value = TextCellValue('RESUMEN');
+    final summaryCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    summaryCell.value = TextCellValue('RESUMEN DE UBICACIÓN');
     summaryCell.cellStyle = CellStyle(bold: true, fontSize: 14);
     currentRow++;
-
-    final totalCell = sheet.cell(
-      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
-    );
+    
+    final totalCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
     totalCell.value = TextCellValue('• Total de productos: ${products.length}');
     currentRow++;
-
-    final stockCell = sheet.cell(
-      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
-    );
-    stockCell.value = TextCellValue(
-      '• Productos con stock: ${products.where((p) => p.cantidadFinal > 0).length}',
-    );
+    
+    final stockCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    stockCell.value = TextCellValue('• Productos con stock: ${products.where((p) => p.cantidadFinal > 0).length}');
     currentRow++;
-
-    final noStockCell = sheet.cell(
-      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
-    );
-    noStockCell.value = TextCellValue(
-      '• Productos sin stock: ${products.where((p) => p.cantidadFinal <= 0).length}',
-    );
+    
+    final noStockCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    noStockCell.value = TextCellValue('• Productos sin stock: ${products.where((p) => p.cantidadFinal <= 0).length}');
     currentRow++;
-
-    final totalStockCell = sheet.cell(
-      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
-    );
-    totalStockCell.value = TextCellValue(
-      '• Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} unidades',
-    );
-
-    return Uint8List.fromList(excel.encode()!);
+    
+    final totalStockCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    totalStockCell.value = TextCellValue('• Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} unidades');
   }
 }
 
