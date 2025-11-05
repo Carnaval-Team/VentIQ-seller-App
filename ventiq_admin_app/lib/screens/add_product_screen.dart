@@ -1562,6 +1562,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
 
     // Validaciones específicas para datos relacionados
+    if (_selectedCategoryId == null) {
+      _showErrorSnackBar('Debe seleccionar una categoría');
+      return;
+    }
+
+    if (_selectedSubcategorias.isEmpty) {
+      _showErrorSnackBar('Debe seleccionar al menos una subcategoría');
+      return;
+    }
+
     if (_selectedBasePresentationId == null) {
       _showErrorSnackBar('Debe seleccionar una presentación base');
       return;
