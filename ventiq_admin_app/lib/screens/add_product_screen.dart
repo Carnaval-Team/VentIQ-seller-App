@@ -467,7 +467,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
         _subcategorias = subcategorias;
         _selectedSubcategorias.clear(); // Limpiar selecciones previas
       });
-      _generateSKU(); // Generar SKU cuando cambia la categoría
+      // Solo generar SKU en modo creación, no en edición
+      if (widget.product == null) {
+        _generateSKU(); // Generar SKU cuando cambia la categoría
+      }
     } catch (e) {
       print('Error al cargar subcategorías: $e');
       _showErrorSnackBar('Error al cargar subcategorías: $e');
@@ -475,6 +478,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   void _generateSKU() {
+    // No generar SKU en modo edición - preservar el SKU original
+    if (widget.product != null) {
+      print('🔒 Modo edición: SKU no se regenera, se preserva el original');
+      return;
+    }
+
     String sku = '';
 
     // Agregar código de categoría
@@ -768,7 +777,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
                           _selectedSubcategorias.remove(subcat['id']);
                         }
                       });
-                      _generateSKU();
+                      // Solo generar SKU en modo creación, no en edición
+                      if (widget.product == null) {
+                        _generateSKU();
+                      }
                     },
                   );
                 }).toList(),
