@@ -1029,7 +1029,7 @@ class _InventoryExtractionBySaleScreenState
                                   return ListTile(
                                     contentPadding: EdgeInsets.zero,
                                     title: Text(
-                                      product['denominacion'] ?? 'Sin nombre',
+                                      '${product['denominacion']} - ${product['sku_producto']}' ,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w600,
                                       ),
