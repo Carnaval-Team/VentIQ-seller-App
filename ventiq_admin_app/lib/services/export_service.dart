@@ -234,12 +234,13 @@ class ExportService {
             pw.Table(
               border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
               columnWidths: {
-                0: const pw.FlexColumnWidth(3), // Nombre
-                1: const pw.FlexColumnWidth(1.5), // Cant. Inicial
-                2: const pw.FlexColumnWidth(1.5), // Entradas
-                3: const pw.FlexColumnWidth(1.5), // Extracciones
-                4: const pw.FlexColumnWidth(1.5), // Ventas
-                5: const pw.FlexColumnWidth(1.5), // Cant. Final
+                0: const pw.FlexColumnWidth(2.5), // Nombre
+                1: const pw.FlexColumnWidth(1.5), // SKU
+                2: const pw.FlexColumnWidth(1.5), // Cant. Inicial
+                3: const pw.FlexColumnWidth(1.5), // Entradas
+                4: const pw.FlexColumnWidth(1.5), // Extracciones
+                5: const pw.FlexColumnWidth(1.5), // Ventas
+                6: const pw.FlexColumnWidth(1.5), // Cant. Final
               },
               children: [
                 // Encabezado de la tabla
@@ -247,6 +248,7 @@ class ExportService {
                   decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                   children: [
                     _buildTableHeader('Nombre del Producto', font: boldFont),
+                    _buildTableHeader('SKU', font: boldFont),
                     _buildTableHeader('Cantidad Inicial', font: boldFont),
                     _buildTableHeader('Entradas', font: boldFont),
                     _buildTableHeader('Extracciones', font: boldFont),
@@ -268,6 +270,7 @@ class ExportService {
                     return pw.TableRow(
                       children: [
                         _buildTableCell(product.nombreProducto, font: regularFont),
+                        _buildTableCell(product.skuProducto, font: regularFont),
                         _buildTableCell(
                           product.cantidadInicial.toStringAsFixed(0),
                           font: regularFont,
@@ -375,13 +378,14 @@ class ExportService {
     final excel = Excel.createExcel();
     final sheet = excel['Inventario'];
 
-    // Configurar el ancho de las columnas (nuevas 6 columnas solicitadas)
-    sheet.setColumnWidth(0, 30); // Nombre
-    sheet.setColumnWidth(1, 15); // Cantidad Inicial
-    sheet.setColumnWidth(2, 12); // Entradas
-    sheet.setColumnWidth(3, 12); // Extracciones
-    sheet.setColumnWidth(4, 12); // Ventas
-    sheet.setColumnWidth(5, 15); // Cantidad Final
+    // Configurar el ancho de las columnas (incluyendo SKU)
+    sheet.setColumnWidth(0, 25); // Nombre
+    sheet.setColumnWidth(1, 15); // SKU
+    sheet.setColumnWidth(2, 15); // Cantidad Inicial
+    sheet.setColumnWidth(3, 12); // Entradas
+    sheet.setColumnWidth(4, 12); // Extracciones
+    sheet.setColumnWidth(5, 12); // Ventas
+    sheet.setColumnWidth(6, 15); // Cantidad Final
 
     int currentRow = 0;
 
@@ -427,9 +431,10 @@ class ExportService {
     );
     currentRow += 2;
 
-    // Encabezados de la tabla (nuevas 6 columnas solicitadas)
+    // Encabezados de la tabla (incluyendo SKU)
     final headers = [
       'Nombre del Producto',
+      'SKU',
       'Cantidad Inicial',
       'Entradas',
       'Extracciones',
@@ -461,6 +466,7 @@ class ExportService {
       
       final rowData = [
         product.nombreProducto,
+        product.skuProducto,
         product.cantidadInicial.toStringAsFixed(0),
         entradas.toStringAsFixed(0),
         extracciones.toStringAsFixed(0),
@@ -475,8 +481,8 @@ class ExportService {
         cell.value = TextCellValue(rowData[i]);
 
         // Aplicar color basado en el stock
-        if (i == 5) {
-          // Columna de cantidad final (índice 5)
+        if (i == 6) {
+          // Columna de cantidad final (índice 6)
           final cantidad = product.cantidadFinal;
           if (cantidad <= 0) {
             cell.cellStyle = CellStyle(backgroundColorHex: ExcelColor.red);

@@ -1930,7 +1930,7 @@ class InventoryService {
       print('  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}');
 
       final response = await _supabase.rpc(
-        'obtener_reporte_inventario2',
+        'obtener_reporte_inventario_completo',
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],

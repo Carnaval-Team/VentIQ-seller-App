@@ -30,7 +30,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   String? _error;
 
   // Opciones de columnas adicionales
-  bool _includeSku = false;
+  bool _includeSku = true; // Habilitado por defecto
   bool _includeNombreCorto = false;
   bool _includeMarca = false;
   bool _includeDescripcionCorta = false;
