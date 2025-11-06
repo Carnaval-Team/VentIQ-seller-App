@@ -2,7 +2,7 @@ name: ventiq_admin_app
 description: "Vendedor Cuba Admin - Sistema de administración para gestión de inventarios, productos y ventas."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.2.0+120
 
 environment:
   sdk: ^3.7.0
@@ -13,6 +13,7 @@ dependencies:
 
   # UI & Icons
   cupertino_icons: ^1.0.8
+  flutter_local_notifications: ^17.2.3
   
   # Supabase backend
   supabase_flutter: ^2.5.6
@@ -30,6 +31,9 @@ dependencies:
   
   # Date formatting
   intl: ^0.19.0
+  
+  # Timeago for formatting notification dates
+  timeago: ^3.7.0
   
   # Barcode scanner
   mobile_scanner: ^5.2.3

@@ -1,8 +1,40 @@
 {
-  "current_version": "1.1.2",
-  "build": 112,
+  "current_version": "1.2.0",
+  "build": 120,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.2.0",
+      "date": "2025-11-05",
+      "title": "🔔 Sistema de Notificaciones en Tiempo Real",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Notificaciones Instantáneas",
+          "description": "Recibe alertas importantes al instante sobre inventario, ventas y operaciones del negocio"
+        },
+        {
+          "type": "feature",
+          "title": "Centro de Notificaciones",
+          "description": "Accede a todas tus notificaciones desde el ícono de campana en la barra superior"
+        },
+        {
+          "type": "feature",
+          "title": "Alertas con Sonido",
+          "description": "Las notificaciones importantes llegan con sonido y vibración para que no te pierdas nada"
+        },
+        {
+          "type": "feature",
+          "title": "Historial Completo",
+          "description": "Consulta todas tus notificaciones anteriores y marca las importantes como leídas"
+        },
+        {
+          "type": "improvement",
+          "title": "Contador Visual",
+          "description": "Badge rojo muestra cuántas notificaciones nuevas tienes sin leer"
+        }
+      ]
+    },
     {
       "version": "1.1.2",
       "date": "2025-10-26",
