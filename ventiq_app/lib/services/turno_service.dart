@@ -347,7 +347,7 @@ class TurnoService {
     }
   }
 
-  /// Registra apertura de turno usando la nueva función v2 con manejo de inventario
+  /// Registra apertura de turno usando la función v3 con manejo de inventario y observaciones
   static Future<Map<String, dynamic>> registrarAperturaTurno({
     required double efectivoInicial,
     required int idTpv,
@@ -355,29 +355,32 @@ class TurnoService {
     required String usuario,
     required bool manejaInventario,
     List<Map<String, dynamic>>? productos,
+    String? observaciones,
   }) async {
     try {
-      print('🔄 Calling registrar_apertura_turno_v2 with:');
+      print('🔄 Calling registrar_apertura_turno_v3 with:');
       print('  - Efectivo inicial: $efectivoInicial');
       print('  - ID TPV: $idTpv');
       print('  - ID Vendedor: $idVendedor');
       print('  - Usuario: $usuario');
       print('  - Maneja inventario: $manejaInventario');
       print('  - Productos: ${productos?.length ?? 0} items');
+      print('  - Observaciones: ${observaciones ?? "Sin observaciones"}');
 
       final response = await _supabase.rpc(
-        'registrar_apertura_turno_v2',
+        'registrar_apertura_turno_v3',
         params: {
           'p_efectivo_inicial': efectivoInicial,
           'p_id_tpv': idTpv,
           'p_id_vendedor': idVendedor,
           'p_usuario': usuario,
-          'p_maneja_inventario': manejaInventario,
+          'p_maneja_inventario': false,
           'p_productos': productos,
+          'p_observaciones': observaciones,
         },
       );
 
-      print('✅ registrar_apertura_turno_v2 response: $response');
+      print('✅ registrar_apertura_turno_v3 response: $response');
 
       if (response != null) {
         return {

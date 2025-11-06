@@ -1,8 +1,75 @@
 {
-  "current_version": "1.4.4",
-  "build": 404,
+  "current_version": "1.5.0",
+  "build": 500,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.5.0",
+      "date": "2025-11-06",
+      "title": "📦 Control de Inventario Inteligente en Apertura y Cierre",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Control de Inventario al Abrir Turno",
+          "description": "Ahora puedes registrar el inventario inicial cuando abres tu turno. La app te muestra todos tus productos para que ingreses las cantidades que tienes al comenzar el día"
+        },
+        {
+          "type": "feature",
+          "title": "Control de Inventario al Cerrar Turno",
+          "description": "Al cerrar el turno, registra las cantidades finales de tus productos. La app compara automáticamente con lo que tenías al inicio para detectar diferencias"
+        },
+        {
+          "type": "feature",
+          "title": "Detección Automática de Diferencias",
+          "description": "El sistema calcula automáticamente si te sobran o faltan productos comparando el inventario inicial con el final. Ya no necesitas hacer cuentas manualmente"
+        },
+        {
+          "type": "feature",
+          "title": "Observaciones Automáticas Detalladas",
+          "description": "La app genera automáticamente un reporte claro indicando exactamente qué productos te sobran o faltan y en qué cantidad. Por ejemplo: 'Faltan 5.00 unidades de Pizza Margarita'"
+        },
+        {
+          "type": "feature",
+          "title": "Validación Completa de Inventario",
+          "description": "No podrás abrir o cerrar turno sin haber revisado todos los productos. La app te avisa cuántos productos te faltan por contar para que no olvides ninguno"
+        },
+        {
+          "type": "feature",
+          "title": "Interfaz Simple para Contar",
+          "description": "Modal fácil de usar que muestra solo el nombre del producto y un campo para ingresar la cantidad. Sin información que te distraiga, solo lo necesario para contar rápido"
+        },
+        {
+          "type": "improvement",
+          "title": "Control Secreto en Cierre",
+          "description": "Al cerrar turno, el sistema NO muestra las cantidades que debería haber según el sistema. Esto evita que el vendedor simplemente copie los números sin contar realmente"
+        },
+        {
+          "type": "improvement",
+          "title": "Productos Únicos Sin Duplicados",
+          "description": "La app agrupa automáticamente los productos para que no veas el mismo producto varias veces. Solo aparece una vez por producto, sin importar ubicaciones o presentaciones"
+        },
+        {
+          "type": "improvement",
+          "title": "Carga Rápida de Productos",
+          "description": "Los productos se cargan antes de mostrar el modal, así no tienes que esperar viendo una pantalla en blanco. Todo listo desde el primer momento"
+        },
+        {
+          "type": "improvement",
+          "title": "Observaciones Combinadas",
+          "description": "Puedes agregar tus propias observaciones y la app las combina automáticamente con el reporte de diferencias de inventario. Todo queda registrado en un solo lugar"
+        },
+        {
+          "type": "improvement",
+          "title": "Indicador Visual de Estado",
+          "description": "El botón de inventario cambia de color: naranja cuando no has contado, verde cuando ya lo hiciste. Siempre sabes si falta algo por hacer"
+        },
+        {
+          "type": "improvement",
+          "title": "Soporte Offline Completo",
+          "description": "Puedes contar tu inventario sin conexión a internet. Los datos se guardan localmente y se sincronizan automáticamente cuando vuelva la conexión"
+        }
+      ]
+    },
     {
       "version": "1.4.4",
       "date": "2025-11-05",
