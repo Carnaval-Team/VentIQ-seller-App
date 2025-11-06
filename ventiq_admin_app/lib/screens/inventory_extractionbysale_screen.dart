@@ -82,9 +82,19 @@ class _InventoryExtractionBySaleScreenState
         return denominacion.contains('venta');
       }).toList();
 
-      // Si hay motivos, seleccionar el primero por defecto
+      // Buscar y seleccionar automáticamente "Venta normal"
       if (_motivoVentaOptions.isNotEmpty) {
-        _selectedMotivoVenta = _motivoVentaOptions.first;
+        // Intentar encontrar "Venta normal" específicamente
+        final ventaNormal = _motivoVentaOptions.firstWhere(
+          (motivo) {
+            final denominacion = (motivo['denominacion'] ?? '').toString().toLowerCase();
+            return denominacion == 'venta normal';
+          },
+          orElse: () => _motivoVentaOptions.first, // Fallback al primero si no encuentra "Venta normal"
+        );
+        _selectedMotivoVenta = ventaNormal;
+        
+        print('🎯 Motivo seleccionado automáticamente: ${_selectedMotivoVenta!['denominacion']}');
       }
 
       print('✅ Motivos de venta cargados: ${_motivoVentaOptions.length}');
