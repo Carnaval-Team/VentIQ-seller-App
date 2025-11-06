@@ -29,6 +29,12 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   List<Warehouse> _warehouses = [];
   String? _error;
 
+  // Opciones de columnas adicionales
+  bool _includeSku = true; // Habilitado por defecto
+  bool _includeNombreCorto = false;
+  bool _includeMarca = false;
+  bool _includeDescripcionCorta = false;
+
   @override
   void initState() {
     super.initState();
@@ -127,6 +133,10 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         filterDateFrom: _selectedDate,
         filterDateTo: _selectedDateTo,
         format: _selectedExportMethod == 'excel' ? 'excel' : 'pdf',
+        includeSku: _includeSku,
+        includeNombreCorto: _includeNombreCorto,
+        includeMarca: _includeMarca,
+        includeDescripcionCorta: _includeDescripcionCorta,
       );
 
       // Cerrar el diálogo después de la exportación exitosa
@@ -470,6 +480,126 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
                     const SizedBox(height: 24),
 
+                    // Columnas adicionales
+                    const Text(
+                      'Columnas Adicionales (Opcional)',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        children: [
+                          CheckboxListTile(
+                            title: const Text(
+                              'SKU',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Código SKU del producto',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            value: _includeSku,
+                            onChanged: (value) {
+                              setState(() {
+                                _includeSku = value ?? false;
+                              });
+                            },
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          CheckboxListTile(
+                            title: const Text(
+                              'Nombre Corto',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Denominación corta del producto',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            value: _includeNombreCorto,
+                            onChanged: (value) {
+                              setState(() {
+                                _includeNombreCorto = value ?? false;
+                              });
+                            },
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          CheckboxListTile(
+                            title: const Text(
+                              'Marca',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Nombre comercial/marca del producto',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            value: _includeMarca,
+                            onChanged: (value) {
+                              setState(() {
+                                _includeMarca = value ?? false;
+                              });
+                            },
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          CheckboxListTile(
+                            title: const Text(
+                              'Descripción Corta',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Descripción corta del producto',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            value: _includeDescripcionCorta,
+                            onChanged: (value) {
+                              setState(() {
+                                _includeDescripcionCorta = value ?? false;
+                              });
+                            },
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
                     // Información adicional
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -490,7 +620,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'El reporte incluirá: nombre del producto, stock disponible, cantidad inicial, cantidad final, precio de venta y costo promedio.',
+                              'El reporte incluirá las columnas básicas (nombre del producto, stock disponible, cantidad inicial, cantidad final, precio de venta y presentación) más las columnas adicionales seleccionadas.',
                               style: TextStyle(
                                 color: AppColors.info.withOpacity(0.8),
                                 fontSize: 13,

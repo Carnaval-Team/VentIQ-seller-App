@@ -190,7 +190,10 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
           ],
         ),
         trailing: const Icon(Icons.add_circle_outline),
-        onTap: () => widget.onProductSelected(product),
+        onTap: () {
+          widget.onProductSelected(product);
+          _searchController.clear();
+        },
       ),
     );
   }

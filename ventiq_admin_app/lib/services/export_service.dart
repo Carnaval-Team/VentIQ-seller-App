@@ -234,12 +234,13 @@ class ExportService {
             pw.Table(
               border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
               columnWidths: {
-                0: const pw.FlexColumnWidth(3), // Nombre
-                1: const pw.FlexColumnWidth(1.5), // Cant. Inicial
-                2: const pw.FlexColumnWidth(1.5), // Entradas
-                3: const pw.FlexColumnWidth(1.5), // Extracciones
-                4: const pw.FlexColumnWidth(1.5), // Ventas
-                5: const pw.FlexColumnWidth(1.5), // Cant. Final
+                0: const pw.FlexColumnWidth(2.5), // Nombre
+                1: const pw.FlexColumnWidth(1.5), // SKU
+                2: const pw.FlexColumnWidth(1.5), // Cant. Inicial
+                3: const pw.FlexColumnWidth(1.5), // Entradas
+                4: const pw.FlexColumnWidth(1.5), // Extracciones
+                5: const pw.FlexColumnWidth(1.5), // Ventas
+                6: const pw.FlexColumnWidth(1.5), // Cant. Final
               },
               children: [
                 // Encabezado de la tabla
@@ -247,6 +248,7 @@ class ExportService {
                   decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                   children: [
                     _buildTableHeader('Nombre del Producto', font: boldFont),
+                    _buildTableHeader('SKU', font: boldFont),
                     _buildTableHeader('Cantidad Inicial', font: boldFont),
                     _buildTableHeader('Entradas', font: boldFont),
                     _buildTableHeader('Extracciones', font: boldFont),
@@ -268,6 +270,7 @@ class ExportService {
                     return pw.TableRow(
                       children: [
                         _buildTableCell(product.nombreProducto, font: regularFont),
+                        _buildTableCell(product.skuProducto, font: regularFont),
                         _buildTableCell(
                           product.cantidadInicial.toStringAsFixed(0),
                           font: regularFont,
@@ -375,13 +378,14 @@ class ExportService {
     final excel = Excel.createExcel();
     final sheet = excel['Inventario'];
 
-    // Configurar el ancho de las columnas (nuevas 6 columnas solicitadas)
-    sheet.setColumnWidth(0, 30); // Nombre
-    sheet.setColumnWidth(1, 15); // Cantidad Inicial
-    sheet.setColumnWidth(2, 12); // Entradas
-    sheet.setColumnWidth(3, 12); // Extracciones
-    sheet.setColumnWidth(4, 12); // Ventas
-    sheet.setColumnWidth(5, 15); // Cantidad Final
+    // Configurar el ancho de las columnas (incluyendo SKU)
+    sheet.setColumnWidth(0, 25); // Nombre
+    sheet.setColumnWidth(1, 15); // SKU
+    sheet.setColumnWidth(2, 15); // Cantidad Inicial
+    sheet.setColumnWidth(3, 12); // Entradas
+    sheet.setColumnWidth(4, 12); // Extracciones
+    sheet.setColumnWidth(5, 12); // Ventas
+    sheet.setColumnWidth(6, 15); // Cantidad Final
 
     int currentRow = 0;
 
@@ -427,9 +431,10 @@ class ExportService {
     );
     currentRow += 2;
 
-    // Encabezados de la tabla (nuevas 6 columnas solicitadas)
+    // Encabezados de la tabla (incluyendo SKU)
     final headers = [
       'Nombre del Producto',
+      'SKU',
       'Cantidad Inicial',
       'Entradas',
       'Extracciones',
@@ -461,6 +466,7 @@ class ExportService {
       
       final rowData = [
         product.nombreProducto,
+        product.skuProducto,
         product.cantidadInicial.toStringAsFixed(0),
         entradas.toStringAsFixed(0),
         extracciones.toStringAsFixed(0),
@@ -475,8 +481,8 @@ class ExportService {
         cell.value = TextCellValue(rowData[i]);
 
         // Aplicar color basado en el stock
-        if (i == 5) {
-          // Columna de cantidad final (índice 5)
+        if (i == 6) {
+          // Columna de cantidad final (índice 6)
           final cantidad = product.cantidadFinal;
           if (cantidad <= 0) {
             cell.cellStyle = CellStyle(backgroundColorHex: ExcelColor.red);
@@ -950,6 +956,10 @@ class ExportService {
     DateTime? filterDateFrom,
     DateTime? filterDateTo,
     required String format,
+    bool includeSku = false,
+    bool includeNombreCorto = false,
+    bool includeMarca = false,
+    bool includeDescripcionCorta = false,
   }) async {
     try {
       final now = DateTime.now();
@@ -962,7 +972,14 @@ class ExportService {
 
       if (format == 'excel') {
         // Generar Excel con páginas separadas por almacén y ubicación
-        fileBytes = await _generateSimpleExcel(warehouseName, inventoryData);
+        fileBytes = await _generateSimpleExcel(
+          warehouseName, 
+          inventoryData,
+          includeSku: includeSku,
+          includeNombreCorto: includeNombreCorto,
+          includeMarca: includeMarca,
+          includeDescripcionCorta: includeDescripcionCorta,
+        );
         mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         fileName = 'inventario_${cleanWarehouse}_$dateStr.xlsx';
       } else {
@@ -1058,62 +1075,16 @@ class ExportService {
 
                     widgets.add(pw.SizedBox(height: 4));
 
-                    // Tabla de productos
-                    
+                    // Tabla de productos con columnas dinámicas
                     widgets.add(
-                      pw.Table(
-                        border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
-                        columnWidths: {
-                          0: const pw.FlexColumnWidth(2.5),
-                          1: const pw.FlexColumnWidth(1),
-                          2: const pw.FlexColumnWidth(1),
-                          3: const pw.FlexColumnWidth(1),
-                          4: const pw.FlexColumnWidth(1),
-                          5: const pw.FlexColumnWidth(1),
-                        },
-                        children: [
-                          pw.TableRow(
-                            decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-                            children: [
-                              _buildTableHeader('Nombre', font: boldFont),
-                              _buildTableHeader('Cant. Inicial', font: boldFont),
-                              _buildTableHeader('Entradas', font: boldFont),
-                              _buildTableHeader('Extracciones', font: boldFont),
-                              _buildTableHeader('Ventas', font: boldFont),
-                              _buildTableHeader('Cant. Final', font: boldFont),
-                            ],
-                          ),
-                          ...productos.map(
-                            (producto) => pw.TableRow(
-                              children: [
-                                _buildTableCell(
-                                  producto['nombre_producto']?.toString() ?? 'Sin nombre',
-                                  font: regularFont,
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                  font: regularFont,
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                  font: regularFont,
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                  font: regularFont,
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                  font: regularFont,
-                                ),
-                                _buildTableCell(
-                                  (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-                                  font: regularFont,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                      _buildDynamicTable(
+                        productos, 
+                        regularFont, 
+                        boldFont,
+                        includeSku: includeSku,
+                        includeNombreCorto: includeNombreCorto,
+                        includeMarca: includeMarca,
+                        includeDescripcionCorta: includeDescripcionCorta,
                       ),
                     );
 
@@ -1292,6 +1263,9 @@ class ExportService {
         id: int.tryParse(item['id']?.toString() ?? '0') ?? 0,
         skuProducto: item['sku_producto']?.toString() ?? '',
         nombreProducto: item['nombre_producto']?.toString() ?? 'Sin nombre',
+        denominacionCorta: item['denominacion_corta']?.toString(),
+        nombreComercial: item['nombre_comercial']?.toString(),
+        descripcionCorta: item['descripcion_corta']?.toString(),
         idCategoria: int.tryParse(item['id_categoria']?.toString() ?? '0') ?? 0,
         categoria: item['categoria']?.toString() ?? '',
         idSubcategoria: int.tryParse(item['id_subcategoria']?.toString() ?? '0') ?? 0,
@@ -1333,8 +1307,12 @@ class ExportService {
   /// Genera Excel con páginas separadas por almacén y ubicación
   Future<Uint8List> _generateSimpleExcel(
     String warehouseName,
-    List<Map<String, dynamic>> inventoryData,
-  ) async {
+    List<Map<String, dynamic>> inventoryData, {
+    bool includeSku = false,
+    bool includeNombreCorto = false,
+    bool includeMarca = false,
+    bool includeDescripcionCorta = false,
+  }) async {
     final excel = Excel.createExcel();
     
     // Eliminar la hoja por defecto
@@ -1363,7 +1341,16 @@ class ExportService {
         
         // Crear la hoja
         final sheet = excel[sheetName];
-        _populateSheet(sheet, almacenName, ubicacionName, inventoryProducts);
+        _populateSheet(
+          sheet, 
+          almacenName, 
+          ubicacionName, 
+          inventoryProducts,
+          includeSku: includeSku,
+          includeNombreCorto: includeNombreCorto,
+          includeMarca: includeMarca,
+          includeDescripcionCorta: includeDescripcionCorta,
+        );
       }
     }
 
@@ -1481,14 +1468,64 @@ class ExportService {
   }
   
   /// Puebla una hoja con datos de inventario
-  void _populateSheet(Sheet sheet, String almacenName, String ubicacionName, List<InventoryProduct> products) {
-    // Configurar anchos de columna
+  void _populateSheet(
+    Sheet sheet, 
+    String almacenName, 
+    String ubicacionName, 
+    List<InventoryProduct> products, {
+    bool includeSku = false,
+    bool includeNombreCorto = false,
+    bool includeMarca = false,
+    bool includeDescripcionCorta = false,
+  }) {
+    // Crear lista de encabezados dinámicamente
+    final headers = <String>['Nombre'];
+    int columnIndex = 1;
+    
+    if (includeSku) {
+      headers.add('SKU');
+      columnIndex++;
+    }
+    if (includeNombreCorto) {
+      headers.add('Nombre Corto');
+      columnIndex++;
+    }
+    if (includeMarca) {
+      headers.add('Marca');
+      columnIndex++;
+    }
+    if (includeDescripcionCorta) {
+      headers.add('Descripción Corta');
+      columnIndex++;
+    }
+    
+    headers.addAll(['Cant. Inicial', 'Entradas', 'Extracciones', 'Ventas', 'Cant. Final']);
+    
+    // Configurar anchos de columna dinámicamente
     sheet.setColumnWidth(0, 30); // Nombre del Producto
-    sheet.setColumnWidth(1, 12); // Cant. Inicial
-    sheet.setColumnWidth(2, 12); // Entradas
-    sheet.setColumnWidth(3, 12); // Extracciones
-    sheet.setColumnWidth(4, 12); // Ventas
-    sheet.setColumnWidth(5, 12); // Cant. Final
+    int currentCol = 1;
+    
+    if (includeSku) {
+      sheet.setColumnWidth(currentCol, 15); // SKU
+      currentCol++;
+    }
+    if (includeNombreCorto) {
+      sheet.setColumnWidth(currentCol, 25); // Nombre Corto
+      currentCol++;
+    }
+    if (includeMarca) {
+      sheet.setColumnWidth(currentCol, 20); // Marca
+      currentCol++;
+    }
+    if (includeDescripcionCorta) {
+      sheet.setColumnWidth(currentCol, 30); // Descripción Corta
+      currentCol++;
+    }
+    
+    // Columnas numéricas
+    for (int i = 0; i < 5; i++) {
+      sheet.setColumnWidth(currentCol + i, 12);
+    }
     
     int currentRow = 0;
     
@@ -1514,7 +1551,6 @@ class ExportService {
     currentRow += 2;
     
     // Encabezados de la tabla
-    final headers = ['Nombre', 'Cant. Inicial', 'Entradas', 'Extracciones', 'Ventas', 'Cant. Final'];
     for (int i = 0; i < headers.length; i++) {
       final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
       cell.value = TextCellValue(headers[i]);
@@ -1528,21 +1564,37 @@ class ExportService {
     
     // Datos de los productos
     for (final product in products) {
-      final rowData = [
-        product.nombreProducto,
+      final rowData = <String>[product.nombreProducto];
+      
+      // Agregar columnas adicionales si están habilitadas
+      if (includeSku) {
+        rowData.add(product.skuProducto ?? '');
+      }
+      if (includeNombreCorto) {
+        rowData.add(product.denominacionCorta ?? '');
+      }
+      if (includeMarca) {
+        rowData.add(product.nombreComercial ?? '');
+      }
+      if (includeDescripcionCorta) {
+        rowData.add(product.descripcionCorta ?? '');
+      }
+      
+      // Agregar columnas numéricas
+      rowData.addAll([
         product.cantidadInicial.toStringAsFixed(1),
         (product.entradasPeriodo ?? 0).toStringAsFixed(1),
         (product.extraccionesPeriodo ?? 0).toStringAsFixed(1),
         (product.ventasPeriodo ?? 0).toStringAsFixed(1),
         product.cantidadFinal.toStringAsFixed(1),
-      ];
+      ]);
       
       for (int i = 0; i < rowData.length; i++) {
         final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
         cell.value = TextCellValue(rowData[i]);
         
-        // Aplicar color basado en el stock en la columna Cant. Final
-        if (i == 5) {
+        // Aplicar color basado en el stock en la última columna (Cant. Final)
+        if (i == rowData.length - 1) {
           final cantidad = product.cantidadFinal;
           if (cantidad <= 0) {
             cell.cellStyle = CellStyle(backgroundColorHex: ExcelColor.red);
@@ -1577,6 +1629,97 @@ class ExportService {
     
     final totalStockCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
     totalStockCell.value = TextCellValue('• Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} unidades');
+  }
+
+  /// Construye una tabla PDF con columnas dinámicas
+  pw.Widget _buildDynamicTable(
+    List<Map<String, dynamic>> productos,
+    pw.Font regularFont,
+    pw.Font boldFont, {
+    bool includeSku = false,
+    bool includeNombreCorto = false,
+    bool includeMarca = false,
+    bool includeDescripcionCorta = false,
+  }) {
+    // Crear lista de encabezados dinámicamente
+    final headers = <String>['Nombre'];
+    final columnWidths = <int, pw.TableColumnWidth>{
+      0: const pw.FlexColumnWidth(2.5),
+    };
+    
+    int columnIndex = 1;
+    
+    if (includeSku) {
+      headers.add('SKU');
+      columnWidths[columnIndex] = const pw.FlexColumnWidth(1.5);
+      columnIndex++;
+    }
+    if (includeNombreCorto) {
+      headers.add('Nombre Corto');
+      columnWidths[columnIndex] = const pw.FlexColumnWidth(2);
+      columnIndex++;
+    }
+    if (includeMarca) {
+      headers.add('Marca');
+      columnWidths[columnIndex] = const pw.FlexColumnWidth(1.5);
+      columnIndex++;
+    }
+    if (includeDescripcionCorta) {
+      headers.add('Descripción Corta');
+      columnWidths[columnIndex] = const pw.FlexColumnWidth(2);
+      columnIndex++;
+    }
+    
+    // Agregar columnas numéricas
+    headers.addAll(['Cant. Inicial', 'Entradas', 'Extracciones', 'Ventas', 'Cant. Final']);
+    for (int i = 0; i < 5; i++) {
+      columnWidths[columnIndex + i] = const pw.FlexColumnWidth(1);
+    }
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+      columnWidths: columnWidths,
+      children: [
+        // Encabezados
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+          children: headers.map((header) => _buildTableHeader(header, font: boldFont)).toList(),
+        ),
+        // Datos de productos
+        ...productos.map(
+          (producto) {
+            final rowData = <String>[producto['nombre_producto']?.toString() ?? 'Sin nombre'];
+            
+            // Agregar columnas adicionales si están habilitadas
+            if (includeSku) {
+              rowData.add(producto['sku_producto']?.toString() ?? '');
+            }
+            if (includeNombreCorto) {
+              rowData.add(producto['denominacion_corta']?.toString() ?? '');
+            }
+            if (includeMarca) {
+              rowData.add(producto['nombre_comercial']?.toString() ?? '');
+            }
+            if (includeDescripcionCorta) {
+              rowData.add(producto['descripcion_corta']?.toString() ?? '');
+            }
+            
+            // Agregar columnas numéricas
+            rowData.addAll([
+              (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+              (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+              (double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+              (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+              (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
+            ]);
+            
+            return pw.TableRow(
+              children: rowData.map((data) => _buildTableCell(data, font: regularFont)).toList(),
+            );
+          },
+        ),
+      ],
+    );
   }
 }
 

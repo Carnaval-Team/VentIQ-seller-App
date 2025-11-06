@@ -55,6 +55,9 @@ class InventoryProduct {
   final int id;
   final String skuProducto;
   final String nombreProducto;
+  final String? denominacionCorta;
+  final String? nombreComercial;
+  final String? descripcionCorta;
   final int idCategoria;
   final String categoria;
   final int idSubcategoria;
@@ -114,6 +117,9 @@ class InventoryProduct {
     required this.id,
     required this.skuProducto,
     required this.nombreProducto,
+    this.denominacionCorta,
+    this.nombreComercial,
+    this.descripcionCorta,
     required this.idCategoria,
     required this.categoria,
     required this.idSubcategoria,
@@ -197,6 +203,9 @@ class InventoryProduct {
       id: map['id'] ?? 0,
       skuProducto: map['sku_producto'] ?? '',
       nombreProducto: map['nombre_producto'] ?? '',
+      denominacionCorta: map['denominacion_corta'],
+      nombreComercial: map['nombre_comercial'],
+      descripcionCorta: map['descripcion_corta'],
       idCategoria: map['id_categoria'] ?? 0,
       categoria: map['categoria'] ?? '',
       idSubcategoria: map['id_subcategoria'] ?? 0,
@@ -245,6 +254,9 @@ class InventoryProduct {
       id: row[0] ?? 0,
       skuProducto: row[1] ?? '',
       nombreProducto: row[2] ?? '',
+      denominacionCorta: row.length > 39 ? row[39] : null,
+      nombreComercial: row.length > 40 ? row[40] : null,
+      descripcionCorta: row.length > 41 ? row[41] : null,
       idCategoria: row[3] ?? 0,
       categoria: row[4] ?? '',
       idSubcategoria: row[5] ?? 0,
