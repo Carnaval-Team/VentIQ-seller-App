@@ -1075,10 +1075,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                   ),
                                 ),
                               ],
-                              if (item['sku'] != null) ...[
+                              if (item['sku_producto'] != null) ...[
                                 const SizedBox(height: 2),
                                 Text(
-                                  'SKU: ${item['sku']}',
+                                  'SKU: ${item['sku_producto']}',
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: Colors.grey[500],

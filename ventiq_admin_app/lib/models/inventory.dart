@@ -494,6 +494,7 @@ class InventoryResponse {
 class InventorySummaryByUser {
   final int idProducto;
   final String productoNombre;
+  final String productoSku;
   final int? idVariante;
   final String varianteValor;
   final int? idOpcionVariante;
@@ -506,6 +507,7 @@ class InventorySummaryByUser {
   InventorySummaryByUser({
     required this.idProducto,
     required this.productoNombre,
+    required this.productoSku,
     this.idVariante,
     required this.varianteValor,
     this.idOpcionVariante,
@@ -555,6 +557,7 @@ class InventorySummaryByUser {
     return InventorySummaryByUser(
       idProducto: map['id_producto'] ?? 0,
       productoNombre: map['producto_nombre'] ?? '',
+      productoSku: map['producto_sku'] ?? '',
       idVariante: map['id_variante'],
       varianteValor: map['variante_valor'] ?? 'N/A',
       idOpcionVariante: map['id_opcion_variante'],
@@ -572,6 +575,7 @@ class InventorySummaryByUser {
     return InventorySummaryByUser(
       idProducto: json['prod_id'] ?? 0,
       productoNombre: json['prod_nombre'] ?? '',
+      productoSku: json['prod_sku'] ?? '',
       idVariante: json['variante_id'],
       varianteValor: json['variante_valor'] ?? 'N/A',
       idOpcionVariante: json['opcion_variante_id'],
@@ -587,6 +591,7 @@ class InventorySummaryByUser {
     return {
       'id_producto': idProducto,
       'producto_nombre': productoNombre,
+      'producto_sku': productoSku,
       'id_variante': idVariante,
       'variante_valor': varianteValor,
       'id_opcion_variante': idOpcionVariante,

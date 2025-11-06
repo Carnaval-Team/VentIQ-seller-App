@@ -235,7 +235,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
           'descuento_monto': descuentoMonto,
           'bonificacion_cantidad': bonificacionCantidad,
           'denominacion': widget.product.name,
-          'sku': widget.product.sku,
+          'sku_producto': widget.product.sku,
           'moneda_precio': monedaGuardar,
         };
 

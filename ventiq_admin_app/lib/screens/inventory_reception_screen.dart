@@ -538,7 +538,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                     categoryId: productData['id_categoria']?.toString() ?? '',
                     categoryName: productData['categoria_nombre'] ?? '',
                     brand: '', // No disponible en nueva estructura
-                    sku: productData['sku'] ?? '',
+                    sku: productData['sku_producto'] ?? '',
                     barcode: productData['codigo_barras'] ?? '',
                     basePrice:
                         (productData['precio_venta_cup'] as num?)?.toDouble() ??
@@ -610,7 +610,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'SKU: ${item['sku'] ?? 'N/A'}',
+                          'SKU: ${item['sku_producto'] ?? item['sku'] ?? 'N/A'}',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],

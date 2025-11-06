@@ -162,7 +162,7 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('SKU: ${product['sku_producto'] ?? 'N/A'}'),
+            Text('SKU: ${product['sku_producto'] ?? product['sku'] ?? 'N/A'}'),
             if (product['precio_venta_cup'] != null)
               Text(
                 'Precio: \$${product['precio_venta_cup'].toStringAsFixed(2)}',

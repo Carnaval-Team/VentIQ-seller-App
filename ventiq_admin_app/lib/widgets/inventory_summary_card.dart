@@ -51,15 +51,29 @@ class InventorySummaryCard extends StatelessWidget {
                             Row(
                               children: [
                                 Expanded(
-                                  child: Text(
-                                    summary.productoNombre,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        summary.productoNombre,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'SKU: ${summary.productoSku}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 // Icons for multiple layouts and presentations
@@ -248,7 +262,14 @@ class InventorySummaryList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Debug information
+    print('🎯 InventorySummaryList.build called');
+    print('📊 isLoading: $isLoading');
+    print('📊 errorMessage: $errorMessage');
+    print('📊 summaries.length: ${summaries.length}');
+    
     if (isLoading) {
+      print('🔄 Showing loading state');
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
@@ -258,6 +279,7 @@ class InventorySummaryList extends StatelessWidget {
     }
 
     if (errorMessage != null) {
+      print('❌ Showing error state: $errorMessage');
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -297,6 +319,7 @@ class InventorySummaryList extends StatelessWidget {
     }
 
     if (summaries.isEmpty) {
+      print('📭 Showing empty state');
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
@@ -327,6 +350,12 @@ class InventorySummaryList extends StatelessWidget {
           ),
         ),
       );
+    }
+
+    print('✅ Building ListView with ${summaries.length} items');
+    for (int i = 0; i < summaries.length && i < 3; i++) {
+      final summary = summaries[i];
+      print('📋 Item $i: ${summary.productoNombre} - ${summary.cantidadTotalEnAlmacen} units');
     }
 
     return ListView.builder(

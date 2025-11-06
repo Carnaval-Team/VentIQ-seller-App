@@ -238,7 +238,7 @@ class InventoryService {
 
       // Get regular inventory operations
       final response = await _supabase.rpc(
-        'fn_listar_operaciones_inventario_re',
+        'fn_listar_operaciones_inventario',
         params: {
           'p_id_tienda': idTienda,
           'p_id_tpv': null,
@@ -1765,6 +1765,7 @@ class InventoryService {
   static Future<List<InventorySummaryByUser>> getInventorySummaryByUser(
     int? idAlmacen,
     String? busqueda,
+    String? filtroStock,
   ) async {
     try {
       final userData = await _prefsService.getUserData();
@@ -1781,12 +1782,13 @@ class InventoryService {
       print('🔍 InventoryService: Getting inventory summary by user...');
 
       final response = await _supabase.rpc(
-        'fn_inventario_resumen_por_usuario_almacen',
+        'fn_inventario_resumen_por_usuario_almacen2',
         params: {
           'p_id_tienda': idTienda,
           'p_id_almacen': idAlmacen,
           'p_busqueda': busqueda,
           'p_mostrar_sin_stock': true,
+          'p_filtro_stock': filtroStock ?? 'Todos',
           'p_limite': 9999,
           'p_pagina': 1,
         },

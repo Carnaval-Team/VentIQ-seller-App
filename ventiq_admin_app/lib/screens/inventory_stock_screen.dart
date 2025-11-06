@@ -119,6 +119,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         final summaries = await InventoryService.getInventorySummaryByUser(
           _selectedWarehouseId,
           _searchQuery,
+          _stockFilter,
         );
 
         print('📦 Received ${summaries.length} summaries from service');
@@ -444,6 +445,17 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   Widget _buildSummaryInventoryList() {
     final filteredSummaries = _getFilteredInventorySummaries();
 
+    // Debug information
+    print('🔍 _buildSummaryInventoryList called');
+    print('📊 _inventorySummaries.length: ${_inventorySummaries.length}');
+    print('📊 filteredSummaries.length: ${filteredSummaries.length}');
+    print('📊 _isLoading: $_isLoading');
+    print('📊 _errorMessage: $_errorMessage');
+    
+    if (_inventorySummaries.isNotEmpty) {
+      print('📋 First summary: ${_inventorySummaries[0].productoNombre} - ${_inventorySummaries[0].cantidadTotalEnAlmacen} units');
+    }
+
     return InventorySummaryList(
       summaries: filteredSummaries,
       isLoading: _isLoading,
@@ -470,51 +482,15 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   }
 
   List<InventorySummaryByUser> _getFilteredInventorySummaries() {
-    List<InventorySummaryByUser> filtered = List.from(_inventorySummaries);
-
-    // Apply search filter
-    if (_searchQuery.isNotEmpty) {
-      filtered =
-          filtered.where((summary) {
-            return summary.productoNombre.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                ) ||
-                summary.variantDisplay.toLowerCase().contains(
-                  _searchQuery.toLowerCase(),
-                );
-          }).toList();
-    }
-
-    // Apply stock filter
-    switch (_stockFilter) {
-      case 'Sin Stock':
-        filtered =
-            filtered
-                .where((summary) => summary.cantidadTotalEnAlmacen <= 0)
-                .toList();
-        break;
-      case 'Stock Bajo':
-        filtered =
-            filtered
-                .where(
-                  (summary) =>
-                      summary.cantidadTotalEnAlmacen > 0 &&
-                      summary.cantidadTotalEnAlmacen <= 10,
-                )
-                .toList();
-        break;
-      case 'Stock OK':
-        filtered =
-            filtered
-                .where((summary) => summary.cantidadTotalEnAlmacen > 10)
-                .toList();
-        break;
-      case 'Todos':
-      default:
-        break;
-    }
-
-    return filtered;
+    // ✅ Todos los filtros ahora se manejan en el servidor
+    // Solo devolvemos los datos tal como vienen del servidor
+    print('🔍 _getFilteredInventorySummaries called');
+    print('📊 Summaries count (server-filtered): ${_inventorySummaries.length}');
+    print('📊 Search query: "$_searchQuery"');
+    print('📊 Stock filter: "$_stockFilter"');
+    print('📊 All filtering is now done on the server side');
+    
+    return _inventorySummaries;
   }
 
   Widget _buildLoadingState() {
