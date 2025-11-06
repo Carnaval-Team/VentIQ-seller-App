@@ -289,33 +289,78 @@ class _InventoryExtractionBySaleScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        productData['denominacion'] ?? 'Sin nombre',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      // Nombre del producto - ocupa todo el ancho
+                      SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          productData['denominacion'] ?? 'Sin nombre',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
-                      Text('SKU: ${productData['sku_producto']}'
-                         ?? 'Sin nombre',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      const SizedBox(height: 8),
+                      
+                      // Primera fila: SKU y Variante
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 1,
+                            child: Text(
+                              'SKU: ${productData['sku_producto'] ?? 'N/A'}',
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                          if (productData['variante'] != null &&
+                              productData['variante'].toString().isNotEmpty)
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                'Variante: ${productData['variante']}',
+                                style: TextStyle(
+                                  color: AppColors.success.withOpacity(0.6),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      if (productData['variante'] != null &&
-                          productData['variante'].toString().isNotEmpty)
-                        Text('Variante: ${productData['variante']}',
-                            style: TextStyle(
-                                color: AppColors.success.withOpacity(0.6),
-                                fontSize: 12)),
-                      Text('Cantidad: ${productData['cantidad']}',
-                          style: const TextStyle(fontWeight: FontWeight.w500)),
-                      Text(
-                        'Precio: \$${(productData['precio_unitario'] ?? 0.0).toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.success),
+                      const SizedBox(height: 4),
+                      
+                      // Segunda fila: Cantidad y Precio
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 1,
+                            child: Text(
+                              'Cantidad: ${productData['cantidad']}',
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 1,
+                            child: Text(
+                              'Precio: \$${(productData['precio_unitario'] ?? 0.0).toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.success,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        'Subtotal: \$${((productData['cantidad'] ?? 0.0) * (productData['precio_unitario'] ?? 0.0)).toStringAsFixed(2)}',
-                        style: const TextStyle(
+                      const SizedBox(height: 4),
+                      
+                      // Tercera fila: Subtotal - centrado y destacado
+                      SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          'Subtotal: \$${((productData['cantidad'] ?? 0.0) * (productData['precio_unitario'] ?? 0.0)).toStringAsFixed(2)}',
+                          style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: AppColors.success),
+                            color: AppColors.success,
+                            fontSize: 16,
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
                       ),
                     ],
                   ),
@@ -577,6 +622,12 @@ class _InventoryExtractionBySaleScreenState
         }
 
         if (mounted) {
+          // Limpiar campos de cliente y observaciones
+          _clienteController.clear();
+          _observacionesController.clear();
+          _lastCliente = '';
+          _lastObservaciones = '';
+          
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Venta por acuerdo registrada y completada exitosamente'),
@@ -1205,7 +1256,7 @@ class _ProductQuantityWithPriceDialogState
       'id_presentacion': _selectedVariant!['id_presentacion'] ?? 1,
       'cantidad': quantity,
       'precio_unitario': price,
-      'sku_producto': widget.product['sku'] ?? '',
+      'sku_producto': widget.product['sku_producto'] ?? '',
       'denominacion_corta': widget.product['denominacion_corta'] ?? '',
       'sku_ubicacion': widget.sourceLocation?.name ?? '',
       'denominacion':
@@ -1262,14 +1313,6 @@ class _ProductQuantityWithPriceDialogState
                         if (widget.product['sku_producto'] != null)
                           Text(
                             'SKU: ${widget.product['sku_producto']}',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
-
-                          Text(
-                            'SKU: ${widget.product['meta']}',
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 12,
