@@ -1038,11 +1038,27 @@ class _InventoryExtractionBySaleScreenState
                                   final product = _selectedProducts[index];
                                   return ListTile(
                                     contentPadding: EdgeInsets.zero,
-                                    title: Text(
-                                      '${product['denominacion']} - ${product['sku_producto']}' ,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                    title: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${product['denominacion']}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        if (product['sku_producto'] != null && product['sku_producto'].toString().isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'SKU: ${product['sku_producto']}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                              fontFamily: 'monospace',
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                     subtitle: Column(
                                       crossAxisAlignment:
