@@ -17,6 +17,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _isLoading = true;
   bool _needMasterPasswordToCancel = false;
   bool _needAllOrdersCompletedToContinue = false;
+  bool _manejaInventario = false;
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
@@ -52,6 +53,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       setState(() {
         _needMasterPasswordToCancel = config['need_master_password_to_cancel'] ?? false;
         _needAllOrdersCompletedToContinue = config['need_all_orders_completed_to_continue'] ?? false;
+        _manejaInventario = config['maneja_inventario'] ?? false;
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
         _isLoading = false;
@@ -60,6 +62,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('✅ Configuración cargada:');
       print('  - Contraseña maestra para cancelar: $_needMasterPasswordToCancel');
       print('  - Completar todas las órdenes: $_needAllOrdersCompletedToContinue');
+      print('  - Maneja inventario: $_manejaInventario');
       print('  - Tiene contraseña maestra: $_hasMasterPassword');
 
     } catch (e) {
@@ -157,6 +160,51 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       // Revertir el cambio en caso de error
       setState(() {
         _needAllOrdersCompletedToContinue = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateInventoryManagementSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print('🔧 Actualizando configuración de manejo de inventario: $value');
+      
+      await StoreConfigService.updateManejaInventario(_storeId!, value);
+      
+      setState(() {
+        _manejaInventario = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value 
+                ? 'Control de inventario activado - Los vendedores deberán hacer control al abrir/cerrar turno'
+                : 'Control de inventario desactivado - Los vendedores no harán control al abrir/cerrar turno'
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Configuración de manejo de inventario actualizada');
+    } catch (e) {
+      print('❌ Error al actualizar configuración de manejo de inventario: $e');
+      
+      // Revertir el cambio en caso de error
+      setState(() {
+        _manejaInventario = !value;
       });
 
       if (mounted) {
@@ -287,6 +335,20 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 : 'Los vendedores pueden crear nuevas órdenes sin completar las pendientes',
             value: _needAllOrdersCompletedToContinue,
             onChanged: _updateOrdersCompletionSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          // Configuración de Control de Inventario
+          _buildConfigCard(
+            icon: Icons.inventory_2_outlined,
+            iconColor: Colors.blue,
+            title: 'Control de Inventario en Turnos',
+            subtitle: _manejaInventario
+                ? 'Los vendedores deben hacer control de inventario al abrir y cerrar turno'
+                : 'Los vendedores no hacen control de inventario al abrir y cerrar turno',
+            value: _manejaInventario,
+            onChanged: _updateInventoryManagementSetting,
           ),
 
           const SizedBox(height: 24),
