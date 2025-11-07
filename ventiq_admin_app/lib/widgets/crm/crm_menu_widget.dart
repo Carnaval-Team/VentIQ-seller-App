@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../config/app_colors.dart';
+import '../../utils/navigation_guard.dart';
 
 class CRMMenuWidget extends StatelessWidget {
   const CRMMenuWidget({super.key});
@@ -115,31 +116,31 @@ class CRMMenuWidget extends StatelessWidget {
   void _navigateToModule(BuildContext context, String module) {
     switch (module) {
       case 'dashboard':
-        Navigator.pushNamed(context, '/crm-dashboard');
+        NavigationGuard.navigateWithPermission(context, '/crm-dashboard');
         break;
       case 'customers':
-        Navigator.pushNamed(context, '/customers');
+        NavigationGuard.navigateWithPermission(context, '/customers');
         break;
       case 'suppliers':
-        Navigator.pushNamed(context, '/suppliers');
+        NavigationGuard.navigateWithPermission(context, '/suppliers');
         break;
       case 'relationships':
-        Navigator.pushNamed(context, '/relationships');
+        NavigationGuard.navigateWithPermission(context, '/relationships');
         break;
       case 'interactions':
-        Navigator.pushNamed(context, '/crm-interactions');
+        NavigationGuard.navigateWithPermission(context, '/crm-interactions');
         break;
       case 'opportunities':
-        Navigator.pushNamed(context, '/crm-opportunities');
+        NavigationGuard.navigateWithPermission(context, '/crm-opportunities');
         break;
       case 'analytics':
-        Navigator.pushNamed(context, '/crm-analytics');
+        NavigationGuard.navigateWithPermission(context, '/crm-analytics');
         break;
       case 'reports':
-        Navigator.pushNamed(context, '/crm-reports');
+        NavigationGuard.navigateWithPermission(context, '/crm-reports');
         break;
       case 'settings':
-        Navigator.pushNamed(context, '/crm-settings');
+        NavigationGuard.navigateWithPermission(context, '/crm-settings');
         break;
       default:
         // Mostrar mensaje de funcionalidad próximamente

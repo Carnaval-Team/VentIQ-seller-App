@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/permissions_service.dart';
+import '../utils/navigation_guard.dart';
 
 class AdminBottomNavigation extends StatefulWidget {
   final String? currentRoute;
@@ -109,7 +110,7 @@ class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
     return 0;
   }
 
-  void _handleTap(int index) {
+  void _handleTap(int index) async {
     // SIEMPRE usar navegación por ruta para evitar problemas con índices
     if (index >= 0 && index < _routes.length) {
       final route = _routes[index];
@@ -119,7 +120,11 @@ class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
         return;
       }
 
-      Navigator.pushReplacementNamed(context, route);
+      // Verificar suscripción y permisos antes de navegar
+      final canNavigate = await NavigationGuard.canNavigate(route, context);
+      if (canNavigate) {
+        Navigator.pushReplacementNamed(context, route);
+      }
     }
   }
 

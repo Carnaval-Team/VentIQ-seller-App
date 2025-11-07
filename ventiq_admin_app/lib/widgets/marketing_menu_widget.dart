@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
+import '../utils/navigation_guard.dart';
 
 class MarketingMenuWidget extends StatelessWidget {
   const MarketingMenuWidget({super.key});
@@ -93,25 +94,25 @@ class MarketingMenuWidget extends StatelessWidget {
   void _navigateToModule(BuildContext context, String module) {
     switch (module) {
       case 'dashboard':
-        Navigator.pushNamed(context, '/marketing-dashboard');
+        NavigationGuard.navigateWithPermission(context, '/marketing-dashboard');
         break;
       case 'promotions':
-        Navigator.pushNamed(context, '/promotions');
+        NavigationGuard.navigateWithPermission(context, '/promotions');
         break;
       case 'campaigns':
-        Navigator.pushNamed(context, '/campaigns');
+        NavigationGuard.navigateWithPermission(context, '/campaigns');
         break;
       case 'communications':
-        Navigator.pushNamed(context, '/communications');
+        NavigationGuard.navigateWithPermission(context, '/communications');
         break;
       case 'segments':
-        Navigator.pushNamed(context, '/segments');
+        NavigationGuard.navigateWithPermission(context, '/segments');
         break;
       case 'loyalty':
-        Navigator.pushNamed(context, '/loyalty');
+        NavigationGuard.navigateWithPermission(context, '/loyalty');
         break;
       case 'analytics':
-        Navigator.pushNamed(context, '/analytics');
+        NavigationGuard.navigateWithPermission(context, '/analytics');
         break;
     }
   }

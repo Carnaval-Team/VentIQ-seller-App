@@ -1,7 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'subscription_service.dart';
 
 class StoreRegistrationService {
   final SupabaseClient _supabase = Supabase.instance.client;
+  final SubscriptionService _subscriptionService = SubscriptionService();
 
   /// Registra un nuevo usuario en Supabase Auth
   Future<Map<String, dynamic>> registerUser({
@@ -209,6 +211,31 @@ class StoreRegistrationService {
           'user_created': true,
           'user_id': user.id,
         };
+      }
+
+      // Paso 3: Crear suscripción por defecto con plan ID 1
+      final tiendaId = storeResult['data']?['tienda_id'];
+      if (tiendaId != null) {
+        print('📋 Creando suscripción por defecto para tienda ID: $tiendaId');
+        try {
+          final subscription = await _subscriptionService.createDefaultSubscription(
+            tiendaId,
+            user.id,
+          );
+          
+          if (subscription != null) {
+            print('✅ Suscripción por defecto creada exitosamente');
+            print('  - Plan: ${subscription.planDenominacion}');
+            print('  - Estado: ${subscription.estadoText}');
+          } else {
+            print('⚠️ No se pudo crear la suscripción por defecto, pero la tienda fue creada');
+          }
+        } catch (e) {
+          print('❌ Error creando suscripción por defecto: $e');
+          // No fallar el proceso completo por error de suscripción
+        }
+      } else {
+        print('⚠️ No se pudo obtener ID de tienda para crear suscripción');
       }
 
       print('🎉 Proceso completo exitoso!');

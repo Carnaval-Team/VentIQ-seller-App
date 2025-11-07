@@ -4,11 +4,12 @@ import 'dart:convert';
 import '../config/app_colors.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../services/auth_service.dart';
+import '../utils/navigation_guard.dart';
 import '../services/changelog_service.dart';
 import '../services/update_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/update_dialog.dart';
-import '../utils/navigation_guard.dart';
 
 class AdminDrawer extends StatefulWidget {
   const AdminDrawer({Key? key}) : super(key: key);
@@ -176,10 +177,9 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   subtitle: 'Vista general del negocio',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamedAndRemoveUntil(
+                    NavigationGuard.navigateAndRemoveUntil(
                       context,
                       '/dashboard',
-                      (route) => false,
                     );
                   },
                 ),
@@ -203,7 +203,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Gestión del catálogo',
                             onTap: () {
                               Navigator.pop(context);
-                              Navigator.pushNamed(
+                              NavigationGuard.navigateWithPermission(
                                 context,
                                 '/products-dashboard',
                               );
@@ -235,7 +235,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Control de stock',
                             onTap: () {
                               Navigator.pop(context);
-                              Navigator.pushNamed(context, '/inventory');
+                              NavigationGuard.navigateWithPermission(context, '/inventory');
                             },
                           ),
                           const Divider(height: 1),
@@ -253,7 +253,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   subtitle: 'Gestión de almacenes',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.pushNamed(context, '/warehouse');
+                    NavigationGuard.navigateWithPermission(context, '/warehouse');
                   },
                 ),
                 const Divider(height: 1),
@@ -276,7 +276,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Campañas y promociones',
                             onTap: () {
                               Navigator.pop(context);
-                              Navigator.pushNamed(
+                              NavigationGuard.navigateWithPermission(
                                 context,
                                 '/marketing-dashboard',
                               );
@@ -308,7 +308,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Monitoreo de ventas',
                             onTap: () {
                               Navigator.pop(context);
-                              Navigator.pushNamed(context, '/sales');
+                              NavigationGuard.navigateWithPermission(context, '/sales');
                             },
                           ),
                           const Divider(height: 1),
@@ -337,7 +337,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Gestión financiera',
                             onTap: () {
                               Navigator.pop(context);
-                              Navigator.pushNamed(context, '/financial');
+                              NavigationGuard.navigateWithPermission(context, '/financial');
                             },
                           ),
                           const Divider(height: 1),
@@ -366,7 +366,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Clientes y proveedores',
                             onTap: () {
                               Navigator.pop(context);
-                              Navigator.pushNamed(context, '/crm-dashboard');
+                              NavigationGuard.navigateWithPermission(context, '/crm-dashboard');
                             },
                           ),
                           const Divider(height: 1),
@@ -395,7 +395,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             subtitle: 'Gestión de personal',
                             onTap: () {
                               Navigator.pop(context);
-                              Navigator.pushNamed(context, '/workers');
+                              NavigationGuard.navigateWithPermission(context, '/workers');
                             },
                           ),
                           const Divider(height: 1),
@@ -422,7 +422,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                         subtitle: 'Ajustes del sistema',
                         onTap: () {
                           Navigator.pop(context);
-                          Navigator.pushNamed(context, '/settings');
+                          NavigationGuard.navigateWithPermission(context, '/settings');
                         },
                       );
                     }

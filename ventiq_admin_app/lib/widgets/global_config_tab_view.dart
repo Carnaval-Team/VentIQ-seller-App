@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../config/app_colors.dart';
 import '../services/store_config_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/subscription_service.dart';
+import '../models/subscription.dart';
+import '../screens/subscription_detail_screen.dart';
+import '../utils/navigation_guard.dart';
 
 class GlobalConfigTabView extends StatefulWidget {
   const GlobalConfigTabView({super.key});
@@ -12,6 +17,7 @@ class GlobalConfigTabView extends StatefulWidget {
 
 class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final SubscriptionService _subscriptionService = SubscriptionService();
   final TextEditingController _masterPasswordController = TextEditingController();
   
   bool _isLoading = true;
@@ -22,6 +28,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
   int? _storeId;
+  
+  // Variables para suscripción
+  Subscription? _activeSubscription;
 
   @override
   void initState() {
@@ -59,11 +68,34 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _isLoading = false;
       });
 
+      // Cargar suscripción actual (activa o vencida)
+      _activeSubscription = await _subscriptionService.getCurrentSubscription(_storeId!);
+      
+      if (_activeSubscription != null) {
+        print('🔍 Suscripción encontrada:');
+        print('  - ID: ${_activeSubscription!.id}');
+        print('  - Plan: ${_activeSubscription!.planDenominacion}');
+        print('  - Estado: ${_activeSubscription!.estadoText}');
+        print('  - Activa: ${_activeSubscription!.isActive}');
+        print('  - Vencida: ${_activeSubscription!.isExpired}');
+        if (_activeSubscription!.fechaFin != null) {
+          print('  - Fecha fin: ${_activeSubscription!.fechaFin}');
+        }
+      } else {
+        print('⚠️ No se encontró suscripción para la tienda $_storeId');
+      }
+
       print('✅ Configuración cargada:');
       print('  - Contraseña maestra para cancelar: $_needMasterPasswordToCancel');
       print('  - Completar todas las órdenes: $_needAllOrdersCompletedToContinue');
       print('  - Maneja inventario: $_manejaInventario');
       print('  - Tiene contraseña maestra: $_hasMasterPassword');
+      print('  - Suscripción actual: ${_activeSubscription?.planDenominacion ?? 'No encontrada'} (${_activeSubscription?.estadoText ?? 'N/A'})');
+
+      // Actualizar UI después de cargar la suscripción
+      if (mounted) {
+        setState(() {});
+      }
 
     } catch (e) {
       print('❌ Error al cargar configuración de tienda: $e');
@@ -300,8 +332,11 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          
+          // Sección de Suscripción
+          if (_activeSubscription != null) ...[
+            _buildSubscriptionCard(),
+            const SizedBox(height: 24),
+          ],
 
           const SizedBox(height: 24),
 
@@ -644,6 +679,266 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildSubscriptionCard() {
+    final subscription = _activeSubscription!;
+    final isExpiringSoon = subscription.diasRestantes > 0 && subscription.diasRestantes <= 7;
+    final isExpired = subscription.isExpired;
+    
+    Color statusColor = AppColors.success;
+    if (isExpired) {
+      statusColor = AppColors.error;
+    } else if (isExpiringSoon) {
+      statusColor = AppColors.warning;
+    }
+
+    return GestureDetector(
+      onTap: () async {
+        final canNavigate = await NavigationGuard.canNavigate('/subscription-detail', context);
+        if (canNavigate) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const SubscriptionDetailScreen(),
+            ),
+          );
+        }
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primary.withOpacity(0.1),
+              AppColors.primary.withOpacity(0.05),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.primary.withOpacity(0.2),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header con icono y título
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.workspace_premium,
+                    color: AppColors.primary,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Plan de Suscripción',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        subscription.planDenominacion ?? 'Plan desconocido',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    subscription.estadoText,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // Información del plan
+            Row(
+              children: [
+                Expanded(
+                  child: _buildSubscriptionInfo(
+                    'Precio',
+                    subscription.planPrecioMensual != null 
+                        ? '\$${subscription.planPrecioMensual!.toStringAsFixed(2)}/mes'
+                        : 'N/A',
+                    Icons.attach_money,
+                  ),
+                ),
+                Expanded(
+                  child: _buildSubscriptionInfo(
+                    'Inicio',
+                    DateFormat('dd/MM/yyyy').format(subscription.fechaInicio),
+                    Icons.calendar_today,
+                  ),
+                ),
+              ],
+            ),
+            
+            if (subscription.fechaFin != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildSubscriptionInfo(
+                      'Vencimiento',
+                      DateFormat('dd/MM/yyyy').format(subscription.fechaFin!),
+                      Icons.event,
+                      isExpiringSoon || isExpired ? statusColor : null,
+                    ),
+                  ),
+                  if (subscription.diasRestantes > 0)
+                    Expanded(
+                      child: _buildSubscriptionInfo(
+                        'Días restantes',
+                        '${subscription.diasRestantes} días',
+                        Icons.hourglass_empty,
+                        isExpiringSoon ? statusColor : AppColors.success,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+
+            // Advertencia si está por vencer o vencida
+            if (isExpiringSoon || isExpired) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: statusColor.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isExpired ? Icons.error : Icons.warning,
+                      color: statusColor,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        isExpired 
+                            ? 'Tu suscripción ha vencido. Contacta al administrador para renovar.'
+                            : 'Tu suscripción vence pronto. Contacta al administrador para renovar.',
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+            
+            // Botón para ver detalles
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SubscriptionDetailScreen(),
+                      ),
+                    );
+                  },
+                  icon: Icon(
+                    Icons.arrow_forward,
+                    color: AppColors.primary,
+                    size: 18,
+                  ),
+                  label: Text(
+                    'Ver detalles',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionInfo(String label, String value, IconData icon, [Color? color]) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: color ?? AppColors.textSecondary),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: color ?? AppColors.textPrimary,
+          ),
+        ),
+      ],
     );
   }
 }

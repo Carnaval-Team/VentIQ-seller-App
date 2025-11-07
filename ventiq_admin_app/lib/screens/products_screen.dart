@@ -1,15 +1,20 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/currency_service.dart';
 import '../services/permissions_service.dart';
+import '../services/image_picker_service.dart';
 import 'add_product_screen.dart';
 import 'product_detail_screen.dart';
 import 'excel_import_screen.dart';
-import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/admin_drawer.dart';
+import '../widgets/admin_bottom_navigation.dart';
+import '../utils/navigation_guard.dart';
 
 class ProductsScreen extends StatefulWidget {
   const ProductsScreen({super.key});
@@ -131,7 +136,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ),
           if (_canCreateProduct)
             IconButton(
-              onPressed: () => Navigator.pushNamed(context, '/excel-import'),
+              onPressed: () => NavigationGuard.navigateWithPermission(context, '/excel-import'),
               icon: const Icon(Icons.upload_file),
               tooltip: 'Importar desde Excel',
             ),
@@ -654,6 +659,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         tooltip: 'Editar',
                       ),
                       IconButton(
+                        icon: const Icon(Icons.add_a_photo, size: 20),
+                        onPressed: () => _showAddImageDialog(product),
+                        color: Colors.orange,
+                        tooltip: 'Gestionar imagen',
+                      ),
+                      IconButton(
                         icon: const Icon(Icons.delete, size: 20),
                         onPressed: () => _showDeleteConfirmation(product),
                         color: AppColors.error,
@@ -738,17 +749,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
-  void _showAddProductDialog() {
-    Navigator.pushNamed(context, '/add-product').then((result) {
-      // Si se creó un producto, recargar la lista
-      if (result != null && result == true) {
-        _loadProducts();
-      }
-    });
+  void _showAddProductDialog() async {
+    // Navegar a la pantalla de agregar producto
+    await NavigationGuard.navigateWithPermission(context, '/add-product');
+    
+    // Recargar la lista de productos cuando regrese
+    _loadProducts();
   }
 
   void _showProductDetails(Product product) {
-    Navigator.pushNamed(context, '/product-detail', arguments: product);
+    NavigationGuard.navigateWithPermission(context, '/product-detail', arguments: product);
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -933,18 +943,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   void _showEditProductDialog(Product product) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AddProductScreen(
-          product: product,
-          onProductSaved: () {
-            // Recargar la lista de productos después de editar
-            _loadProducts();
-          },
-        ),
-      ),
-    );
+    NavigationGuard.navigateWithPermission(context, '/edit-product', arguments: product);
   }
 
   Widget _buildReadOnlyField(String label, String value) {
@@ -1387,19 +1386,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Dashboard
-        Navigator.pushNamedAndRemoveUntil(
+        NavigationGuard.navigateAndRemoveUntil(
           context,
           '/dashboard',
-          (route) => false,
         );
         break;
       case 1: // Productos (current)
         break;
       case 2: // Inventario
-        Navigator.pushNamed(context, '/inventory');
+        NavigationGuard.navigateWithPermission(context, '/inventory');
         break;
       case 3: // Configuración
-        Navigator.pushNamed(context, '/settings');
+        NavigationGuard.navigateWithPermission(context, '/settings');
         break;
     }
   }
@@ -1542,7 +1540,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ElevatedButton.icon(
             onPressed: () {
               Navigator.of(context).pop();
-              Navigator.pushNamed(context, '/inventory');
+              NavigationGuard.navigateWithPermission(context, '/inventory');
             },
             icon: const Icon(Icons.inventory_2, size: 18),
             label: const Text('Ir a Inventario'),
@@ -1583,6 +1581,395 @@ class _ProductsScreenState extends State<ProductsScreen> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Muestra el diálogo para gestionar la imagen del producto
+  void _showAddImageDialog(Product product) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _AddImageDialog(
+        product: product,
+        onImageUpdated: () {
+          _loadProducts(); // Recargar productos para mostrar la nueva imagen
+        },
+      ),
+    );
+  }
+}
+
+/// Diálogo para seleccionar y subir imagen del producto
+class _AddImageDialog extends StatefulWidget {
+  final Product product;
+  final VoidCallback onImageUpdated;
+
+  const _AddImageDialog({
+    required this.product,
+    required this.onImageUpdated,
+  });
+
+  @override
+  State<_AddImageDialog> createState() => _AddImageDialogState();
+}
+
+class _AddImageDialogState extends State<_AddImageDialog> {
+  final ImagePicker _imagePicker = ImagePicker();
+  bool _isLoading = false;
+
+  Future<void> _pickImageWeb() async {
+    try {
+      setState(() => _isLoading = true);
+
+      final Uint8List? bytes = await ImagePickerService.pickImage();
+
+      if (bytes != null) {
+        final fileName = 'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+        // Subir imagen y actualizar producto
+        final success = await ProductService.updateProductImage(
+          productId: widget.product.id,
+          imageBytes: bytes,
+          imageFileName: fileName,
+        );
+
+        if (success && mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Imagen actualizada exitosamente'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          
+          // Ejecutar callback para recargar la lista
+          widget.onImageUpdated();
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Error al actualizar la imagen'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      setState(() => _isLoading = true);
+
+      final XFile? image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 80,
+      );
+
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        final fileName = 'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+        // Subir imagen y actualizar producto
+        final success = await ProductService.updateProductImage(
+          productId: widget.product.id,
+          imageBytes: bytes,
+          imageFileName: fileName,
+        );
+
+        if (success && mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Imagen actualizada exitosamente'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          
+          // Ejecutar callback para recargar la lista
+          widget.onImageUpdated();
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Error al actualizar la imagen'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _removeImage() async {
+    try {
+      setState(() => _isLoading = true);
+
+      // Actualizar producto con imagen vacía
+      final success = await ProductService.removeProductImage(
+        productId: widget.product.id,
+      );
+
+      if (success && mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Imagen eliminada exitosamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        
+        // Ejecutar callback para recargar la lista
+        widget.onImageUpdated();
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Error al eliminar la imagen'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: const BoxDecoration(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.add_a_photo,
+                  color: Colors.orange[600],
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Gestionar Imagen',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        widget.product.name,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                if (_isLoading)
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                    color: AppColors.textSecondary,
+                  ),
+              ],
+            ),
+          ),
+          
+          // Imagen actual
+          if (widget.product.imageUrl.isNotEmpty) ...[
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    'Imagen actual:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      image: DecorationImage(
+                        image: NetworkImage(widget.product.imageUrl),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          
+          // Opciones
+          if (!_isLoading) ...[
+            if (kIsWeb) ...[
+              // Opción para web
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.upload_file, color: Colors.blue),
+                ),
+                title: const Text('Seleccionar archivo'),
+                subtitle: const Text('Elegir una imagen desde tu computadora'),
+                onTap: _pickImageWeb,
+              ),
+            ] else ...[
+              // Opciones para móvil
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.camera_alt, color: Colors.blue),
+                ),
+                title: const Text('Tomar foto'),
+                subtitle: const Text('Usar la cámara del dispositivo'),
+                onTap: () => _pickImage(ImageSource.camera),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.photo_library, color: Colors.green),
+                ),
+                title: const Text('Seleccionar de galería'),
+                subtitle: const Text('Elegir una imagen existente'),
+                onTap: () => _pickImage(ImageSource.gallery),
+              ),
+            ],
+            if (widget.product.imageUrl.isNotEmpty) ...[
+              const Divider(height: 1),
+              ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.delete, color: Colors.red),
+                ),
+                title: const Text('Eliminar imagen'),
+                subtitle: const Text('Quitar la imagen actual'),
+                onTap: _removeImage,
+              ),
+            ],
+            const SizedBox(height: 20),
+          ] else ...[
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Column(
+                children: [
+                  CircularProgressIndicator(color: AppColors.primary),
+                  SizedBox(height: 16),
+                  Text(
+                    'Procesando imagen...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

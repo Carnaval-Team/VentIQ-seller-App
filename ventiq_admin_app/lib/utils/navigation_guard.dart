@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../services/permissions_service.dart';
+import '../services/subscription_guard_service.dart';
 
-/// Guard para proteger navegación según permisos del usuario
+/// Guard para proteger navegación según permisos del usuario y suscripción
 class NavigationGuard {
   static final PermissionsService _permissionsService = PermissionsService();
+  static final SubscriptionGuardService _subscriptionGuard = SubscriptionGuardService();
 
   /// Verificar si el usuario puede navegar a una ruta
   static Future<bool> canNavigate(
@@ -12,6 +14,16 @@ class NavigationGuard {
     bool showDialog = true,
   }) async {
     try {
+      // Verificar suscripción primero
+      final hasSubscription = await _subscriptionGuard.canAccessRoute(route);
+      if (!hasSubscription) {
+        if (showDialog && context.mounted) {
+          await _subscriptionGuard.checkAndRedirectIfNeeded(context, route);
+        }
+        return false;
+      }
+
+      // Verificar permisos de rol
       final canAccess = await _permissionsService.canAccessScreen(route);
 
       if (!canAccess && showDialog && context.mounted) {
@@ -149,5 +161,28 @@ class NavigationGuard {
         ),
       ),
     );
+  }
+
+  /// Verificar solo suscripción (sin permisos de rol)
+  static Future<bool> hasValidSubscription() async {
+    try {
+      return await _subscriptionGuard.hasActiveSubscription();
+    } catch (e) {
+      print('❌ Error verificando suscripción: $e');
+      return false;
+    }
+  }
+
+  /// Verificar suscripción y redirigir si es necesario
+  static Future<bool> checkSubscriptionAndRedirect(
+    BuildContext context,
+    String route,
+  ) async {
+    try {
+      return await _subscriptionGuard.checkAndRedirectIfNeeded(context, route);
+    } catch (e) {
+      print('❌ Error verificando suscripción y redirigiendo: $e');
+      return false;
+    }
   }
 }

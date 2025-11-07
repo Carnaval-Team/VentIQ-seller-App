@@ -4,6 +4,9 @@ import '../config/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
+import '../services/subscription_service.dart';
+import '../services/subscription_guard_service.dart';
+import '../models/subscription.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -19,6 +22,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _authService = AuthService();
   final _userPreferencesService = UserPreferencesService();
   final _permissionsService = PermissionsService();
+  final _subscriptionService = SubscriptionService();
+  final _subscriptionGuard = SubscriptionGuardService();
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _rememberMe = false;
@@ -450,7 +455,27 @@ class _LoginScreenState extends State<LoginScreen> {
         throw Exception('NO_STORE_ASSIGNED');
       }
 
-      // Paso 5: Preparar datos para guardar
+      // Paso 5: Obtener suscripción activa de la tienda por defecto
+      Subscription? activeSubscription;
+      try {
+        activeSubscription = await _subscriptionService.getActiveSubscription(defaultStoreId);
+        if (activeSubscription != null) {
+          print('✅ Suscripción activa encontrada:');
+          print('  - Plan: ${activeSubscription.planDenominacion}');
+          print('  - Estado: ${activeSubscription.estadoText}');
+          print('  - Vence: ${activeSubscription.fechaFin ?? 'Sin vencimiento'}');
+          if (activeSubscription.diasRestantes > 0) {
+            print('  - Días restantes: ${activeSubscription.diasRestantes}');
+          }
+        } else {
+          print('⚠️ No se encontró suscripción activa para la tienda $defaultStoreId');
+        }
+      } catch (e) {
+        print('❌ Error obteniendo suscripción: $e');
+        // No bloquear el login por error de suscripción
+      }
+
+      // Paso 6: Preparar datos para guardar
       final storesForPreferences =
           userStores
               .map(
@@ -464,7 +489,7 @@ class _LoginScreenState extends State<LoginScreen> {
               )
               .toList();
 
-      // Paso 6: Guardar datos del usuario
+      // Paso 7: Guardar datos del usuario
       await _userPreferencesService.saveUserData(
         userId: user.id,
         email: user.email ?? _emailController.text.trim(),
@@ -494,9 +519,44 @@ class _LoginScreenState extends State<LoginScreen> {
 
       print('✅ Login exitoso como $roleName');
 
-      // Navigate to dashboard
+      // Verificar suscripción antes de navegar al dashboard
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        final hasActiveSubscription = await _subscriptionGuard.hasActiveSubscription(forceRefresh: true);
+        
+        // Guardar datos de suscripción si existe
+        if (activeSubscription != null) {
+          await _userPreferencesService.saveSubscriptionData(
+            subscriptionId: activeSubscription.id,
+            state: activeSubscription.estado,
+            planId: activeSubscription.idPlan,
+            planName: activeSubscription.planDenominacion ?? 'Plan desconocido',
+            startDate: activeSubscription.fechaInicio,
+            endDate: activeSubscription.fechaFin,
+            features: activeSubscription.planFuncionesHabilitadas,
+          );
+          print('💾 Datos de suscripción guardados en preferencias');
+        }
+        
+        if (hasActiveSubscription) {
+          print('✅ Suscripción válida - Navegando al dashboard');
+          Navigator.pushReplacementNamed(context, '/dashboard');
+        } else {
+          print('⚠️ Sin suscripción activa - Navegando a detalles de suscripción');
+          
+          // Mostrar mensaje informativo
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                _subscriptionGuard.getSubscriptionStatusMessage(),
+              ),
+              backgroundColor: _subscriptionGuard.getSubscriptionStatusColor(),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          
+          // Navegar a detalles de suscripción
+          Navigator.pushReplacementNamed(context, '/subscription-detail');
+        }
       }
     } catch (e) {
       print('❌ Login error: $e');
