@@ -25,17 +25,26 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   int _totalCount = 0;
   final int _itemsPerPage = 20;
   bool _hasNextPage = false;
+  bool _isLoadingMore = false;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    print('🚀 InventoryOperationsScreen inicializado');
+    print('  • ScrollController configurado para detectar paginación');
+    print('  • Threshold de carga: 200px del final');
+    print('  • Items por página: $_itemsPerPage');
+    
     _loadOperations();
     _searchController.addListener(_onSearchChanged);
+    _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -44,6 +53,30 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       _searchQuery = _searchController.text;
     });
     _debounceSearch();
+  }
+
+  void _onScroll() {
+    final currentPixels = _scrollController.position.pixels;
+    final maxScrollExtent = _scrollController.position.maxScrollExtent;
+    final threshold = 200;
+    final distanceFromEnd = maxScrollExtent - currentPixels;
+    
+    // Log detallado del scroll
+    print('📜 Scroll detectado:');
+    print('  • Posición actual: ${currentPixels.toStringAsFixed(1)}px');
+    print('  • Máximo scroll: ${maxScrollExtent.toStringAsFixed(1)}px');
+    print('  • Distancia del final: ${distanceFromEnd.toStringAsFixed(1)}px');
+    print('  • Threshold: ${threshold}px');
+    print('  • ¿Debe cargar más?: ${distanceFromEnd <= threshold}');
+    print('  • ¿Ya está cargando?: $_isLoadingMore');
+    print('  • ¿Hay más páginas?: $_hasNextPage');
+    
+    if (currentPixels >= maxScrollExtent - threshold) {
+      print('🎯 Condición cumplida - Intentando cargar más datos...');
+      _loadMoreOperations();
+    } else {
+      print('⏳ Aún no llega al threshold para cargar más datos');
+    }
   }
 
   Timer? _debounceTimer;
@@ -55,9 +88,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     });
   }
 
-  Future<void> _loadOperations() async {
+  Future<void> _loadOperations({bool isLoadMore = false}) async {
     try {
-      setState(() => _isLoading = true);
+      if (!isLoadMore) {
+        setState(() => _isLoading = true);
+      }
 
       final result = await InventoryService.getInventoryOperations(
         busqueda: _searchQuery.isEmpty ? null : _searchQuery,
@@ -67,20 +102,77 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         pagina: _currentPage,
       );
 
+      final newOperations = result['operations'] ?? [];
+      final newTotalCount = result['totalCount'] ?? 0;
+      
+      print('📊 Resultado de _loadOperations:');
+      print('  • isLoadMore: $isLoadMore');
+      print('  • Nuevas operaciones recibidas: ${newOperations.length}');
+      print('  • Total count del servidor: $newTotalCount');
+      print('  • Página actual: $_currentPage');
+      
       setState(() {
-        _operations = result['operations'] ?? [];
-        _totalCount = result['totalCount'] ?? 0;
+        if (isLoadMore) {
+          // Agregar nuevos datos a la lista existente
+          final oldLength = _operations.length;
+          _operations.addAll(newOperations);
+          print('  • Operaciones agregadas: ${newOperations.length}');
+          print('  • Total antes: $oldLength, Total después: ${_operations.length}');
+        } else {
+          // Reemplazar toda la lista (primera carga o búsqueda nueva)
+          _operations = newOperations;
+          print('  • Lista reemplazada con ${newOperations.length} operaciones');
+        }
+        _totalCount = newTotalCount;
         _hasNextPage = (_currentPage * _itemsPerPage) < _totalCount;
         _isLoading = false;
+        _isLoadingMore = false;
+        
+        print('  • _hasNextPage calculado: $_hasNextPage');
+        print('  • Cálculo: ($_currentPage * $_itemsPerPage) < $_totalCount = ${(_currentPage * _itemsPerPage)} < $_totalCount');
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al cargar operaciones: $e')),
         );
       }
     }
+  }
+
+  /// Método para cargar más operaciones (paginación)
+  Future<void> _loadMoreOperations() async {
+    print('🔄 _loadMoreOperations llamado');
+    print('  • _isLoadingMore: $_isLoadingMore');
+    print('  • _hasNextPage: $_hasNextPage');
+    print('  • _currentPage: $_currentPage');
+    print('  • Total operaciones actuales: ${_operations.length}');
+    print('  • _totalCount: $_totalCount');
+    
+    // Verificar si ya está cargando más datos o si no hay más páginas
+    if (_isLoadingMore || !_hasNextPage) {
+      if (_isLoadingMore) {
+        print('❌ Ya está cargando más datos, cancelando...');
+      }
+      if (!_hasNextPage) {
+        print('❌ No hay más páginas disponibles, cancelando...');
+      }
+      return;
+    }
+
+    print('📄 ✅ Condiciones cumplidas - Cargando página ${_currentPage + 1}...');
+    setState(() => _isLoadingMore = true);
+    
+    _currentPage++;
+    await _loadOperations(isLoadMore: true);
+    
+    print('✅ Página ${_currentPage} cargada exitosamente');
+    print('  • Total operaciones después de cargar: ${_operations.length}');
+    print('  • ¿Aún hay más páginas?: $_hasNextPage');
   }
 
   /// Método para el pull-to-refresh
@@ -444,14 +536,39 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                   ],
                 )
                 : ListView.builder(
+                  controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(16),
-                  itemCount: _operations.length,
+                  itemCount: _operations.length + (_isLoadingMore ? 1 : 0),
                   itemBuilder: (context, index) {
+                    if (index == _operations.length) {
+                      // Mostrar indicador de carga al final
+                      return _buildLoadingMoreIndicator();
+                    }
                     final operation = _operations[index];
                     return _buildOperationCard(operation);
                   },
                 ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingMoreIndicator() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      alignment: Alignment.center,
+      child: Column(
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 8),
+          Text(
+            'Cargando más operaciones...',
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 14,
+            ),
+          ),
+        ],
       ),
     );
   }

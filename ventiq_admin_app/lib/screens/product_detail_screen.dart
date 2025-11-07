@@ -2195,7 +2195,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               product: _product,
               onProductSaved: () {
                 // Refresh the product data after editing
-                Navigator.pop(context);
+                print('🔄 Producto editado, recargando datos...');
+                _loadAdditionalData();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Producto actualizado exitosamente'),

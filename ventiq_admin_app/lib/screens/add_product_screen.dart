@@ -133,8 +133,15 @@ class _AddProductScreenState extends State<AddProductScreen> {
           widget.product!.diasAlertCaducidad?.toString() ?? '';
       _codigoBarrasController.text = widget.product!.codigoBarras ?? '';
 
-      // Debug: Verificar carga de campos específicos
-      print('📝 Campos cargados para edición:');
+      // Debug: Verificar valores del modelo Product
+      print('🔍 Valores del modelo Product:');
+      print('  • denominacionCorta: "${widget.product!.denominacionCorta}"');
+      print('  • descripcionCorta: "${widget.product!.descripcionCorta}"');
+      print('  • codigoBarras: "${widget.product!.codigoBarras}"');
+      print('  • nombreComercial: "${widget.product!.nombreComercial}"');
+      
+      // Debug: Verificar carga de campos específicos en controladores
+      print('📝 Campos cargados en controladores:');
       print('  • Nombre comercial: "${_nombreComercialController.text}"');
       print('  • Denominación corta: "${_denominacionCortaController.text}"');
       print('  • Descripción corta: "${_descripcionCortaController.text}"');
@@ -1897,13 +1904,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
       throw Exception('No se encontró ID de tienda');
     }
 
+    // Validar campos requeridos antes de actualizar
+    if (_denominacionController.text.trim().isEmpty) {
+      throw Exception('La denominación del producto es requerida');
+    }
+    if (_selectedCategoryId == null) {
+      throw Exception('Debe seleccionar una categoría');
+    }
+
     // Preparar datos del producto para actualización
     final productoData = {
-      'id': productId,
       'id_tienda': idTienda,
-      'sku': _skuController.text,
+      // SKU no se actualiza en modo edición
       'id_categoria': _selectedCategoryId,
-      'denominacion': _denominacionController.text,
+      'denominacion': _denominacionController.text.trim(),
       'nombre_comercial': _nombreComercialController.text,
       'denominacion_corta': _denominacionCortaController.text,
       'descripcion': _descripcionController.text,
@@ -1934,21 +1948,28 @@ class _AddProductScreenState extends State<AddProductScreen> {
     
     // Debug: Verificar campos específicos antes de enviar
     print('📤 Campos específicos a actualizar:');
+    print('  • ID Tienda: ${productoData['id_tienda']}');
+    print('  • SKU: NO SE ACTUALIZA (preservado)');
+    print('  • ID Categoría: ${productoData['id_categoria']}');
+    print('  • Denominación: "${productoData['denominacion']}"');
     print('  • Nombre comercial: "${productoData['nombre_comercial']}"');
     print('  • Denominación corta: "${productoData['denominacion_corta']}"');
     print('  • Descripción corta: "${productoData['descripcion_corta']}"');
     print('  • Código de barras: "${productoData['codigo_barras']}"');
+    print('  • UM: "${productoData['um']}"');
+    print('  • Es elaborado: ${productoData['es_elaborado']}');
+    print('  • Es servicio: ${productoData['es_servicio']}');
 
     try {
       // Actualizar datos básicos del producto
+      print('🔄 Ejecutando actualización en app_dat_producto...');
       final updateResult = await _supabase
           .from('app_dat_producto')
           .update(productoData)
           .eq('id', productId);
       
       print('✅ Resultado de actualización: $updateResult');
-
-      print('✅ Datos básicos del producto actualizados');
+      print('✅ Datos básicos del producto actualizados exitosamente');
 
       // Actualizar subcategorías
       await _updateSubcategorias(productId);
@@ -2023,8 +2044,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       print('✅ Producto actualizado exitosamente');
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error actualizando producto: $e');
+      print('📍 StackTrace: $stackTrace');
+      
+      // Verificar si es un error específico de Supabase
+      if (e.toString().contains('PostgrestException')) {
+        print('🔍 Error de PostgreSQL detectado');
+        print('🔍 Detalles del error: ${e.toString()}');
+      }
+      
       throw Exception('Error actualizando producto: $e');
     }
 
