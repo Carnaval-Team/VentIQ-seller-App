@@ -51,6 +51,13 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   @override
   void initState() {
     super.initState();
+    
+    // Debug: Verificar el producto recibido en el diálogo
+    print('🎯 ProductQuantityDialog - Producto recibido:');
+    print('  - name: ${widget.product.name}');
+    print('  - sku: "${widget.product.sku}"');
+    print('  - sku.isEmpty: ${widget.product.sku.isEmpty}');
+    
     _finalCurrency = widget.invoiceCurrency;
     _initializeVariantsAndPresentations();
     _loadLastPurchasePrice();
@@ -320,13 +327,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                             color: AppColors.textPrimary,
                           ),
                         ),
-                        Text(
-                          widget.product.name,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
+                       
                         // ← NUEVO: Mostrar moneda de factura
                         Container(
                           margin: EdgeInsets.only(top: 4),
