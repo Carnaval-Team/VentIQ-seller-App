@@ -522,7 +522,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                 searchType: ProductSearchType.all,
                 requireInventory: false, // ✅ Permite productos sin inventario
                 searchHint: 'Buscar productos para recibir...',
-                onProductSelected: (productData) {
+                onProductSelected: (productData) {                  
                   // Convertir Map a Product para mantener compatibilidad
                   final product = Product(
                     id: productData['id']?.toString() ?? '',
@@ -538,7 +538,7 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                     categoryId: productData['id_categoria']?.toString() ?? '',
                     categoryName: productData['categoria_nombre'] ?? '',
                     brand: '', // No disponible en nueva estructura
-                    sku: productData['sku_producto'] ?? '',
+                    sku: productData['sku_producto'] ?? productData['sku'] ?? '',
                     barcode: productData['codigo_barras'] ?? '',
                     basePrice:
                         (productData['precio_venta_cup'] as num?)?.toDouble() ??
@@ -563,6 +563,13 @@ class _InventoryReceptionScreenState extends State<InventoryReceptionScreen> {
                             ?.cast<Map<String, dynamic>>() ??
                         [],
                   );
+                  
+                  // Debug: Verificar el objeto Product creado
+                  print('✅ Product creado:');
+                  print('  - name: ${product.name}');
+                  print('  - sku: "${product.sku}"');
+                  print('  - sku.isEmpty: ${product.sku.isEmpty}');
+                  
                   _addProductToReception(product);
                 },
               ),
