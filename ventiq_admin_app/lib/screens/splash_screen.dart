@@ -28,7 +28,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
       if (hasValidSession) {
         print('✅ Valid admin session found, navigating to dashboard...');
-        Navigator.of(context).pushReplacementNamed('/dashboard');
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/dashboard',
+          (route) => false,
+        );
       } else {
         print('❌ No valid session found, navigating to login...');
         Navigator.of(context).pushReplacementNamed('/login');
@@ -46,22 +49,16 @@ class _SplashScreenState extends State<SplashScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // Logo
-              ColorFiltered(
-                colorFilter: const ColorFilter.mode(
-                  Colors.white,
-                  BlendMode.srcIn,
-                ),
-                child: Image.asset(
-                  'assets/images/ventas_admin.png',
-                  width: 120,
-                  height: 120,
-                  fit: BoxFit.contain,
-                ),
+              Image.asset(
+                'assets/images/inventia.png',
+                width: 120,
+                height: 120,
+                fit: BoxFit.contain,
               ),
               const SizedBox(height: 32),
               // App name
               const Text(
-                'Vendedor Cuba Admin',
+                'Inventtia Admin',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 28,
@@ -87,7 +84,7 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 24),
               // Loading text
               const Text(
-                'Iniciando Vendedor Cuba Admin...',
+                'Iniciando Inventtia Admin...',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,

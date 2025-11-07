@@ -76,6 +76,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -97,6 +98,7 @@ flutter:
     - assets/no_image_g.png
     - assets/no_image.png
     - assets/Lk1KNR.png
+    - assets/ic.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -123,3 +125,22 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/ic.png"
+  min_sdk_android: 21
+  # Configuración para evitar recorte
+  adaptive_icon_background: "#194B8C"  # Color sólido que coincide con tu tema
+  adaptive_icon_foreground: "assets/ic.png"
+  remove_alpha_ios: true
+  # Solo generar tamaños necesarios
+  android_13_icon: true
+  # Configuración adicional para evitar recorte
+  web:
+    generate: false
+  windows:
+    generate: false
+  macos:
+    generate: false

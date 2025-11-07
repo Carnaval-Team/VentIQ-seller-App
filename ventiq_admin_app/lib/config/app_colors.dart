@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 /// Colores consistentes de VentIQ basados en la app principal
 class AppColors {
   // Colores principales
-  static const Color primary = Color(0xFF4A90E2);
-  static const Color primaryDark = Color(0xFF357ABD);
+  static const Color primary = Color(0xFF194B8C);
+  static const Color primaryDark = Color(0xFF123A6B);
   static const Color secondary = Color(0xFF6B7280);
   static const Color background = Color(0xFFF8F9FA);
 

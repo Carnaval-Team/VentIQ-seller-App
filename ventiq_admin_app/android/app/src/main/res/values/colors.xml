@@ -3,4 +3,5 @@
     <!-- VentIQ Brand Colors -->
     <color name="ventiq_blue">#4A90E2</color>
     <color name="ventiq_blue_dark">#357ABD</color>
+	<color name="ic_launcher_background">#194B8C</color>
 </resources>

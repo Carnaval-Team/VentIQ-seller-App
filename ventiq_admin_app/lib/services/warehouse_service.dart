@@ -1,6 +1,5 @@
 import '../models/warehouse.dart';
 import '../models/store.dart';
-import 'mock_data_service.dart';
 import 'user_preferences_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -82,23 +81,7 @@ class WarehouseService {
     } catch (e, stackTrace) {
       print('❌ ERROR en listWarehousesWithPagination: $e');
       print('📍 Stack trace: $stackTrace');
-      print('🔄 Usando datos mock como fallback...');
-
-      // Fallback a datos mock
-      final mockWarehouses = MockDataService.getMockWarehouses();
-      print('🤖 Datos mock cargados: ${mockWarehouses.length} almacenes');
-
-      return WarehousePaginationResponse(
-        almacenes: mockWarehouses,
-        paginacion: WarehousePagination(
-          paginaActual: pagina,
-          porPagina: porPagina,
-          totalPaginas: 1,
-          totalAlmacenes: mockWarehouses.length,
-          tieneSiguiente: false,
-          tieneAnterior: false,
-        ),
-      );
+      rethrow;
     } finally {
       print('🏁 === FIN listWarehousesWithPagination ===');
     }
@@ -119,21 +102,8 @@ class WarehouseService {
       );
       return response.almacenes;
     } catch (e) {
-      print('⚠️ Error en listWarehouses, usando datos mock: $e');
-      // Fallback a datos mock en caso de error
-      final all = MockDataService.getMockWarehouses();
-      final filtered =
-          all.where((w) {
-            final byStore =
-                storeId == null || storeId.isEmpty || storeId == 'all';
-            final bySearch =
-                search == null || search.trim().isEmpty
-                    ? true
-                    : w.name.toLowerCase().contains(search.toLowerCase());
-            return byStore && bySearch;
-          }).toList();
-      await Future.delayed(const Duration(milliseconds: 250));
-      return filtered;
+      print('❌ Error en listWarehouses: $e');
+      rethrow;
     }
   }
 
@@ -228,10 +198,7 @@ class WarehouseService {
       return warehouse;
     } catch (e) {
       print('❌ Error en getWarehouseDetail: $e');
-      // Fallback a datos mock en caso de error
-      final all = MockDataService.getMockWarehouses();
-      final w = all.firstWhere((e) => e.id == id, orElse: () => all.first);
-      return w;
+      rethrow;
     }
   }
 
@@ -807,26 +774,16 @@ class WarehouseService {
       print('🔍 Respuesta tipos layout: $response');
 
       if (response == null) {
-        print('⚠️ Respuesta nula, usando datos mock');
-        return _getMockTiposLayout();
+        throw Exception('No se pudo obtener tipos de layout del servidor');
       }
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
-      print('Error obteniendo tipos layout: $e');
-      return _getMockTiposLayout();
+      print('❌ Error obteniendo tipos layout: $e');
+      rethrow;
     }
   }
 
-  List<Map<String, dynamic>> _getMockTiposLayout() {
-    return [
-      {'id': 1, 'denominacion': 'Almacenamiento', 'sku_codigo': 'ALM'},
-      {'id': 2, 'denominacion': 'Picking', 'sku_codigo': 'PICK'},
-      {'id': 3, 'denominacion': 'Expedición', 'sku_codigo': 'EXP'},
-      {'id': 4, 'denominacion': 'Recepción', 'sku_codigo': 'REC'},
-      {'id': 5, 'denominacion': 'Cuarentena', 'sku_codigo': 'CUAR'},
-    ];
-  }
 
   /// Obtiene condiciones disponibles desde Supabase
   Future<List<Map<String, dynamic>>> getCondiciones() async {
@@ -838,61 +795,16 @@ class WarehouseService {
       print('🔍 Respuesta condiciones: $response');
 
       if (response == null) {
-        print('⚠️ Respuesta nula, usando datos mock');
-        return _getMockCondiciones();
+        throw Exception('No se pudo obtener condiciones del servidor');
       }
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('❌ Error obteniendo condiciones: $e');
-      return _getMockCondiciones();
+      rethrow;
     }
   }
 
-  List<Map<String, dynamic>> _getMockCondiciones() {
-    return [
-      {
-        'id': 1,
-        'denominacion': 'Refrigerado',
-        'descripcion': 'Requiere refrigeración',
-        'es_refrigerado': true,
-        'es_fragil': false,
-        'es_peligroso': false,
-      },
-      {
-        'id': 2,
-        'denominacion': 'Frágil',
-        'descripcion': 'Productos frágiles',
-        'es_refrigerado': false,
-        'es_fragil': true,
-        'es_peligroso': false,
-      },
-      {
-        'id': 3,
-        'denominacion': 'Peligroso',
-        'descripcion': 'Materiales peligrosos',
-        'es_refrigerado': false,
-        'es_fragil': false,
-        'es_peligroso': true,
-      },
-      {
-        'id': 4,
-        'denominacion': 'Seco',
-        'descripcion': 'Ambiente seco',
-        'es_refrigerado': false,
-        'es_fragil': false,
-        'es_peligroso': false,
-      },
-      {
-        'id': 5,
-        'denominacion': 'Ventilado',
-        'descripcion': 'Requiere ventilación',
-        'es_refrigerado': false,
-        'es_fragil': false,
-        'es_peligroso': false,
-      },
-    ];
-  }
 
   /// Obtiene productos filtrados por tienda desde Supabase
   Future<List<Map<String, dynamic>>> getProductos() async {
@@ -911,15 +823,8 @@ class WarehouseService {
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
-      print('Error obteniendo productos: $e');
-      // Fallback a datos mock
-      return [
-        {'id': 1, 'denominacion': 'Coca Cola 350ml', 'sku': 'COCA350'},
-        {'id': 2, 'denominacion': 'Pan Integral', 'sku': 'PAN001'},
-        {'id': 3, 'denominacion': 'Leche Entera 1L', 'sku': 'LECHE1L'},
-        {'id': 4, 'denominacion': 'Arroz Blanco 1kg', 'sku': 'ARROZ1K'},
-        {'id': 5, 'denominacion': 'Aceite Vegetal 1L', 'sku': 'ACEITE1L'},
-      ];
+      print('❌ Error obteniendo productos: $e');
+      rethrow;
     }
   }
 
@@ -1027,78 +932,10 @@ class WarehouseService {
       return products;
     } catch (e) {
       print('❌ Error obteniendo productos del layout con RPC: $e');
-      return _getMockProductosLayout(layoutId);
+      rethrow;
     }
   }
 
-  List<Map<String, dynamic>> _getMockProductosLayout(String layoutId) {
-    // Simular diferentes productos según el layout
-    final mockProducts = {
-      '1': [
-        {
-          'id': 1,
-          'denominacion': 'Coca Cola 350ml',
-          'sku': 'COCA350',
-          'stock_actual': 150,
-          'stock_minimo': 50,
-          'stock_maximo': 300,
-          'ubicacion': 'A1-B2-C3',
-          'lote': 'L001',
-          'fecha_vencimiento': '2024-12-31',
-        },
-        {
-          'id': 2,
-          'denominacion': 'Pepsi 350ml',
-          'sku': 'PEPSI350',
-          'stock_actual': 89,
-          'stock_minimo': 30,
-          'stock_maximo': 200,
-          'ubicacion': 'A1-B3-C1',
-          'lote': 'L002',
-          'fecha_vencimiento': '2024-11-15',
-        },
-      ],
-      '2': [
-        {
-          'id': 3,
-          'denominacion': 'Leche Entera 1L',
-          'sku': 'LECHE1L',
-          'stock_actual': 45,
-          'stock_minimo': 20,
-          'stock_maximo': 100,
-          'ubicacion': 'B1-A2-C1',
-          'lote': 'L003',
-          'fecha_vencimiento': '2024-10-20',
-        },
-      ],
-      '3': [
-        {
-          'id': 4,
-          'denominacion': 'Arroz Blanco 1kg',
-          'sku': 'ARROZ1K',
-          'stock_actual': 200,
-          'stock_minimo': 100,
-          'stock_maximo': 500,
-          'ubicacion': 'C1-A1-B1',
-          'lote': 'L004',
-          'fecha_vencimiento': '2025-06-30',
-        },
-        {
-          'id': 5,
-          'denominacion': 'Aceite Vegetal 1L',
-          'sku': 'ACEITE1L',
-          'stock_actual': 75,
-          'stock_minimo': 25,
-          'stock_maximo': 150,
-          'ubicacion': 'C1-A2-B3',
-          'lote': 'L005',
-          'fecha_vencimiento': '2025-03-15',
-        },
-      ],
-    };
-
-    return mockProducts[layoutId] ?? [];
-  }
 
   /// Registrar o actualizar un layout usando RPC
   Future<Map<String, dynamic>?> registerOrUpdateLayout({

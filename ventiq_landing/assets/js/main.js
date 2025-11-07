@@ -159,9 +159,9 @@ function initDownloadButtons() {
                               this.textContent.toLowerCase().includes('móvil');
             
             if (isSellerApp) {
-                showDownloadModal('Vendedor Cuba', 'seller');
+                showDownloadModal('Inventtia', 'seller');
             } else {
-                showDownloadModal('Vendedor Cuba Admin', 'admin');
+                showDownloadModal('Inventtia Admin', 'admin');
             }
         });
     });
@@ -214,7 +214,7 @@ function showDownloadModal(appName, appType) {
                         <p>Acceso directo desde navegador</p>
                         <button class="btn btn-primary" onclick="openWebApp('seller')">
                             <i class="fas fa-external-link-alt"></i>
-                            Abrir Vendedor Cuba Web
+                            Abrir Inventtia Web
                         </button>
                     </div>
                 </div>
@@ -252,7 +252,7 @@ function showDownloadModal(appName, appType) {
                         <p>Acceso directo desde navegador</p>
                         <button class="btn btn-primary" onclick="openWebApp('admin')">
                             <i class="fas fa-external-link-alt"></i>
-                            Abrir Vendedor Cuba Admin
+                            Abrir Inventtia Admin
                         </button>
                     </div>
                 </div>
@@ -449,25 +449,25 @@ function closeDownloadModal() {
 // Download app functions
 function downloadApp(platform) {
     if (platform === 'android-seller') {
-        showNotification('Descarga iniciada', 'La descarga del APK de Vendedor Cuba comenzará en breve.', 'success');
+        showNotification('Descarga iniciada', 'La descarga del APK de Inventtia comenzará en breve.', 'success');
         window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20cuba.apk', '_blank');
     } else if (platform === 'ios-seller') {
-        showNotification('Próximamente', 'Vendedor Cuba para iOS estará disponible pronto.', 'info');
+        showNotification('Próximamente', 'Inventtia para iOS estará disponible pronto.', 'info');
     } else if (platform === 'android-admin') {
-        showNotification('Descarga iniciada', 'La descarga del APK de Vendedor Cuba Admin comenzará en breve.', 'success');
+        showNotification('Descarga iniciada', 'La descarga del APK de Inventtia Admin comenzará en breve.', 'success');
         window.open('https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20admin.apk', '_blank');
     } else if (platform === 'ios-admin') {
-        showNotification('Próximamente', 'Vendedor Cuba Admin para iOS estará disponible pronto.', 'info');
+        showNotification('Próximamente', 'Inventtia Admin para iOS estará disponible pronto.', 'info');
     }
     closeDownloadModal();
 }
 
 function openWebApp(appType) {
     if (appType === 'seller') {
-        showNotification('Abriendo aplicación...', 'Vendedor Cuba Web se abrirá en una nueva pestaña.', 'info');
+        showNotification('Abriendo aplicación...', 'Inventtia Web se abrirá en una nueva pestaña.', 'info');
         window.open('https://ventiq-seller.appwrite.network', '_blank');
     } else {
-        showNotification('Abriendo aplicación...', 'Vendedor Cuba Admin se abrirá en una nueva pestaña.', 'info');
+        showNotification('Abriendo aplicación...', 'Inventtia Admin se abrirá en una nueva pestaña.', 'info');
         window.open('https://vendedor-admin.appwrite.network', '_blank');
     }
     closeDownloadModal();

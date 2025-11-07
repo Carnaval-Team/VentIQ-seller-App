@@ -1,4 +1,4 @@
-# Vendedor Cuba Admin App
+# Inventtia Admin App
 
 Sistema de administración completo para VentIQ que permite gestionar productos, inventarios, ventas, finanzas y más.
 

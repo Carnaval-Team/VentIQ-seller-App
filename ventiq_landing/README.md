@@ -1,6 +1,6 @@
 # VentIQ Landing Page
 
-Landing page promocional para las aplicaciones VentIQ Seller App y Vendedor Cuba Admin Web.
+Landing page promocional para las aplicaciones VentIQ Seller App y Inventtia Admin Web.
 
 ## 🚀 Características
 
@@ -47,7 +47,7 @@ Landing page promocional para las aplicaciones VentIQ Seller App y Vendedor Cuba
 
 ##### Categorías Interactivas
 - **VentIQ Seller App**: Tutoriales para vendedores
-- **Vendedor Cuba Admin Web**: Tutoriales para administradores
+- **Inventtia Admin Web**: Tutoriales para administradores
 - Switching dinámico entre categorías
 
 ##### Tutoriales Implementados
@@ -208,7 +208,7 @@ php -S localhost:8000
 - **CSS Variables**: Compatibilidad moderna
 
 ### Recursos Utilizados
-- Colores basados en `app_colors.dart` de Vendedor Cuba Admin
+- Colores basados en `app_colors.dart` de Inventtia Admin
 - Iconos y assets copiados de las aplicaciones
 - Estructura inspirada en las pantallas existentes
 

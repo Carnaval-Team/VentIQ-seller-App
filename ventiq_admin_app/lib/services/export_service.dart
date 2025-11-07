@@ -19,7 +19,7 @@ import 'web_download_stub.dart'
   if (dart.library.html) 'web_download_web.dart' as web_download;
 
 class ExportService {
-  static const String _appName = 'Vendedor Cuba Admin';
+  static const String _appName = 'Inventtia Admin';
   
   // Cache para las fuentes
   static pw.Font? _regularFont;
