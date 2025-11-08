@@ -218,6 +218,7 @@ class InventoryService {
     String? busqueda,
     DateTime? fechaDesde,
     DateTime? fechaHasta,
+    int? tipoOperacionId,
     int? limite,
     int? pagina,
   }) async {
@@ -242,7 +243,7 @@ class InventoryService {
         params: {
           'p_id_tienda': idTienda,
           'p_id_tpv': null,
-          'p_id_tipo_operacion': null,
+          'p_id_tipo_operacion': tipoOperacionId,
           'p_estados': null,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
           'p_fecha_hasta': fechaHasta?.toIso8601String().split('T')[0],

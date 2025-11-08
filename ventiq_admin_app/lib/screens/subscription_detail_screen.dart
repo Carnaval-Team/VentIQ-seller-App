@@ -88,6 +88,13 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          // Mostrar botón de dashboard si hay suscripción activa
+          if (_activeSubscription != null && _activeSubscription!.isActive)
+            IconButton(
+              onPressed: _navigateToDashboard,
+              icon: const Icon(Icons.dashboard, color: Colors.white),
+              tooltip: 'Ir al Dashboard',
+            ),
           // Mostrar botón de logout si no hay suscripción activa
           if (_activeSubscription == null || !_activeSubscription!.isActive)
             IconButton(
@@ -114,6 +121,11 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                     ],
                     
                     if (_activeSubscription != null) ...[
+                      // Mostrar mensaje de bienvenida si la suscripción está activa
+                      if (_activeSubscription!.isActive) ...[
+                        _buildWelcomeCard(),
+                        const SizedBox(height: 16),
+                      ],
                       _buildActiveSubscriptionCard(),
                       const SizedBox(height: 24),
                       _buildFeaturesCard(),
@@ -128,6 +140,93 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildWelcomeCard() {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            colors: [
+              AppColors.success.withOpacity(0.1),
+              AppColors.primary.withOpacity(0.05),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              Icons.check_circle,
+              size: 48,
+              color: AppColors.success,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '¡Suscripción Activa!',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tu suscripción está activa y puedes acceder a todas las funcionalidades del sistema.',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _navigateToDashboard,
+                    icon: const Icon(Icons.dashboard, size: 18),
+                    label: const Text('Ir al Dashboard'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _loadSubscriptionData,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Actualizar'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: BorderSide(color: AppColors.primary),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -347,6 +446,34 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ],
+
+            // Botón para navegar al dashboard si la suscripción está activa
+            if (subscription.isActive) ...[
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _navigateToDashboard,
+                  icon: const Icon(Icons.dashboard, size: 20),
+                  label: const Text(
+                    'Ir al Dashboard',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 2,
+                  ),
                 ),
               ),
             ],
@@ -880,6 +1007,26 @@ Gracias,''';
         backgroundColor: AppColors.success,
       ),
     );
+  }
+
+  /// Navegar al dashboard cuando hay suscripción activa
+  void _navigateToDashboard() {
+    // Verificar nuevamente que la suscripción esté activa antes de navegar
+    if (_activeSubscription != null && _activeSubscription!.isActive) {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/dashboard',
+        (route) => false,
+      );
+    } else {
+      // Si por alguna razón la suscripción no está activa, mostrar mensaje
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tu suscripción no está activa. No puedes acceder al dashboard.'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+    }
   }
 
 
