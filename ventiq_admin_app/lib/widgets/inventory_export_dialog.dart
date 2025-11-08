@@ -34,6 +34,9 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   bool _includeNombreCorto = false;
   bool _includeMarca = false;
   bool _includeDescripcionCorta = false;
+  
+  // Opciones de filtrado
+  bool _includeZeroStock = false; // Incluir productos con stock cero
 
   @override
   void initState() {
@@ -119,6 +122,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         idTienda: storeId,
         fechaDesde: _selectedDate,
         fechaHasta: _selectedDateTo,
+        includeZero: _includeZeroStock,
       );
 
       if (inventoryData.isEmpty) {
@@ -589,6 +593,44 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             onChanged: (value) {
                               setState(() {
                                 _includeDescripcionCorta = value ?? false;
+                              });
+                            },
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          
+                          const Divider(height: 24),
+                          
+                          // Sección de filtros
+                          const Text(
+                            'Opciones de Filtrado',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          
+                          CheckboxListTile(
+                            title: const Text(
+                              'Incluir productos con stock cero',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Mostrar productos que tienen registro en inventario pero sin stock actual',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            value: _includeZeroStock,
+                            onChanged: (value) {
+                              setState(() {
+                                _includeZeroStock = value ?? false;
                               });
                             },
                             activeColor: AppColors.primary,
