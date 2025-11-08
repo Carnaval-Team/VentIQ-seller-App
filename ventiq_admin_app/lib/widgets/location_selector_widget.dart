@@ -64,24 +64,43 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
       final warehouseService = WarehouseService();
       final warehouses = await warehouseService.listWarehouses();
 
+      print('🏢 === DEBUGGING LocationSelectorWidget ===');
+      print('🏢 Almacenes recibidos: ${warehouses.length}');
+      
       // Flatten all zones from all warehouses
       List<WarehouseZone> allLocations = [];
       for (final warehouse in warehouses) {
-        for (final zone in warehouse.zones) {
-          final zoneWithWarehouse = WarehouseZone(
-            id: zone.id, // ← ID único
-            warehouseId: warehouse.id,
-            name: zone.name,
-            code: zone.code,
-            type: zone.type,
-            conditions: zone.conditions,
-            capacity: zone.capacity,
-            currentOccupancy: zone.currentOccupancy,
-            locations: zone.locations,
-            conditionCodes: zone.conditionCodes,
-          );
-          allLocations.add(zoneWithWarehouse);
+        print('🏢 Almacén: ${warehouse.name} (ID: ${warehouse.id})');
+        print('🏢   - Zones: ${warehouse.zones.length}');
+        print('🏢   - Layouts: ${warehouse.layouts.length}');
+        
+        if (warehouse.zones.isEmpty) {
+          print('🏢   ⚠️ Almacén sin zonas - requiere configuración');
+          // No crear zona por defecto, mostrar error en su lugar
+        } else {
+          // Procesar zonas existentes
+          for (final zone in warehouse.zones) {
+            print('🏢   - Zona: ${zone.name} (ID: ${zone.id}, Código: ${zone.code})');
+            final zoneWithWarehouse = WarehouseZone(
+              id: zone.id, // ← ID único
+              warehouseId: warehouse.id,
+              name: zone.name,
+              code: zone.code,
+              type: zone.type,
+              conditions: zone.conditions,
+              capacity: zone.capacity,
+              currentOccupancy: zone.currentOccupancy,
+              locations: zone.locations,
+              conditionCodes: zone.conditionCodes,
+            );
+            allLocations.add(zoneWithWarehouse);
+          }
         }
+      }
+      
+      print('🏢 Total ubicaciones disponibles: ${allLocations.length}');
+      for (final location in allLocations) {
+        print('🏢   - ${location.name} (${location.id}) - Almacén: ${_getWarehouseName(location.warehouseId)}');
       }
 
       setState(() {
@@ -139,6 +158,27 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
           ),
     );
     return warehouse.name;
+  }
+
+  void _navigateToWarehouses(BuildContext context) {
+    try {
+      print('🏢 Navegando a la vista de almacenes...');
+      Navigator.of(context).pushNamed('/warehouses');
+    } catch (e) {
+      print('❌ Error al navegar a almacenes: $e');
+      // Fallback: mostrar mensaje si la navegación falla
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo abrir la vista de almacenes'),
+          backgroundColor: AppColors.error,
+          action: SnackBarAction(
+            label: 'Cerrar',
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
+        ),
+      );
+    }
   }
 
   Widget _buildLocationDropdown({
@@ -455,6 +495,65 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
                       ),
                     ],
                   ),
+                ),
+              )
+            else if (_allLocations.isEmpty)
+              // No locations available - warehouses exist but no zones configured
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.settings_outlined, color: AppColors.error, size: 32),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Configuración de zonas pendiente',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.error,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Los almacenes encontrados no tienen zonas configuradas. Es necesario configurar las zonas/layouts antes de poder realizar operaciones de inventario.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _loadWarehouses,
+                          icon: Icon(Icons.refresh, size: 18),
+                          label: Text('Recargar'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.textSecondary,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () => _navigateToWarehouses(context),
+                          icon: Icon(Icons.warehouse, size: 18),
+                          label: Text('Configurar Almacenes'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               )
             else if (widget.type == LocationSelectorType.single)
