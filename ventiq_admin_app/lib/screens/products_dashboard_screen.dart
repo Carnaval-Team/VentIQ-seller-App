@@ -7,6 +7,7 @@ import '../widgets/products_charts_widget.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../widgets/admin_drawer.dart';
 import '../utils/number_formatter.dart';
+import '../utils/navigation_guard.dart';
 
 class ProductsDashboardScreen extends StatefulWidget {
   const ProductsDashboardScreen({super.key});
@@ -283,7 +284,7 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
       floatingActionButton:
           _tabController.index == 0 && _canCreateProduct
               ? FloatingActionButton.extended(
-                onPressed: () => Navigator.pushNamed(context, '/add-product'),
+                onPressed: () => NavigationGuard.navigateWithPermission(context, '/add-product'),
                 backgroundColor: AppColors.primary,
                 icon: const Icon(Icons.add, color: Colors.white),
                 label: const Text(
@@ -310,9 +311,9 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
             ProductsQuickActions(
               onAddProduct:
                   _canCreateProduct
-                      ? () => Navigator.pushNamed(context, '/add-product')
+                      ? () => NavigationGuard.navigateWithPermission(context, '/add-product')
                       : null,
-              onViewAll: () => Navigator.pushNamed(context, '/products'),
+              onViewAll: () => NavigationGuard.navigateWithPermission(context, '/products'),
               onViewAlerts:
                   () => _tabController.animateTo(2), // Cambiar de 2 a 3
               onViewReports: () => _tabController.animateTo(1), // Mantener en 1
@@ -818,7 +819,7 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
             'Acceder a la gestión de productos',
             Icons.list,
             AppColors.primary,
-            () => Navigator.pushNamed(context, '/products'),
+            () => NavigationGuard.navigateWithPermission(context, '/products'),
           ),
           const SizedBox(height: 12),
           _buildActionButton(
@@ -826,7 +827,7 @@ class _ProductsDashboardScreenState extends State<ProductsDashboardScreen>
             'Crear un nuevo producto',
             Icons.add,
             AppColors.success,
-            () => Navigator.pushNamed(context, '/add-product'),
+            () => NavigationGuard.navigateWithPermission(context, '/add-product'),
           ),
         ],
       ),

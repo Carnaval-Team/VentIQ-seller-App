@@ -50,6 +50,7 @@ class StoreConfigService {
     bool? needMasterPasswordToCancel,
     bool? needAllOrdersCompletedToContinue,
     String? masterPassword,
+    bool? manejaInventario,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -72,6 +73,11 @@ class StoreConfigService {
         final digest = sha256.convert(bytes);
         updateData['master_password'] = digest.toString();
         print('  - master_password: [ENCRIPTADA]');
+      }
+      
+      if (manejaInventario != null) {
+        updateData['maneja_inventario'] = manejaInventario;
+        print('  - maneja_inventario: $manejaInventario');
       }
 
       if (updateData.isEmpty) {
@@ -150,5 +156,21 @@ class StoreConfigService {
       print('❌ Error al verificar master_password: $e');
       return false;
     }
+  }
+
+  /// Obtiene solo el valor de maneja_inventario
+  static Future<bool> getManejaInventario(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['maneja_inventario'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener maneja_inventario: $e');
+      return false; // Valor por defecto en caso de error
+    }
+  }
+
+  /// Actualiza solo maneja_inventario
+  static Future<void> updateManejaInventario(int storeId, bool value) async {
+    await updateStoreConfig(storeId, manejaInventario: value);
   }
 }

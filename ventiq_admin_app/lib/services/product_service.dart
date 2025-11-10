@@ -1,6 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import '../models/product.dart';
 import 'user_preferences_service.dart';
 import 'store_selector_service.dart';
@@ -1905,6 +1907,100 @@ class ProductService {
       print('❌ Error obteniendo productos que usan este ingrediente: $e');
       print('📍 StackTrace: $stackTrace');
       return [];
+    }
+  }
+
+  /// Sube una imagen al bucket de Supabase Storage para productos
+  static Future<String?> _uploadProductImage(Uint8List imageBytes, String fileName) async {
+    try {
+      debugPrint('📤 Subiendo imagen de producto: $fileName');
+      
+      // Generar nombre único para evitar conflictos
+      final uniqueFileName = 'product_${DateTime.now().millisecondsSinceEpoch}_$fileName';
+      
+      // Subir imagen al bucket 'images_back' con opciones específicas
+      final response = await _supabase.storage
+          .from('images_back')
+          .uploadBinary(
+            uniqueFileName, 
+            imageBytes,
+            fileOptions: const FileOptions(
+              cacheControl: '3600',
+              upsert: true, // Permite sobrescribir si existe
+            ),
+          );
+
+      if (response.isEmpty) {
+        throw Exception('Error al subir imagen');
+      }
+
+      // Obtener URL pública de la imagen
+      final imageUrl = _supabase.storage
+          .from('images_back')
+          .getPublicUrl(uniqueFileName);
+
+      debugPrint('✅ Imagen de producto subida exitosamente: $imageUrl');
+      return imageUrl;
+    } catch (e) {
+      debugPrint('❌ Error al subir imagen de producto: $e');
+      
+      // Si falla con RLS, intentar continuar sin imagen
+      if (e.toString().contains('row-level security policy')) {
+        debugPrint('⚠️ Error de permisos RLS - continuando sin imagen');
+        return null;
+      }
+      
+      return null;
+    }
+  }
+
+  /// Actualiza la imagen de un producto en la base de datos
+  static Future<bool> updateProductImage({
+    required String productId,
+    required Uint8List imageBytes,
+    required String imageFileName,
+  }) async {
+    try {
+      debugPrint('🖼️ Actualizando imagen del producto ID: $productId');
+      
+      // Subir nueva imagen
+      final imageUrl = await _uploadProductImage(imageBytes, imageFileName);
+      if (imageUrl == null) {
+        throw Exception('Error al subir la imagen');
+      }
+
+      // Actualizar el producto con la nueva URL de imagen
+      await _supabase
+          .from('app_dat_producto')
+          .update({'imagen': imageUrl})
+          .eq('id', productId);
+
+      debugPrint('✅ Imagen del producto actualizada exitosamente');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error al actualizar imagen del producto: $e');
+      return false;
+    }
+  }
+
+  /// Elimina la imagen de un producto (establece la URL como vacía)
+  static Future<bool> removeProductImage({
+    required String productId,
+  }) async {
+    try {
+      debugPrint('🗑️ Eliminando imagen del producto ID: $productId');
+      
+      // Actualizar el producto con imagen vacía
+      await _supabase
+          .from('app_dat_producto')
+          .update({'imagen': ''})
+          .eq('id', productId);
+
+      debugPrint('✅ Imagen del producto eliminada exitosamente');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error al eliminar imagen del producto: $e');
+      return false;
     }
   }
 }

@@ -218,6 +218,7 @@ class InventoryService {
     String? busqueda,
     DateTime? fechaDesde,
     DateTime? fechaHasta,
+    int? tipoOperacionId,
     int? limite,
     int? pagina,
   }) async {
@@ -242,7 +243,7 @@ class InventoryService {
         params: {
           'p_id_tienda': idTienda,
           'p_id_tpv': null,
-          'p_id_tipo_operacion': null,
+          'p_id_tipo_operacion': tipoOperacionId,
           'p_estados': null,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
           'p_fecha_hasta': fechaHasta?.toIso8601String().split('T')[0],
@@ -1923,16 +1924,18 @@ class InventoryService {
     int? idTienda,
     DateTime? fechaHasta,
     DateTime? fechaDesde,
+    bool includeZero = false,
   }) async {
     try {
-      print('🔍 Calling obtener_reporte_inventario with params:');
+      print('🔍 Calling obtener_reporte_inventario_completo_con_ceros with params:');
       print('  - idAlmacen: $idAlmacen');
       print('  - idTienda: $idTienda');
       print('  - fechaDesde: ${fechaDesde?.toIso8601String().split('T')[0]}');
       print('  - fechaHasta: ${fechaHasta != null ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59' : null}');
+      print('  - includeZero: $includeZero');
 
       final response = await _supabase.rpc(
-        'obtener_reporte_inventario_completo',
+        'obtener_reporte_inventario_completo2',
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
@@ -1940,6 +1943,7 @@ class InventoryService {
               ? '${fechaHasta.toIso8601String().split('T')[0]} 23:59:59'
               : null,
           'p_id_almacen': idAlmacen,
+          'p_include_zero': includeZero,
         },
       );
 

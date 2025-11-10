@@ -1006,4 +1006,66 @@ class WarehouseService {
       };
     }
   }
+
+  /// Inicializar inventario de productos faltantes en un almacén
+  Future<Map<String, dynamic>> initializeInventoryMissingProducts({
+    required String warehouseId,
+  }) async {
+    try {
+      print('🔄 === INICIO initializeInventoryMissingProducts ===');
+      print('🔄 Warehouse ID: $warehouseId');
+
+      // Obtener UUID del usuario para la función
+      final userId = await _prefsService.getUserId();
+      if (userId == null) {
+        throw Exception('No se encontró el ID de usuario');
+      }
+      print('✅ Usuario ID obtenido: $userId');
+
+      final response = await _supabase.rpc(
+        'fn_inicializar_inventario_productos_faltantes',
+        params: {
+          'p_id_almacen': int.tryParse(warehouseId) ?? 0,
+          'p_uuid_usuario': userId,
+        },
+      );
+
+      print('🔄 Respuesta RPC: $response');
+
+      if (response == null || response.isEmpty) {
+        print('❌ Respuesta vacía del RPC');
+        return {
+          'success': false,
+          'message': 'No se recibió respuesta del servidor',
+          'error': true,
+        };
+      }
+
+      // La función devuelve: productos_procesados, productos_insertados, detalles
+      final result = response[0];
+      final productosProcessados = result['productos_procesados'] ?? 0;
+      final productosInsertados = result['productos_insertados'] ?? 0;
+      final detalles = result['detalles'] ?? [];
+
+      print('✅ Resultado:');
+      print('  - Productos procesados: $productosProcessados');
+      print('  - Productos insertados: $productosInsertados');
+      print('  - Detalles: ${detalles.length} registros');
+
+      return {
+        'success': true,
+        'productos_procesados': productosProcessados,
+        'productos_insertados': productosInsertados,
+        'detalles': detalles,
+        'message': 'Inicialización completada: $productosInsertados de $productosProcessados productos procesados',
+      };
+    } catch (e) {
+      print('❌ Error en initializeInventoryMissingProducts: $e');
+      return {
+        'success': false,
+        'message': 'Error al inicializar inventario: $e',
+        'error': true,
+      };
+    }
+  }
 }

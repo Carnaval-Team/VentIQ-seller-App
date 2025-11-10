@@ -25,6 +25,16 @@ class UserPreferencesService {
   static const String _savedPasswordKey = 'saved_password';
   static const String _tokenExpiryKey = 'token_expiry';
 
+  // Subscription keys
+  static const String _subscriptionIdKey = 'subscription_id';
+  static const String _subscriptionStateKey = 'subscription_state';
+  static const String _subscriptionPlanIdKey = 'subscription_plan_id';
+  static const String _subscriptionPlanNameKey = 'subscription_plan_name';
+  static const String _subscriptionStartDateKey = 'subscription_start_date';
+  static const String _subscriptionEndDateKey = 'subscription_end_date';
+  static const String _subscriptionFeaturesKey = 'subscription_features';
+  static const String _subscriptionLastCheckKey = 'subscription_last_check';
+
   // Guardar datos del usuario admin
   Future<void> saveUserData({
     required String userId,
@@ -152,18 +162,6 @@ class UserPreferencesService {
     return prefs.getBool(_isLoggedInKey) ?? false;
   }
 
-  // Limpiar todos los datos del usuario (logout)
-  Future<void> clearUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_userIdKey);
-    await prefs.remove(_userEmailKey);
-    await prefs.remove(_accessTokenKey);
-    await prefs.remove(_adminNameKey);
-    await prefs.remove(_adminRoleKey);
-    await prefs.remove(_idTiendaKey);
-    await prefs.remove(_userStoresKey);
-    await prefs.setBool(_isLoggedInKey, false);
-  }
 
   // Guardar versión de la app
   Future<void> saveAppVersion(String version) async {
@@ -306,5 +304,180 @@ class UserPreferencesService {
       'email': prefs.getString(_userEmailKey) ?? '',
       'idTienda': prefs.getInt(_idTiendaKey),
     };
+  }
+
+  // ========== SUBSCRIPTION MANAGEMENT ==========
+
+  /// Guarda los datos de suscripción en las preferencias
+  Future<void> saveSubscriptionData({
+    required int subscriptionId,
+    required int state,
+    required int planId,
+    required String planName,
+    required DateTime startDate,
+    DateTime? endDate,
+    Map<String, dynamic>? features,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    await prefs.setInt(_subscriptionIdKey, subscriptionId);
+    await prefs.setInt(_subscriptionStateKey, state);
+    await prefs.setInt(_subscriptionPlanIdKey, planId);
+    await prefs.setString(_subscriptionPlanNameKey, planName);
+    await prefs.setString(_subscriptionStartDateKey, startDate.toIso8601String());
+    
+    if (endDate != null) {
+      await prefs.setString(_subscriptionEndDateKey, endDate.toIso8601String());
+    } else {
+      await prefs.remove(_subscriptionEndDateKey);
+    }
+    
+    if (features != null) {
+      await prefs.setString(_subscriptionFeaturesKey, jsonEncode(features));
+    } else {
+      await prefs.remove(_subscriptionFeaturesKey);
+    }
+    
+    // Marcar última verificación
+    await prefs.setString(_subscriptionLastCheckKey, DateTime.now().toIso8601String());
+    
+    print('💾 Datos de suscripción guardados: Plan $planName (ID: $subscriptionId)');
+  }
+
+  /// Obtiene los datos de suscripción guardados
+  Future<Map<String, dynamic>?> getSubscriptionData() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    final subscriptionId = prefs.getInt(_subscriptionIdKey);
+    if (subscriptionId == null) return null;
+    
+    final state = prefs.getInt(_subscriptionStateKey);
+    final planId = prefs.getInt(_subscriptionPlanIdKey);
+    final planName = prefs.getString(_subscriptionPlanNameKey);
+    final startDateStr = prefs.getString(_subscriptionStartDateKey);
+    final endDateStr = prefs.getString(_subscriptionEndDateKey);
+    final featuresStr = prefs.getString(_subscriptionFeaturesKey);
+    final lastCheckStr = prefs.getString(_subscriptionLastCheckKey);
+    
+    if (state == null || planId == null || planName == null || startDateStr == null) {
+      return null;
+    }
+    
+    return {
+      'subscription_id': subscriptionId,
+      'state': state,
+      'plan_id': planId,
+      'plan_name': planName,
+      'start_date': DateTime.parse(startDateStr),
+      'end_date': endDateStr != null ? DateTime.parse(endDateStr) : null,
+      'features': featuresStr != null ? jsonDecode(featuresStr) : null,
+      'last_check': lastCheckStr != null ? DateTime.parse(lastCheckStr) : null,
+    };
+  }
+
+  /// Verifica si la suscripción guardada está activa
+  Future<bool> hasActiveSubscriptionStored() async {
+    final subscriptionData = await getSubscriptionData();
+    if (subscriptionData == null) return false;
+    
+    final state = subscriptionData['state'] as int;
+    final endDate = subscriptionData['end_date'] as DateTime?;
+    
+    // Estado 1 = Activa
+    final isActiveState = state == 1;
+    
+    // Verificar si no ha vencido
+    final isNotExpired = endDate == null || endDate.isAfter(DateTime.now());
+    
+    return isActiveState && isNotExpired;
+  }
+
+  /// Obtiene el nombre del plan de suscripción
+  Future<String?> getSubscriptionPlanName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_subscriptionPlanNameKey);
+  }
+
+  /// Obtiene las funciones habilitadas de la suscripción
+  Future<Map<String, dynamic>?> getSubscriptionFeatures() async {
+    final prefs = await SharedPreferences.getInstance();
+    final featuresStr = prefs.getString(_subscriptionFeaturesKey);
+    if (featuresStr == null) return null;
+    
+    try {
+      return jsonDecode(featuresStr) as Map<String, dynamic>;
+    } catch (e) {
+      print('❌ Error decodificando funciones de suscripción: $e');
+      return null;
+    }
+  }
+
+  /// Verifica si una función específica está habilitada
+  Future<bool> isFeatureEnabled(String feature) async {
+    final features = await getSubscriptionFeatures();
+    if (features == null) return false;
+    
+    return features[feature] == true;
+  }
+
+  /// Obtiene la fecha de última verificación de suscripción
+  Future<DateTime?> getSubscriptionLastCheck() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastCheckStr = prefs.getString(_subscriptionLastCheckKey);
+    if (lastCheckStr == null) return null;
+    
+    try {
+      return DateTime.parse(lastCheckStr);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Verifica si es necesario actualizar los datos de suscripción (más de 5 minutos)
+  Future<bool> shouldRefreshSubscription() async {
+    final lastCheck = await getSubscriptionLastCheck();
+    if (lastCheck == null) return true;
+    
+    final now = DateTime.now();
+    final difference = now.difference(lastCheck).inMinutes;
+    
+    return difference >= 5;
+  }
+
+  /// Limpia los datos de suscripción
+  Future<void> clearSubscriptionData() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    await prefs.remove(_subscriptionIdKey);
+    await prefs.remove(_subscriptionStateKey);
+    await prefs.remove(_subscriptionPlanIdKey);
+    await prefs.remove(_subscriptionPlanNameKey);
+    await prefs.remove(_subscriptionStartDateKey);
+    await prefs.remove(_subscriptionEndDateKey);
+    await prefs.remove(_subscriptionFeaturesKey);
+    await prefs.remove(_subscriptionLastCheckKey);
+    
+    print('🧹 Datos de suscripción limpiados');
+  }
+
+  /// Limpia todos los datos del usuario incluyendo suscripción
+  Future<void> clearUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Limpiar datos básicos del usuario
+    await prefs.remove(_userIdKey);
+    await prefs.remove(_userEmailKey);
+    await prefs.remove(_accessTokenKey);
+    await prefs.remove(_adminNameKey);
+    await prefs.remove(_adminRoleKey);
+    await prefs.remove(_idTiendaKey);
+    await prefs.remove(_userStoresKey);
+    await prefs.remove(_tokenExpiryKey);
+    await prefs.setBool(_isLoggedInKey, false);
+    
+    // Limpiar datos de suscripción
+    await clearSubscriptionData();
+    
+    print('🧹 Todos los datos del usuario limpiados');
   }
 }

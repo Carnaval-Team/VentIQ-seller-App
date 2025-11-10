@@ -1,8 +1,40 @@
 {
-  "current_version": "1.2.0",
-  "build": 120,
+  "current_version": "1.2.1",
+  "build": 121,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.2.1",
+      "date": "2025-11-06",
+      "title": "⚙️ Configuración de Control de Inventario en Turnos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Control de Inventario Configurable",
+          "description": "Nueva configuración global que permite activar o desactivar el control de inventario al abrir y cerrar turnos para los vendedores"
+        },
+        {
+          "type": "feature",
+          "title": "Switch de Control en Configuración Global",
+          "description": "Nuevo switch en el tab Global de Configuración para gestionar si los vendedores deben hacer conteo de inventario en sus turnos"
+        },
+        {
+          "type": "improvement",
+          "title": "Flexibilidad por Tienda",
+          "description": "Cada tienda puede decidir independientemente si requiere control de inventario en turnos según sus necesidades operativas"
+        },
+        {
+          "type": "improvement",
+          "title": "Mensajes Informativos",
+          "description": "Subtítulos dinámicos que explican claramente el comportamiento cuando el control está activado o desactivado"
+        },
+        {
+          "type": "improvement",
+          "title": "Persistencia en Base de Datos",
+          "description": "La configuración se guarda automáticamente en la base de datos y se aplica inmediatamente para todos los vendedores de la tienda"
+        }
+      ]
+    },
     {
       "version": "1.2.0",
       "date": "2025-11-05",

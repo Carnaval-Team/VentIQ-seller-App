@@ -35,7 +35,22 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
       _warehouse = w;
       _loading = false;
     });
-    _loadAllLayoutProducts();
+    // No cargar automáticamente todos los productos
+    // Los productos se cargarán solo cuando el usuario expanda una zona específica
+  }
+
+  /// Carga solo la información básica del warehouse sin productos
+  Future<void> _loadBasicInfo() async {
+    setState(() => _loading = true);
+    final w = await _service.getWarehouseDetail(widget.warehouseId);
+    setState(() {
+      _warehouse = w;
+      _loading = false;
+    });
+    // Limpiar datos de productos para forzar recarga cuando se expandan
+    _layoutProducts.clear();
+    _loadingProducts.clear();
+    _expandedLayouts.clear();
   }
 
   Future<void> _loadAllLayoutProducts() async {
@@ -261,6 +276,24 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
             if (w.tienda != null) ...[
               _modernKv('Tienda', w.tienda!.denominacion, Icons.store),
             ],
+            const SizedBox(height: 16),
+            // Botón para inicializar inventario
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _showInitializeInventoryDialog(w),
+                icon: const Icon(Icons.inventory_2),
+                label: const Text('Inicializar Inventario Faltante'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -726,9 +759,20 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        ...products
-                            .map(
-                              (product) => Padding(
+                        // Usar Container con altura fija para evitar problemas de layout
+                        Container(
+                          constraints: BoxConstraints(
+                            maxHeight: products.length > 5 ? 200 : products.length * 40.0,
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            physics: products.length > 5 
+                                ? const AlwaysScrollableScrollPhysics()
+                                : const NeverScrollableScrollPhysics(),
+                            itemCount: products.length,
+                            itemBuilder: (context, index) {
+                              final product = products[index];
+                              return Padding(
                                 padding: const EdgeInsets.only(bottom: 4),
                                 child: Row(
                                   children: [
@@ -760,8 +804,10 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                                     ),
                                   ],
                                 ),
-                              ),
-                            ),
+                              );
+                            },
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1570,8 +1616,8 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                                   print(
                                     '🔄 Layout operation completed, reloading data...',
                                   );
-                                  // Reload warehouse data to get updated layouts
-                                  await _load();
+                                  // Reload warehouse data to get updated layouts (basic info only)
+                                  await _loadBasicInfo();
 
                                   print('🔄 Data reloaded, closing dialogs...');
                                   if (mounted) {
@@ -1613,8 +1659,8 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                                   );
 
                                   print('🔄 Layout updated, reloading data...');
-                                  // Reload warehouse data to get updated layouts
-                                  await _load();
+                                  // Reload warehouse data to get updated layouts (basic info only)
+                                  await _loadBasicInfo();
 
                                   print('🔄 Data reloaded, closing dialogs...');
                                   if (mounted) {
@@ -1684,8 +1730,8 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
 
       if (result != null && result['success'] == true) {
         _showSnack(result['message'] ?? 'Layout duplicado correctamente');
-        // Refresh warehouse data
-        await _load();
+        // Refresh warehouse data (basic info only)
+        await _loadBasicInfo();
       } else {
         _showSnack(result?['message'] ?? 'Error al duplicar layout');
       }
@@ -1715,6 +1761,269 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                   ],
                 )
                 : Text(msg),
+      ),
+    );
+  }
+
+  /// Mostrar diálogo de inicialización de inventario
+  Future<void> _showInitializeInventoryDialog(Warehouse w) async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.inventory_2,
+                color: AppColors.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Inicializar Inventario',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Esta acción buscará todos los productos de la tienda "${w.tienda?.denominacion ?? 'N/A'}" que no tienen registros de inventario en la primera ubicación del almacén "${w.denominacion ?? w.name}".',
+              style: const TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Lo que hará esta función:',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '• Buscar productos sin operaciones de inventario\n'
+                    '• Crear operación inicial con cantidad 0\n'
+                    '• Establecer origen de cambio como "Inventario Inicial"\n'
+                    '• Mostrar detalle de productos procesados',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_outlined, size: 16, color: Colors.orange.shade700),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Esta acción no se puede deshacer. Solo afectará productos que no tengan registros previos.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _executeInitializeInventory(w);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Inicializar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Ejecutar la inicialización de inventario
+  Future<void> _executeInitializeInventory(Warehouse w) async {
+    // Mostrar diálogo de progreso
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Inicializando inventario...'),
+            SizedBox(height: 8),
+            Text(
+              'Por favor espere mientras se procesan los productos',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final result = await _service.initializeInventoryMissingProducts(
+        warehouseId: w.id,
+      );
+
+      // Cerrar diálogo de progreso
+      Navigator.of(context).pop();
+
+      // Mostrar resultado
+      _showInitializationResult(result);
+      
+      // Recargar solo información básica sin productos
+      await _loadBasicInfo();
+    } catch (e) {
+      // Cerrar diálogo de progreso
+      Navigator.of(context).pop();
+
+      // Mostrar error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al inicializar inventario: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Mostrar resultado de la inicialización
+  void _showInitializationResult(Map<String, dynamic> result) {
+    final success = result['success'] ?? false;
+    final productosProcessados = result['productos_procesados'] ?? 0;
+    final productosInsertados = result['productos_insertados'] ?? 0;
+    final detalles = result['detalles'] ?? [];
+    final message = result['message'] ?? '';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: success ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                success ? Icons.check_circle : Icons.error,
+                color: success ? Colors.green : Colors.red,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                success ? 'Inicialización Completada' : 'Error en Inicialización',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Resumen
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: success ? Colors.green.shade50 : Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: success ? Colors.green.shade200 : Colors.red.shade200,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Resumen:',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: success ? Colors.green.shade700 : Colors.red.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (success) ...[
+                      Text('• Productos evaluados: $productosProcessados'),
+                      Text('• Productos inicializados: $productosInsertados'),
+                      Text('• Productos ya existentes: ${productosProcessados - productosInsertados}'),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      message,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Cerrar'),
+          ),
+        ],
       ),
     );
   }

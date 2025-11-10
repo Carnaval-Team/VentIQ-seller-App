@@ -10,6 +10,8 @@ import '../services/changelog_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/notification_widget.dart';
 import '../services/notification_service.dart';
+import '../utils/subscription_protection_mixin.dart';
+import '../utils/navigation_guard.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,7 +20,9 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProtectionMixin {
+  @override
+  String get protectedRoute => '/dashboard';
   bool _isLoading = true;
   Map<String, dynamic> _dashboardData = {};
   String _selectedTimeFilter = '1 mes';
@@ -47,11 +51,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _verifySubscriptionOnLoad();
     _loadStoreInfo();
     _loadDashboardData(); // Ya incluye _loadUsdRate() después de actualizar las tasas
     _checkForChangelog();
     // Inicializar servicio de notificaciones para suscribirse a Realtime
     _notificationService.initialize();
+  }
+
+  /// Verifica la suscripción al cargar el dashboard
+  Future<void> _verifySubscriptionOnLoad() async {
+    try {
+      // Verificar suscripción con el NavigationGuard
+      final hasValidSubscription = await NavigationGuard.hasValidSubscription();
+      
+      if (!hasValidSubscription && mounted) {
+        print('⚠️ Dashboard cargado sin suscripción válida - redirigiendo');
+        
+        // Usar el NavigationGuard para redirección
+        await NavigationGuard.checkSubscriptionAndRedirect(context, '/dashboard');
+      } else {
+        print('✅ Dashboard cargado con suscripción válida');
+      }
+    } catch (e) {
+      print('❌ Error verificando suscripción en dashboard: $e');
+    }
   }
 
   Future<void> _loadStoreInfo() async {
@@ -357,7 +381,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return buildProtectedContent(Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text(
@@ -404,7 +428,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         currentRoute: '/dashboard',
         onTap: _onBottomNavTap,
       ),
-    );
+    ));
   }
 
   Widget _buildLoadingState() {
@@ -563,7 +587,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     '${(_dashboardData['salesChange'] ?? 0.0) >= 0 ? '+' : '-'} ${(_dashboardData['salesChange'] ?? 0.0).toStringAsFixed(2)}% ${_getPreviousPeriodLabel()}',
                 icon: Icons.trending_up,
                 color: AppColors.success,
-                onTap: () => Navigator.pushNamed(context, '/sales'),
+                onTap: () => NavigationGuard.navigateWithPermission(context, '/sales'),
               ),
             ),
           ],
@@ -578,7 +602,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 subtitle: '${_dashboardData['outOfStock'] ?? 0} sin stock',
                 icon: Icons.inventory,
                 color: AppColors.warning,
-                onTap: () => Navigator.pushNamed(context, '/products'),
+                onTap: () => NavigationGuard.navigateWithPermission(context, '/products'),
               ),
             ),
             const SizedBox(width: 12),
@@ -589,7 +613,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
                 subtitle: _getPeriodLabel(),
                 icon: Icons.money_off,
-                onTap: () => Navigator.pushNamed(context, '/sales'),
+                onTap: () => NavigationGuard.navigateWithPermission(context, '/sales'),
                 color: AppColors.error,
               ),
             ),
@@ -1015,25 +1039,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
               'Productos',
               Icons.inventory_2,
               AppColors.primary,
-              () => Navigator.pushNamed(context, '/products-dashboard'),
+              () => NavigationGuard.navigateWithPermission(context, '/products-dashboard'),
             ),
             _buildQuickActionCard(
               'Categorías',
               Icons.category,
               AppColors.success,
-              () => Navigator.pushNamed(context, '/settings'),
+              () => NavigationGuard.navigateWithPermission(context, '/settings'),
             ),
             _buildQuickActionCard(
               'Inventario',
               Icons.warehouse,
               AppColors.warning,
-              () => Navigator.pushNamed(context, '/inventory'),
+              () => NavigationGuard.navigateWithPermission(context, '/inventory'),
             ),
             _buildQuickActionCard(
               'Ventas',
               Icons.point_of_sale,
               AppColors.info,
-              () => Navigator.pushNamed(context, '/sales'),
+              () => NavigationGuard.navigateWithPermission(context, '/sales'),
             ),
           ],
         ),

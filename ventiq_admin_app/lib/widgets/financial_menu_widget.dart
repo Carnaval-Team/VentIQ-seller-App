@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
-import '../screens/financial_configuration_screen.dart';
+import '../screens/production_costs_screen.dart';
+import '../utils/navigation_guard.dart';
 import '../screens/cost_assignments_screen.dart';
+import '../screens/financial_configuration_screen.dart';
 
 class FinancialMenuWidget extends StatelessWidget {
   const FinancialMenuWidget({super.key});
@@ -102,43 +104,49 @@ class FinancialMenuWidget extends StatelessWidget {
     );
   }
 
-  void _navigateToModule(BuildContext context, String module) {
+  void _navigateToModule(BuildContext context, String module) async {
     switch (module) {
       case 'dashboard':
-        Navigator.pushNamed(context, '/financial-dashboard');
+        NavigationGuard.navigateWithPermission(context, '/financial-dashboard');
         break;
       case 'setup':
-        Navigator.pushNamed(context, '/financial-setup');
+        NavigationGuard.navigateWithPermission(context, '/financial-setup');
         break;
       case 'reports':
-        Navigator.pushNamed(context, '/financial-reports');
+        NavigationGuard.navigateWithPermission(context, '/financial-reports');
         break;
       case 'expenses':
-        Navigator.pushNamed(context, '/financial-expenses');
+        NavigationGuard.navigateWithPermission(context, '/financial-expenses');
         break;
       case 'budgets':
         // Navegar a la pestaña de presupuestos en reportes
-        Navigator.pushNamed(context, '/financial-reports');
+        NavigationGuard.navigateWithPermission(context, '/financial-reports');
         break;
       case 'projections':
         // Navegar a la pestaña de proyecciones en reportes
-        Navigator.pushNamed(context, '/financial-reports');
+        NavigationGuard.navigateWithPermission(context, '/financial-reports');
         break;
       case 'cost_assignments':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const CostAssignmentsScreen(),
-          ),
-        );
+        final canNavigate = await NavigationGuard.canNavigate('/cost-assignments', context);
+        if (canNavigate) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const CostAssignmentsScreen(),
+            ),
+          );
+        }
         break;
       case 'configuration':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const FinancialConfigurationScreen(),
-          ),
-        );
+        final canNavigate = await NavigationGuard.canNavigate('/financial-configuration', context);
+        if (canNavigate) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const FinancialConfigurationScreen(),
+            ),
+          );
+        }
         break;
     }
   }

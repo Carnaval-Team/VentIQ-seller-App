@@ -19,6 +19,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   String _searchQuery = '';
   DateTime? _fechaDesde;
   DateTime? _fechaHasta;
+  int? _tipoOperacionId;
 
   // Pagination
   int _currentPage = 1;
@@ -98,6 +99,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         busqueda: _searchQuery.isEmpty ? null : _searchQuery,
         fechaDesde: _fechaDesde,
         fechaHasta: _fechaHasta,
+        tipoOperacionId: _tipoOperacionId,
         limite: _itemsPerPage,
         pagina: _currentPage,
       );
@@ -188,194 +190,360 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.5,
-            maxChildSize: 0.7,
-            minChildSize: 0.3,
-            builder:
-                (context, scrollController) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Handle
-                      Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Seleccionar Rango de Fechas',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
                         ),
                       ),
-                      // Header
-                      Padding(
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Quick date options
+                    const Text(
+                      'Opciones rápidas:',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    // Quick date buttons
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildQuickDateButton('Hoy', () => _setQuickDateRange(0)),
+                        _buildQuickDateButton('Ayer', () => _setQuickDateRange(1)),
+                        _buildQuickDateButton('Últimos 7 días', () => _setQuickDateRange(7)),
+                        _buildQuickDateButton('Últimos 15 días', () => _setQuickDateRange(15)),
+                        _buildQuickDateButton('Últimos 30 días', () => _setQuickDateRange(30)),
+                        _buildQuickDateButton('Este mes', () => _setCurrentMonth()),
+                        _buildQuickDateButton('Mes anterior', () => _setPreviousMonth()),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const SizedBox(height: 16),
+
+                    // Custom date range selection
+                    const Text(
+                      'Selección personalizada:',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    // Calendar button
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _showNativeDateRangePicker,
+                        icon: const Icon(Icons.calendar_month),
+                        label: const Text('Abrir Calendario de Rango'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF4A90E2),
+                          side: const BorderSide(color: Color(0xFF4A90E2)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Current selection display
+                    if (_fechaDesde != null && _fechaHasta != null) ...[
+                      Container(
+                        width: double.infinity,
                         padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4A90E2).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF4A90E2).withOpacity(0.3),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Expanded(
-                              child: Text(
-                                'Seleccionar Rango de Fechas',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.date_range,
+                                  color: const Color(0xFF4A90E2),
+                                  size: 20,
                                 ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Rango seleccionado:',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${_formatDateLong(_fechaDesde!)} - ${_formatDateLong(_fechaHasta!)}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1F2937),
                               ),
                             ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: const Icon(Icons.close),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${_fechaHasta!.difference(_fechaDesde!).inDays + 1} día(s)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      const Divider(height: 1),
-                      // Content
-                      Expanded(
-                        child: ListView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(16),
-                          children: [
-                            // Inline Date Range Picker
-                            Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey[300]!),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Action buttons
+                    Row(
+                      children: [
+                        if (_fechaDesde != null || _fechaHasta != null) ...[
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _clearDateFilter();
+                              },
+                              icon: const Icon(Icons.clear),
+                              label: const Text('Limpiar'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red,
+                                side: const BorderSide(color: Colors.red),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _fechaDesde != null && _fechaHasta != null
+                                ? () {
+                                    print('🔄 Aplicando filtro de fechas: $_fechaDesde - $_fechaHasta');
+                                    Navigator.pop(context);
+                                    _currentPage = 1;
+                                    _loadOperations();
+                                  }
+                                : null,
+                            icon: const Icon(Icons.check),
+                            label: const Text('Aplicar Filtro'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _fechaDesde != null && _fechaHasta != null 
+                                  ? const Color(0xFF4A90E2)
+                                  : Colors.grey,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: Theme(
-                                data: Theme.of(context).copyWith(
-                                  colorScheme: Theme.of(
-                                    context,
-                                  ).colorScheme.copyWith(
-                                    primary: const Color(0xFF4A90E2),
-                                    onPrimary: Colors.white,
-                                  ),
-                                ),
-                                child: CalendarDatePicker(
-                                  initialDate: _fechaDesde ?? DateTime.now(),
-                                  firstDate: DateTime(2020),
-                                  lastDate: DateTime.now(),
-                                  onDateChanged: (date) async {
-                                    // First date selected, now select end date
-                                    final endDate = await _selectEndDate(date);
-                                    if (endDate != null) {
-                                      Navigator.pop(context);
-                                      setState(() {
-                                        _fechaDesde = date;
-                                        _fechaHasta = endDate;
-                                      });
-                                      _currentPage = 1;
-                                      _loadOperations();
-                                    }
-                                  },
-                                ),
-                              ),
                             ),
-
-                            const SizedBox(height: 16),
-
-                            // Current selection display
-                            if (_fechaDesde != null && _fechaHasta != null) ...[
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFF4A90E2,
-                                  ).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: const Color(
-                                      0xFF4A90E2,
-                                    ).withOpacity(0.3),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Rango seleccionado:',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${_formatDate(_fechaDesde!)} - ${_formatDate(_fechaHasta!)}',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1F2937),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                            ],
-
-                            const SizedBox(height: 12),
-
-                            // Clear filter button
-                            if (_fechaDesde != null || _fechaHasta != null)
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                    _clearDateFilter();
-                                  },
-                                  icon: const Icon(Icons.clear),
-                                  label: const Text('Limpiar Filtro'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.red,
-                                    side: const BorderSide(color: Colors.red),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
+            ],
           ),
+        ),
+      ),
     );
   }
 
-  Future<DateTime?> _selectEndDate(DateTime startDate) async {
-    return await showDatePicker(
-      context: context,
-      initialDate: startDate.add(const Duration(days: 1)),
-      firstDate: startDate,
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-              primary: const Color(0xFF4A90E2),
-              onPrimary: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
+  Widget _buildQuickDateButton(String label, VoidCallback onPressed) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFF4A90E2),
+        side: const BorderSide(color: Color(0xFF4A90E2)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 12),
+      ),
     );
+  }
+
+  void _setQuickDateRange(int daysAgo) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    setState(() {
+      if (daysAgo == 0) {
+        // Hoy
+        _fechaDesde = today;
+        _fechaHasta = today;
+      } else if (daysAgo == 1) {
+        // Ayer
+        final yesterday = today.subtract(const Duration(days: 1));
+        _fechaDesde = yesterday;
+        _fechaHasta = yesterday;
+      } else {
+        // Últimos X días (incluyendo hoy)
+        _fechaDesde = today.subtract(Duration(days: daysAgo - 1));
+        _fechaHasta = today;
+      }
+    });
+    
+    // Auto-aplicar el filtro para opciones rápidas
+    Navigator.pop(context);
+    _currentPage = 1;
+    _loadOperations();
+  }
+
+  void _setCurrentMonth() {
+    final now = DateTime.now();
+    setState(() {
+      _fechaDesde = DateTime(now.year, now.month, 1);
+      _fechaHasta = DateTime(now.year, now.month + 1, 0); // Último día del mes
+    });
+    
+    // Auto-aplicar el filtro
+    Navigator.pop(context);
+    _currentPage = 1;
+    _loadOperations();
+  }
+
+  void _setPreviousMonth() {
+    final now = DateTime.now();
+    final previousMonth = DateTime(now.year, now.month - 1, 1);
+    setState(() {
+      _fechaDesde = previousMonth;
+      _fechaHasta = DateTime(previousMonth.year, previousMonth.month + 1, 0); // Último día del mes anterior
+    });
+    
+    // Auto-aplicar el filtro
+    Navigator.pop(context);
+    _currentPage = 1;
+    _loadOperations();
+  }
+
+  Future<void> _showNativeDateRangePicker() async {
+    try {
+      final DateTimeRange? picked = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime.now(),
+        initialDateRange: _fechaDesde != null && _fechaHasta != null
+            ? DateTimeRange(start: _fechaDesde!, end: _fechaHasta!)
+            : null,
+        helpText: 'Seleccionar rango de fechas',
+        cancelText: 'Cancelar',
+        confirmText: 'Confirmar',
+        builder: (context, child) {
+          return Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: Theme.of(context).colorScheme.copyWith(
+                primary: const Color(0xFF4A90E2),
+                onPrimary: Colors.white,
+              ),
+            ),
+            child: child!,
+          );
+        },
+      );
+
+      if (picked != null) {
+        print('📅 Rango seleccionado: ${picked.start} - ${picked.end}');
+        
+        // Cerrar el modal primero
+        Navigator.pop(context);
+        
+        // Luego actualizar el estado para que se vea la actualización
+        setState(() {
+          // Normalizar las fechas para evitar problemas de zona horaria
+          _fechaDesde = DateTime(picked.start.year, picked.start.month, picked.start.day);
+          _fechaHasta = DateTime(picked.end.year, picked.end.month, picked.end.day);
+        });
+        
+        print('📅 Fechas guardadas: $_fechaDesde - $_fechaHasta');
+        
+        // Mostrar el modal actualizado con las fechas seleccionadas
+        await Future.delayed(const Duration(milliseconds: 100));
+        _showDateRangeDialog();
+      }
+    } catch (e) {
+      print('❌ Error al abrir selector de fechas: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al abrir el calendario: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _clearDateFilter() {
@@ -385,6 +553,141 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     });
     _currentPage = 1;
     _loadOperations();
+  }
+
+  void _clearAllFilters() {
+    setState(() {
+      _fechaDesde = null;
+      _fechaHasta = null;
+      _tipoOperacionId = null;
+    });
+    _currentPage = 1;
+    _loadOperations();
+  }
+
+  Future<void> _showOperationTypeDialog() async {
+    // Lista de tipos de operación comunes
+    final List<Map<String, dynamic>> tiposOperacion = [
+      {'id': null, 'nombre': 'Todos los tipos'},
+      {'id': 1, 'nombre': 'Recepción de Productos'},
+      {'id': 2, 'nombre': 'Extracción de Productos'},
+      {'id': 3, 'nombre': 'Ajuste de Inventario'},
+      {'id': 4, 'nombre': 'Venta'},
+      {'id': 5, 'nombre': 'Apertura de Caja'},
+      {'id': 6, 'nombre': 'Cierre de Caja'},
+      {'id': 7, 'nombre': 'Transferencia'},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.8,
+        minChildSize: 0.4,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(20),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Filtrar por Tipo de Operación',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Content
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: tiposOperacion.length,
+                  itemBuilder: (context, index) {
+                    final tipo = tiposOperacion[index];
+                    final isSelected = _tipoOperacionId == tipo['id'];
+                    
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: isSelected 
+                              ? const Color(0xFF4A90E2)
+                              : Colors.grey[300]!,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        color: isSelected 
+                            ? const Color(0xFF4A90E2).withOpacity(0.1)
+                            : Colors.white,
+                      ),
+                      child: ListTile(
+                        title: Text(
+                          tipo['nombre'],
+                          style: TextStyle(
+                            fontWeight: isSelected 
+                                ? FontWeight.w600 
+                                : FontWeight.normal,
+                            color: isSelected 
+                                ? const Color(0xFF4A90E2)
+                                : const Color(0xFF1F2937),
+                          ),
+                        ),
+                        trailing: isSelected 
+                            ? const Icon(
+                                Icons.check_circle,
+                                color: Color(0xFF4A90E2),
+                              )
+                            : null,
+                        onTap: () {
+                          Navigator.pop(context);
+                          setState(() {
+                            _tipoOperacionId = tipo['id'];
+                          });
+                          _currentPage = 1;
+                          _loadOperations();
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _nextPage() {
@@ -476,8 +779,36 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
             ),
           ),
 
+          // Operation type filter
+          const SizedBox(width: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: _tipoOperacionId != null
+                  ? const Color(0xFF4A90E2).withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _tipoOperacionId != null
+                    ? const Color(0xFF4A90E2)
+                    : Colors.grey.withOpacity(0.3),
+              ),
+            ),
+            child: IconButton(
+              onPressed: _showOperationTypeDialog,
+              icon: Icon(
+                Icons.filter_list,
+                color: _tipoOperacionId != null
+                    ? const Color(0xFF4A90E2)
+                    : Colors.grey[600],
+              ),
+              tooltip: _tipoOperacionId != null
+                  ? 'Filtro de tipo aplicado'
+                  : 'Filtrar por tipo de operación',
+            ),
+          ),
+
           // Clear filter button
-          if (_fechaDesde != null || _fechaHasta != null) ...[
+          if (_fechaDesde != null || _fechaHasta != null || _tipoOperacionId != null) ...[
             const SizedBox(width: 8),
             Container(
               decoration: BoxDecoration(
@@ -486,9 +817,9 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                 border: Border.all(color: Colors.red.withOpacity(0.3)),
               ),
               child: IconButton(
-                onPressed: _clearDateFilter,
+                onPressed: _clearAllFilters,
                 icon: const Icon(Icons.clear, color: Colors.red),
-                tooltip: 'Limpiar filtro de fecha',
+                tooltip: 'Limpiar todos los filtros',
               ),
             ),
           ],
@@ -1018,6 +1349,14 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year.toString().substring(2)}';
+  }
+
+  String _formatDateLong(DateTime date) {
+    const months = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ];
+    return '${date.day} de ${months[date.month - 1]} ${date.year}';
   }
 
   String _formatDateTime(DateTime date) {
