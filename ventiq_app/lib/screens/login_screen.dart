@@ -452,7 +452,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     BlendMode.srcIn,
                   ),
                   child: Image.asset(
-                    'assets/ventas.png',
+                    'assets/inventia_logo.png',
                     width: 120,
                     height: 120,
                     fit: BoxFit.contain,
