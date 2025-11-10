@@ -7,6 +7,7 @@ import '../services/store_config_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/subscription_guard_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -25,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _promotionService = PromotionService();
   final _integrationService = SettingsIntegrationService();
   final _connectivityService = ConnectivityService();
+  final _subscriptionGuard = SubscriptionGuardService();
   bool _isLoading = false;
   bool _obscure = true;
   bool _rememberMe = false;
@@ -251,9 +253,34 @@ class _LoginScreenState extends State<LoginScreen> {
             // Inicializar servicios inteligentes en segundo plano
             _initializeSmartServices();
 
-            // Login exitoso - ir al catálogo
+            // Verificar suscripción antes de navegar
             if (mounted) {
-              Navigator.of(context).pushReplacementNamed('/categories');
+              final hasActiveSubscription = await _subscriptionGuard.hasActiveSubscription(forceRefresh: true);
+              
+              // Guardar datos de suscripción si existe
+              if (hasActiveSubscription) {
+                final subscription = await _subscriptionGuard.getCurrentSubscription();
+                if (subscription != null) {
+                  await _userPreferencesService.saveSubscriptionData(
+                    subscriptionId: subscription.id,
+                    state: subscription.estado,
+                    planId: subscription.idPlan,
+                    planName: subscription.planDenominacion ?? 'Plan desconocido',
+                    startDate: subscription.fechaInicio,
+                    endDate: subscription.fechaFin,
+                    features: subscription.planFuncionesHabilitadas,
+                  );
+                  print('💾 Datos de suscripción guardados en login');
+                }
+              }
+
+              if (hasActiveSubscription) {
+                // Login exitoso con suscripción activa - ir al catálogo
+                Navigator.of(context).pushReplacementNamed('/categories');
+              } else {
+                // Sin suscripción activa - ir a detalles de suscripción
+                Navigator.of(context).pushReplacementNamed('/subscription-detail');
+              }
             }
           } catch (e) {
             // Error: usuario no es vendedor válido
@@ -364,12 +391,22 @@ class _LoginScreenState extends State<LoginScreen> {
       // Inicializar servicios inteligentes en segundo plano (también funciona en offline)
       _initializeSmartServices();
 
-      // Navegar a categorías
+      // Verificar suscripción antes de navegar (modo offline)
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
-        Navigator.of(context).pushReplacementNamed('/categories');
+        
+        // En modo offline, verificar desde preferencias guardadas
+        final hasActiveSubscription = await _userPreferencesService.hasActiveSubscriptionStored();
+        
+        if (hasActiveSubscription) {
+          // Login offline exitoso con suscripción activa - ir al catálogo
+          Navigator.of(context).pushReplacementNamed('/categories');
+        } else {
+          // Sin suscripción activa - ir a detalles de suscripción
+          Navigator.of(context).pushReplacementNamed('/subscription-detail');
+        }
       }
 
       return true;

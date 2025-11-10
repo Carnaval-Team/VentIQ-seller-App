@@ -12,6 +12,8 @@ import '../services/turno_service.dart';
 import '../services/settings_integration_service.dart';
 import '../services/store_config_service.dart';
 import '../services/update_service.dart';
+import '../services/subscription_guard_service.dart';
+import '../models/subscription.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
@@ -32,6 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       UserPreferencesService();
   final SettingsIntegrationService _integrationService =
       SettingsIntegrationService();
+  final SubscriptionGuardService _subscriptionGuard = SubscriptionGuardService();
 
   bool _isPrintEnabled = true; // Valor por defecto
   bool _isLimitDataUsageEnabled = false; // Valor por defecto
@@ -48,15 +51,34 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   // Variable para la versión dinámica
   String _appVersion = 'Cargando...';
 
+  // Variables para suscripción
+  Subscription? _currentSubscription;
+  bool _isLoadingSubscription = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadSettings();
     _loadAppVersion();
+    _loadSubscriptionData();
     _initializeSmartServices();
   }
 
+  /// Cargar datos de suscripción
+  Future<void> _loadSubscriptionData() async {
+    setState(() => _isLoadingSubscription = true);
+    
+    try {
+      _currentSubscription = await _subscriptionGuard.getCurrentSubscription(forceRefresh: false);
+    } catch (e) {
+      print('❌ Error cargando datos de suscripción: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingSubscription = false);
+      }
+    }
+  }
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -118,6 +140,11 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     } catch (e) {
       print('❌ Error verificando conexión después de reanudar: $e');
     }
+  }
+
+    /// Navegar a detalles de suscripción
+  void _navigateToSubscriptionDetail() {
+    Navigator.pushNamed(context, '/subscription-detail');
   }
 
   /// Cargar versión de la app desde changelog.json
@@ -414,7 +441,65 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       );
     }
   }
+  /// Construir sección de suscripción
+  Widget _buildSubscriptionSection() {
+    return Column(
+      children: [
+        _buildSectionHeader('Suscripción'),
+        _buildSettingsCard([
+          _buildSubscriptionTile(),
+        ]),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
 
+  /// Construir tile de suscripción
+  Widget _buildSubscriptionTile() {
+    if (_isLoadingSubscription) {
+      return ListTile(
+        leading: const CircularProgressIndicator(),
+        title: const Text('Cargando suscripción...'),
+        subtitle: const Text('Verificando estado'),
+      );
+    }
+
+    final subscription = _currentSubscription;
+    final isActive = subscription?.isActive ?? false;
+    
+    return _buildSettingsTile(
+      icon: isActive ? Icons.verified : Icons.warning,
+      title: isActive ? 'Suscripción Activa' : 'Suscripción Inactiva',
+      subtitle: subscription != null 
+        ? '${subscription.planDenominacion ?? 'Plan desconocido'} - ${subscription.estadoText}'
+        : 'No se encontró información de suscripción',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (subscription != null && subscription.diasRestantes > 0 && subscription.diasRestantes <= 30)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Text(
+                '${subscription.diasRestantes}d',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.orange,
+                ),
+              ),
+            ),
+          const SizedBox(width: 8),
+          const Icon(Icons.chevron_right, color: Colors.grey),
+        ],
+      ),
+      onTap: () => _navigateToSubscriptionDetail(),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -472,6 +557,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           ]),
 
           const SizedBox(height: 16),
+
+          // Sección de suscripción
+          _buildSubscriptionSection(),
 
           // Sección de aplicación
           _buildSectionHeader('Aplicación'),
