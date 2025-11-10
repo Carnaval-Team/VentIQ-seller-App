@@ -1,8 +1,50 @@
 {
-  "current_version": "1.5.0",
-  "build": 500,
+  "current_version": "1.6.0",
+  "build": 600,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.6.0",
+      "date": "2025-11-10",
+      "title": "🎉 ¡Bienvenido a Inventtia® - Marca Registrada!",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Marca Registrada Inventtia®",
+          "description": "¡Ahora somos Inventtia®! Nuestra marca está oficialmente registrada, garantizando calidad y compromiso con tu negocio"
+        },
+        {
+          "type": "feature",
+          "title": "Verificación de Suscripción en Configuración",
+          "description": "Ahora puedes revisar el tiempo restante de tu suscripción directamente desde la configuración. Mantente informado sobre el estado de tu plan"
+        },
+        {
+          "type": "feature",
+          "title": "1 Mes de Prueba Gratis para Nuevas Tiendas",
+          "description": "Al registrar una nueva tienda, automáticamente recibirás 1 mes de prueba con todas las funcionalidades premium de Inventtia® sin restricciones"
+        },
+        {
+          "type": "feature",
+          "title": "Detalles Completos de Suscripción",
+          "description": "Visualiza información detallada de tu suscripción: fecha de inicio, fecha de vencimiento, días restantes y estado actual del plan"
+        },
+        {
+          "type": "improvement",
+          "title": "Indicador Visual de Estado de Suscripción",
+          "description": "Nuevos badges de colores que indican el estado de tu suscripción: verde (activa), naranja (próxima a vencer), rojo (vencida)"
+        },
+        {
+          "type": "improvement",
+          "title": "Alertas Inteligentes de Vencimiento",
+          "description": "Recibe notificaciones cuando tu suscripción esté próxima a vencer para que puedas renovarla a tiempo sin interrupciones"
+        },
+        {
+          "type": "improvement",
+          "title": "Acceso Directo a Renovación",
+          "description": "Desde la configuración puedes acceder directamente a renovar tu suscripción con un solo toque"
+        }
+      ]
+    },
     {
       "version": "1.5.0",
       "date": "2025-11-06",

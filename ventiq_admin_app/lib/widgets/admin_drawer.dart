@@ -51,7 +51,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
       print('Email: $email');
 
       String displayName = name ?? 'Administrador';
-      String displayEmail = email ?? 'admin@ventiq.com';
+      String displayEmail = email ?? 'admin@inventtia.com';
 
       print('Display Name: $displayName');
       print('Display Email: $displayEmail');
@@ -66,7 +66,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
       print('Error loading admin user data: $e');
       setState(() {
         _userName = 'Administrador';
-        _userEmail = 'admin@ventiq.com';
+        _userEmail = 'admin@inventtia.com';
         _isLoading = false;
       });
     }
@@ -457,7 +457,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'VentIQ Admin $_appVersion',
+                        'Inventtia® Admin $_appVersion',
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                     ),

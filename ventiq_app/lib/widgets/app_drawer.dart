@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:convert';
 import '../services/auth_service.dart';
 import '../services/user_preferences_service.dart';
 
@@ -13,11 +15,37 @@ class _AppDrawerState extends State<AppDrawer> {
   String _userName = '';
   String _userEmail = '';
   bool _isLoading = true;
+  String _appVersion = 'Cargando...';
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadAppVersion();
+  }
+
+  /// Cargar versión de la app desde changelog.json
+  Future<void> _loadAppVersion() async {
+    try {
+      final String changelogString = await rootBundle.loadString('assets/changelog.json');
+      final Map<String, dynamic> changelog = json.decode(changelogString);
+      final String version = changelog['current_version'] ?? '1.0.0';
+      
+      if (mounted) {
+        setState(() {
+          _appVersion = 'v$version';
+        });
+      }
+      
+      print('✅ Versión de la app cargada en drawer: $_appVersion');
+    } catch (e) {
+      print('❌ Error cargando versión desde changelog.json en drawer: $e');
+      if (mounted) {
+        setState(() {
+          _appVersion = 'v1.0.0'; // Fallback
+        });
+      }
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -98,15 +126,15 @@ class _AppDrawerState extends State<AppDrawer> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // const Text(
-                          //   'VentIQ',
-                          //   style: TextStyle(
-                          //     color: Colors.white,
-                          //     fontSize: 18,
-                          //     fontWeight: FontWeight.bold,
-                          //     letterSpacing: 0.5,
-                          //   ),
-                          // ),
+                          const Text(
+                            'Inventtia®',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
                           const SizedBox(height: 6),
                           if (_isLoading)
                             const Row(
@@ -273,7 +301,7 @@ class _AppDrawerState extends State<AppDrawer> {
                 Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 8),
                 Text(
-                  'Inventia v1.5.0',
+                  'Inventtia® $_appVersion',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],

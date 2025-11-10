@@ -1,8 +1,55 @@
 {
-  "current_version": "1.2.1",
-  "build": 121,
+  "current_version": "1.3.0",
+  "build": 130,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.3.0",
+      "date": "2025-11-10",
+      "title": "🎉 ¡Bienvenido a Inventtia® - Marca Registrada!",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Marca Registrada Inventtia®",
+          "description": "¡Ahora somos Inventtia®! Nuestra marca está oficialmente registrada, garantizando calidad, innovación y compromiso con la gestión empresarial"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión Completa de Suscripciones",
+          "description": "Nuevo módulo para administrar suscripciones de tiendas: visualiza estado, fechas de vencimiento y gestiona renovaciones desde el panel de administración"
+        },
+        {
+          "type": "feature",
+          "title": "1 Mes de Prueba Automático",
+          "description": "Al registrar una nueva tienda, el sistema automáticamente asigna 1 mes de prueba con acceso completo a todas las funcionalidades premium de Inventtia®"
+        },
+        {
+          "type": "feature",
+          "title": "Monitoreo de Estado de Suscripciones",
+          "description": "Visualiza el estado de todas las tiendas: activas, próximas a vencer, vencidas o en período de prueba con indicadores visuales de colores"
+        },
+        {
+          "type": "feature",
+          "title": "Alertas de Vencimiento Inteligentes",
+          "description": "Sistema de notificaciones automáticas que alerta cuando una suscripción está próxima a vencer para gestionar renovaciones a tiempo"
+        },
+        {
+          "type": "improvement",
+          "title": "Dashboard de Suscripciones",
+          "description": "Nueva sección en el dashboard mostrando métricas de suscripciones: total activas, próximas a vencer, vencidas y en período de prueba"
+        },
+        {
+          "type": "improvement",
+          "title": "Filtros y Búsqueda de Suscripciones",
+          "description": "Herramientas avanzadas para filtrar tiendas por estado de suscripción, fecha de vencimiento y buscar por nombre de tienda"
+        },
+        {
+          "type": "improvement",
+          "title": "Historial de Renovaciones",
+          "description": "Registro completo del historial de renovaciones de cada tienda con fechas, duraciones y estados anteriores"
+        }
+      ]
+    },
     {
       "version": "1.2.1",
       "date": "2025-11-06",
