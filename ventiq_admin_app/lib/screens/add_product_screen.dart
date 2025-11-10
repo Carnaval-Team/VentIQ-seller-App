@@ -90,6 +90,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _esComprable = true;
   bool _esInventariable = true;
   bool _esPorLotes = false;
+  
+  // Control de SKU manual
+  bool _skuManual = false;
 
   // Campos para productos elaborados
   bool _esElaborado = false;
@@ -490,6 +493,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('🔒 Modo edición: SKU no se regenera, se preserva el original');
       return;
     }
+    
+    // No generar SKU si está en modo manual
+    if (_skuManual) {
+      print('✋ SKU manual activado: no se genera automáticamente');
+      return;
+    }
 
     String sku = '';
 
@@ -679,14 +688,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
             labelText: 'SKU *',
             hintText: widget.product != null 
                 ? 'SKU del producto (no editable)'
-                : 'Se genera automáticamente',
+                : _skuManual 
+                    ? 'Ingrese el SKU manualmente'
+                    : 'Se genera automáticamente',
             border: const OutlineInputBorder(),
             suffixIcon: Icon(
-              widget.product != null ? Icons.lock : Icons.auto_awesome, 
+              widget.product != null 
+                  ? Icons.lock 
+                  : _skuManual 
+                      ? Icons.edit 
+                      : Icons.auto_awesome, 
               color: AppColors.primary
             ),
           ),
-          readOnly: widget.product != null, // Solo lectura si estamos editando
+          readOnly: widget.product != null ? true : !_skuManual, // Editable solo si es creación y modo manual
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'El SKU es requerido';
@@ -694,6 +709,58 @@ class _AddProductScreenState extends State<AddProductScreen> {
             return null;
           },
         ),
+        // Switch para SKU manual (solo en modo creación)
+        if (widget.product == null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Switch(
+                value: _skuManual,
+                onChanged: (value) {
+                  setState(() {
+                    _skuManual = value;
+                    if (!_skuManual) {
+                      // Si se desactiva el modo manual, generar SKU automáticamente
+                      _generateSKU();
+                    } else {
+                      // Si se activa el modo manual, limpiar el campo para que el usuario lo llene
+                      _skuController.clear();
+                    }
+                  });
+                },
+                activeColor: AppColors.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'SKU Manual',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _skuManual ? AppColors.primary : Colors.grey[600],
+                    fontWeight: _skuManual ? FontWeight.w500 : FontWeight.normal,
+                  ),
+                ),
+              ),
+              if (_skuManual)
+                Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: Colors.grey[600],
+                ),
+            ],
+          ),
+          if (_skuManual)
+            Padding(
+              padding: const EdgeInsets.only(left: 56, top: 4),
+              child: Text(
+                'Ingrese un SKU único para el producto',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ),
+        ],
         const SizedBox(height: 16),
         // Denominación
         TextFormField(
