@@ -273,7 +273,7 @@ class _AppDrawerState extends State<AppDrawer> {
                 Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
                 const SizedBox(width: 8),
                 Text(
-                  'VentIQ v1.0',
+                  'Inventia v1.5.0',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],

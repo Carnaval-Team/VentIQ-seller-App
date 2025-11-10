@@ -99,6 +99,7 @@ flutter:
     - assets/no_image.png
     - assets/Lk1KNR.png
     - assets/ic.png
+    - assets/ic_clean.png
     - assets/inventia_logo.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
@@ -130,11 +131,11 @@ flutter:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/ic.png"
+  image_path: "assets/ic_clean.png"
   min_sdk_android: 21
   # Configuración para evitar recorte
   adaptive_icon_background: "#194B8C"  # Color sólido que coincide con tu tema
-  adaptive_icon_foreground: "assets/ic.png"
+  adaptive_icon_foreground: "assets/ic_clean.png"
   remove_alpha_ios: true
   # Solo generar tamaños necesarios
   android_13_icon: true
