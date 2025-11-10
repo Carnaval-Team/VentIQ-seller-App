@@ -587,7 +587,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             _buildSettingsTile(
               icon: Icons.info_outline,
               title: 'Acerca de',
-              subtitle: 'Vendedor Cuba $_appVersion',
+              subtitle: 'Inventtia $_appVersion',
               onTap: () => _showAboutDialog(),
             ),
           ]),
@@ -1583,7 +1583,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               onPressed: () => Navigator.of(context).pop(),
             ),
             title: const Text(
-              'Código QR - Vendedor Cuba',
+              'Código QR - Inventtia',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 18,
@@ -1621,7 +1621,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 const SizedBox(height: 24),
                 // Información
                 Text(
-                  'Escanea este código para descargar Vendedor Cuba',
+                  'Escanea este código para descargar Inventtia',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.9),
                     fontSize: 16,
@@ -1631,7 +1631,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Vendedor Cuba $_appVersion',
+                  'Inventtia $_appVersion',
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.7),
                     fontSize: 14,
@@ -1710,7 +1710,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Escanea el código QR para descargar la aplicación Vendedor Cuba en tu dispositivo:',
+                'Escanea el código QR para descargar la aplicación Inventtia en tu dispositivo:',
                 style: TextStyle(
                   fontSize: 14,
                   color: Color(0xFF6B7280),
@@ -1782,7 +1782,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               ),
               const SizedBox(height: 16),
               Text(
-                'Vendedor Cuba $_appVersion',
+                'Inventtia $_appVersion',
                 style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF9CA3AF),
@@ -1817,7 +1817,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   void _showAboutDialog() {
     showAboutDialog(
       context: context,
-      applicationName: 'Vendedor Cuba',
+      applicationName: 'Inventtia',
       applicationVersion: _appVersion,
       applicationIcon: Container(
         padding: const EdgeInsets.all(8),

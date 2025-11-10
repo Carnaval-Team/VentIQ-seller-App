@@ -25,7 +25,7 @@ android {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.ventiq_app"
         // Configuración de compatibilidad amplia
-        minSdk = 21  // Android 5.0 - Compatibilidad con ~95% de dispositivos
+        minSdk = flutter.minSdkVersion  // Android 5.0 - Compatibilidad con ~95% de dispositivos
         targetSdk = 34  // Android 14 - Última versión estable
         versionCode = flutter.versionCode
         versionName = flutter.versionName

@@ -325,7 +325,7 @@ const tutorialData = {
                 title: 'Crear cuenta de administrador',
                 content: 'Registra una nueva cuenta para el administrador de la empresa.',
                 instructions: [
-                    'Accede a la página de registro de Vendedor Cuba Admin',
+                    'Accede a la página de registro de Inventtia Admin',
                     'Ingresa el nombre completo del administrador',
                     'Proporciona un email válido',
                     'Crea una contraseña segura',

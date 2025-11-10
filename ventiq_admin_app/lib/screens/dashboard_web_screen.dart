@@ -178,7 +178,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
       appBar: AppBar(
         title: Text(
           isLargeScreen
-              ? 'Dashboard Ejecutivo - Vendedor Cuba Admin'
+              ? 'Dashboard Ejecutivo - Inventtia Admin'
               : 'Dashboard Ejecutivo',
           style: const TextStyle(
             color: Colors.white,

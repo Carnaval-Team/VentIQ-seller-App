@@ -38,7 +38,7 @@ BEGIN
 
 ℹ️ Versión mínima requerida: %s',
     CASE 
-      WHEN NEW.app_name = 'ventiq_app' THEN 'Vendedor Cuba'
+      WHEN NEW.app_name = 'ventiq_app' THEN 'Inventtia'
       WHEN NEW.app_name = 'ventiq_admin' THEN 'Vendedor Admin'
       ELSE NEW.app_name
     END,

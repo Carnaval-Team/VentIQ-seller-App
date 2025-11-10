@@ -48,7 +48,11 @@ class _LoginScreenState extends State<LoginScreen> {
     final hasValidSession = await _userPreferencesService.hasValidSession();
     if (hasValidSession && mounted) {
       print('✅ Valid session found, auto-logging in...');
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/dashboard',
+        (route) => false,
+      );
     }
   }
 
@@ -131,22 +135,15 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildHeader() {
     return Column(
       children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            gradient: AppColors.primaryGradient,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Icon(
-            Icons.admin_panel_settings,
-            size: 40,
-            color: Colors.white,
-          ),
+        Image.asset(
+          'assets/images/inventia.png',
+          width: 120,
+          height: 120,
+          fit: BoxFit.contain,
         ),
         const SizedBox(height: 24),
         const Text(
-          'Vendedor Cuba Admin',
+          'Inventtia Admin',
           style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,

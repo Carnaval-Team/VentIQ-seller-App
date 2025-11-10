@@ -1,5 +1,5 @@
 name: ventiq_admin_app
-description: "Vendedor Cuba Admin - Sistema de administración para gestión de inventarios, productos y ventas."
+description: "Inventtia Admin - Sistema de administración para gestión de inventarios, productos y ventas."
 publish_to: 'none'
 
 version: 1.2.0+120
@@ -65,20 +65,28 @@ flutter:
   
   # Assets
   assets:
-    - assets/images/ventas_admin.png
+    - assets/images/inventia.png
+    - assets/images/ic.png
     - assets/changelog.json
 
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/images/ventas_admin.png"
+  image_path: "assets/images/ic.png"
   min_sdk_android: 21
-  # Optimizaciones para reducir tamaño
-  adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/images/ventas_admin.png"
+  # Configuración para evitar recorte
+  adaptive_icon_background: "#194B8C"  # Color sólido que coincide con tu tema
+  adaptive_icon_foreground: "assets/images/ic.png"
   remove_alpha_ios: true
   # Solo generar tamaños necesarios
   android_13_icon: true
+  # Configuración adicional para evitar recorte
+  web:
+    generate: false
+  windows:
+    generate: false
+  macos:
+    generate: false
 
   # To add custom fonts to your application, add a fonts section here,
   # in this "flutter" section. Each entry in this list should have a

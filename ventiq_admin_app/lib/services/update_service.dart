@@ -83,5 +83,5 @@ class UpdateService {
   }
 
   /// URL de descarga de la aplicación admin
-  static const String downloadUrl = 'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/ventiq_admin.apk';
+  static const String downloadUrl = 'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20admin.apk';
 }
