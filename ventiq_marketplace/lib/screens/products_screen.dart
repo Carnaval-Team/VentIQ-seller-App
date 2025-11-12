@@ -170,65 +170,196 @@ class _ProductsScreenState extends State<ProductsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Productos'),
-        elevation: 0,
-      ),
-      body: Column(
-        children: [
-          // Barra de búsqueda
-          _buildSearchBar(),
-          
-          // Filtro de categorías
-          _buildCategoryFilter(),
-          
-          // Contador de resultados
-          if (!_isLoading && _products.isNotEmpty) _buildResultsCounter(),
-          
-          // Lista de productos
-          Expanded(
-            child: _isLoading
-                ? _buildLoadingState()
+      backgroundColor: AppTheme.backgroundColor,
+      body: RefreshIndicator(
+        onRefresh: _refreshProducts,
+        color: AppTheme.primaryColor,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // AppBar moderno con gradiente
+            _buildModernAppBar(),
+            
+            // Barra de búsqueda
+            SliverToBoxAdapter(child: _buildSearchSection()),
+            
+            // Filtro de categorías
+            SliverToBoxAdapter(child: _buildCategoryFilter()),
+            
+            // Contador de resultados
+            if (!_isLoading && _products.isNotEmpty)
+              SliverToBoxAdapter(child: _buildResultsCounter()),
+            
+            // Contenido principal
+            _isLoading
+                ? SliverToBoxAdapter(child: _buildLoadingState())
                 : _products.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _refreshProducts,
-                        child: _buildProductsList(),
-                      ),
-          ),
-        ],
+                    ? SliverToBoxAdapter(child: _buildEmptyState())
+                    : _buildProductsList(),
+            
+            // Indicador de carga al final
+            if (_isLoadingMore)
+              SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.all(AppTheme.paddingM),
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSearchBar() {
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.paddingM),
-      color: Colors.white,
-      child: TextField(
-        controller: _searchController,
-        onChanged: _onSearchChanged,
-        decoration: InputDecoration(
-          hintText: 'Buscar por nombre, SKU, categoría, tienda...',
-          prefixIcon: const Icon(Icons.search, color: AppTheme.primaryColor),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    _onSearchChanged('');
-                  },
-                )
-              : null,
-          filled: true,
-          fillColor: AppTheme.backgroundColor,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusM),
-            borderSide: BorderSide.none,
+  /// AppBar moderno con SliverAppBar
+  Widget _buildModernAppBar() {
+    return SliverAppBar(
+      expandedHeight: 140.0,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      flexibleSpace: FlexibleSpaceBar(
+        background: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppTheme.primaryColor,
+                AppTheme.primaryColor.withOpacity(0.85),
+                AppTheme.accentColor.withOpacity(0.7),
+              ],
+            ),
           ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: AppTheme.paddingM,
-            vertical: 12,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.paddingM,
+                vertical: AppTheme.paddingS,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppTheme.errorColor.withOpacity(0.3),
+                              AppTheme.warningColor.withOpacity(0.3),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.shopping_bag_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Productos',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            Text(
+                              'Encuentra lo que necesitas',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Sección del buscador mejorada
+  Widget _buildSearchSection() {
+    return Padding(
+      padding: const EdgeInsets.all(AppTheme.paddingM),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: _onSearchChanged,
+          decoration: InputDecoration(
+            hintText: 'Buscar productos...',
+            hintStyle: TextStyle(
+              color: AppTheme.textSecondary.withOpacity(0.6),
+              fontSize: 15,
+            ),
+            prefixIcon: Container(
+              padding: const EdgeInsets.all(12),
+              child: const Icon(
+                Icons.search_rounded,
+                color: AppTheme.primaryColor,
+                size: 24,
+              ),
+            ),
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(
+                      Icons.clear_rounded,
+                      color: AppTheme.textSecondary,
+                    ),
+                    onPressed: () {
+                      _searchController.clear();
+                      _onSearchChanged('');
+                    },
+                  )
+                : null,
+            filled: false,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusL),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 16,
+            ),
           ),
         ),
       ),
@@ -237,8 +368,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   Widget _buildCategoryFilter() {
     return Container(
-      height: 50,
-      color: Colors.white,
+      height: 56,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.paddingM),
@@ -249,28 +391,44 @@ class _ProductsScreenState extends State<ProductsScreen> {
             final isSelected = _selectedCategoryId == null;
             return Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: FilterChip(
-                label: const Text('Todos'),
-                selected: isSelected,
-                onSelected: (selected) {
-                  if (selected) {
-                    _onCategoryChanged(null);
-                  }
-                },
-                backgroundColor: Colors.white,
-                selectedColor: AppTheme.primaryColor.withOpacity(0.2),
-                labelStyle: TextStyle(
-                  color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  fontSize: 13,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: isSelected
+                      ? LinearGradient(
+                          colors: [
+                            AppTheme.primaryColor.withOpacity(0.15),
+                            AppTheme.primaryColor.withOpacity(0.08),
+                          ],
+                        )
+                      : null,
+                  color: isSelected ? null : Colors.grey[50],
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSelected
+                        ? AppTheme.primaryColor.withOpacity(0.3)
+                        : Colors.grey.withOpacity(0.2),
+                    width: 1,
+                  ),
                 ),
-                side: BorderSide(
-                  color: isSelected
-                      ? AppTheme.primaryColor
-                      : Colors.grey.shade300,
-                  width: isSelected ? 1.5 : 1,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _onCategoryChanged(null),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Text(
+                        'Todos',
+                        style: TextStyle(
+                          color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                          fontSize: 13,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
               ),
             );
           }
@@ -283,28 +441,44 @@ class _ProductsScreenState extends State<ProductsScreen> {
           
           return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: Text(categoryName),
-              selected: isSelected,
-              onSelected: (selected) {
-                if (selected) {
-                  _onCategoryChanged(categoryId);
-                }
-              },
-              backgroundColor: Colors.white,
-              selectedColor: AppTheme.primaryColor.withOpacity(0.2),
-              labelStyle: TextStyle(
-                color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 13,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: isSelected
+                    ? LinearGradient(
+                        colors: [
+                          AppTheme.primaryColor.withOpacity(0.15),
+                          AppTheme.primaryColor.withOpacity(0.08),
+                        ],
+                      )
+                    : null,
+                color: isSelected ? null : Colors.grey[50],
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isSelected
+                      ? AppTheme.primaryColor.withOpacity(0.3)
+                      : Colors.grey.withOpacity(0.2),
+                  width: 1,
+                ),
               ),
-              side: BorderSide(
-                color: isSelected
-                    ? AppTheme.primaryColor
-                    : Colors.grey.shade300,
-                width: isSelected ? 1.5 : 1,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _onCategoryChanged(categoryId),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      categoryName,
+                      style: TextStyle(
+                        color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                        fontSize: 13,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
             ),
           );
         },
@@ -313,20 +487,62 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildResultsCounter() {
+    final isFiltering = _searchController.text.isNotEmpty || _selectedCategoryId != null;
+    
     return Container(
-      padding: const EdgeInsets.symmetric(
+      margin: const EdgeInsets.symmetric(
         horizontal: AppTheme.paddingM,
-        vertical: AppTheme.paddingS,
+        vertical: 8,
       ),
-      color: AppTheme.backgroundColor,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 12,
+      ),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            isFiltering
+                ? AppTheme.accentColor.withOpacity(0.08)
+                : AppTheme.secondaryColor.withOpacity(0.06),
+            isFiltering
+                ? AppTheme.accentColor.withOpacity(0.04)
+                : AppTheme.secondaryColor.withOpacity(0.03),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isFiltering
+              ? AppTheme.accentColor.withOpacity(0.2)
+              : Colors.grey.withOpacity(0.15),
+          width: 1,
+        ),
+      ),
       child: Row(
         children: [
-          Text(
-            '${_products.length} ${_products.length == 1 ? 'producto encontrado' : 'productos encontrados'}',
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: isFiltering
+                  ? AppTheme.accentColor.withOpacity(0.15)
+                  : AppTheme.secondaryColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isFiltering ? Icons.filter_list_rounded : Icons.shopping_bag_rounded,
+              size: 18,
+              color: isFiltering ? AppTheme.accentColor : AppTheme.secondaryColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '${_products.length} ${_products.length == 1 ? 'producto encontrado' : 'productos encontrados'}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isFiltering ? AppTheme.accentColor : AppTheme.textPrimary,
+                letterSpacing: -0.2,
+              ),
             ),
           ),
         ],
@@ -335,20 +551,48 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildLoadingState() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: AppTheme.paddingM),
-          Text(
-            'Cargando productos...',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppTheme.textSecondary,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppTheme.primaryColor.withOpacity(0.1),
+                    AppTheme.accentColor.withOpacity(0.05),
+                  ],
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: const CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+            const Text(
+              'Cargando productos...',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Preparando las mejores ofertas',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppTheme.textSecondary.withOpacity(0.8),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -386,23 +630,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildProductsList() {
-    return ListView.builder(
-      controller: _scrollController,
+    return SliverPadding(
       padding: const EdgeInsets.only(
-        top: AppTheme.paddingS,
-        bottom: AppTheme.paddingL,
+        top: 8,
+        bottom: AppTheme.paddingXL,
       ),
-      itemCount: _products.length + (_isLoadingMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        // Indicador de carga al final
-        if (index == _products.length) {
-          return const Padding(
-            padding: EdgeInsets.all(AppTheme.paddingM),
-            child: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
         
         final product = _products[index];
         final metadata = product['metadata'] as Map<String, dynamic>?;
@@ -433,7 +668,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
           presentations: presentaciones,
           onTap: () => _openProductDetails(product),
         );
-      },
+          },
+          childCount: _products.length,
+        ),
+      ),
     );
   }
 }

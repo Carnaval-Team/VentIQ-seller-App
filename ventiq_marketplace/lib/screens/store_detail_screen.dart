@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../widgets/product_list_card.dart';
@@ -8,10 +9,7 @@ import '../services/marketplace_service.dart';
 class StoreDetailScreen extends StatefulWidget {
   final Map<String, dynamic> store;
 
-  const StoreDetailScreen({
-    super.key,
-    required this.store,
-  });
+  const StoreDetailScreen({super.key, required this.store});
 
   @override
   State<StoreDetailScreen> createState() => _StoreDetailScreenState();
@@ -20,13 +18,13 @@ class StoreDetailScreen extends StatefulWidget {
 class _StoreDetailScreenState extends State<StoreDetailScreen> {
   final MarketplaceService _marketplaceService = MarketplaceService();
   final ScrollController _scrollController = ScrollController();
-  
+
   List<Map<String, dynamic>> _storeProducts = [];
   List<Map<String, dynamic>> _tpvs = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _isLoadingTPVs = true;
-  
+
   // Paginación
   final int _pageSize = 20;
   int _currentOffset = 0;
@@ -62,7 +60,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     try {
       // Obtener ID de la tienda
       final storeId = widget.store['id'] as int?;
-      
+
       if (storeId == null) {
         print('❌ Error: ID de tienda no disponible');
         setState(() {
@@ -73,7 +71,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
       }
 
       print('📍 Cargando productos de tienda ID: $storeId');
-      
+
       final newProducts = await _marketplaceService.getProducts(
         idTienda: storeId,
         idCategoria: null,
@@ -89,7 +87,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
         } else {
           _storeProducts.addAll(newProducts);
         }
-        
+
         _currentOffset += newProducts.length;
         _hasMoreProducts = newProducts.length == _pageSize;
         _isLoading = false;
@@ -101,7 +99,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
         _isLoading = false;
         _isLoadingMore = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -128,7 +126,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   Future<void> _loadTPVsStatus() async {
     try {
       final storeId = widget.store['id'] as int?;
-      
+
       if (storeId == null) {
         print('❌ Error: ID de tienda no disponible para TPVs');
         setState(() {
@@ -138,7 +136,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
       }
 
       print('🏪 Cargando estado de TPVs de tienda ID: $storeId');
-      
+
       final tpvs = await _marketplaceService.getStoreTPVsStatus(storeId);
 
       setState(() {
@@ -155,10 +153,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
 
   /// Refresca los productos y TPVs
   Future<void> _refreshProducts() async {
-    await Future.wait([
-      _loadStoreProducts(reset: true),
-      _loadTPVsStatus(),
-    ]);
+    await Future.wait([_loadStoreProducts(reset: true), _loadTPVsStatus()]);
   }
 
   /// Verifica si la tienda tiene al menos un TPV abierto
@@ -166,7 +161,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     if (_isLoadingTPVs || _tpvs.isEmpty) {
       return false;
     }
-    
+
     return _tpvs.any((tpv) => tpv['esta_abierto'] == true);
   }
 
@@ -175,7 +170,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     if (_isLoadingTPVs || _tpvs.isEmpty) {
       return 0;
     }
-    
+
     return _tpvs.where((tpv) => tpv['esta_abierto'] == true).length;
   }
 
@@ -205,43 +200,41 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
         child: CustomScrollView(
           controller: _scrollController,
           slivers: [
-          // AppBar con imagen de fondo
-          _buildSliverAppBar(),
-          
-          // Contenido
-          SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Información de la tienda
-                _buildStoreInfo(),
-                
-                const Divider(height: 1, thickness: 1),
-                
-                // Sección de productos
-                _buildProductsSection(),
-              ],
-            ),
-          ),
-          
-          // Lista de productos
-          _isLoading
-              ? SliverToBoxAdapter(child: _buildLoadingState())
-              : _storeProducts.isEmpty
-                  ? SliverToBoxAdapter(child: _buildEmptyState())
-                  : _buildProductsList(),
-          
-          // Indicador de carga al final
-          if (_isLoadingMore)
+            // AppBar con imagen de fondo
+            _buildSliverAppBar(),
+
+            // Contenido
             SliverToBoxAdapter(
-              child: Container(
-                padding: const EdgeInsets.all(AppTheme.paddingM),
-                child: const Center(
-                  child: CircularProgressIndicator(),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Información de la tienda
+                  _buildStoreInfo(),
+
+                  const Divider(height: 1, thickness: 1),
+
+                  // Sección de productos
+                  _buildProductsSection(),
+                ],
               ),
             ),
-        ],
+
+            // Lista de productos
+            _isLoading
+                ? SliverToBoxAdapter(child: _buildLoadingState())
+                : _storeProducts.isEmpty
+                ? SliverToBoxAdapter(child: _buildEmptyState())
+                : _buildProductsList(),
+
+            // Indicador de carga al final
+            if (_isLoadingMore)
+              SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.all(AppTheme.paddingM),
+                  child: const Center(child: CircularProgressIndicator()),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -249,43 +242,96 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
 
   Widget _buildSliverAppBar() {
     return SliverAppBar(
-      expandedHeight: 200,
+      expandedHeight: 250,
       pinned: true,
       flexibleSpace: FlexibleSpaceBar(
-        title: Text(
-          widget.store['nombre'],
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            shadows: [
-              Shadow(
-                color: Colors.black45,
-                blurRadius: 4,
-                offset: Offset(0, 1),
+        centerTitle: false,
+        titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
+        title: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.3),
+                  width: 1.5,
+                ),
               ),
-            ],
-          ),
-        ),
-        background: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                AppTheme.primaryColor,
-                AppTheme.primaryColor.withOpacity(0.8),
-              ],
+              child: Text(
+                widget.store['nombre'],
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black45,
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
-          child: widget.store['logoUrl'] != null
-              ? Image.network(
-                  widget.store['logoUrl'],
-                  fit: BoxFit.cover,
-                )
-              : Icon(
-                  Icons.store,
-                  size: 80,
-                  color: Colors.white.withOpacity(0.3),
+        ),
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Imagen de fondo o gradiente
+            widget.store['logoUrl'] != null
+                ? Image.network(
+                    widget.store['logoUrl'],
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return _buildGradientBackground();
+                    },
+                  )
+                : _buildGradientBackground(),
+            
+            // Overlay oscuro para mejor contraste
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.3),
+                    Colors.black.withOpacity(0.6),
+                  ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradientBackground() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppTheme.primaryColor,
+            AppTheme.primaryColor.withOpacity(0.7),
+            AppTheme.accentColor.withOpacity(0.8),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.store,
+          size: 100,
+          color: Colors.white.withOpacity(0.3),
         ),
       ),
     );
@@ -293,7 +339,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
 
   Widget _buildStoreInfo() {
     final isOpen = _isStoreOpen();
-    
+
     return Container(
       padding: const EdgeInsets.all(AppTheme.paddingM),
       color: Colors.white,
@@ -324,7 +370,9 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                     Icon(
                       isOpen ? Icons.check_circle : Icons.cancel,
                       size: 16,
-                      color: isOpen ? AppTheme.successColor : AppTheme.errorColor,
+                      color: isOpen
+                          ? AppTheme.successColor
+                          : AppTheme.errorColor,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -332,7 +380,9 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: isOpen ? AppTheme.successColor : AppTheme.errorColor,
+                        color: isOpen
+                            ? AppTheme.successColor
+                            : AppTheme.errorColor,
                       ),
                     ),
                   ],
@@ -350,16 +400,17 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             ],
           ),
           const SizedBox(height: AppTheme.paddingM),
-          
+
           // Ubicación
           _buildInfoRow(
             icon: Icons.location_on_outlined,
             title: 'Ubicación',
-            content: '${widget.store['ubicacion']}, ${widget.store['municipio']}, ${widget.store['provincia']}',
+            content:
+                '${widget.store['ubicacion']}, ${widget.store['municipio']}, ${widget.store['provincia']}',
             onTap: _openMap,
           ),
           const SizedBox(height: 12),
-          
+
           // Dirección
           if (widget.store['direccion'] != null)
             _buildInfoRow(
@@ -368,7 +419,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
               content: widget.store['direccion'],
             ),
           const SizedBox(height: 12),
-          
+
           // Total de productos
           _buildInfoRow(
             icon: Icons.inventory_2_outlined,
@@ -376,7 +427,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             content: '${widget.store['productCount']} productos',
           ),
           const SizedBox(height: AppTheme.paddingM),
-          
+
           // Sección de TPVs
           // if (!_isLoadingTPVs && _tpvs.isNotEmpty) _buildTPVsSection(),
         ],
@@ -401,11 +452,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
               color: AppTheme.primaryColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: AppTheme.primaryColor,
-            ),
+            child: Icon(icon, size: 20, color: AppTheme.primaryColor),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -489,10 +536,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             SizedBox(height: AppTheme.paddingM),
             Text(
               'Cargando productos...',
-              style: TextStyle(
-                fontSize: 14,
-                color: AppTheme.textSecondary,
-              ),
+              style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
             ),
           ],
         ),
@@ -514,10 +558,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             const SizedBox(height: AppTheme.paddingM),
             const Text(
               'Esta tienda no tiene productos disponibles',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppTheme.textSecondary,
-              ),
+              style: TextStyle(fontSize: 16, color: AppTheme.textSecondary),
               textAlign: TextAlign.center,
             ),
           ],
@@ -548,17 +589,17 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     final isOpen = tpv['esta_abierto'] as bool? ?? false;
     final tpvName = tpv['denominacion_tpv'] as String? ?? 'TPV';
     final fechaApertura = tpv['fecha_apertura'] as String?;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isOpen 
+        color: isOpen
             ? AppTheme.successColor.withOpacity(0.05)
             : Colors.grey.withOpacity(0.05),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isOpen 
+          color: isOpen
               ? AppTheme.successColor.withOpacity(0.3)
               : Colors.grey.withOpacity(0.3),
           width: 1,
@@ -570,7 +611,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isOpen 
+              color: isOpen
                   ? AppTheme.successColor.withOpacity(0.1)
                   : Colors.grey.withOpacity(0.1),
               borderRadius: BorderRadius.circular(6),
@@ -582,7 +623,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          
+
           // Información del TPV
           Expanded(
             child: Column(
@@ -619,7 +660,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
               ],
             ),
           ),
-          
+
           // Badge de estado
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -654,40 +695,43 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
 
   Widget _buildProductsList() {
     return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          final product = _storeProducts[index];
-          final metadata = product['metadata'] as Map<String, dynamic>?;
-          
-          // Extraer presentaciones del metadata
-          final presentacionesData = metadata?['presentaciones'] as List<dynamic>?;
-          final presentaciones = presentacionesData?.map((p) {
-            final presentacion = p as Map<String, dynamic>;
-            final denominacion = presentacion['denominacion'] as String? ?? '';
-            final cantidad = presentacion['cantidad'] ?? 1;
-            final esBase = presentacion['es_base'] as bool? ?? false;
-            
-            // Formato: "Unidad" o "Caja x24" con indicador de base
-            if (cantidad == 1) {
-              return esBase ? '$denominacion ⭐' : denominacion;
-            } else {
-              return esBase ? '$denominacion x$cantidad ⭐' : '$denominacion x$cantidad';
-            }
-          }).toList() ?? [];
-          
-          return ProductListCard(
-            productName: product['denominacion'] ?? 'Sin nombre',
-            price: (product['precio_venta'] ?? 0).toDouble(),
-            imageUrl: product['imagen'],
-            storeName: metadata?['denominacion_tienda'] ?? 'Sin tienda',
-            availableStock: (product['stock_disponible'] ?? 0).toInt(),
-            rating: (metadata?['rating_promedio'] ?? 0.0).toDouble(),
-            presentations: presentaciones,
-            onTap: () => _openProductDetails(product),
-          );
-        },
-        childCount: _storeProducts.length,
-      ),
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final product = _storeProducts[index];
+        final metadata = product['metadata'] as Map<String, dynamic>?;
+
+        // Extraer presentaciones del metadata
+        final presentacionesData =
+            metadata?['presentaciones'] as List<dynamic>?;
+        final presentaciones =
+            presentacionesData?.map((p) {
+              final presentacion = p as Map<String, dynamic>;
+              final denominacion =
+                  presentacion['denominacion'] as String? ?? '';
+              final cantidad = presentacion['cantidad'] ?? 1;
+              final esBase = presentacion['es_base'] as bool? ?? false;
+
+              // Formato: "Unidad" o "Caja x24" con indicador de base
+              if (cantidad == 1) {
+                return esBase ? '$denominacion ⭐' : denominacion;
+              } else {
+                return esBase
+                    ? '$denominacion x$cantidad ⭐'
+                    : '$denominacion x$cantidad';
+              }
+            }).toList() ??
+            [];
+
+        return ProductListCard(
+          productName: product['denominacion'] ?? 'Sin nombre',
+          price: (product['precio_venta'] ?? 0).toDouble(),
+          imageUrl: product['imagen'],
+          storeName: metadata?['denominacion_tienda'] ?? 'Sin tienda',
+          availableStock: (product['stock_disponible'] ?? 0).toInt(),
+          rating: (metadata?['rating_promedio'] ?? 0.0).toDouble(),
+          presentations: presentaciones,
+          onTap: () => _openProductDetails(product),
+        );
+      }, childCount: _storeProducts.length),
     );
   }
 }

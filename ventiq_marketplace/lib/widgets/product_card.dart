@@ -29,77 +29,154 @@ class ProductCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 180,
+        width: 220,
         decoration: BoxDecoration(
           color: AppTheme.cardBackground,
-          borderRadius: BorderRadius.circular(AppTheme.radiusM),
+          borderRadius: BorderRadius.circular(AppTheme.radiusL),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 15,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Imagen del producto
-            Container(
-              height: 140,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(AppTheme.radiusM),
-                  topRight: Radius.circular(AppTheme.radiusM),
-                ),
-              ),
-              child: Stack(
-                children: [
-                  Center(
+            // Imagen del producto con efectos
+            Stack(
+              children: [
+                Container(
+                  height: 150,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.grey[100]!,
+                        Colors.grey[200]!,
+                      ],
+                    ),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(AppTheme.radiusL),
+                      topRight: Radius.circular(AppTheme.radiusL),
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(AppTheme.radiusL),
+                      topRight: Radius.circular(AppTheme.radiusL),
+                    ),
                     child: imageUrl != null
                         ? Image.network(
                             imageUrl!,
                             fit: BoxFit.cover,
                             width: double.infinity,
                             height: double.infinity,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Center(
+                                child: Icon(
+                                  Icons.image_not_supported_outlined,
+                                  size: 50,
+                                  color: Colors.grey[400],
+                                ),
+                              );
+                            },
                           )
-                        : Icon(
-                            Icons.shopping_bag_outlined,
-                            size: 60,
-                            color: Colors.grey[400],
+                        : Center(
+                            child: Icon(
+                              Icons.shopping_bag_outlined,
+                              size: 60,
+                              color: Colors.grey[400],
+                            ),
                           ),
                   ),
-                  // Badge de categoría
+                ),
+                // Badge de categoría mejorado
+                Positioned(
+                  top: 10,
+                  left: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppTheme.primaryColor,
+                          AppTheme.primaryColor.withOpacity(0.8),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primaryColor.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      category,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+                // Badge de ventas
+                if (salesCount > 0)
                   Positioned(
-                    top: 8,
-                    left: 8,
+                    top: 10,
+                    right: 10,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryColor,
-                        borderRadius: BorderRadius.circular(AppTheme.radiusS),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        category,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.local_fire_department,
+                            size: 12,
+                            color: AppTheme.errorColor,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            '$salesCount',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ],
-              ),
+              ],
             ),
             
-            // Información del producto
+            // Información del producto con mejor diseño
             Padding(
-              padding: const EdgeInsets.all(AppTheme.paddingS),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -112,68 +189,105 @@ class ProductCard extends StatelessWidget {
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: AppTheme.textPrimary,
+                      height: 1.3,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   
-                  // Precio
-                  Text(
-                    '\$${price.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.priceColor,
+                  // Tienda con badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.backgroundColor,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.store_rounded,
+                          size: 12,
+                          color: AppTheme.primaryColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            storeName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   
-                  // Tienda
+                  // Precio y rating en fila
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.store_outlined,
-                        size: 12,
-                        color: AppTheme.textSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
+                      // Precio destacado
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppTheme.successColor.withOpacity(0.1),
+                              AppTheme.successColor.withOpacity(0.05),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         child: Text(
-                          storeName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          '\$${price.toStringAsFixed(2)}',
                           style: const TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textSecondary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.priceColor,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  
-                  // Rating y ventas
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.star,
-                        size: 14,
-                        color: AppTheme.secondaryColor,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        rating.toStringAsFixed(1),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textPrimary,
+                      
+                      // Rating con estrella
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${salesCount} vendidos',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: AppTheme.textSecondary,
+                        decoration: BoxDecoration(
+                          color: AppTheme.warningColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.star_rounded,
+                              size: 14,
+                              color: AppTheme.warningColor,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              rating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.textPrimary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],

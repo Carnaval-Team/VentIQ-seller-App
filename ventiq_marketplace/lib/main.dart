@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/app_theme.dart';
 import 'config/supabase_config.dart';
+import 'screens/splash_screen.dart';
 import 'screens/main_screen.dart';
 
 void main() async {
@@ -12,19 +13,23 @@ void main() async {
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
   
-  runApp(const VentIQMarketplaceApp());
+  runApp(const InventtiaMarketplaceApp());
 }
 
-class VentIQMarketplaceApp extends StatelessWidget {
-  const VentIQMarketplaceApp({super.key});
+class InventtiaMarketplaceApp extends StatelessWidget {
+  const InventtiaMarketplaceApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'VentIQ Marketplace',
+      title: 'Inventtia Marketplace',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: const MainScreen(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const SplashScreen(),
+        '/home': (context) => const MainScreen(),
+      },
     );
   }
 }

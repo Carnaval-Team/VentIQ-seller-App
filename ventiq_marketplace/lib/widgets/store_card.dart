@@ -25,50 +25,89 @@ class StoreCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 280,
+        width: 300,
         decoration: BoxDecoration(
-          color: AppTheme.cardBackground,
-          borderRadius: BorderRadius.circular(AppTheme.radiusM),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, Colors.grey[50]!],
+          ),
+          borderRadius: BorderRadius.circular(AppTheme.radiusL),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 15,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(10.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header con gradiente
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppTheme.primaryColor.withOpacity(0.1),
+                    AppTheme.secondaryColor.withOpacity(0.05),
+                  ],
+                ),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(AppTheme.radiusL),
+                  topRight: Radius.circular(AppTheme.radiusL),
+                ),
+              ),
+              child: Row(
                 children: [
-                  // Logo de la tienda
+                  // Logo de la tienda mejorado
                   Container(
                     width: 50,
                     height: 50,
                     decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      borderRadius: BorderRadius.circular(AppTheme.radiusS),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Colors.white, Colors.grey[100]!],
+                      ),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: logoUrl != null
                         ? ClipRRect(
-                            borderRadius: BorderRadius.circular(AppTheme.radiusS),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radiusM,
+                            ),
                             child: Image.network(
                               logoUrl!,
                               fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(
+                                  Icons.store_rounded,
+                                  size: 35,
+                                  color: AppTheme.primaryColor,
+                                );
+                              },
                             ),
                           )
                         : Icon(
-                            Icons.store,
-                            size: 30,
-                            color: Colors.grey[400],
+                            Icons.store_rounded,
+                            size: 35,
+                            color: AppTheme.primaryColor,
                           ),
                   ),
-                  const SizedBox(width: AppTheme.paddingM),
-                  
+                  const SizedBox(width: 12),
+
                   // Información de la tienda
                   Expanded(
                     child: Column(
@@ -84,118 +123,185 @@ class StoreCard extends StatelessWidget {
                             color: AppTheme.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.star,
-                              size: 14,
-                              color: AppTheme.secondaryColor,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              rating.toStringAsFixed(1),
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.textPrimary,
+                        const SizedBox(height: 4),
+                        // Rating con diseño mejorado
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.warningColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.star_rounded,
+                                size: 14,
+                                color: AppTheme.warningColor,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 3),
+                              Text(
+                                rating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              
-              // Estadísticas
-              Container(
-                padding: const EdgeInsets.all(6.0),
-                decoration: BoxDecoration(
-                  color: AppTheme.backgroundColor,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusS),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _buildStatItem(
-                      icon: Icons.inventory_2_outlined,
-                      label: 'Productos',
-                      value: _formatNumber(productCount),
-                    ),
-                    Container(
-                      width: 1,
-                      height: 25,
-                      color: Colors.grey[300],
-                    ),
-                    _buildStatItem(
-                      icon: Icons.shopping_cart_outlined,
-                      label: 'Ventas',
-                      value: _formatNumber(salesCount),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 5),
-              
-              // Botón de visitar
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: onTap,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    minimumSize: const Size(0, 32),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppTheme.radiusS),
-                    ),
+            ),
+
+            // Contenido principal
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                children: [
+                  // Estadísticas mejoradas
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildModernStatCard(
+                          icon: Icons.inventory_2_rounded,
+                          label: 'Productos',
+                          value: _formatNumber(productCount),
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildModernStatCard(
+                          icon: Icons.shopping_cart_rounded,
+                          label: 'Ventas',
+                          value: _formatNumber(salesCount),
+                          color: AppTheme.successColor,
+                        ),
+                      ),
+                    ],
                   ),
-                  child: const Text(
-                    'Visitar Tienda',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                  const SizedBox(height: 10),
+
+                  // Botón de visitar mejorado
+                  // Container(
+                  //   width: double.infinity,
+                  //   decoration: BoxDecoration(
+                  //     gradient: LinearGradient(
+                  //       colors: [
+                  //         AppTheme.primaryColor,
+                  //         AppTheme.primaryColor.withOpacity(0.8),
+                  //       ],
+                  //     ),
+                  //     borderRadius: BorderRadius.circular(10),
+                  //     boxShadow: [
+                  //       BoxShadow(
+                  //         color: AppTheme.primaryColor.withOpacity(0.3),
+                  //         blurRadius: 6,
+                  //         offset: const Offset(0, 3),
+                  //       ),
+                  //     ],
+                  //   ),
+                  //   child: Material(
+                  //     color: Colors.transparent,
+                  //     child: InkWell(
+                  //       onTap: onTap,
+                  //       borderRadius: BorderRadius.circular(10),
+                  //       child: Padding(
+                  //         padding: const EdgeInsets.symmetric(vertical: 10),
+                  //         child: Row(
+                  //           mainAxisAlignment: MainAxisAlignment.center,
+                  //           children: [
+                  //             const Icon(
+                  //               Icons.storefront_rounded,
+                  //               color: Colors.white,
+                  //               size: 18,
+                  //             ),
+                  //             const SizedBox(width: 6),
+                  //             const Text(
+                  //               'Visitar Tienda',
+                  //               style: TextStyle(
+                  //                 color: Colors.white,
+                  //                 fontSize: 13,
+                  //                 fontWeight: FontWeight.bold,
+                  //                 letterSpacing: 0.5,
+                  //               ),
+                  //             ),
+                  //             const SizedBox(width: 4),
+                  //             const Icon(
+                  //               Icons.arrow_forward_rounded,
+                  //               color: Colors.white,
+                  //               size: 16,
+                  //             ),
+                  //           ],
+                  //         ),
+                  //       ),
+                  //     ),
+                  //   ),
+                  // ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStatItem({
+  Widget _buildModernStatCard({
     required IconData icon,
     required String label,
     required String value,
+    required Color color,
   }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18, color: AppTheme.primaryColor),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.textPrimary,
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
         ),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 10,
-            color: AppTheme.textSecondary,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.2), width: 1),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 20, color: color),
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              color: AppTheme.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -91,78 +91,290 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('VentIQ Marketplace'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: () {},
-          ),
-        ],
-      ),
+      backgroundColor: AppTheme.backgroundColor,
       body: RefreshIndicator(
         onRefresh: _loadData,
-        child: SingleChildScrollView(
+        color: AppTheme.primaryColor,
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Buscador
-              _buildSearchSection(),
+          slivers: [
+            // AppBar con efecto moderno
+            _buildModernAppBar(),
 
-              const SizedBox(height: AppTheme.paddingM),
+            // Contenido principal
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Buscador con diseño mejorado
+                  _buildSearchSection(),
 
-              // Productos más vendidos
-              _buildBestSellingProducts(),
+                  const SizedBox(height: AppTheme.paddingL),
 
-              const SizedBox(height: AppTheme.paddingL),
+                  // Banner promocional
+                  // _buildPromoBanner(),
 
-              // Tiendas destacadas
-              _buildTopStores(),
+                  const SizedBox(height: AppTheme.paddingL),
 
-              const SizedBox(height: AppTheme.paddingL),
-            ],
+                  // Productos más vendidos
+                  _buildBestSellingProducts(),
+
+                  const SizedBox(height: AppTheme.paddingXL),
+
+                  // Tiendas destacadas
+                  _buildTopStores(),
+
+                  const SizedBox(height: AppTheme.paddingXL),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// AppBar moderno con SliverAppBar
+  Widget _buildModernAppBar() {
+    return SliverAppBar(
+      expandedHeight: 120.0,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      flexibleSpace: FlexibleSpaceBar(
+        background: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppTheme.primaryColor,
+                AppTheme.primaryColor.withOpacity(0.8),
+                AppTheme.secondaryColor,
+              ],
+            ),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.paddingM,
+                vertical: AppTheme.paddingS,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(0),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ColorFiltered(
+                          colorFilter: const ColorFilter.mode(
+                            Colors.white,
+                            BlendMode.srcIn,
+                          ),
+                          child: Image.asset(
+                            'assets/logo_app.png',
+                            width: 58,
+                            height: 58,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Inventtia',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            Text(
+                              'Marketplace',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.notifications_outlined),
+                          color: Colors.white,
+                          onPressed: () {},
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.account_circle_outlined),
+                          color: Colors.white,
+                          onPressed: () {},
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// Sección del buscador
+  /// Sección del buscador mejorada
   Widget _buildSearchSection() {
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.paddingM),
-      decoration: BoxDecoration(
-        gradient: AppTheme.primaryGradient,
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryColor.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: AppTheme.paddingM),
-          SearchBarWidget(
-            controller: _searchController,
-            onSearch: (query) {
-              // TODO: Implementar búsqueda
-              print('Buscando: $query');
-            },
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.paddingM),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: SearchBarWidget(
+          controller: _searchController,
+          onSearch: (query) {
+            // TODO: Implementar búsqueda
+            print('Buscando: $query');
+          },
+        ),
       ),
     );
   }
 
-  /// Sección de productos más vendidos
+  /// Banner promocional
+  Widget _buildPromoBanner() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.paddingM),
+      child: Container(
+        height: 160,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppTheme.accentColor,
+              AppTheme.accentColor.withOpacity(0.8),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.accentColor.withOpacity(0.3),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Patrón de fondo decorativo
+            Positioned(
+              right: -20,
+              top: -20,
+              child: Container(
+                width: 150,
+                height: 150,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.1),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 40,
+              bottom: -30,
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.1),
+                ),
+              ),
+            ),
+            // Contenido
+            Padding(
+              padding: const EdgeInsets.all(AppTheme.paddingL),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      '🎉 OFERTA ESPECIAL',
+                      style: TextStyle(
+                        color: AppTheme.accentColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '¡Descuentos de hasta\n50% en productos!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Aprovecha las mejores ofertas',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Sección de productos más vendidos con diseño mejorado
   Widget _buildBestSellingProducts() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,51 +384,148 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                '🔥 Productos Más Vendidos',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppTheme.errorColor.withOpacity(0.2),
+                          AppTheme.warningColor.withOpacity(0.2),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.local_fire_department_rounded,
+                      color: AppTheme.errorColor,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Más Vendidos',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Los favoritos del momento',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: () {
-                  // Navegar al tab de Productos (index 2)
-                  widget.onNavigateToTab?.call(2);
-                },
-                child: const Text('Ver todos'),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: TextButton(
+                  onPressed: () {
+                    widget.onNavigateToTab?.call(2);
+                  },
+                  child: Row(
+                    children: [
+                      Text(
+                        'Ver todos',
+                        style: TextStyle(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        color: AppTheme.primaryColor,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: AppTheme.paddingS),
+        const SizedBox(height: AppTheme.paddingM),
         SizedBox(
-          height: 280,
+          height: 290,
           child: _isLoadingProducts
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        color: AppTheme.primaryColor,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Cargando productos...',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
               : _bestSellingProducts.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(AppTheme.paddingM),
-                        child: Text(
-                          'No hay productos disponibles',
-                          style: TextStyle(color: AppTheme.textSecondary),
+                  ? Center(
+                      child: Container(
+                        margin: const EdgeInsets.all(AppTheme.paddingM),
+                        padding: const EdgeInsets.all(AppTheme.paddingL),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.inventory_2_outlined,
+                              size: 48,
+                              color: AppTheme.textSecondary.withOpacity(0.5),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'No hay productos disponibles',
+                              style: TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     )
                   : ListView.builder(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.paddingS,
+                        horizontal: AppTheme.paddingM,
                       ),
                       itemCount: _bestSellingProducts.length,
                       itemBuilder: (context, index) {
                         final product = _bestSellingProducts[index];
                         return Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.paddingS,
-                          ),
+                          padding: const EdgeInsets.only(right: AppTheme.paddingM),
                           child: ProductCard(
                             productName: product['nombre'] as String? ?? 'Sin nombre',
                             price: (product['precio_venta'] as num?)?.toDouble() ?? 0.0,
@@ -253,7 +562,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Sección de tiendas destacadas
+  /// Sección de tiendas destacadas con diseño mejorado
   Widget _buildTopStores() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -263,51 +572,148 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                '⭐ Tiendas Destacadas',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppTheme.warningColor.withOpacity(0.2),
+                          AppTheme.warningColor.withOpacity(0.1),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.store_rounded,
+                      color: AppTheme.warningColor,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Tiendas Destacadas',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Las mejores valoradas',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: () {
-                  // Navegar al tab de Tiendas (index 1)
-                  widget.onNavigateToTab?.call(1);
-                },
-                child: const Text('Ver todas'),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: TextButton(
+                  onPressed: () {
+                    widget.onNavigateToTab?.call(1);
+                  },
+                  child: Row(
+                    children: [
+                      Text(
+                        'Ver todas',
+                        style: TextStyle(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        color: AppTheme.primaryColor,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: AppTheme.paddingS),
+        const SizedBox(height: AppTheme.paddingM),
         SizedBox(
-          height: 200,
+          height: 210,
           child: _isLoadingStores
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        color: AppTheme.primaryColor,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Cargando tiendas...',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
               : _featuredStores.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(AppTheme.paddingM),
-                        child: Text(
-                          'No hay tiendas disponibles',
-                          style: TextStyle(color: AppTheme.textSecondary),
+                  ? Center(
+                      child: Container(
+                        margin: const EdgeInsets.all(AppTheme.paddingM),
+                        padding: const EdgeInsets.all(AppTheme.paddingL),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.store_mall_directory_outlined,
+                              size: 48,
+                              color: AppTheme.textSecondary.withOpacity(0.5),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'No hay tiendas disponibles',
+                              style: TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     )
                   : ListView.builder(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.paddingS,
+                        horizontal: AppTheme.paddingM,
                       ),
                       itemCount: _featuredStores.length,
                       itemBuilder: (context, index) {
                         final store = _featuredStores[index];
                         return Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTheme.paddingS,
-                          ),
+                          padding: const EdgeInsets.only(right: AppTheme.paddingM),
                           child: StoreCard(
                             storeName: store['nombre'] as String? ?? 'Tienda',
                             productCount: (store['total_productos'] as num?)?.toInt() ?? 0,

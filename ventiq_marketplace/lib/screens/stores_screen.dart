@@ -148,64 +148,183 @@ class _StoresScreenState extends State<StoresScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tiendas'),
-        elevation: 0,
-      ),
+      backgroundColor: AppTheme.backgroundColor,
       body: RefreshIndicator(
         onRefresh: _loadStores,
-        child: Column(
-          children: [
+        color: AppTheme.primaryColor,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // AppBar moderno con gradiente
+            _buildModernAppBar(),
+            
             // Barra de búsqueda
-            _buildSearchBar(),
+            SliverToBoxAdapter(child: _buildSearchSection()),
             
             // Contador de resultados
-            if (!_isLoading && _errorMessage == null) _buildResultsCounter(),
+            if (!_isLoading && _errorMessage == null)
+              SliverToBoxAdapter(child: _buildResultsCounter()),
             
-            // Lista de tiendas
-            Expanded(
-              child: _isLoading
-                  ? _buildLoadingState()
-                  : _errorMessage != null
-                      ? _buildErrorState()
-                      : _filteredStores.isEmpty
-                          ? _buildEmptyState()
-                          : _buildStoresList(),
-            ),
+            // Contenido principal
+            _isLoading
+                ? SliverToBoxAdapter(child: _buildLoadingState())
+                : _errorMessage != null
+                    ? SliverToBoxAdapter(child: _buildErrorState())
+                    : _filteredStores.isEmpty
+                        ? SliverToBoxAdapter(child: _buildEmptyState())
+                        : _buildStoresList(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSearchBar() {
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.paddingM),
-      color: Colors.white,
-      child: TextField(
-        controller: _searchController,
-        onChanged: _filterStores,
-        decoration: InputDecoration(
-          hintText: 'Buscar por nombre, ubicación o dirección...',
-          prefixIcon: const Icon(Icons.search, color: AppTheme.primaryColor),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    _filterStores('');
-                  },
-                )
-              : null,
-          filled: true,
-          fillColor: AppTheme.backgroundColor,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusM),
-            borderSide: BorderSide.none,
+  /// AppBar moderno con SliverAppBar
+  Widget _buildModernAppBar() {
+    return SliverAppBar(
+      expandedHeight: 140.0,
+      floating: false,
+      pinned: true,
+      elevation: 0,
+      flexibleSpace: FlexibleSpaceBar(
+        background: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppTheme.primaryColor,
+                AppTheme.primaryColor.withOpacity(0.85),
+                AppTheme.secondaryColor.withOpacity(0.9),
+              ],
+            ),
           ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: AppTheme.paddingM,
-            vertical: 12,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.paddingM,
+                vertical: AppTheme.paddingS,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppTheme.warningColor.withOpacity(0.3),
+                              AppTheme.warningColor.withOpacity(0.2),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.store_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Tiendas',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            Text(
+                              'Descubre las mejores tiendas',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Sección del buscador mejorada
+  Widget _buildSearchSection() {
+    return Padding(
+      padding: const EdgeInsets.all(AppTheme.paddingM),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: _filterStores,
+          decoration: InputDecoration(
+            hintText: 'Buscar tiendas...',
+            hintStyle: TextStyle(
+              color: AppTheme.textSecondary.withOpacity(0.6),
+              fontSize: 15,
+            ),
+            prefixIcon: Container(
+              padding: const EdgeInsets.all(12),
+              child: const Icon(
+                Icons.search_rounded,
+                color: AppTheme.primaryColor,
+                size: 24,
+              ),
+            ),
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(
+                      Icons.clear_rounded,
+                      color: AppTheme.textSecondary,
+                    ),
+                    onPressed: () {
+                      _searchController.clear();
+                      _filterStores('');
+                    },
+                  )
+                : null,
+            filled: false,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusL),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 16,
+            ),
           ),
         ),
       ),
@@ -216,28 +335,61 @@ class _StoresScreenState extends State<StoresScreen> {
     final isFiltering = _searchController.text.isNotEmpty;
     
     return Container(
-      padding: const EdgeInsets.symmetric(
+      margin: const EdgeInsets.symmetric(
         horizontal: AppTheme.paddingM,
-        vertical: AppTheme.paddingS,
+        vertical: 8,
       ),
-      color: AppTheme.backgroundColor,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 12,
+      ),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            isFiltering
+                ? AppTheme.primaryColor.withOpacity(0.08)
+                : AppTheme.secondaryColor.withOpacity(0.06),
+            isFiltering
+                ? AppTheme.primaryColor.withOpacity(0.04)
+                : AppTheme.secondaryColor.withOpacity(0.03),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isFiltering
+              ? AppTheme.primaryColor.withOpacity(0.2)
+              : Colors.grey.withOpacity(0.15),
+          width: 1,
+        ),
+      ),
       child: Row(
         children: [
-          if (isFiltering)
-            const Icon(
-              Icons.filter_list,
-              size: 18,
-              color: AppTheme.primaryColor,
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: isFiltering
+                  ? AppTheme.primaryColor.withOpacity(0.15)
+                  : AppTheme.secondaryColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
             ),
-          if (isFiltering) const SizedBox(width: 8),
-          Text(
-            isFiltering
-                ? '${_filteredStores.length} de ${_stores.length} ${_filteredStores.length == 1 ? 'tienda' : 'tiendas'}'
-                : '${_filteredStores.length} ${_filteredStores.length == 1 ? 'tienda encontrada' : 'tiendas encontradas'}',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: isFiltering ? AppTheme.primaryColor : AppTheme.textSecondary,
+            child: Icon(
+              isFiltering ? Icons.filter_list_rounded : Icons.store_rounded,
+              size: 18,
+              color: isFiltering ? AppTheme.primaryColor : AppTheme.secondaryColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              isFiltering
+                  ? '${_filteredStores.length} de ${_stores.length} ${_filteredStores.length == 1 ? 'tienda' : 'tiendas'}'
+                  : '${_filteredStores.length} ${_filteredStores.length == 1 ? 'tienda disponible' : 'tiendas disponibles'}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isFiltering ? AppTheme.primaryColor : AppTheme.textPrimary,
+                letterSpacing: -0.2,
+              ),
             ),
           ),
         ],
@@ -246,20 +398,48 @@ class _StoresScreenState extends State<StoresScreen> {
   }
 
   Widget _buildLoadingState() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: AppTheme.paddingM),
-          Text(
-            'Cargando tiendas...',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppTheme.textSecondary,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppTheme.primaryColor.withOpacity(0.1),
+                    AppTheme.secondaryColor.withOpacity(0.05),
+                  ],
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: const CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+            const Text(
+              'Cargando tiendas...',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Descubriendo las mejores opciones',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppTheme.textSecondary.withOpacity(0.8),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -369,13 +549,14 @@ class _StoresScreenState extends State<StoresScreen> {
 
   /// Lista de tiendas
   Widget _buildStoresList() {
-    return ListView.builder(
+    return SliverPadding(
       padding: const EdgeInsets.only(
-        top: AppTheme.paddingS,
-        bottom: AppTheme.paddingL,
+        top: 8,
+        bottom: AppTheme.paddingXL,
       ),
-      itemCount: _filteredStores.length,
-      itemBuilder: (context, index) {
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
         final store = _filteredStores[index];
         return StoreListCard(
           storeName: store['nombre'] as String? ?? 'Tienda',
@@ -394,7 +575,10 @@ class _StoresScreenState extends State<StoresScreen> {
             store['nombre'] as String? ?? 'Tienda',
           ),
         );
-      },
+          },
+          childCount: _filteredStores.length,
+        ),
+      ),
     );
   }
 }

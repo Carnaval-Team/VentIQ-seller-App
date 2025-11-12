@@ -32,81 +32,105 @@ class StoreListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(
         horizontal: AppTheme.paddingM,
-        vertical: AppTheme.paddingS,
+        vertical: 6,
       ),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radiusM),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.grey.withOpacity(0.15),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppTheme.radiusM),
-        child: Padding(
-          padding: const EdgeInsets.all(AppTheme.paddingM),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Logo de la tienda
-              _buildStoreLogo(),
-              const SizedBox(width: AppTheme.paddingM),
-              
-              // Información de la tienda
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Nombre y botón de mapa
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            storeName,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Logo de la tienda
+                _buildStoreLogo(),
+                const SizedBox(width: 14),
+
+                // Información de la tienda
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Nombre y botón de mapa
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              storeName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textPrimary,
+                                letterSpacing: -0.2,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        if (latitude != null && longitude != null)
-                          IconButton(
-                            icon: const Icon(
-                              Icons.map_outlined,
-                              color: AppTheme.primaryColor,
-                              size: 24,
+                          if (latitude != null && longitude != null)
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryColor.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.map_outlined,
+                                  color: AppTheme.primaryColor,
+                                  size: 20,
+                                ),
+                                onPressed: onMapTap,
+                                tooltip: 'Ver en el mapa',
+                                padding: const EdgeInsets.all(8),
+                                constraints: const BoxConstraints(),
+                              ),
                             ),
-                            onPressed: onMapTap,
-                            tooltip: 'Ver en el mapa',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Ubicación
+                      if (ubicacion != null ||
+                          provincia != null ||
+                          municipio != null)
+                        _buildLocationInfo(),
+
+                      const SizedBox(height: 10),
+
+                      // Total de productos
+                      _buildProductCount(),
+
+                      // Dirección
+                      if (direccion != null && direccion!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _buildAddress(),
                       ],
-                    ),
-                    const SizedBox(height: 8),
-                    
-                    // Ubicación
-                    if (ubicacion != null || provincia != null || municipio != null)
-                      _buildLocationInfo(),
-                    
-                    const SizedBox(height: 12),
-                    
-                    // Total de productos
-                    _buildProductCount(),
-                    
-                    const SizedBox(height: 8),
-                    
-                    // Dirección
-                    if (direccion != null && direccion!.isNotEmpty)
-                      _buildAddress(),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -115,19 +139,26 @@ class StoreListCard extends StatelessWidget {
 
   Widget _buildStoreLogo() {
     return Container(
-      width: 80,
-      height: 80,
+      width: 70,
+      height: 70,
       decoration: BoxDecoration(
-        color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(AppTheme.radiusS),
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.grey[300]!,
+          color: Colors.grey.withOpacity(0.15),
           width: 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: logoUrl != null && logoUrl!.isNotEmpty
           ? ClipRRect(
-              borderRadius: BorderRadius.circular(AppTheme.radiusS),
+              borderRadius: BorderRadius.circular(12),
               child: Image.network(
                 logoUrl!,
                 fit: BoxFit.cover,
@@ -141,16 +172,18 @@ class StoreListCard extends StatelessWidget {
   }
 
   Widget _buildPlaceholderLogo() {
-    return Icon(
-      Icons.store,
-      size: 40,
-      color: Colors.grey[400],
+    return Center(
+      child: Icon(
+        Icons.store_rounded,
+        size: 32,
+        color: Colors.grey[400],
+      ),
     );
   }
 
   Widget _buildLocationInfo() {
     final List<String> locationParts = [];
-    
+
     if (ubicacion != null && ubicacion!.isNotEmpty) {
       locationParts.add(ubicacion!);
     }
@@ -160,23 +193,24 @@ class StoreListCard extends StatelessWidget {
     if (provincia != null && provincia!.isNotEmpty) {
       locationParts.add(provincia!);
     }
-    
+
     final locationText = locationParts.join(', ');
-    
+
     return Row(
       children: [
-        const Icon(
-          Icons.location_on_outlined,
-          size: 16,
-          color: AppTheme.secondaryColor,
+        Icon(
+          Icons.location_on_rounded,
+          size: 15,
+          color: AppTheme.secondaryColor.withOpacity(0.8),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 5),
         Expanded(
           child: Text(
             locationText,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: AppTheme.textSecondary,
+              color: AppTheme.textSecondary.withOpacity(0.9),
+              height: 1.3,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -188,33 +222,38 @@ class StoreListCard extends StatelessWidget {
 
   Widget _buildProductCount() {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: AppTheme.primaryColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppTheme.radiusS),
+        gradient: LinearGradient(
+          colors: [
+            AppTheme.primaryColor.withOpacity(0.08),
+            AppTheme.primaryColor.withOpacity(0.12),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: AppTheme.primaryColor.withOpacity(0.3),
-          width: 1,
+          color: AppTheme.primaryColor.withOpacity(0.2),
+          width: 0.5,
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.inventory_2_outlined,
-            size: 16,
-            color: AppTheme.primaryColor,
+          Icon(
+            Icons.inventory_2_rounded,
+            size: 14,
+            color: AppTheme.primaryColor.withOpacity(0.9),
           ),
           const SizedBox(width: 6),
           Text(
             '$productCount ${productCount == 1 ? 'producto' : 'productos'}',
-            style: const TextStyle(
-              fontSize: 13,
+            style: TextStyle(
+              fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: AppTheme.primaryColor,
+              color: AppTheme.primaryColor.withOpacity(0.9),
+              letterSpacing: -0.1,
             ),
           ),
         ],
@@ -226,19 +265,19 @@ class StoreListCard extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(
-          Icons.home_outlined,
-          size: 16,
-          color: AppTheme.textSecondary,
+        Icon(
+          Icons.home_rounded,
+          size: 14,
+          color: AppTheme.textSecondary.withOpacity(0.6),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 5),
         Expanded(
           child: Text(
             direccion!,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppTheme.textSecondary,
-              height: 1.3,
+            style: TextStyle(
+              fontSize: 11.5,
+              color: AppTheme.textSecondary.withOpacity(0.8),
+              height: 1.4,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

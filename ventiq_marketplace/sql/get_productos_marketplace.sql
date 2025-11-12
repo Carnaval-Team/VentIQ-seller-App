@@ -96,6 +96,10 @@ BEGIN
             'es_servicio', p.es_servicio,
             'denominacion_tienda', t.denominacion,
             'id_tienda', t.id,
+            'ubicacion', t.ubicacion,
+            'direccion', t.direccion,
+            'provincia', t.provincia,
+            'municipio', t.municipio,
             'rating_promedio', COALESCE(
                 (SELECT ROUND(AVG(pr.rating), 1)
                  FROM app_dat_producto_rating pr
