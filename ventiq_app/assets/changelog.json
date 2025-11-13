@@ -1,8 +1,30 @@
 {
-  "current_version": "1.6.0",
-  "build": 600,
+  "current_version": "1.6.1",
+  "build": 601,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.6.1",
+      "date": "2025-11-13",
+      "title": "🎉 ¡Bienvenido a Inventtia® - Marca Registrada!",
+      "changes": [
+       {
+          "type": "improvement",
+          "title": "Venta de Productos elaborados sin ingredientes disponibles",
+          "description": "Ahora puedes vender productos elaborados sin ingredientes disponibles, si el administrador de la tienda lo permite."
+        },
+        {
+          "type": "fix",
+          "title": "Procesamiento Más Rápido",
+          "description": "Ahora la carga de productos en el listado de productos y en el detalle aumento la velocidad drasticamente."
+        },
+        {
+          "type": "fix",
+          "title": "Error listando los prodcutos en apertura y cierre.",
+          "description": "Ahora la carga de productos para el conteo físico funciona correctamente mostrando solo los prodcutos del almacén al que el tpv puede acceder."
+        }
+      ]
+    },
     {
       "version": "1.6.0",
       "date": "2025-11-10",

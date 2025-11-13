@@ -6,6 +6,7 @@ import '../services/turno_service.dart';
 import '../services/payment_method_service.dart';
 import '../services/product_detail_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/store_config_service.dart';
 import '../utils/price_utils.dart';
 import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
@@ -914,11 +915,28 @@ class _PreorderScreenState extends State<PreorderScreen> {
         },
       );
 
-      // Verificar disponibilidad de ingredientes solo en modo ONLINE
+      // Verificar disponibilidad de ingredientes solo en modo ONLINE y si la configuración lo requiere
       final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
+      
       if (!isOfflineModeEnabled) {
-        debugPrint('🌐 Modo online - Verificando disponibilidad de ingredientes');
-        await _checkIngredientsAvailability(productosElaborados);
+        debugPrint('🌐 Modo online - Verificando configuración de tienda...');
+        
+        // Obtener ID de tienda
+        final idTienda = await _userPreferencesService.getIdTienda();
+        if (idTienda != null) {
+          // Verificar configuración de tienda
+          final permiteVenderSinDisponibilidad = await StoreConfigService.getPermiteVenderAunSinDisponibilidad(idTienda);
+          
+          if (permiteVenderSinDisponibilidad) {
+            debugPrint('⚙️ Configuración permite vender sin disponibilidad - Saltando verificación de ingredientes');
+          } else {
+            debugPrint('⚙️ Configuración requiere verificar disponibilidad - Verificando ingredientes');
+            await _checkIngredientsAvailability(productosElaborados);
+          }
+        } else {
+          debugPrint('⚠️ No se pudo obtener ID de tienda - Verificando ingredientes por seguridad');
+          await _checkIngredientsAvailability(productosElaborados);
+        }
       } else {
         debugPrint('🔌 Modo offline - Saltando verificación de disponibilidad');
       }
