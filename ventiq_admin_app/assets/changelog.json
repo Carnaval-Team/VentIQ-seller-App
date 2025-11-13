@@ -144,7 +144,7 @@
         {
           "type": "fix",
           "title": "Zona Horaria de La Habana en Vista y PDF",
-          "description": "Corregida conversión de fechas y horas UTC a zona horaria de Cuba (UTC-4) en la vista de turnos, trabajadores y exportación PDF del módulo de Recursos Humanos"
+          "description": "Corregida conversión de fechas y horas UTC a zona horaria de (UTC-4) en la vista de turnos, trabajadores y exportación PDF del módulo de Recursos Humanos"
         }
       ]
     },

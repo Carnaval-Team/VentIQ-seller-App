@@ -23,7 +23,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
   bool _manejaInventario = false; // Se cargará desde configuración de tienda
   bool _isLoadingStoreConfig = true;
   String _userName = 'Cargando...';
-  
+
   // Inventory management
   List<InventoryProduct> _inventoryProducts = [];
   Map<int, TextEditingController> _inventoryControllers = {};
@@ -185,7 +185,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
       // Verificar si está en modo offline
       final isOffline = await _userPrefs.isOfflineModeEnabled();
-      
+
       if (isOffline) {
         print('🔌 Modo offline activado - Inventario deshabilitado');
         setState(() {
@@ -196,11 +196,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
       }
 
       final storeConfig = await _userPrefs.getStoreConfig();
-      
+
       if (storeConfig != null) {
         final manejaInventario = storeConfig['maneja_inventario'] ?? false;
-        print('🏪 Configuración de tienda cargada - Maneja inventario: $manejaInventario');
-        
+        print(
+          '🏪 Configuración de tienda cargada - Maneja inventario: $manejaInventario',
+        );
+
         setState(() {
           _manejaInventario = manejaInventario;
           _isLoadingStoreConfig = false;
@@ -230,14 +232,18 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
       final userData = await _userPrefs.getUserData();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda = idTiendaRaw is int ? idTiendaRaw : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda =
+          idTiendaRaw is int
+              ? idTiendaRaw
+              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (idTienda == null) {
         throw Exception('No se encontró información de la tienda');
       }
 
-      print('📦 Cargando productos de inventario para tienda: $idTienda');
-
+      final idAlmacen = await _userPrefs.getIdAlmacen();
+      print('📦 Cargando productos de inventario para tienda: $idTienda almacen: $idAlmacen');
+      
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged',
         params: {
@@ -245,23 +251,28 @@ class _AperturaScreenState extends State<AperturaScreen> {
           'p_limite': 9999,
           'p_mostrar_sin_stock': true,
           'p_pagina': 1,
+          'p_id_almacen':idAlmacen,
         },
       );
 
       if (response != null && response is List) {
         // Agrupar productos SOLO por id_producto (sin considerar ubicaciones ni presentaciones)
         final Map<int, InventoryProduct> productsByIdMap = {};
-        
+
         for (var item in response) {
           try {
             final product = InventoryProduct.fromSupabaseRpc(item);
-            
+
             // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
             if (!productsByIdMap.containsKey(product.id)) {
               productsByIdMap[product.id] = product;
-              print('📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})');
+              print(
+                '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
+              );
             } else {
-              print('⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})');
+              print(
+                '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
+              );
             }
           } catch (e) {
             print('❌ Error procesando producto: $e');
@@ -294,7 +305,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
       setState(() {
         _isLoadingInventory = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -310,11 +321,17 @@ class _AperturaScreenState extends State<AperturaScreen> {
   Future<List<Map<String, dynamic>>> _getProductLocations(int productId) async {
     try {
       final userData = await _userPrefs.getUserData();
+      final idAlmacen = await _userPrefs.getIdAlmacen();
       final idTiendaRaw = userData['idTienda'];
-      final idTienda = idTiendaRaw is int ? idTiendaRaw : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+      final idTienda =
+          idTiendaRaw is int
+              ? idTiendaRaw
+              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
 
       if (idTienda == null) return [];
-
+      print(
+        '📦 Obteniendo ubicaciones del producto $productId para tienda $idTienda... almacen: $idAlmacen',
+      );
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged',
         params: {
@@ -323,20 +340,21 @@ class _AperturaScreenState extends State<AperturaScreen> {
           'p_limite': 9999,
           'p_mostrar_sin_stock': true,
           'p_pagina': 1,
+          'p_id_almacen': idAlmacen,
         },
       );
 
       if (response != null && response is List) {
         // Agrupar por ubicación única para evitar duplicados por presentaciones
         final Map<String, Map<String, dynamic>> locationsMap = {};
-        
+
         for (var item in response) {
           try {
             final product = InventoryProduct.fromSupabaseRpc(item);
-            
+
             // Crear clave única por ubicación (almacén + ubicación)
             final locationKey = '${product.idAlmacen}_${product.idUbicacion}';
-            
+
             // Solo agregar la primera vez que vemos esta ubicación
             if (!locationsMap.containsKey(locationKey)) {
               locationsMap[locationKey] = {
@@ -349,10 +367,10 @@ class _AperturaScreenState extends State<AperturaScreen> {
             print('❌ Error procesando ubicación: $e');
           }
         }
-        
+
         return locationsMap.values.toList();
       }
-      
+
       return [];
     } catch (e) {
       print('❌ Error obteniendo ubicaciones del producto: $e');
@@ -367,9 +385,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
       print('📦 Cargando productos antes de mostrar modal...');
       await _loadInventoryProducts();
     }
-    
+
     if (!mounted) return;
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -488,7 +506,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
                         padding: const EdgeInsets.all(16),
                         child: const Center(
                           child: CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Color(0xFF4A90E2),
+                            ),
                           ),
                         ),
                       )
@@ -496,10 +516,16 @@ class _AperturaScreenState extends State<AperturaScreen> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: _inventorySet ? Colors.green[50] : Colors.orange[50],
+                          color:
+                              _inventorySet
+                                  ? Colors.green[50]
+                                  : Colors.orange[50],
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: _inventorySet ? Colors.green[200]! : Colors.orange[200]!,
+                            color:
+                                _inventorySet
+                                    ? Colors.green[200]!
+                                    : Colors.orange[200]!,
                           ),
                         ),
                         child: Column(
@@ -508,17 +534,27 @@ class _AperturaScreenState extends State<AperturaScreen> {
                             Row(
                               children: [
                                 Icon(
-                                  _inventorySet ? Icons.check_circle : Icons.warning_amber,
-                                  color: _inventorySet ? Colors.green[700] : Colors.orange[700],
+                                  _inventorySet
+                                      ? Icons.check_circle
+                                      : Icons.warning_amber,
+                                  color:
+                                      _inventorySet
+                                          ? Colors.green[700]
+                                          : Colors.orange[700],
                                   size: 18,
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  _inventorySet ? 'Inventario Establecido' : 'Inventario Requerido',
+                                  _inventorySet
+                                      ? 'Inventario Establecido'
+                                      : 'Inventario Requerido',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
-                                    color: _inventorySet ? Colors.green[700] : Colors.orange[700],
+                                    color:
+                                        _inventorySet
+                                            ? Colors.green[700]
+                                            : Colors.orange[700],
                                   ),
                                 ),
                               ],
@@ -538,12 +574,25 @@ class _AperturaScreenState extends State<AperturaScreen> {
                               width: double.infinity,
                               child: ElevatedButton.icon(
                                 onPressed: _showInventoryCountModal,
-                                icon: Icon(_inventorySet ? Icons.edit : Icons.inventory_2),
-                                label: Text(_inventorySet ? 'Editar Inventario' : 'Establecer Inventario'),
+                                icon: Icon(
+                                  _inventorySet
+                                      ? Icons.edit
+                                      : Icons.inventory_2,
+                                ),
+                                label: Text(
+                                  _inventorySet
+                                      ? 'Editar Inventario'
+                                      : 'Establecer Inventario',
+                                ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: _inventorySet ? Colors.green : Colors.orange,
+                                  backgroundColor:
+                                      _inventorySet
+                                          ? Colors.green
+                                          : Colors.orange,
                                   foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
                                 ),
                               ),
                             ),
@@ -818,7 +867,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
     if (_manejaInventario && !_inventorySet) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Debes establecer el inventario inicial antes de continuar'),
+          content: Text(
+            'Debes establecer el inventario inicial antes de continuar',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -835,11 +886,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
           productosVacios++;
         }
       }
-      
+
       if (productosVacios > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Debes ingresar la cantidad para todos los productos ($productosVacios pendientes)'),
+            content: Text(
+              'Debes ingresar la cantidad para todos los productos ($productosVacios pendientes)',
+            ),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 4),
           ),
@@ -894,16 +947,16 @@ class _AperturaScreenState extends State<AperturaScreen> {
       // Preparar datos de inventario y generar observaciones si está habilitado
       List<Map<String, dynamic>>? productCounts;
       String observacionesInventario = '';
-      
+
       if (_manejaInventario && _inventorySet) {
         productCounts = [];
         final List<String> excesos = [];
         final List<String> defectos = [];
-        
+
         for (var product in _inventoryProducts) {
           final controller = _inventoryControllers[product.id];
           final cantidadText = controller?.text ?? '';
-          
+
           if (cantidadText.isNotEmpty) {
             final cantidadContada = double.tryParse(cantidadText);
             if (cantidadContada != null && cantidadContada >= 0) {
@@ -915,42 +968,46 @@ class _AperturaScreenState extends State<AperturaScreen> {
                 'id_presentacion': product.idPresentacion,
                 'cantidad': cantidadContada,
               });
-              
+
               // Calcular diferencia con cantidad del sistema
               final cantidadSistema = product.cantidadFinal;
               final diferencia = cantidadContada - cantidadSistema;
-              
+
               if (diferencia > 0) {
                 // Hay exceso
-                excesos.add('Sobran ${diferencia.toStringAsFixed(2)} unidades de ${product.nombreProducto}');
+                excesos.add(
+                  'Sobran ${diferencia.toStringAsFixed(2)} unidades de ${product.nombreProducto}',
+                );
               } else if (diferencia < 0) {
                 // Hay defecto
-                defectos.add('Faltan ${diferencia.abs().toStringAsFixed(2)} unidades de ${product.nombreProducto}');
+                defectos.add(
+                  'Faltan ${diferencia.abs().toStringAsFixed(2)} unidades de ${product.nombreProducto}',
+                );
               }
             }
           }
         }
-        
+
         // Construir observaciones de inventario
         if (excesos.isNotEmpty || defectos.isNotEmpty) {
           final List<String> observaciones = [];
-          
+
           if (defectos.isNotEmpty) {
             observaciones.add('FALTANTES:');
             observaciones.addAll(defectos);
           }
-          
+
           if (excesos.isNotEmpty) {
             if (observaciones.isNotEmpty) observaciones.add('');
             observaciones.add('EXCESOS:');
             observaciones.addAll(excesos);
           }
-          
+
           observacionesInventario = observaciones.join('\n');
           print('📋 Observaciones de inventario generadas:');
           print(observacionesInventario);
         }
-        
+
         print('📦 Productos contados: ${productCounts.length}');
       }
 
@@ -958,16 +1015,19 @@ class _AperturaScreenState extends State<AperturaScreen> {
       String observacionesFinales = _observacionesController.text.trim();
       if (observacionesInventario.isNotEmpty) {
         if (observacionesFinales.isNotEmpty) {
-          observacionesFinales += '\n\n--- INVENTARIO ---\n$observacionesInventario';
+          observacionesFinales +=
+              '\n\n--- INVENTARIO ---\n$observacionesInventario';
         } else {
           observacionesFinales = observacionesInventario;
         }
       }
-      
+
       print('📦 Productos para apertura:');
       if (productCounts != null && productCounts.isNotEmpty) {
         for (var prod in productCounts) {
-          print('  - ID: ${prod['id_producto']}, Ubicación: ${prod['id_ubicacion']}, Variante: ${prod['id_variante']}, Presentación: ${prod['id_presentacion']}, Cantidad: ${prod['cantidad']}');
+          print(
+            '  - ID: ${prod['id_producto']}, Ubicación: ${prod['id_ubicacion']}, Variante: ${prod['id_variante']}, Presentación: ${prod['id_presentacion']}, Cantidad: ${prod['cantidad']}',
+          );
         }
       }
       print('📊 Total productos: ${productCounts?.length ?? 0}');
@@ -1314,10 +1374,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                     const SizedBox(height: 8),
                     Text(
                       'Ingresa la cantidad real de cada producto del turno anterior',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                     ),
                   ],
                 ),
@@ -1325,202 +1382,241 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
               // Lista de productos
               Expanded(
-                child: _isLoadingInventory
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A90E2)),
-                            ),
-                            SizedBox(height: 16),
-                            Text(
-                              'Cargando productos...',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey,
+                child:
+                    _isLoadingInventory
+                        ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF4A90E2),
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : _inventoryProducts.isEmpty
+                              SizedBox(height: 16),
+                              Text(
+                                'Cargando productos...',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                        : _inventoryProducts.isEmpty
                         ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.inventory_2_outlined,
-                                  size: 64,
-                                  color: Colors.grey[400],
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.inventory_2_outlined,
+                                size: 64,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No hay productos disponibles',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
                                 ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No hay productos disponibles',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
+                              ),
+                            ],
+                          ),
+                        )
                         : ListView.builder(
-                            controller: scrollController,
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _inventoryProducts.length,
-                            itemBuilder: (context, index) {
-                              final product = _inventoryProducts[index];
-                              final controller = _inventoryControllers[product.id]!;
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _inventoryProducts.length,
+                          itemBuilder: (context, index) {
+                            final product = _inventoryProducts[index];
+                            final controller =
+                                _inventoryControllers[product.id]!;
 
-                              return FutureBuilder<List<Map<String, dynamic>>>(
-                                future: _getProductLocations(product.id),
-                                builder: (context, snapshot) {
-                                  final locations = snapshot.data ?? [];
-                                  final totalQuantity = locations.fold<double>(
-                                    0.0,
-                                    (sum, loc) => sum + (loc['cantidad'] as double),
-                                  );
+                            return FutureBuilder<List<Map<String, dynamic>>>(
+                              future: _getProductLocations(product.id),
+                              builder: (context, snapshot) {
+                                final locations = snapshot.data ?? [];
+                                final totalQuantity = locations.fold<double>(
+                                  0.0,
+                                  (sum, loc) =>
+                                      sum + (loc['cantidad'] as double),
+                                );
 
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[50],
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.grey[200]!),
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
                                     ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    product.nombreProducto,
-                                                    style: const TextStyle(
-                                                      fontSize: 14,
-                                                      fontWeight: FontWeight.w500,
-                                                      color: Color(0xFF1F2937),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  // Mostrar cantidad total del sistema
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4,
-                                                    ),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.blue[50],
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      border: Border.all(
-                                                        color: Colors.blue[200]!,
-                                                      ),
-                                                    ),
-                                                    child: Text(
-                                                      'Sistema: ${totalQuantity.toStringAsFixed(2)} unidades',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        fontWeight: FontWeight.w600,
-                                                        color: Colors.blue[700],
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            SizedBox(
-                                              width: 100,
-                                              child: TextFormField(
-                                                controller: controller,
-                                                keyboardType: const TextInputType.numberWithOptions(
-                                                  decimal: true,
-                                                ),
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter.allow(
-                                                    RegExp(r'^\d+\.?\d{0,2}'),
-                                                  ),
-                                                ],
-                                                decoration: InputDecoration(
-                                                  labelText: 'Real',
-                                                  hintText: '0',
-                                                  border: OutlineInputBorder(
-                                                    borderRadius: BorderRadius.circular(8),
-                                                  ),
-                                                  contentPadding: const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 8,
-                                                  ),
-                                                  isDense: true,
-                                                ),
-                                                style: const TextStyle(fontSize: 14),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        // Desglose por ubicación (muy pequeño)
-                                        if (locations.isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey[100],
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  'Desglose por ubicación:',
-                                                  style: TextStyle(
-                                                    fontSize: 9,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.grey[700],
+                                                  product.nombreProducto,
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Color(0xFF1F2937),
                                                   ),
                                                 ),
                                                 const SizedBox(height: 4),
-                                                ...locations.map((loc) => Padding(
-                                                  padding: const EdgeInsets.only(bottom: 2),
-                                                  child: Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                    children: [
-                                                      Expanded(
-                                                        child: Text(
-                                                          '${loc['almacen']} - ${loc['ubicacion']}',
-                                                          style: TextStyle(
-                                                            fontSize: 8,
-                                                            color: Colors.grey[600],
-                                                          ),
-                                                          overflow: TextOverflow.ellipsis,
-                                                        ),
+                                                // Mostrar cantidad total del sistema
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
                                                       ),
-                                                      Text(
-                                                        '${(loc['cantidad'] as double).toStringAsFixed(2)}',
-                                                        style: TextStyle(
-                                                          fontSize: 8,
-                                                          fontWeight: FontWeight.w500,
-                                                          color: Colors.grey[800],
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue[50],
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
                                                         ),
-                                                      ),
-                                                    ],
+                                                    border: Border.all(
+                                                      color: Colors.blue[200]!,
+                                                    ),
                                                   ),
-                                                )).toList(),
+                                                  child: Text(
+                                                    'Sistema: ${totalQuantity.toStringAsFixed(2)} unidades',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Colors.blue[700],
+                                                    ),
+                                                  ),
+                                                ),
                                               ],
                                             ),
                                           ),
+                                          const SizedBox(width: 12),
+                                          SizedBox(
+                                            width: 100,
+                                            child: TextFormField(
+                                              controller: controller,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
+                                              inputFormatters: [
+                                                FilteringTextInputFormatter.allow(
+                                                  RegExp(r'^\d+\.?\d{0,2}'),
+                                                ),
+                                              ],
+                                              decoration: InputDecoration(
+                                                labelText: 'Real',
+                                                hintText: '0',
+                                                border: OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                contentPadding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8,
+                                                    ),
+                                                isDense: true,
+                                              ),
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ),
                                         ],
+                                      ),
+                                      // Desglose por ubicación (muy pequeño)
+                                      if (locations.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey[100],
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Desglose por ubicación:',
+                                                style: TextStyle(
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.grey[700],
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              ...locations
+                                                  .map(
+                                                    (loc) => Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                            bottom: 2,
+                                                          ),
+                                                      child: Row(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .spaceBetween,
+                                                        children: [
+                                                          Expanded(
+                                                            child: Text(
+                                                              '${loc['almacen']} - ${loc['ubicacion']}',
+                                                              style: TextStyle(
+                                                                fontSize: 8,
+                                                                color:
+                                                                    Colors
+                                                                        .grey[600],
+                                                              ),
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                            ),
+                                                          ),
+                                                          Text(
+                                                            '${(loc['cantidad'] as double).toStringAsFixed(2)}',
+                                                            style: TextStyle(
+                                                              fontSize: 8,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w500,
+                                                              color:
+                                                                  Colors
+                                                                      .grey[800],
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  )
+                                                  .toList(),
+                                            ],
+                                          ),
+                                        ),
                                       ],
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                          ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
               ),
 
               // Footer con botones

@@ -68,26 +68,30 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // PASO 1: Verificar si hay conexión real a internet
       print('🔍 Verificando conexión a internet...');
-      final hasInternetConnection = await _connectivityService.checkConnectivity();
-      
+      final hasInternetConnection =
+          await _connectivityService.checkConnectivity();
+
       if (hasInternetConnection) {
         // ✅ HAY CONEXIÓN: Desactivar modo offline automáticamente y hacer login normal
         print('✅ Conexión a internet detectada');
-        
+
         // Verificar si el modo offline estaba activado
-        final wasOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-        
+        final wasOfflineModeEnabled =
+            await _userPreferencesService.isOfflineModeEnabled();
+
         if (wasOfflineModeEnabled) {
-          print('🔄 Desactivando modo offline automáticamente (hay conexión disponible)');
+          print(
+            '🔄 Desactivando modo offline automáticamente (hay conexión disponible)',
+          );
           await _userPreferencesService.setOfflineMode(false);
         }
-        
+
         // Continuar con login online normal
         print('🌐 Modo online - Autenticando con Supabase...');
       } else {
         // ❌ NO HAY CONEXIÓN: Intentar login offline
         print('📵 Sin conexión a internet - Intentando login offline...');
-        
+
         // Verificar si el usuario existe en el array de usuarios offline
         final hasOfflineUser = await _userPreferencesService.hasOfflineUser(
           _emailController.text.trim(),
@@ -159,17 +163,19 @@ class _LoginScreenState extends State<LoginScreen> {
             final idSeller =
                 sellerData['id']
                     as int; // ID del vendedor desde app_dat_vendedor
-
+            final idAlmacen = sellerProfile['idAlmacen'];
             print('🔍 IDs extraídos por separado:');
             print('  - ID TPV (app_dat_vendedor): $idTpv');
             print('  - ID Tienda (app_dat_trabajadores): $idTienda');
             print('  - ID Seller (app_dat_vendedor): $idSeller');
+            print('  - ID Almacen (app_dat_tpv): $idAlmacen');
 
             // Guardar datos del vendedor
             await _userPreferencesService.saveSellerData(
               idTpv: idTpv,
               idTrabajador: sellerData['id_trabajador'] as int,
             );
+            await _userPreferencesService.saveIdAlmacen(idAlmacen);
 
             // Guardar ID del vendedor
             await _userPreferencesService.saveIdSeller(idSeller);
@@ -255,17 +261,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
             // Verificar suscripción antes de navegar
             if (mounted) {
-              final hasActiveSubscription = await _subscriptionGuard.hasActiveSubscription(forceRefresh: true);
-              
+              final hasActiveSubscription = await _subscriptionGuard
+                  .hasActiveSubscription(forceRefresh: true);
+
               // Guardar datos de suscripción si existe
               if (hasActiveSubscription) {
-                final subscription = await _subscriptionGuard.getCurrentSubscription();
+                final subscription =
+                    await _subscriptionGuard.getCurrentSubscription();
                 if (subscription != null) {
                   await _userPreferencesService.saveSubscriptionData(
                     subscriptionId: subscription.id,
                     state: subscription.estado,
                     planId: subscription.idPlan,
-                    planName: subscription.planDenominacion ?? 'Plan desconocido',
+                    planName:
+                        subscription.planDenominacion ?? 'Plan desconocido',
                     startDate: subscription.fechaInicio,
                     endDate: subscription.fechaFin,
                     features: subscription.planFuncionesHabilitadas,
@@ -279,7 +288,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 Navigator.of(context).pushReplacementNamed('/categories');
               } else {
                 // Sin suscripción activa - ir a detalles de suscripción
-                Navigator.of(context).pushReplacementNamed('/subscription-detail');
+                Navigator.of(
+                  context,
+                ).pushReplacementNamed('/subscription-detail');
               }
             }
           } catch (e) {
@@ -396,10 +407,11 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() {
           _isLoading = false;
         });
-        
+
         // En modo offline, verificar desde preferencias guardadas
-        final hasActiveSubscription = await _userPreferencesService.hasActiveSubscriptionStored();
-        
+        final hasActiveSubscription =
+            await _userPreferencesService.hasActiveSubscriptionStored();
+
         if (hasActiveSubscription) {
           // Login offline exitoso con suscripción activa - ir al catálogo
           Navigator.of(context).pushReplacementNamed('/categories');

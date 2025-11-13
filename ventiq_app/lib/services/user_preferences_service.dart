@@ -22,6 +22,7 @@ class UserPreferencesService {
   static const String _idTiendaKey = 'id_tienda';
   static const String _idRollKey = 'id_roll';
   static const String _appVersionKey = 'app_version';
+  static const String _appIdAlmacenKey = 'id_almacen';
 
   // Remember me keys
   static const String _rememberMeKey = 'remember_me';
@@ -107,6 +108,13 @@ class UserPreferencesService {
     return prefs.getString(_userEmailKey);
   }
 
+  Future<int?> getIdAlmacen() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_appIdAlmacenKey);
+  }
+
+  
+
   // Obtener access token del usuario
   Future<String?> getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -154,6 +162,13 @@ class UserPreferencesService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_idSellerKey, idSeller);
   }
+
+
+  Future<void> saveIdAlmacen(int idAlmacen) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_appIdAlmacenKey, idAlmacen);
+  }
+
 
   // Obtener ID del vendedor
   Future<int?> getIdSeller() async {

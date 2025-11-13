@@ -440,8 +440,9 @@ class _CierreScreenState extends State<CierreScreen> {
       if (idTienda == null) {
         throw Exception('ID de tienda no encontrado');
       }
+      final idAlmacen = await _userPrefs.getIdAlmacen();
 
-      print('🔄 Llamando a fn_listar_inventario_productos_paged...');
+      print('🔄 Llamando a fn_listar_inventario_productos_paged... idAlmacen');
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged',
         params: {
@@ -449,6 +450,7 @@ class _CierreScreenState extends State<CierreScreen> {
           'p_limite': 9999,
           'p_mostrar_sin_stock': true,
           'p_pagina': 1,
+          'p_id_almacen':idAlmacen,
         },
       );
       print('✅ Respuesta recibida: ${response?.length ?? 0} items');

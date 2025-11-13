@@ -48,6 +48,25 @@ class SellerService {
     }
   }
 
+  Future<Map<String, dynamic>?> geTpvById(int idTpv) async {
+    try {
+      final response = await client
+          .from('app_dat_tpv')
+          .select('*')
+          .eq('id', idTpv);
+
+      if (response.isEmpty) {
+        return null; // Trabajador no encontrado
+      }
+
+      // Retornar el primer trabajador encontrado
+      return response.first;
+    } catch (e) {
+      print('❌ Error al obtener datos del tpv: $e');
+      rethrow;
+    }
+  }
+
   // Verificar vendedor y obtener perfil completo (método combinado)
   Future<Map<String, dynamic>> verifySellerAndGetProfile(
     String userUuid,
@@ -67,7 +86,7 @@ class SellerService {
 
       // 2. Obtener datos del trabajador
       final workerData = await getWorkerById(sellerData['id_trabajador']);
-
+      final tpvData = await geTpvById(sellerData['id_tpv']);
       if (workerData == null) {
         throw Exception('No se encontraron datos del trabajador');
       }
@@ -85,8 +104,8 @@ class SellerService {
         'seller': sellerData,
         'worker': workerData,
         'idTpv': sellerData['id_tpv'], // ID TPV desde app_dat_vendedor
-        'idTienda':
-            workerData['id_tienda'], // ID Tienda desde app_dat_trabajadores
+        'idTienda': workerData['id_tienda'], 
+        'idAlmacen':tpvData?['id_almacen']// ID Tienda desde app_dat_trabajadores
       };
     } catch (e) {
       print('❌ Error en verificación de vendedor: $e');

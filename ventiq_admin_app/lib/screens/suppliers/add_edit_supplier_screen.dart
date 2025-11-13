@@ -215,7 +215,7 @@ class _AddEditSupplierScreenState extends State<AddEditSupplierScreen> {
               _buildTextField(
                 controller: _ubicacionController,
                 label: 'Ciudad/Ubicación',
-                hint: 'Ej: La Habana, Cuba',
+                hint: 'Ej: Miami, Estados Unidos',
                 icon: Icons.location_city,
               ),
 
