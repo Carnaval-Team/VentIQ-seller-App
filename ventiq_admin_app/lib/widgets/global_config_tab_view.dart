@@ -24,6 +24,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _needMasterPasswordToCancel = false;
   bool _needAllOrdersCompletedToContinue = false;
   bool _manejaInventario = false;
+  bool _permiteVenderAunSinDisponibilidad = false;
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
@@ -63,6 +64,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _needMasterPasswordToCancel = config['need_master_password_to_cancel'] ?? false;
         _needAllOrdersCompletedToContinue = config['need_all_orders_completed_to_continue'] ?? false;
         _manejaInventario = config['maneja_inventario'] ?? false;
+        _permiteVenderAunSinDisponibilidad = config['permite_vender_aun_sin_disponibilidad'] ?? false;
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
         _isLoading = false;
@@ -89,6 +91,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('  - Contraseña maestra para cancelar: $_needMasterPasswordToCancel');
       print('  - Completar todas las órdenes: $_needAllOrdersCompletedToContinue');
       print('  - Maneja inventario: $_manejaInventario');
+      print('  - Permite vender sin disponibilidad: $_permiteVenderAunSinDisponibilidad');
       print('  - Tiene contraseña maestra: $_hasMasterPassword');
       print('  - Suscripción actual: ${_activeSubscription?.planDenominacion ?? 'No encontrada'} (${_activeSubscription?.estadoText ?? 'N/A'})');
 
@@ -250,6 +253,210 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
   }
 
+  Future<void> _updateElaboratedProductsSetting(bool value) async {
+    if (_storeId == null) return;
+
+    // Mostrar diálogo de advertencia si se está activando
+    if (value) {
+      final confirmed = await _showElaboratedProductsWarning();
+      if (!confirmed) return;
+    }
+
+    try {
+      print('🔧 Actualizando configuración de productos elaborados sin disponibilidad: $value');
+      
+      await StoreConfigService.updatePermiteVenderAunSinDisponibilidad(_storeId!, value);
+      
+      setState(() {
+        _permiteVenderAunSinDisponibilidad = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value 
+                ? '⚠️ Los vendedores ahora pueden vender productos elaborados sin verificar ingredientes'
+                : '✅ Los vendedores deben verificar ingredientes antes de vender productos elaborados'
+            ),
+            backgroundColor: value ? Colors.orange : AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Configuración de productos elaborados actualizada');
+    } catch (e) {
+      print('❌ Error al actualizar configuración de productos elaborados: $e');
+      
+      // Revertir el cambio en caso de error
+      setState(() {
+        _permiteVenderAunSinDisponibilidad = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<bool> _showElaboratedProductsWarning() async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange,
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Advertencia Importante',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange,
+                ),
+              ),
+            ],
+          ),
+          content: Container(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.orange.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '🍽️ Productos sin Verificación de Disponibilidad',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Al activar esta opción:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildWarningPoint('Los vendedores podrán vender productos sin verificar si hay ingredientes o cantidad suficientes'),
+                      const SizedBox(height: 8),
+                      _buildWarningPoint('Esto puede resultar en ventas de productos que no se pueden preparar'),
+                      const SizedBox(height: 8),
+                      _buildWarningPoint('Podrías tener problemas de inventario y clientes insatisfechos'),
+                      const SizedBox(height: 8),
+                      _buildWarningPoint('Solo activa esta opción si confías completamente en el control manual de tus vendedores'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.blue.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.blue,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Recomendación: Mantén esta opción desactivada para un mejor control de inventario',
+                          style: TextStyle(
+                            color: Colors.blue,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'Cancelar',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Activar de todos modos'),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
+  }
+
+  Widget _buildWarningPoint(String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(top: 6),
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: Colors.orange,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _updateMasterPassword() async {
     if (_storeId == null) return;
 
@@ -384,6 +591,20 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 : 'Los vendedores no hacen control de inventario al abrir y cerrar turno',
             value: _manejaInventario,
             onChanged: _updateInventoryManagementSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          // Configuración de Productos Elaborados sin Disponibilidad
+          _buildConfigCard(
+            icon: Icons.restaurant_menu,
+            iconColor: Colors.deepOrange,
+            title: 'Venta de Productos Sin Disponibilidad',
+            subtitle: _permiteVenderAunSinDisponibilidad
+                ? '⚠️ Los vendedores pueden vender productos sin verificar ingredientes disponibles'
+                : '✅ Los vendedores deben verificar ingredientes antes de vender productos',
+            value: _permiteVenderAunSinDisponibilidad,
+            onChanged: _updateElaboratedProductsSetting,
           ),
 
           const SizedBox(height: 24),

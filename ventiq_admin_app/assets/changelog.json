@@ -1,8 +1,45 @@
 {
-  "current_version": "1.3.0",
-  "build": 130,
+  "current_version": "1.3.1",
+  "build": 131,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.3.1",
+      "date": "2025-11-13",
+      "title": "🍽️ Configuración de Venta de Productos Sin Disponibilidad",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Control de Venta Sin Verificación de Disponibilidad",
+          "description": "Nueva configuración global que permite a las tiendas vender productos sin verificar si hay ingredientes o cantidad suficientes disponibles"
+        },
+        {
+          "type": "feature",
+          "title": "Diálogo de Advertencia Inteligente",
+          "description": "Sistema de advertencia detallado que informa sobre los riesgos de activar la venta sin verificación de disponibilidad, con recomendaciones de seguridad"
+        },
+        {
+          "type": "feature",
+          "title": "Switch de Control en Configuración Global",
+          "description": "Nuevo switch en el tab Global de Configuración para gestionar si los vendedores deben verificar disponibilidad antes de vender productos"
+        },
+        {
+          "type": "improvement",
+          "title": "Flexibilidad Operativa por Tienda",
+          "description": "Cada tienda puede decidir independientemente su política de venta según sus necesidades operativas y nivel de confianza en el control manual"
+        },
+        {
+          "type": "improvement",
+          "title": "Mensajes Informativos Dinámicos",
+          "description": "Subtítulos y notificaciones que explican claramente el comportamiento cuando la verificación está activada o desactivada"
+        },
+        {
+          "type": "improvement",
+          "title": "Integración con Seller App",
+          "description": "La configuración se sincroniza automáticamente con la aplicación de vendedores para aplicar la política de venta inmediatamente"
+        }
+      ]
+    },
     {
       "version": "1.3.0",
       "date": "2025-11-10",

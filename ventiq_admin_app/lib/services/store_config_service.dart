@@ -51,6 +51,7 @@ class StoreConfigService {
     bool? needAllOrdersCompletedToContinue,
     String? masterPassword,
     bool? manejaInventario,
+    bool? permiteVenderAunSinDisponibilidad,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -78,6 +79,11 @@ class StoreConfigService {
       if (manejaInventario != null) {
         updateData['maneja_inventario'] = manejaInventario;
         print('  - maneja_inventario: $manejaInventario');
+      }
+      
+      if (permiteVenderAunSinDisponibilidad != null) {
+        updateData['permite_vender_aun_sin_disponibilidad'] = permiteVenderAunSinDisponibilidad;
+        print('  - permite_vender_aun_sin_disponibilidad: $permiteVenderAunSinDisponibilidad');
       }
 
       if (updateData.isEmpty) {
@@ -172,5 +178,21 @@ class StoreConfigService {
   /// Actualiza solo maneja_inventario
   static Future<void> updateManejaInventario(int storeId, bool value) async {
     await updateStoreConfig(storeId, manejaInventario: value);
+  }
+
+  /// Obtiene solo el valor de permite_vender_aun_sin_disponibilidad
+  static Future<bool> getPermiteVenderAunSinDisponibilidad(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['permite_vender_aun_sin_disponibilidad'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener permite_vender_aun_sin_disponibilidad: $e');
+      return false; // Valor por defecto en caso de error
+    }
+  }
+
+  /// Actualiza solo permite_vender_aun_sin_disponibilidad
+  static Future<void> updatePermiteVenderAunSinDisponibilidad(int storeId, bool value) async {
+    await updateStoreConfig(storeId, permiteVenderAunSinDisponibilidad: value);
   }
 }
