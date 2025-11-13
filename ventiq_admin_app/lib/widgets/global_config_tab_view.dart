@@ -644,7 +644,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Estas configuraciones afectan el comportamiento de la aplicación de vendedores (VentIQ Seller App). Los cambios se aplicarán inmediatamente para todos los usuarios.',
+                  'Estas configuraciones afectan el comportamiento de la aplicación de vendedores (Inventtia App). Los cambios se aplicarán inmediatamente para todos los usuarios.',
                   style: TextStyle(
                     color: Colors.blue,
                     fontSize: 14,
