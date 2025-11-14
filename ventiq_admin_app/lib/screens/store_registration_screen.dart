@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/store_registration_service.dart';
+import '../services/warehouse_service.dart';
 
 class StoreRegistrationScreen extends StatefulWidget {
   const StoreRegistrationScreen({super.key});
@@ -12,6 +13,7 @@ class StoreRegistrationScreen extends StatefulWidget {
 class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   final PageController _pageController = PageController();
   final StoreRegistrationService _registrationService = StoreRegistrationService();
+  final WarehouseService _warehouseService = WarehouseService();
   
   int _currentStep = 0;
   bool _isLoading = false;
@@ -25,6 +27,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _fullNameController = TextEditingController();
+  final _phoneController = TextEditingController();
   
   // Datos de la tienda
   final _storeNameController = TextEditingController();
@@ -34,6 +37,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   // Datos obligatorios
   List<Map<String, dynamic>> _tpvData = [];
   List<Map<String, dynamic>> _almacenesData = [];
+  List<Map<String, dynamic>> _layoutsData = [];
   List<Map<String, dynamic>> _personalData = [];
   
   // Los roles y layout types se manejan directamente en los métodos
@@ -45,6 +49,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _fullNameController.dispose();
+    _phoneController.dispose();
     _storeNameController.dispose();
     _storeAddressController.dispose();
     _storeLocationController.dispose();
@@ -295,6 +300,28 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
             const SizedBox(height: 16),
             
             TextFormField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Número de Teléfono',
+                prefixIcon: Icon(Icons.phone),
+                hintText: 'Ej: +1234567890',
+                helperText: 'Necesario para que nuestro equipo pueda contactarte',
+                helperMaxLines: 2,
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Ingresa un número de teléfono';
+                }
+                if (value.trim().length < 8) {
+                  return 'Ingresa un número de teléfono válido';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            TextFormField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               decoration: const InputDecoration(
@@ -530,6 +557,19 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                 required: true,
               ),
               const SizedBox(height: 16),
+
+          // Layouts Section
+          _buildSectionCard(
+            title: 'Layouts/Zonas',
+            icon: Icons.grid_view,
+            count: _layoutsData.length,
+            items: _layoutsData,
+            onAdd: _showAddLayoutDialog,
+            onEdit: (index) => _showEditLayoutDialog(index),
+            onDelete: (index) => _deleteLayout(index),
+            required: true,
+          ),
+          const SizedBox(height: 16),
 
           // TPVs Section
           _buildSectionCard(
@@ -856,6 +896,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text('Nombre: ${_fullNameController.text}'),
+                  Text('Teléfono: ${_phoneController.text}'),
                   Text('Email: ${_emailController.text}'),
                 ],
               ),
@@ -923,6 +964,17 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   )).toList(),
                   const SizedBox(height: 8),
                   
+                  // Layouts
+                  Text(
+                    'Layouts/Zonas (${_layoutsData.length}):',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  ..._layoutsData.map((layout) => Padding(
+                    padding: const EdgeInsets.only(left: 16, top: 4),
+                    child: Text('• ${layout['denominacion']} (${layout['tipo_nombre'] ?? 'Zona'}) - Almacén: ${layout['almacen_asignado']} - Código: ${layout['codigo']}'),
+                  )).toList(),
+                  const SizedBox(height: 8),
+                  
                   // Personal
                   Text(
                     'Personal (${_personalData.length}):',
@@ -937,7 +989,23 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                     }
                     return Padding(
                       padding: const EdgeInsets.only(left: 16, top: 4),
-                      child: Text('• ${personal['nombres']} ${personal['apellidos']} - ${personal['tipo_rol']}$asignacion'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('• ${personal['nombres']} ${personal['apellidos']} - ${personal['tipo_rol']}$asignacion'),
+                          if (personal['email'] != null)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 12, top: 2),
+                              child: Text(
+                                'Email: ${personal['email']}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     );
                   }).toList(),
                 ],
@@ -1119,6 +1187,35 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
           _showErrorDialog('Debes configurar al menos un almacén');
           return false;
         }
+        if (_layoutsData.isEmpty) {
+          _showErrorDialog('Debes configurar al menos un layout/zona');
+          return false;
+        }
+        // Validar que cada almacén tenga al menos una zona asociada
+        final almacenesSinZonas = <String>[];
+        for (final almacen in _almacenesData) {
+          final nombreAlmacen = (almacen['denominacion'] ?? '').toString();
+          if (nombreAlmacen.isEmpty) {
+            continue;
+          }
+
+          final tieneZonas = _layoutsData.any((layout) =>
+              (layout['almacen_asignado'] ?? '').toString() == nombreAlmacen);
+
+          if (!tieneZonas) {
+            almacenesSinZonas.add(nombreAlmacen);
+          }
+        }
+
+        if (almacenesSinZonas.isNotEmpty) {
+          final detalle = almacenesSinZonas.join(', ');
+          _showErrorDialog(
+            'Cada almacén debe tener al menos una zona configurada.\n\n'
+            'Faltan zonas en los siguientes almacenes:\n$detalle',
+          );
+          return false;
+        }
+
         if (_personalData.isEmpty) {
           _showErrorDialog('Debes configurar al menos un miembro del personal');
           return false;
@@ -1137,6 +1234,8 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     });
 
     try {
+      print('🚀 Iniciando creación de tienda...');
+      
       final result = await _registrationService.registerUserAndCreateStore(
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -1146,11 +1245,13 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
         ubicacionTienda: _storeLocationController.text.trim(),
         tpvData: _tpvData.isEmpty ? null : _tpvData,
         almacenesData: _almacenesData.isEmpty ? null : _almacenesData,
+        layoutsData: _layoutsData.isEmpty ? null : _layoutsData,
         personalData: _personalData.isEmpty ? null : _personalData,
       );
 
       if (result['success']) {
-        _showSuccessDialog();
+        final userAlreadyExisted = result['user_already_existed'] == true;
+        _showSuccessDialog(userAlreadyExisted: userAlreadyExisted);
       } else {
         _showErrorDialog(result['message'] ?? 'Error desconocido');
       }
@@ -1163,7 +1264,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     }
   }
 
-  void _showSuccessDialog() {
+  void _showSuccessDialog({bool userAlreadyExisted = false}) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1175,8 +1276,43 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
             Text('¡Éxito!'),
           ],
         ),
-        content: const Text(
-          'La tienda ha sido creada exitosamente. El usuario administrador puede iniciar sesión ahora.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              userAlreadyExisted 
+                  ? 'La tienda ha sido creada exitosamente. El usuario ya existía en el sistema y fue autenticado correctamente.'
+                  : 'La tienda ha sido creada exitosamente. Ya puedes comenzar a usar la aplicación.',
+            ),
+            if (userAlreadyExisted) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, 
+                         color: Colors.orange.shade700, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Nota: El usuario con este email ya existía en el sistema.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ),
         actions: [
           TextButton(
@@ -1533,6 +1669,9 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   void _showAddPersonalDialog() {
     final nombresController = TextEditingController();
     final apellidosController = TextEditingController();
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
     String? selectedRole;
     String? selectedAlmacen;
     String? selectedTPV;
@@ -1559,6 +1698,36 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Apellidos',
                     hintText: 'Apellidos del empleado',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'Email del empleado para acceso al sistema',
+                    prefixIcon: Icon(Icons.email),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Contraseña',
+                    hintText: 'Contraseña de acceso (mínimo 6 caracteres)',
+                    prefixIcon: Icon(Icons.lock),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: confirmPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmar Contraseña',
+                    hintText: 'Repetir la contraseña',
+                    prefixIcon: Icon(Icons.lock_outline),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -1654,7 +1823,43 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               onPressed: () {
                 bool canAdd = nombresController.text.trim().isNotEmpty &&
                     apellidosController.text.trim().isNotEmpty &&
+                    emailController.text.trim().isNotEmpty &&
+                    passwordController.text.trim().isNotEmpty &&
+                    confirmPasswordController.text.trim().isNotEmpty &&
                     selectedRole != null;
+                
+                // Validaciones de email y contraseña
+                if (canAdd) {
+                  if (!emailController.text.contains('@')) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Ingresa un email válido')),
+                    );
+                    return;
+                  }
+                  
+                  if (passwordController.text.length < 6) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('La contraseña debe tener al menos 6 caracteres')),
+                    );
+                    return;
+                  }
+                  
+                  if (passwordController.text != confirmPasswordController.text) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Las contraseñas no coinciden')),
+                    );
+                    return;
+                  }
+                  
+                  // Verificar que el email no esté duplicado
+                  final emailExists = _personalData.any((p) => p['email'] == emailController.text.trim());
+                  if (emailExists) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Este email ya está registrado')),
+                    );
+                    return;
+                  }
+                }
                 
                 // Validaciones específicas por rol
                 if (selectedRole == 'almacenero') {
@@ -1668,6 +1873,8 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                     final personalItem = {
                       'nombres': nombresController.text.trim(),
                       'apellidos': apellidosController.text.trim(),
+                      'email': emailController.text.trim(),
+                      'password': passwordController.text.trim(),
                       'tipo_rol': selectedRole,
                       'id_roll': _getRoleId(selectedRole!),
                       'uuid': 'PLACEHOLDER_USER_UUID', // Se reemplazará con el UUID real
@@ -1697,6 +1904,7 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     final personal = _personalData[index];
     final nombresController = TextEditingController(text: personal['nombres']);
     final apellidosController = TextEditingController(text: personal['apellidos']);
+    final emailController = TextEditingController(text: personal['email']);
     String? selectedRole = personal['tipo_rol'];
     
     showDialog(
@@ -1704,41 +1912,52 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Editar Personal'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nombresController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombres',
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nombresController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombres',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: apellidosController,
-                decoration: const InputDecoration(
-                  labelText: 'Apellidos',
+                const SizedBox(height: 16),
+                TextField(
+                  controller: apellidosController,
+                  decoration: const InputDecoration(
+                    labelText: 'Apellidos',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedRole,
-                decoration: const InputDecoration(
-                  labelText: 'Rol',
+                const SizedBox(height: 16),
+                TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.email),
+                  ),
                 ),
-                items: [
-                  const DropdownMenuItem(value: 'gerente', child: Text('Gerente')),
-                  const DropdownMenuItem(value: 'supervisor', child: Text('Supervisor')),
-                  const DropdownMenuItem(value: 'almacenero', child: Text('Almacenero')),
-                  const DropdownMenuItem(value: 'vendedor', child: Text('Vendedor')),
-                ],
-                onChanged: (value) {
-                  setDialogState(() {
-                    selectedRole = value;
-                  });
-                },
-              ),
-            ],
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedRole,
+                  decoration: const InputDecoration(
+                    labelText: 'Rol',
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: 'gerente', child: Text('Gerente')),
+                    const DropdownMenuItem(value: 'supervisor', child: Text('Supervisor')),
+                    const DropdownMenuItem(value: 'almacenero', child: Text('Almacenero')),
+                    const DropdownMenuItem(value: 'vendedor', child: Text('Vendedor')),
+                  ],
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedRole = value;
+                    });
+                  },
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -1749,10 +1968,31 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               onPressed: () {
                 if (nombresController.text.trim().isNotEmpty &&
                     apellidosController.text.trim().isNotEmpty &&
+                    emailController.text.trim().isNotEmpty &&
                     selectedRole != null) {
+                  
+                  // Validar email
+                  if (!emailController.text.contains('@')) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Ingresa un email válido')),
+                    );
+                    return;
+                  }
+                  
+                  // Verificar que el email no esté duplicado (excepto el actual)
+                  final emailExists = _personalData.asMap().entries.any((entry) => 
+                      entry.key != index && entry.value['email'] == emailController.text.trim());
+                  if (emailExists) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Este email ya está registrado')),
+                    );
+                    return;
+                  }
+                  
                   setState(() {
                     _personalData[index]['nombres'] = nombresController.text.trim();
                     _personalData[index]['apellidos'] = apellidosController.text.trim();
+                    _personalData[index]['email'] = emailController.text.trim();
                     _personalData[index]['tipo_rol'] = selectedRole;
                     _personalData[index]['id_roll'] = _getRoleId(selectedRole!);
                   });
@@ -1828,6 +2068,8 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     final gerenteItem = {
       'nombres': nombres,
       'apellidos': apellidos,
+      'email': _emailController.text.trim(), // Email del usuario principal
+      'password': _passwordController.text, // Contraseña del usuario principal
       'tipo_rol': 'gerente',
       'id_roll': 1,
       'uuid': 'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
@@ -1839,6 +2081,8 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     final supervisorItem = {
       'nombres': nombres,
       'apellidos': apellidos,
+      'email': _emailController.text.trim(), // Email del usuario principal
+      'password': _passwordController.text, // Contraseña del usuario principal
       'tipo_rol': 'supervisor',
       'id_roll': 2,
       'uuid': 'MAIN_USER_UUID', // Se reemplazará con el UUID real del usuario creado
@@ -1854,5 +2098,294 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     print('✅ Usuario principal agregado automáticamente como Gerente y Supervisor');
     print('   - Nombres: $nombres');
     print('   - Apellidos: $apellidos');
+  }
+
+  // ===== MÉTODOS PARA LAYOUTS =====
+  void _showAddLayoutDialog() {
+    final nameController = TextEditingController();
+    final codeController = TextEditingController();
+    String? selectedAlmacen;
+    int? selectedTipoLayout;
+    List<Map<String, dynamic>> layoutTypes = [];
+    bool loadingTypes = true;
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          // Cargar tipos de layout cuando se abre el diálogo
+          if (loadingTypes) {
+            _warehouseService.getTiposLayout().then((types) {
+              setDialogState(() {
+                layoutTypes.clear();
+                layoutTypes.addAll(types);
+                loadingTypes = false;
+                // Seleccionar el primer tipo por defecto
+                if (layoutTypes.isNotEmpty) {
+                  selectedTipoLayout = layoutTypes.first['id'];
+                }
+              });
+            }).catchError((e) {
+              print('Error cargando tipos de layout: $e');
+              setDialogState(() {
+                loadingTypes = false;
+                // Fallback a tipo por defecto
+                layoutTypes = [{'id': 1, 'denominacion': 'Zona'}];
+                selectedTipoLayout = 1;
+              });
+            });
+          }
+
+          return AlertDialog(
+            title: const Text('Agregar Layout/Zona'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Crea una zona dentro del almacén para organizar los productos.',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del Layout/Zona',
+                      hintText: 'Ej: Zona Principal, Estantería A',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: codeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Código',
+                      hintText: 'Ej: ZP-001, EST-A-001',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (loadingTypes)
+                    const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 8),
+                          Text('Cargando tipos de layout...'),
+                        ],
+                      ),
+                    )
+                  else
+                    DropdownButtonFormField<int?>(
+                      value: selectedTipoLayout,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo de Layout',
+                        prefixIcon: Icon(Icons.category),
+                      ),
+                      isExpanded: true, // Evita overflow
+                      items: layoutTypes.map((tipo) {
+                        return DropdownMenuItem<int?>(
+                          value: tipo['id'],
+                          child: Text(
+                            tipo['denominacion'] ?? 'Sin nombre',
+                            overflow: TextOverflow.ellipsis, // Truncar texto largo
+                            maxLines: 1,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedTipoLayout = value;
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null) {
+                          return 'Selecciona un tipo de layout';
+                        }
+                        return null;
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedAlmacen,
+                    decoration: const InputDecoration(
+                      labelText: 'Almacén Asignado',
+                    ),
+                    isExpanded: true, // Evita overflow
+                    items: _almacenesData.map((almacen) {
+                      return DropdownMenuItem<String>(
+                        value: almacen['denominacion'],
+                        child: Text(
+                          almacen['denominacion'],
+                          overflow: TextOverflow.ellipsis, // Truncar texto largo
+                          maxLines: 1,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedAlmacen = value;
+                      });
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Selecciona un almacén';
+                      }
+                      return null;
+                    },
+                  ),
+                  if (_almacenesData.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Debes crear al menos un almacén primero',
+                        style: TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.trim().isNotEmpty && 
+                    codeController.text.trim().isNotEmpty &&
+                    selectedAlmacen != null && 
+                    selectedTipoLayout != null &&
+                    _almacenesData.isNotEmpty) {
+                  setState(() {
+                    _layoutsData.add({
+                      'denominacion': nameController.text.trim(),
+                      'codigo': codeController.text.trim(),
+                      'almacen_asignado': selectedAlmacen,
+                      'id_tipo_layout': selectedTipoLayout, // Tipo seleccionado por el usuario
+                      'id_layout_padre': null, // Layout raíz
+                      'tipo_nombre': layoutTypes.firstWhere(
+                        (t) => t['id'] == selectedTipoLayout,
+                        orElse: () => {'denominacion': 'Desconocido'}
+                      )['denominacion'], // Para mostrar en confirmación
+                    });
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Agregar'),
+            ),
+          ],
+        );
+        },
+      ),
+    );
+  }
+
+  void _showEditLayoutDialog(int index) {
+    final layout = _layoutsData[index];
+    final nameController = TextEditingController(text: layout['denominacion']);
+    final codeController = TextEditingController(text: layout['codigo']);
+    String? selectedAlmacen = layout['almacen_asignado'];
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Editar Layout/Zona'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del Layout/Zona',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: codeController,
+                decoration: const InputDecoration(
+                  labelText: 'Código',
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: selectedAlmacen,
+                decoration: const InputDecoration(
+                  labelText: 'Almacén Asignado',
+                ),
+                items: _almacenesData.map((almacen) {
+                  return DropdownMenuItem<String>(
+                    value: almacen['denominacion'],
+                    child: Text(almacen['denominacion']),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedAlmacen = value;
+                  });
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.trim().isNotEmpty && 
+                    codeController.text.trim().isNotEmpty &&
+                    selectedAlmacen != null) {
+                  setState(() {
+                    _layoutsData[index]['denominacion'] = nameController.text.trim();
+                    _layoutsData[index]['codigo'] = codeController.text.trim();
+                    _layoutsData[index]['almacen_asignado'] = selectedAlmacen;
+                    // Mantener los campos necesarios si no existen
+                    _layoutsData[index]['id_tipo_layout'] ??= 1;
+                    _layoutsData[index]['id_layout_padre'] ??= null;
+                    _layoutsData[index]['tipo_nombre'] ??= 'Zona';
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _deleteLayout(int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Layout/Zona'),
+        content: Text('¿Estás seguro de eliminar "${_layoutsData[index]['denominacion']}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _layoutsData.removeAt(index);
+              });
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
   }
 }
