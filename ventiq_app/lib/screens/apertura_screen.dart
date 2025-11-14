@@ -242,8 +242,10 @@ class _AperturaScreenState extends State<AperturaScreen> {
       }
 
       final idAlmacen = await _userPrefs.getIdAlmacen();
-      print('📦 Cargando productos de inventario para tienda: $idTienda almacen: $idAlmacen');
-      
+      print(
+        '📦 Cargando productos de inventario para tienda: $idTienda almacen: $idAlmacen',
+      );
+
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged',
         params: {
@@ -251,7 +253,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
           'p_limite': 9999,
           'p_mostrar_sin_stock': true,
           'p_pagina': 1,
-          'p_id_almacen':idAlmacen,
+          'p_id_almacen': idAlmacen,
         },
       );
 
@@ -260,23 +262,25 @@ class _AperturaScreenState extends State<AperturaScreen> {
         final Map<int, InventoryProduct> productsByIdMap = {};
 
         for (var item in response) {
-          try {
-            final product = InventoryProduct.fromSupabaseRpc(item);
+          // if (!item['es_elaborado'] && !item['es_servicio']) {
+            try {
+              final product = InventoryProduct.fromSupabaseRpc(item);
 
-            // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
-            if (!productsByIdMap.containsKey(product.id)) {
-              productsByIdMap[product.id] = product;
-              print(
-                '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
-              );
-            } else {
-              print(
-                '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
-              );
+              // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
+              if (!productsByIdMap.containsKey(product.id)) {
+                productsByIdMap[product.id] = product;
+                print(
+                  '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
+                );
+              } else {
+                print(
+                  '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
+                );
+              }
+            } catch (e) {
+              print('❌ Error procesando producto: $e');
             }
-          } catch (e) {
-            print('❌ Error procesando producto: $e');
-          }
+          // }
         }
 
         // Crear lista consolidada y controllers

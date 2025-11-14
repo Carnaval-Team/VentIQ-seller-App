@@ -8,6 +8,7 @@ import '../services/settings_integration_service.dart';
 import '../services/auto_sync_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/subscription_guard_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -256,6 +257,15 @@ class _LoginScreenState extends State<LoginScreen> {
               print('❌ Error cargando configuración de tienda: $e');
             }
 
+            // Cargar denominaciones de moneda
+            try {
+              print('💰 Cargando denominaciones de moneda...');
+              await _loadCurrencyDenominations();
+              print('✅ Denominaciones de moneda cargadas exitosamente');
+            } catch (e) {
+              print('❌ Error cargando denominaciones de moneda: $e');
+            }
+
             // Inicializar servicios inteligentes en segundo plano
             _initializeSmartServices();
 
@@ -477,6 +487,53 @@ class _LoginScreenState extends State<LoginScreen> {
       return 'Error de conexión. Verifica tu internet.';
     }
     return 'Error de autenticación. Intenta de nuevo.';
+  }
+
+  /// Cargar denominaciones de moneda desde Supabase
+  Future<void> _loadCurrencyDenominations() async {
+    try {
+      print('💰 Consultando denominaciones de moneda en Supabase...');
+
+      final response = await Supabase.instance.client
+          .from('app_dat_denominaciones_moneda')
+          .select('*')
+          .eq('active', true)
+          .order('codigo_moneda', ascending: true)
+          .order('denominacion', ascending: true);
+
+      if (response.isNotEmpty) {
+        print('💱 Denominaciones obtenidas: ${response.length}');
+
+        // Guardar en UserPreferencesService
+        await _userPreferencesService.saveMonedasDenominacion(
+          List<Map<String, dynamic>>.from(response),
+        );
+
+        // Log de monedas disponibles
+        final monedas =
+            response.map((d) => d['codigo_moneda']).toSet().toList();
+        print('💰 Monedas configuradas: ${monedas.join(', ')}');
+
+        // Log de denominaciones por moneda
+        for (final moneda in monedas) {
+          final denominacionesMoneda =
+              response
+                  .where((d) => d['codigo_moneda'] == moneda)
+                  .map((d) => d['denominacion'])
+                  .toList();
+          print('  - $moneda: ${denominacionesMoneda.join(', ')}');
+        }
+      } else {
+        print('⚠️ No se encontraron denominaciones de moneda activas');
+        // Guardar lista vacía para evitar errores
+        await _userPreferencesService.saveMonedasDenominacion([]);
+      }
+    } catch (e) {
+      print('❌ Error cargando denominaciones de moneda: $e');
+      // En caso de error, guardar lista vacía
+      await _userPreferencesService.saveMonedasDenominacion([]);
+      rethrow;
+    }
   }
 
   @override

@@ -11,6 +11,7 @@ import '../widgets/app_drawer.dart';
 import '../widgets/sales_monitor_fab.dart';
 import '../widgets/notification_widget.dart';
 import '../widgets/sync_status_chip.dart';
+import '../widgets/bill_count_dialog.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({Key? key}) : super(key: key);
@@ -306,11 +307,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ),
               ),
           // Sync Status Chip positioned at bottom left
-          const Positioned(
-            bottom: 10,
-            left: 16,
-            child: SyncStatusChip(),
-          ),
+          const Positioned(bottom: 10, left: 16, child: SyncStatusChip()),
         ],
       ),
       endDrawer: const AppDrawer(),
@@ -379,7 +376,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () => Navigator.pushNamed(context, '/categories'), // Ir a Home
+            onPressed:
+                () => Navigator.pushNamed(context, '/categories'), // Ir a Home
             icon: const Icon(Icons.home),
             label: const Text('Ir al Catálogo'),
             style: ElevatedButton.styleFrom(
@@ -878,20 +876,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                           ],
                                         ),
                                         // Mostrar ingredientes si existen
-                                        if (item.ingredientes != null && item.ingredientes!.isNotEmpty) ...[
+                                        if (item.ingredientes != null &&
+                                            item.ingredientes!.isNotEmpty) ...[
                                           const SizedBox(height: 8),
                                           Container(
                                             padding: const EdgeInsets.all(8),
                                             decoration: BoxDecoration(
                                               color: Colors.orange[50],
-                                              borderRadius: BorderRadius.circular(6),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                               border: Border.all(
                                                 color: Colors.orange[200]!,
                                                 width: 1,
                                               ),
                                             ),
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Row(
                                                   children: [
@@ -905,16 +906,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                                       'Ingredientes utilizados:',
                                                       style: TextStyle(
                                                         fontSize: 12,
-                                                        fontWeight: FontWeight.w600,
-                                                        color: Colors.orange[700],
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            Colors.orange[700],
                                                       ),
                                                     ),
                                                   ],
                                                 ),
                                                 const SizedBox(height: 4),
-                                                ...item.ingredientes!.map((ingrediente) {
+                                                ...item.ingredientes!.map((
+                                                  ingrediente,
+                                                ) {
                                                   return Padding(
-                                                    padding: const EdgeInsets.only(left: 18, bottom: 2),
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          left: 18,
+                                                          bottom: 2,
+                                                        ),
                                                     child: Text(
                                                       '• ${ingrediente['nombre_ingrediente']} - ${ingrediente['cantidad_vendida']} ${ingrediente['unidad_medida'] ?? 'unidades'}',
                                                       style: TextStyle(
@@ -1030,29 +1039,109 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          // Botón Confirmar Pago (ancho completo)
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed:
-                  () => _showConfirmationDialog(
-                    order,
-                    OrderStatus.completada,
-                    'Confirmar Pago',
-                    '¿Confirmas que el pago de esta orden ha sido recibido?',
-                    const Color(0xFF10B981),
+          // Botones de pago - Contar Billetes y Confirmar Pago
+          FutureBuilder<bool>(
+            future: _hasEffectivoPayment(order),
+            builder: (context, snapshot) {
+              final hasEfectivo = snapshot.data ?? false;
+
+              if (hasEfectivo) {
+                // Si tiene efectivo, mostrar ambos botones
+                return Column(
+                  children: [
+                    // Fila con Contar Billetes y Confirmar Pago
+                    Row(
+                      children: [
+                        // Botón Contar Billetes
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(
+                                context,
+                              ); // Cerrar modal de detalles
+                              _showBillCountDialog(order);
+                            },
+                            icon: const Icon(Icons.calculate_outlined),
+                            label: const Text('Contar Billetes'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF4A90E2),
+                              side: const BorderSide(color: Color(0xFF4A90E2)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Botón Confirmar Pago
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed:
+                                () => _showConfirmationDialog(
+                                  order,
+                                  OrderStatus.completada,
+                                  'Confirmar Pago',
+                                  '¿Confirmas que el pago de esta orden ha sido recibido?',
+                                  const Color(0xFF10B981),
+                                ),
+                            icon: const Icon(Icons.payment),
+                            label: const Text('Confirmar Pago'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF10B981),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              } else {
+                // Si no tiene efectivo, solo mostrar Confirmar Pago
+                return SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed:
+                        () => _showConfirmationDialog(
+                          order,
+                          OrderStatus.completada,
+                          'Confirmar Pago',
+                          '¿Confirmas que el pago de esta orden ha sido recibido?',
+                          const Color(0xFF10B981),
+                        ),
+                    icon: const Icon(Icons.payment),
+                    label: const Text('Confirmar Pago'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
                   ),
-              icon: const Icon(Icons.payment),
-              label: const Text('Confirmar Pago'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10B981),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-            ),
+                );
+              }
+            },
           ),
         ],
       ],
+    );
+  }
+
+  /// Mostrar diálogo de conteo de billetes
+  void _showBillCountDialog(Order order) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      isDismissible: false, // No se puede cerrar tocando fuera
+      enableDrag: false, // No se puede cerrar arrastrando
+      builder:
+          (context) => BillCountDialog(
+            order: order,
+            userPreferencesService: _userPreferencesService,
+            onConfirmPayment: () {
+              // Confirmar el pago después del conteo
+              _updateOrderStatus(order, OrderStatus.completada);
+            },
+          ),
     );
   }
 
@@ -1361,6 +1450,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
       return Icons.credit_card;
     } else {
       return Icons.account_balance;
+    }
+  }
+
+  /// Verificar si la orden tiene pagos en efectivo
+  Future<bool> _hasEffectivoPayment(Order order) async {
+    if (order.operationId == null) return false;
+
+    try {
+      final payments = await _orderService.getSalePayments(order.operationId!);
+      return payments.any(
+        (payment) => payment['medio_pago_es_efectivo'] == true,
+      );
+    } catch (e) {
+      print('❌ Error verificando pagos en efectivo: $e');
+      return false;
     }
   }
 
