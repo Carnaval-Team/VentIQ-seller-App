@@ -36,33 +36,38 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
   }
 
   Future<void> _loadCategories() async {
-    setState(() => _isLoading = true);
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
     
     try {
       final categories = await _categoryService.getCategoriesByStore();
       print('📦 Categorías cargadas: ${categories.length}');
       
-      setState(() {
-        _categories = categories;
-        _isLoading = false;
-      });
-      
-      // Limpiar filtros si no hay categorías para mostrar el estado vacío correcto
-      if (categories.isEmpty && (_searchQuery.isNotEmpty || _selectedLevel != 'Todos')) {
-        print('🔄 Limpiando filtros porque no hay categorías');
+      if (mounted) {
         setState(() {
-          _searchQuery = '';
-          _selectedLevel = 'Todos';
-          _searchController.clear();
+          _categories = categories;
+          _isLoading = false;
         });
+        
+        // Limpiar filtros si no hay categorías para mostrar el estado vacío correcto
+        if (categories.isEmpty && (_searchQuery.isNotEmpty || _selectedLevel != 'Todos')) {
+          print('🔄 Limpiando filtros porque no hay categorías');
+          setState(() {
+            _searchQuery = '';
+            _selectedLevel = 'Todos';
+            _searchController.clear();
+          });
+        }
       }
     } catch (e) {
       print('❌ Error cargando categorías: $e');
-      setState(() {
-        _categories = []; // Asegurar que la lista esté vacía en caso de error
-        _isLoading = false;
-      });
       if (mounted) {
+        setState(() {
+          _categories = []; // Asegurar que la lista esté vacía en caso de error
+          _isLoading = false;
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error cargando categorías: $e'),
@@ -612,10 +617,12 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
 
         if (image != null) {
           final bytes = await image.readAsBytes();
-          setState(() {
-            _selectedImageBytes = bytes;
-            _selectedImageName = 'category_${DateTime.now().millisecondsSinceEpoch}.jpg';
-          });
+          if (mounted) {
+            setState(() {
+              _selectedImageBytes = bytes;
+              _selectedImageName = 'category_${DateTime.now().millisecondsSinceEpoch}.jpg';
+            });
+          }
         }
       }
     } catch (e) {
@@ -637,7 +644,9 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       final success = await _categoryService.createCategory(
@@ -651,14 +660,19 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
 
       if (success) {
         if (mounted) {
+          // Cerrar el diálogo primero
           Navigator.pop(context);
+          
+          // Luego llamar al callback para actualizar la lista
+          widget.onCategoryAdded();
+          
+          // Finalmente mostrar el mensaje de éxito
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('✅ Categoría creada exitosamente'),
               backgroundColor: Colors.green,
             ),
           );
-          widget.onCategoryAdded();
         }
       } else {
         if (mounted) {
@@ -929,7 +943,9 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       final success = await _categoryService.updateCategory(
@@ -942,14 +958,23 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
 
       if (success) {
         if (mounted) {
+          // Cerrar el diálogo primero
           Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Categoría actualizada exitosamente'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          widget.onCategoryUpdated();
+          
+          // Usar Future.delayed para asegurar que la navegación se complete
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted) {
+              widget.onCategoryUpdated();
+              
+              // Mostrar mensaje después del callback
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✅ Categoría actualizada exitosamente'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          });
         }
       } else {
         if (mounted) {
@@ -1072,16 +1097,6 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
               ),
             ),
             const SizedBox(height: 8),
-            
-            // Nota sobre imagen
-            Text(
-              'Nota: La imagen no se puede editar por el momento',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-                fontStyle: FontStyle.italic,
-              ),
-            ),
           ],
         ),
       ),
@@ -1138,22 +1153,28 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
   }
 
   Future<void> _loadSubcategories() async {
-    setState(() {
-      _isLoading = true;
-      _error = '';
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = '';
+      });
+    }
 
     try {
       final subcategories = await _subcategoryService.getSubcategoriesByCategory(widget.category.id);
-      setState(() {
-        _subcategories = subcategories;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _subcategories = subcategories;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _error = 'Error al cargar subcategorías: $e';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Error al cargar subcategorías: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -1570,6 +1591,21 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
             ),
           ],
         ),
+        const SizedBox(height: 8),
+        // Botón independiente para cambiar imagen
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _showChangeImageDialog(),
+            icon: const Icon(Icons.photo_camera),
+            label: const Text('Cambiar Imagen'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: color,
+              side: BorderSide(color: color),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1868,11 +1904,12 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
       builder: (context) => _EditCategoryDialog(
         category: widget.category,
         onCategoryUpdated: () {
-          Navigator.pop(context); // Close detail view
-          // Trigger refresh in parent
+          // Trigger refresh in parent first
           if (widget.onCategoryUpdated != null) {
             widget.onCategoryUpdated!();
           }
+          // Then close detail view
+          Navigator.pop(context); // Close detail view
         },
       ),
     );
@@ -1936,5 +1973,334 @@ class _CategoryDetailViewState extends State<_CategoryDetailView> {
         ),
       );
     }
+  }
+
+  void _showChangeImageDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => _ChangeImageDialog(
+        category: widget.category,
+        onImageUpdated: () {
+          // Trigger refresh in parent
+          if (widget.onCategoryUpdated != null) {
+            widget.onCategoryUpdated!();
+          }
+        },
+      ),
+    );
+  }
+}
+
+class _ChangeImageDialog extends StatefulWidget {
+  final Category category;
+  final VoidCallback onImageUpdated;
+
+  const _ChangeImageDialog({
+    required this.category,
+    required this.onImageUpdated,
+  });
+
+  @override
+  State<_ChangeImageDialog> createState() => _ChangeImageDialogState();
+}
+
+class _ChangeImageDialogState extends State<_ChangeImageDialog> {
+  final CategoryService _categoryService = CategoryService();
+  final ImagePicker _imagePicker = ImagePicker();
+  
+  Uint8List? _selectedImageBytes;
+  String? _currentImageUrl;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentImageUrl = widget.category.image;
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      // Mostrar opciones de cámara o galería
+      final ImageSource? source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        builder: (BuildContext context) {
+          return SafeArea(
+            child: Wrap(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_camera),
+                  title: const Text('Tomar foto'),
+                  onTap: () => Navigator.of(context).pop(ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Seleccionar de galería'),
+                  onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.cancel),
+                  title: const Text('Cancelar'),
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (source != null) {
+        final XFile? image = await _imagePicker.pickImage(
+          source: source,
+          maxWidth: 800,
+          maxHeight: 800,
+          imageQuality: 80,
+        );
+        
+        if (image != null) {
+          final bytes = await image.readAsBytes();
+          if (mounted) {
+            setState(() {
+              _selectedImageBytes = bytes;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al seleccionar imagen: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _removeImage() {
+    setState(() {
+      _selectedImageBytes = null;
+      _currentImageUrl = null;
+    });
+  }
+
+  Future<void> _updateImage() async {
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+
+    try {
+      final success = await _categoryService.updateCategory(
+        categoryId: widget.category.id,
+        denominacion: widget.category.name,
+        descripcion: widget.category.description,
+        skuCodigo: widget.category.skuCodigo,
+        visibleVendedor: widget.category.visibleVendedor,
+        imageBytes: _selectedImageBytes,
+        imageFileName: _selectedImageBytes != null 
+            ? 'category_${widget.category.id}_${DateTime.now().millisecondsSinceEpoch}.jpg'
+            : null,
+      );
+
+      if (success) {
+        if (mounted) {
+          // Cerrar el diálogo
+          Navigator.pop(context);
+          
+          // Usar Future.delayed para asegurar que la navegación se complete
+          Future.delayed(const Duration(milliseconds: 100), () {
+            widget.onImageUpdated();
+            
+            // Mostrar mensaje de éxito
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Imagen actualizada exitosamente'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          });
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Error al actualizar la imagen'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Color(int.parse(widget.category.color.replaceFirst('#', '0xFF')));
+    
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.photo_camera, color: color),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Cambiar Imagen',
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Actualizar la imagen de "${widget.category.name}"',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Vista previa de imagen
+            Container(
+              width: double.infinity,
+              height: 200,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.withOpacity(0.3)),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: _selectedImageBytes != null
+                    ? Image.memory(
+                        _selectedImageBytes!,
+                        fit: BoxFit.cover,
+                      )
+                    : _currentImageUrl != null && _currentImageUrl!.isNotEmpty
+                        ? Image.network(
+                            _currentImageUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.grey[100],
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.broken_image,
+                                      color: Colors.grey,
+                                      size: 40,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Error al cargar imagen',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          )
+                        : Container(
+                            color: Colors.grey[100],
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.image,
+                                  color: Colors.grey,
+                                  size: 40,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Sin imagen',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Botones de acción
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _pickImage,
+                    icon: const Icon(Icons.photo_library, size: 18),
+                    label: Text(_selectedImageBytes != null || _currentImageUrl != null 
+                        ? 'Cambiar imagen' 
+                        : 'Seleccionar imagen'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                if (_selectedImageBytes != null || _currentImageUrl != null) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _removeImage,
+                    icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                    label: const Text('Quitar', style: TextStyle(color: Colors.red)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading || _selectedImageBytes == null ? null : _updateImage,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: color,
+            foregroundColor: Colors.white,
+          ),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Actualizar Imagen'),
+        ),
+      ],
+    );
   }
 }
