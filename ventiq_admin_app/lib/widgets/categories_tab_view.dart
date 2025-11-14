@@ -40,13 +40,28 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
     
     try {
       final categories = await _categoryService.getCategoriesByStore();
+      print('📦 Categorías cargadas: ${categories.length}');
+      
       setState(() {
         _categories = categories;
         _isLoading = false;
       });
+      
+      // Limpiar filtros si no hay categorías para mostrar el estado vacío correcto
+      if (categories.isEmpty && (_searchQuery.isNotEmpty || _selectedLevel != 'Todos')) {
+        print('🔄 Limpiando filtros porque no hay categorías');
+        setState(() {
+          _searchQuery = '';
+          _selectedLevel = 'Todos';
+          _searchController.clear();
+        });
+      }
     } catch (e) {
       print('❌ Error cargando categorías: $e');
-      setState(() => _isLoading = false);
+      setState(() {
+        _categories = []; // Asegurar que la lista esté vacía en caso de error
+        _isLoading = false;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -384,15 +399,48 @@ class _CategoriesTabViewState extends State<CategoriesTabView> {
   }
 
   Widget _buildEmptyState() {
-    return const Center(
+    // Verificar si realmente no hay categorías o si es por filtros
+    final hasCategories = _categories.isNotEmpty;
+    final isFiltered = _searchQuery.isNotEmpty || _selectedLevel != 'Todos';
+    
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.category_outlined, size: 64, color: AppColors.textSecondary),
-          SizedBox(height: 16),
-          Text('No se encontraron categorías', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
-          SizedBox(height: 8),
-          Text('Intenta ajustar los filtros de búsqueda', style: TextStyle(color: AppColors.textSecondary)),
+          Icon(
+            hasCategories ? Icons.search_off : Icons.category_outlined, 
+            size: 64, 
+            color: AppColors.textSecondary
+          ),
+          const SizedBox(height: 16),
+          Text(
+            hasCategories && isFiltered 
+                ? 'No se encontraron categorías con los filtros aplicados'
+                : 'No hay categorías disponibles',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            hasCategories && isFiltered
+                ? 'Intenta ajustar los filtros de búsqueda'
+                : 'Crea tu primera categoría para comenzar',
+            style: const TextStyle(color: AppColors.textSecondary),
+            textAlign: TextAlign.center,
+          ),
+          if (!hasCategories) ...[
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => showAddCategoryDialog(),
+              icon: const Icon(Icons.add),
+              label: const Text('Crear Primera Categoría'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
         ],
       ),
     );
