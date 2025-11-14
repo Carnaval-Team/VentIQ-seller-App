@@ -40,6 +40,43 @@ class StoreRegistrationService {
       };
     } catch (e) {
       print('❌ Error registrando usuario: $e');
+      
+      // Manejar caso específico de usuario ya existente
+      if (e.toString().contains('user_already_exists') || 
+          e.toString().contains('User already registered')) {
+        print('⚠️ Usuario ya existe, intentando obtener información del usuario existente...');
+        
+        try {
+          // Intentar hacer login para obtener el usuario existente
+          final loginResponse = await _supabase.auth.signInWithPassword(
+            email: email,
+            password: password,
+          );
+          
+          if (loginResponse.user != null) {
+            print('✅ Usuario existente autenticado exitosamente:');
+            print('  - ID: ${loginResponse.user!.id}');
+            print('  - Email: ${loginResponse.user!.email}');
+            print('  - Nota: Usuario ya existía en el sistema');
+            
+            return {
+              'success': true,
+              'user': loginResponse.user,
+              'session': loginResponse.session,
+              'message': 'Usuario ya existía, continuando con el proceso',
+              'user_already_existed': true, // Flag para indicar que el usuario ya existía
+            };
+          }
+        } catch (loginError) {
+          print('❌ Error al autenticar usuario existente: $loginError');
+          return {
+            'success': false,
+            'error': 'Usuario ya existe pero no se pudo autenticar con las credenciales proporcionadas',
+            'message': 'El email ya está registrado. Verifica la contraseña o usa otro email.',
+          };
+        }
+      }
+      
       return {
         'success': false,
         'error': e.toString(),
@@ -169,6 +206,11 @@ class StoreRegistrationService {
       }
 
       final user = userResult['user'] as User;
+      final userAlreadyExisted = userResult['user_already_existed'] == true;
+      
+      if (userAlreadyExisted) {
+        print('ℹ️ Nota: El usuario con email $email ya existía en el sistema');
+      }
 
       // Reemplazar placeholder UUIDs en personalData con el UUID real del usuario
       List<Map<String, dynamic>>? updatedPersonalData;
@@ -239,11 +281,17 @@ class StoreRegistrationService {
       }
 
       print('🎉 Proceso completo exitoso!');
+      
+      String successMessage = userAlreadyExisted 
+          ? 'Usuario existente autenticado y tienda creada exitosamente'
+          : 'Usuario y tienda creados exitosamente';
+          
       return {
         'success': true,
         'user': user,
         'store_data': storeResult['data'],
-        'message': 'Usuario y tienda creados exitosamente',
+        'message': successMessage,
+        'user_already_existed': userAlreadyExisted,
       };
     } catch (e) {
       print('❌ Error en proceso completo: $e');

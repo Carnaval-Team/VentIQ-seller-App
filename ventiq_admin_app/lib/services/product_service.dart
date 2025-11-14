@@ -230,6 +230,131 @@ class ProductService {
     }
   }
 
+  /// Crea una nueva categoría para la tienda
+  static Future<Map<String, dynamic>> createCategoria({
+    required String denominacion,
+    required String descripcion,
+    String? skuCodigo,
+  }) async {
+    try {
+      // Obtener ID de tienda desde las preferencias del usuario
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda en las preferencias del usuario');
+      }
+
+      print('🏗️ Creando categoría: $denominacion para tienda: $idTienda');
+
+      // Generar SKU código si no se proporciona
+      final finalSkuCodigo = skuCodigo ?? _generateSkuFromName(denominacion);
+      
+      print('🏷️ SKU generado: $finalSkuCodigo');
+
+      // Primero crear la categoría en app_dat_categoria
+      final categoriaResponse = await _supabase
+          .from('app_dat_categoria')
+          .insert({
+            'denominacion': denominacion,
+            'descripcion': descripcion,
+            'sku_codigo': finalSkuCodigo,
+            'visible_vendedor': true, // Por defecto visible para vendedores
+          })
+          .select('id')
+          .single();
+
+      final categoriaId = categoriaResponse['id'];
+      print('✅ Categoría creada con ID: $categoriaId');
+
+      // Luego asociar la categoría con la tienda
+      await _supabase
+          .from('app_dat_categoria_tienda')
+          .insert({
+            'id_categoria': categoriaId,
+            'id_tienda': idTienda,
+          });
+
+      print('✅ Categoría asociada a la tienda exitosamente');
+
+      return {
+        'success': true,
+        'id': categoriaId,
+        'denominacion': denominacion,
+        'message': 'Categoría creada exitosamente',
+      };
+    } catch (e, stackTrace) {
+      print('❌ Error al crear categoría: $e');
+      print('📍 StackTrace: $stackTrace');
+      throw Exception('Error al crear categoría: $e');
+    }
+  }
+
+  /// Crea una nueva subcategoría para una categoría específica
+  static Future<Map<String, dynamic>> createSubcategoria({
+    required int idCategoria,
+    required String denominacion,
+  }) async {
+    try {
+      print('🏗️ Creando subcategoría: $denominacion para categoría: $idCategoria');
+
+      final response = await _supabase
+          .from('app_dat_subcategorias')
+          .insert({
+            'idcategoria': idCategoria, // Nombre correcto del campo según schema
+            'denominacion': denominacion,
+            'sku_codigo': _generateSkuFromName(denominacion), // Campo obligatorio
+          })
+          .select('id')
+          .single();
+
+      final subcategoriaId = response['id'];
+      print('✅ Subcategoría creada con ID: $subcategoriaId');
+
+      return {
+        'success': true,
+        'id': subcategoriaId,
+        'denominacion': denominacion,
+        'message': 'Subcategoría creada exitosamente',
+      };
+    } catch (e, stackTrace) {
+      print('❌ Error al crear subcategoría: $e');
+      print('📍 StackTrace: $stackTrace');
+      throw Exception('Error al crear subcategoría: $e');
+    }
+  }
+
+  /// Genera un SKU código basado en el nombre de la categoría
+  static String _generateSkuFromName(String name) {
+    // Limpiar el nombre: solo letras y números, convertir a mayúsculas
+    final cleanName = name
+        .replaceAll(RegExp(r'[^a-zA-Z0-9\s]'), '') // Remover caracteres especiales
+        .trim()
+        .toUpperCase();
+    
+    // Tomar las primeras 3 letras de cada palabra, máximo 6 caracteres
+    final words = cleanName.split(' ');
+    String sku = '';
+    
+    for (final word in words) {
+      if (word.isNotEmpty && sku.length < 6) {
+        final letters = word.length >= 3 ? word.substring(0, 3) : word;
+        sku += letters;
+      }
+    }
+    
+    // Si el SKU es muy corto, rellenar con el nombre completo
+    if (sku.length < 3) {
+      sku = cleanName.replaceAll(' ', '').substring(0, 
+          cleanName.replaceAll(' ', '').length > 6 ? 6 : cleanName.replaceAll(' ', '').length);
+    }
+    
+    // Agregar timestamp para unicidad
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString().substring(8);
+    sku = '${sku.substring(0, sku.length > 4 ? 4 : sku.length)}$timestamp';
+    
+    return sku;
+  }
+
   /// Convierte el JSON de la respuesta RPC al modelo Product
   static Product _convertToProduct(Map<String, dynamic> json) {
     try {

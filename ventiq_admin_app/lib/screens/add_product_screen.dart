@@ -63,6 +63,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _isLoading = false;
   bool _isLoadingData = true;
   bool _isLoadingOpenFoodFacts = false;
+  bool _isLoadingSubcategorias = false; // Estado de carga de subcategorías
   bool _showAdvancedConfig =
       false; // Nueva variable para mostrar/ocultar configuración avanzada
 
@@ -265,6 +266,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         // Configurar valores por defecto solo para productos nuevos
         if (widget.product == null) {
           _setDefaultValues();
+          _setDefaultUnidadMedida(); // Establecer unidad de medida por defecto
         } else {
           // MODO EDICIÓN: Cargar presentación base después de tener las presentaciones disponibles
           _loadBasePresentationForEditing();
@@ -470,20 +472,86 @@ class _AddProductScreenState extends State<AddProductScreen> {
     print('✅ Valores por defecto establecidos correctamente');
   }
 
+  /// Establece la unidad de medida "Unidad" por defecto
+  Future<void> _setDefaultUnidadMedida() async {
+    try {
+      print('🔧 Estableciendo unidad de medida por defecto...');
+      
+      // Cargar unidades de medida
+      final unidades = await ProductService.getUnidadesMedida();
+      
+      // Buscar "Unidad" en la lista (puede ser "Unidad", "unidad", "und", etc.)
+      final unidadDefecto = unidades.firstWhere(
+        (unidad) {
+          final denominacion = (unidad['denominacion'] ?? '').toString().toLowerCase();
+          final abreviatura = (unidad['abreviatura'] ?? '').toString().toLowerCase();
+          return denominacion.contains('unidad') || 
+                 abreviatura == 'und' || 
+                 abreviatura == 'unidad' ||
+                 denominacion == 'unidad';
+        },
+        orElse: () => unidades.isNotEmpty ? unidades.first : <String, dynamic>{},
+      );
+      
+      if (unidadDefecto.isNotEmpty) {
+        setState(() {
+          _selectedUnidadMedidaId = unidadDefecto['id'];
+          _unidadMedidaController.text = unidadDefecto['abreviatura'] ?? 'und';
+        });
+        print('✅ Unidad de medida por defecto establecida: ${unidadDefecto['denominacion']} (${unidadDefecto['abreviatura']})');
+      } else {
+        print('⚠️ No se encontró unidad de medida por defecto, usando valores hardcoded');
+        setState(() {
+          _selectedUnidadMedidaId = 1;
+          _unidadMedidaController.text = 'und';
+        });
+      }
+    } catch (e) {
+      print('❌ Error estableciendo unidad de medida por defecto: $e');
+      // Fallback a valores hardcoded
+      setState(() {
+        _selectedUnidadMedidaId = 1;
+        _unidadMedidaController.text = 'und';
+      });
+    }
+  }
+
   Future<void> _loadSubcategorias(int categoryId) async {
     try {
-      final subcategorias = await ProductService.getSubcategorias(categoryId);
       setState(() {
-        _subcategorias = subcategorias;
+        _isLoadingSubcategorias = true;
+        _subcategorias = [];
         _selectedSubcategorias.clear(); // Limpiar selecciones previas
       });
+
+      final subcategorias = await ProductService.getSubcategorias(categoryId);
+      
+      setState(() {
+        _subcategorias = subcategorias;
+        _isLoadingSubcategorias = false;
+        
+        // ✅ NUEVO: Selección automática si hay una sola subcategoría
+        if (subcategorias.length == 1 && widget.product == null) {
+          _selectedSubcategorias.add(subcategorias.first['id']);
+          print('✅ Subcategoría única seleccionada automáticamente: ${subcategorias.first['denominacion']}');
+        }
+      });
+      
       // Solo generar SKU en modo creación, no en edición
       if (widget.product == null) {
         _generateSKU(); // Generar SKU cuando cambia la categoría
       }
+      
+      print('✅ Subcategorías cargadas: ${subcategorias.length}');
+      if (subcategorias.length == 1) {
+        print('🎯 Subcategoría única seleccionada automáticamente');
+      }
     } catch (e) {
-      print('Error al cargar subcategorías: $e');
-      _showErrorSnackBar('Error al cargar subcategorías: $e');
+      print('❌ Error cargando subcategorías: $e');
+      setState(() {
+        _subcategorias = [];
+        _isLoadingSubcategorias = false;
+      });
     }
   }
 
@@ -589,13 +657,35 @@ class _AddProductScreenState extends State<AddProductScreen> {
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _saveProduct,
-            child: Text(
-              widget.product != null ? 'ACTUALIZAR' : 'GUARDAR',
-              style: TextStyle(
-                color: _isLoading ? Colors.white54 : Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: _isLoading
+                ? const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'GUARDANDO...',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    widget.product != null ? 'ACTUALIZAR' : 'GUARDAR',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
           ),
         ],
       ),
@@ -790,74 +880,235 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ),
         const SizedBox(height: 16),
         // Categoría
-        DropdownButtonFormField<int>(
-          value: _selectedCategoryId,
-          decoration: const InputDecoration(
-            labelText: 'Categoría *',
-            border: OutlineInputBorder(),
-          ),
-          items:
-              _categorias.map((categoria) {
-                return DropdownMenuItem<int>(
-                  value: categoria['id'],
-                  child: Text(categoria['denominacion']),
-                );
-              }).toList(),
-          onChanged: (value) {
-            print('🏷️ Categoría cambiada de $_selectedCategoryId a $value');
-            setState(() {
-              _selectedCategoryId = value;
-              _selectedSubcategorias.clear();
-            });
-            if (value != null) {
-              _loadSubcategorias(value);
-            }
-          },
-          validator: (value) {
-            if (value == null) {
-              return 'Selecciona una categoría';
-            }
-            return null;
-          },
-        ),
-        // Subcategorías
-        if (_subcategorias.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          const Text(
-            'Subcategorías',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textPrimary,
+        if (_categorias.isEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange.shade700),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'No hay categorías disponibles',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Para crear un producto necesitas al menos una categoría con una subcategoría.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _showCreateCategoryDialog,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Crear Primera Categoría'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
+        ] else ...[
+          DropdownButtonFormField<int>(
+            value: _selectedCategoryId,
+            decoration: InputDecoration(
+              labelText: 'Categoría *',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: _showCreateCategoryDialog,
+                tooltip: 'Crear nueva categoría',
+              ),
+            ),
+            items:
+                _categorias.map((categoria) {
+                  return DropdownMenuItem<int>(
+                    value: categoria['id'],
+                    child: Text(categoria['denominacion']),
+                  );
+                }).toList(),
+            onChanged: (value) {
+              print('🏷️ Categoría cambiada de $_selectedCategoryId a $value');
+              setState(() {
+                _selectedCategoryId = value;
+                _selectedSubcategorias.clear();
+              });
+              if (value != null) {
+                _loadSubcategorias(value);
+              }
+            },
+            validator: (value) {
+              if (value == null) {
+                return 'Selecciona una categoría';
+              }
+              return null;
+            },
+          ),
+        ],
+        // Subcategorías - Siempre visible con estados mejorados
+        const SizedBox(height: 16),
+        _buildSubcategoriasSection(),
+      ],
+    );
+  }
+
+  /// Construye la sección de subcategorías con estados mejorados
+  Widget _buildSubcategoriasSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text(
+              'Subcategorías',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (_isLoadingSubcategorias)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        
+        // Estado: Sin categoría seleccionada
+        if (_selectedCategoryId == null) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue.shade700),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Selecciona una categoría para ver las subcategorías disponibles',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ]
+        
+        // Estado: Categoría seleccionada pero sin subcategorías
+        else if (_subcategorias.isEmpty && !_isLoadingSubcategorias) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.warning_outlined, color: Colors.orange.shade700),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'No hay subcategorías disponibles para esta categoría',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showCreateSubcategoryDialog(),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Crear Subcategoría'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ]
+        
+        // Estado: Subcategorías disponibles
+        else if (_subcategorias.isNotEmpty) ...[
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children:
-                _subcategorias.map((subcat) {
-                  final isSelected = _selectedSubcategorias.contains(
-                    subcat['id'],
-                  );
-                  return FilterChip(
-                    label: Text(subcat['denominacion']),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedSubcategorias.add(subcat['id']);
-                        } else {
-                          _selectedSubcategorias.remove(subcat['id']);
-                        }
-                      });
-                      // Solo generar SKU en modo creación, no en edición
-                      if (widget.product == null) {
-                        _generateSKU();
-                      }
-                    },
-                  );
-                }).toList(),
+            children: _subcategorias.map((subcat) {
+              final isSelected = _selectedSubcategorias.contains(subcat['id']);
+              return FilterChip(
+                label: Text(subcat['denominacion']),
+                selected: isSelected,
+                onSelected: (selected) {
+                  setState(() {
+                    if (selected) {
+                      _selectedSubcategorias.add(subcat['id']);
+                    } else {
+                      _selectedSubcategorias.remove(subcat['id']);
+                    }
+                  });
+                  // Solo generar SKU en modo creación, no en edición
+                  if (widget.product == null) {
+                    _generateSKU();
+                  }
+                },
+                selectedColor: AppColors.primary.withOpacity(0.2),
+                checkmarkColor: AppColors.primary,
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => _showCreateSubcategoryDialog(),
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('Agregar Subcategoría'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              minimumSize: const Size(0, 32),
+            ),
           ),
         ],
       ],
@@ -2285,7 +2536,370 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.error),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showCreateCategoryDialog() {
+    final categoriaController = TextEditingController();
+    final categoriaDescController = TextEditingController();
+    final subcategoriaController = TextEditingController();
+    final subcategoriaDescController = TextEditingController();
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.category, color: AppColors.primary),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Crear Categoría y Subcategoría',
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Para crear un producto necesitas al menos una categoría con una subcategoría.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Categoría
+                const Text(
+                  'Categoría Principal',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: categoriaController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre de la categoría *',
+                    hintText: 'Ej: Bebidas, Comida, Postres',
+                    prefixIcon: Icon(Icons.category),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: categoriaDescController,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripción de la categoría',
+                    hintText: 'Descripción opcional',
+                    prefixIcon: Icon(Icons.description),
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 20),
+
+                // Subcategoría
+                const Text(
+                  'Subcategoría (Requerida)',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: subcategoriaController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre de la subcategoría *',
+                    hintText: 'Ej: Gaseosas, Jugos, Cervezas',
+                    prefixIcon: Icon(Icons.subdirectory_arrow_right),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: subcategoriaDescController,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripción de la subcategoría',
+                    hintText: 'Descripción opcional',
+                    prefixIcon: Icon(Icons.description),
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: isLoading ? null : () async {
+                if (categoriaController.text.trim().isEmpty ||
+                    subcategoriaController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('El nombre de la categoría y subcategoría son obligatorios'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                setDialogState(() => isLoading = true);
+
+                try {
+                  // Crear categoría
+                  final categoriaResult = await ProductService.createCategoria(
+                    denominacion: categoriaController.text.trim(),
+                    descripcion: categoriaDescController.text.trim().isEmpty
+                        ? categoriaController.text.trim()
+                        : categoriaDescController.text.trim(),
+                    // SKU se genera automáticamente
+                  );
+
+                  if (categoriaResult['success']) {
+                    final categoriaId = categoriaResult['id'] as int;
+
+                    // Crear subcategoría
+                    final subcategoriaResult = await ProductService.createSubcategoria(
+                      idCategoria: categoriaId,
+                      denominacion: subcategoriaController.text.trim(),
+                    );
+
+                    if (subcategoriaResult['success']) {
+                      final subcategoriaId = subcategoriaResult['id'] as int;
+
+                      // Recargar categorías
+                      await _reloadCategorias();
+
+                      // Seleccionar la nueva categoría
+                      setState(() {
+                        _selectedCategoryId = categoriaId;
+                      });
+
+                      // Cargar subcategorías de la nueva categoría y seleccionar la nueva subcategoría
+                      await _loadSubcategorias(categoriaId);
+
+                      // Seleccionar automáticamente la subcategoría recién creada
+                      setState(() {
+                        _selectedSubcategorias = [subcategoriaId];
+                      });
+
+                      Navigator.pop(context);
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Categoría "${categoriaController.text.trim()}" y subcategoría "${subcategoriaController.text.trim()}" creadas exitosamente',
+                          ),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    }
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error al crear categoría: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                } finally {
+                  setDialogState(() => isLoading = false);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Crear Categoría y Subcategoría'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reloadCategorias() async {
+    try {
+      final categorias = await ProductService.getCategorias();
+      setState(() {
+        _categorias = categorias;
+      });
+      print('✅ Categorías recargadas: ${_categorias.length}');
+    } catch (e) {
+      print('❌ Error recargando categorías: $e');
+    }
+  }
+
+  /// Muestra el diálogo para crear una nueva subcategoría
+  void _showCreateSubcategoryDialog() {
+    if (_selectedCategoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Primero selecciona una categoría'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final subcategoriaController = TextEditingController();
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.subdirectory_arrow_right, color: AppColors.primary),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Crear Subcategoría',
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Crear una nueva subcategoría para la categoría seleccionada.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: subcategoriaController,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre de la subcategoría *',
+                  hintText: 'Ej: Gaseosas, Jugos, Cervezas',
+                  prefixIcon: Icon(Icons.subdirectory_arrow_right),
+                  border: OutlineInputBorder(),
+                ),
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: isLoading ? null : () async {
+                if (subcategoriaController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('El nombre de la subcategoría es obligatorio'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                setDialogState(() => isLoading = true);
+
+                try {
+                  // Crear subcategoría
+                  final subcategoriaResult = await ProductService.createSubcategoria(
+                    idCategoria: _selectedCategoryId!,
+                    denominacion: subcategoriaController.text.trim(),
+                  );
+
+                  if (subcategoriaResult['success']) {
+                    final subcategoriaId = subcategoriaResult['id'] as int;
+                    
+                    // Recargar subcategorías de la categoría actual
+                    await _loadSubcategorias(_selectedCategoryId!);
+                    
+                    // Seleccionar automáticamente la nueva subcategoría
+                    setState(() {
+                      if (!_selectedSubcategorias.contains(subcategoriaId)) {
+                        _selectedSubcategorias.add(subcategoriaId);
+                      }
+                    });
+
+                    Navigator.pop(context);
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Subcategoría "${subcategoriaController.text.trim()}" creada exitosamente',
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error al crear subcategoría: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                } finally {
+                  setDialogState(() => isLoading = false);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Crear Subcategoría'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
