@@ -1,8 +1,65 @@
 {
-  "current_version": "1.6.1",
-  "build": 601,
+  "current_version": "1.6.2",
+  "build": 602,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.6.2",
+      "date": "2025-11-14",
+      "title": "💰 Sistema Inteligente de Conteo de Billetes con Conversión USD",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Conteo de Billetes para Pagos en Efectivo",
+          "description": "Nueva funcionalidad que permite contar billetes de diferentes denominaciones para verificar pagos en efectivo. Aparece automáticamente solo cuando la orden tiene pagos en efectivo."
+        },
+        {
+          "type": "feature",
+          "title": "Soporte Multi-Moneda con Conversión USD",
+          "description": "Soporte completo para USD con conversión automática a CUP usando tipos de cambio en tiempo real. Calcula automáticamente: denominación × cantidad × tipo_cambio_USD."
+        },
+        {
+          "type": "feature",
+          "title": "Cache Inteligente de Denominaciones",
+          "description": "Sistema de cache local para denominaciones de moneda que funciona offline. Carga automáticamente al iniciar sesión y se mantiene disponible sin conexión."
+        },
+        {
+          "type": "feature",
+          "title": "Cálculo Automático de Vuelto Inteligente",
+          "description": "Algoritmo inteligente que prioriza devolver vuelto en las mismas denominaciones recibidas. Si recibes 20 billetes de $10, devuelve 10 billetes de $10 en lugar de 1 billete de $100."
+        },
+        {
+          "type": "feature",
+          "title": "Interfaz Modal Estilo Detalles de Orden",
+          "description": "Diálogo deslizable (DraggableScrollableSheet) con el mismo estilo visual que los detalles de orden, incluyendo handle, header y estructura consistente."
+        },
+        {
+          "type": "feature",
+          "title": "Validación en Tiempo Real",
+          "description": "Cálculo automático de totales, faltante/sobrante y habilitación del botón confirmar solo cuando el pago sea suficiente. Actualización instantánea al cambiar cantidades."
+        },
+        {
+          "type": "feature",
+          "title": "Controles de Cantidad Intuitivos",
+          "description": "Botones +/- y campo de texto editable para cada denominación. Diseño compacto optimizado para evitar overflow en pantallas pequeñas."
+        },
+        {
+          "type": "improvement",
+          "title": "Indicadores Visuales de Conversión",
+          "description": "Banner informativo que muestra el tipo de cambio USD→CUP cuando se selecciona USD. Subtotales duales mostrando valor en CUP y valor original en USD."
+        },
+        {
+          "type": "improvement",
+          "title": "Almacenamiento Automático de Tipos de Cambio",
+          "description": "Los tipos de cambio USD se guardan automáticamente en el store local cada vez que se consultan, garantizando disponibilidad offline."
+        },
+        {
+          "type": "improvement",
+          "title": "Logging Detallado para Debugging",
+          "description": "Sistema de logging completo que muestra cálculos, conversiones y algoritmo de vuelto para facilitar el debugging y soporte técnico."
+        }
+      ]
+    },
     {
       "version": "1.6.1",
       "date": "2025-11-13",

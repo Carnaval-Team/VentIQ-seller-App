@@ -113,8 +113,6 @@ class UserPreferencesService {
     return prefs.getInt(_appIdAlmacenKey);
   }
 
-  
-
   // Obtener access token del usuario
   Future<String?> getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -163,12 +161,10 @@ class UserPreferencesService {
     await prefs.setInt(_idSellerKey, idSeller);
   }
 
-
   Future<void> saveIdAlmacen(int idAlmacen) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_appIdAlmacenKey, idAlmacen);
   }
-
 
   // Obtener ID del vendedor
   Future<int?> getIdSeller() async {
@@ -436,6 +432,10 @@ class UserPreferencesService {
   // Print settings keys
   static const String _printEnabledKey = 'print_enabled';
 
+  // Currency denominations keys
+  static const String _monedasDenominacionKey = 'monedas_denominacion';
+  static const String _cambioCupUsdKey = 'cambio_cup_usd';
+
   Future<void> saveTurnoData(Map<String, dynamic> turnoData) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_turnoIdKey, turnoData['id']);
@@ -529,15 +529,17 @@ class UserPreferencesService {
   Future<void> mergeOfflineData(Map<String, dynamic> newData) async {
     // Obtener datos existentes
     final existingData = await getOfflineData() ?? {};
-    
+
     // Hacer merge preservando datos importantes
     final mergedData = Map<String, dynamic>.from(existingData);
-    
+
     // Log de datos existentes importantes
     print('📋 Datos existentes antes del merge:');
-    print('  - Categorías: ${existingData['categories'] != null ? (existingData['categories'] is List ? existingData['categories'].length : 'Sí') : 'No'}');
+    print(
+      '  - Categorías: ${existingData['categories'] != null ? (existingData['categories'] is List ? existingData['categories'].length : 'Sí') : 'No'}',
+    );
     print('  - Productos: ${existingData['products'] != null ? 'Sí' : 'No'}');
-    
+
     // Merge cada sección individualmente
     newData.forEach((key, value) {
       if (value != null) {
@@ -547,12 +549,14 @@ class UserPreferencesService {
         print('⏭️ Omitiendo sección nula: $key');
       }
     });
-    
+
     // Log de datos finales después del merge
     print('📋 Datos finales después del merge:');
-    print('  - Categorías: ${mergedData['categories'] != null ? (mergedData['categories'] is List ? mergedData['categories'].length : 'Sí') : 'No'}');
+    print(
+      '  - Categorías: ${mergedData['categories'] != null ? (mergedData['categories'] is List ? mergedData['categories'].length : 'Sí') : 'No'}',
+    );
     print('  - Productos: ${mergedData['products'] != null ? 'Sí' : 'No'}');
-    
+
     // Guardar datos merged
     await saveOfflineData(mergedData);
     print('🔄 Merge de datos offline completado');
@@ -1549,18 +1553,24 @@ class UserPreferencesService {
         return true;
       }
 
-      final lastShownTime = DateTime.fromMillisecondsSinceEpoch(lastShownTimestamp);
+      final lastShownTime = DateTime.fromMillisecondsSinceEpoch(
+        lastShownTimestamp,
+      );
       final now = DateTime.now();
       final difference = now.difference(lastShownTime);
 
       final shouldShow = difference.inHours >= _updateDialogIntervalHours;
 
       if (shouldShow) {
-        print('⏰ Han pasado ${difference.inHours} horas desde el último diálogo - Mostrar actualización');
+        print(
+          '⏰ Han pasado ${difference.inHours} horas desde el último diálogo - Mostrar actualización',
+        );
       } else {
         final hoursRemaining = _updateDialogIntervalHours - difference.inHours;
         final minutesRemaining = (difference.inMinutes % 60);
-        print('⏳ Faltan ${hoursRemaining}h ${60 - minutesRemaining}min para mostrar próximo diálogo de actualización');
+        print(
+          '⏳ Faltan ${hoursRemaining}h ${60 - minutesRemaining}min para mostrar próximo diálogo de actualización',
+        );
       }
 
       return shouldShow;
@@ -1577,7 +1587,9 @@ class UserPreferencesService {
       final prefs = await SharedPreferences.getInstance();
       final now = DateTime.now().millisecondsSinceEpoch;
       await prefs.setInt(_lastUpdateDialogShownKey, now);
-      print('✅ Diálogo de actualización marcado como mostrado: ${DateTime.now()}');
+      print(
+        '✅ Diálogo de actualización marcado como mostrado: ${DateTime.now()}',
+      );
     } catch (e) {
       print('❌ Error guardando timestamp de diálogo de actualización: $e');
     }
@@ -1596,7 +1608,9 @@ class UserPreferencesService {
         };
       }
 
-      final lastShownTime = DateTime.fromMillisecondsSinceEpoch(lastShownTimestamp);
+      final lastShownTime = DateTime.fromMillisecondsSinceEpoch(
+        lastShownTimestamp,
+      );
       final now = DateTime.now();
       final difference = now.difference(lastShownTime);
 
@@ -1637,38 +1651,46 @@ class UserPreferencesService {
     Map<String, dynamic>? features,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     await prefs.setInt(_subscriptionIdKey, subscriptionId);
     await prefs.setInt(_subscriptionStateKey, state);
     await prefs.setInt(_subscriptionPlanIdKey, planId);
     await prefs.setString(_subscriptionPlanNameKey, planName);
-    await prefs.setString(_subscriptionStartDateKey, startDate.toIso8601String());
-    
+    await prefs.setString(
+      _subscriptionStartDateKey,
+      startDate.toIso8601String(),
+    );
+
     if (endDate != null) {
       await prefs.setString(_subscriptionEndDateKey, endDate.toIso8601String());
     } else {
       await prefs.remove(_subscriptionEndDateKey);
     }
-    
+
     if (features != null) {
       await prefs.setString(_subscriptionFeaturesKey, jsonEncode(features));
     } else {
       await prefs.remove(_subscriptionFeaturesKey);
     }
-    
+
     // Marcar última verificación
-    await prefs.setString(_subscriptionLastCheckKey, DateTime.now().toIso8601String());
-    
-    print('💾 Datos de suscripción guardados: Plan $planName (ID: $subscriptionId)');
+    await prefs.setString(
+      _subscriptionLastCheckKey,
+      DateTime.now().toIso8601String(),
+    );
+
+    print(
+      '💾 Datos de suscripción guardados: Plan $planName (ID: $subscriptionId)',
+    );
   }
 
   /// Obtiene los datos de suscripción guardados
   Future<Map<String, dynamic>?> getSubscriptionData() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     final subscriptionId = prefs.getInt(_subscriptionIdKey);
     if (subscriptionId == null) return null;
-    
+
     final state = prefs.getInt(_subscriptionStateKey);
     final planId = prefs.getInt(_subscriptionPlanIdKey);
     final planName = prefs.getString(_subscriptionPlanNameKey);
@@ -1676,11 +1698,14 @@ class UserPreferencesService {
     final endDateStr = prefs.getString(_subscriptionEndDateKey);
     final featuresStr = prefs.getString(_subscriptionFeaturesKey);
     final lastCheckStr = prefs.getString(_subscriptionLastCheckKey);
-    
-    if (state == null || planId == null || planName == null || startDateStr == null) {
+
+    if (state == null ||
+        planId == null ||
+        planName == null ||
+        startDateStr == null) {
       return null;
     }
-    
+
     return {
       'subscription_id': subscriptionId,
       'state': state,
@@ -1697,16 +1722,16 @@ class UserPreferencesService {
   Future<bool> hasActiveSubscriptionStored() async {
     final subscriptionData = await getSubscriptionData();
     if (subscriptionData == null) return false;
-    
+
     final state = subscriptionData['state'] as int;
     final endDate = subscriptionData['end_date'] as DateTime?;
-    
+
     // Estado 1 = Activa
     final isActiveState = state == 1;
-    
+
     // Verificar si no ha vencido
     final isNotExpired = endDate == null || endDate.isAfter(DateTime.now());
-    
+
     return isActiveState && isNotExpired;
   }
 
@@ -1721,7 +1746,7 @@ class UserPreferencesService {
     final prefs = await SharedPreferences.getInstance();
     final featuresStr = prefs.getString(_subscriptionFeaturesKey);
     if (featuresStr == null) return null;
-    
+
     try {
       return jsonDecode(featuresStr) as Map<String, dynamic>;
     } catch (e) {
@@ -1734,7 +1759,7 @@ class UserPreferencesService {
   Future<bool> isFeatureEnabled(String feature) async {
     final features = await getSubscriptionFeatures();
     if (features == null) return false;
-    
+
     return features[feature] == true;
   }
 
@@ -1743,7 +1768,7 @@ class UserPreferencesService {
     final prefs = await SharedPreferences.getInstance();
     final lastCheckStr = prefs.getString(_subscriptionLastCheckKey);
     if (lastCheckStr == null) return null;
-    
+
     try {
       return DateTime.parse(lastCheckStr);
     } catch (e) {
@@ -1755,17 +1780,17 @@ class UserPreferencesService {
   Future<bool> shouldRefreshSubscription() async {
     final lastCheck = await getSubscriptionLastCheck();
     if (lastCheck == null) return true;
-    
+
     final now = DateTime.now();
     final difference = now.difference(lastCheck).inMinutes;
-    
+
     return difference >= 5;
   }
 
   /// Limpia los datos de suscripción
   Future<void> clearSubscriptionData() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     await prefs.remove(_subscriptionIdKey);
     await prefs.remove(_subscriptionStateKey);
     await prefs.remove(_subscriptionPlanIdKey);
@@ -1774,7 +1799,216 @@ class UserPreferencesService {
     await prefs.remove(_subscriptionEndDateKey);
     await prefs.remove(_subscriptionFeaturesKey);
     await prefs.remove(_subscriptionLastCheckKey);
-    
+
     print('🧹 Datos de suscripción limpiados');
+  }
+
+  // ==================== DENOMINACIONES DE MONEDA ====================
+
+  /// Guardar denominaciones de moneda en cache
+  Future<void> saveMonedasDenominacion(
+    List<Map<String, dynamic>> denominaciones,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final denominacionesJson = jsonEncode(denominaciones);
+      await prefs.setString(_monedasDenominacionKey, denominacionesJson);
+      print('💰 Denominaciones de moneda guardadas en cache');
+      print('📊 Total denominaciones: ${denominaciones.length}');
+
+      // Log de monedas disponibles
+      final monedas =
+          denominaciones.map((d) => d['codigo_moneda']).toSet().toList();
+      print('💱 Monedas disponibles: ${monedas.join(', ')}');
+    } catch (e) {
+      print('❌ Error guardando denominaciones de moneda: $e');
+    }
+  }
+
+  /// Obtener todas las denominaciones de moneda desde cache
+  Future<List<Map<String, dynamic>>> getMonedasDenominacion() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final denominacionesJson = prefs.getString(_monedasDenominacionKey);
+
+      if (denominacionesJson != null) {
+        final denominacionesList =
+            jsonDecode(denominacionesJson) as List<dynamic>;
+        final denominaciones =
+            denominacionesList
+                .map((item) => item as Map<String, dynamic>)
+                .toList();
+
+        print(
+          '💰 Denominaciones cargadas desde cache: ${denominaciones.length}',
+        );
+        return denominaciones;
+      }
+
+      print('⚠️ No hay denominaciones de moneda en cache');
+      return [];
+    } catch (e) {
+      print('❌ Error cargando denominaciones de moneda: $e');
+      return [];
+    }
+  }
+
+  /// Obtener denominaciones de una moneda específica
+  Future<List<Map<String, dynamic>>> getDenominacionesPorMoneda(
+    String codigoMoneda,
+  ) async {
+    try {
+      final todasLasDenominaciones = await getMonedasDenominacion();
+      final denominacionesMoneda =
+          todasLasDenominaciones
+              .where(
+                (d) =>
+                    d['codigo_moneda'] == codigoMoneda && d['active'] == true,
+              )
+              .toList();
+
+      // Ordenar por denominación de menor a mayor
+      denominacionesMoneda.sort(
+        (a, b) =>
+            (a['denominacion'] as num).compareTo(b['denominacion'] as num),
+      );
+
+      print(
+        '💱 Denominaciones para $codigoMoneda: ${denominacionesMoneda.length}',
+      );
+      return denominacionesMoneda;
+    } catch (e) {
+      print('❌ Error obteniendo denominaciones para $codigoMoneda: $e');
+      return [];
+    }
+  }
+
+  /// Obtener lista de monedas disponibles (códigos únicos)
+  Future<List<String>> getMonedasDisponibles() async {
+    try {
+      final denominaciones = await getMonedasDenominacion();
+      final monedasSet =
+          denominaciones
+              .where((d) => d['active'] == true)
+              .map((d) => d['codigo_moneda'] as String)
+              .toSet();
+
+      final monedas = monedasSet.toList();
+      monedas.sort(); // Ordenar alfabéticamente
+
+      print('💱 Monedas disponibles: ${monedas.join(', ')}');
+      return monedas;
+    } catch (e) {
+      print('❌ Error obteniendo monedas disponibles: $e');
+      return [];
+    }
+  }
+
+  /// Verificar si hay denominaciones de moneda en cache
+  Future<bool> hasMonedasDenominacion() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final denominacionesJson = prefs.getString(_monedasDenominacionKey);
+
+      if (denominacionesJson == null) return false;
+
+      final denominacionesList =
+          jsonDecode(denominacionesJson) as List<dynamic>;
+      return denominacionesList.isNotEmpty;
+    } catch (e) {
+      print('❌ Error verificando cache de denominaciones: $e');
+      return false;
+    }
+  }
+
+  /// Limpiar cache de denominaciones de moneda
+  Future<void> clearMonedasDenominacion() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_monedasDenominacionKey);
+      print('🗑️ Cache de denominaciones de moneda eliminado');
+    } catch (e) {
+      print('❌ Error limpiando cache de denominaciones: $e');
+    }
+  }
+
+  /// Obtener información de denominaciones para debugging
+  Future<Map<String, dynamic>> getDenominacionesInfo() async {
+    try {
+      final denominaciones = await getMonedasDenominacion();
+      final monedas = await getMonedasDisponibles();
+
+      final info = <String, dynamic>{
+        'total_denominaciones': denominaciones.length,
+        'monedas_disponibles': monedas,
+        'denominaciones_por_moneda': <String, int>{},
+      };
+
+      for (final moneda in monedas) {
+        final denominacionesMoneda = await getDenominacionesPorMoneda(moneda);
+        info['denominaciones_por_moneda'][moneda] = denominacionesMoneda.length;
+      }
+
+      return info;
+    } catch (e) {
+      print('❌ Error obteniendo info de denominaciones: $e');
+      return {};
+    }
+  }
+
+  // ==================== TIPO DE CAMBIO CUP-USD ====================
+
+  /// Guardar tipo de cambio CUP-USD en cache
+  Future<void> saveCambioCupUsd(double cambio) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_cambioCupUsdKey, cambio);
+      print('💱 Tipo de cambio CUP-USD guardado: $cambio');
+    } catch (e) {
+      print('❌ Error guardando tipo de cambio CUP-USD: $e');
+    }
+  }
+
+  /// Obtener tipo de cambio CUP-USD desde cache
+  Future<double> getCambioCupUsd() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cambio = prefs.getDouble(_cambioCupUsdKey);
+
+      if (cambio != null) {
+        print('💱 Tipo de cambio CUP-USD desde cache: $cambio');
+        return cambio;
+      } else {
+        print(
+          '⚠️ No hay tipo de cambio CUP-USD en cache, usando default: 420.0',
+        );
+        return 420.0; // Valor por defecto
+      }
+    } catch (e) {
+      print('❌ Error obteniendo tipo de cambio CUP-USD: $e');
+      return 420.0; // Valor por defecto
+    }
+  }
+
+  /// Verificar si hay tipo de cambio CUP-USD en cache
+  Future<bool> hasCambioCupUsd() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.containsKey(_cambioCupUsdKey);
+    } catch (e) {
+      print('❌ Error verificando cache de tipo de cambio: $e');
+      return false;
+    }
+  }
+
+  /// Limpiar cache de tipo de cambio CUP-USD
+  Future<void> clearCambioCupUsd() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_cambioCupUsdKey);
+      print('🗑️ Cache de tipo de cambio CUP-USD eliminado');
+    } catch (e) {
+      print('❌ Error limpiando cache de tipo de cambio: $e');
+    }
   }
 }

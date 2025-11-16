@@ -25,7 +25,8 @@ class _CierreScreenState extends State<CierreScreen> {
 
   bool _isProcessing = false;
   bool _isLoadingData = true;
-  bool _isLoadingInventory = false; // Cambiado a false para que cargue al abrir el modal
+  bool _isLoadingInventory =
+      false; // Cambiado a false para que cargue al abrir el modal
   bool _isLoadingExpenses = true;
 
   // Inventory data
@@ -57,7 +58,7 @@ class _CierreScreenState extends State<CierreScreen> {
   String _conciliacionEstado = '';
   double _efectivoRealAjustado = 0.0;
   double _diferenciaAjustada = 0.0;
-  
+
   // Shift workers closed
   int _trabajadoresCerrados = 0;
 
@@ -82,7 +83,7 @@ class _CierreScreenState extends State<CierreScreen> {
     try {
       // Verificar si está en modo offline
       final isOffline = await _userPrefs.isOfflineModeEnabled();
-      
+
       if (isOffline) {
         print('🔌 Modo offline activado - Inventario deshabilitado');
         if (mounted) {
@@ -94,15 +95,19 @@ class _CierreScreenState extends State<CierreScreen> {
       }
 
       final storeConfig = await _userPrefs.getStoreConfig();
-      
+
       if (storeConfig != null) {
         final manejaInventario = storeConfig['maneja_inventario'] ?? false;
-        print('🏪 Configuración de tienda cargada - Maneja inventario 2: $manejaInventario');
-        
+        print(
+          '🏪 Configuración de tienda cargada - Maneja inventario 2: $manejaInventario',
+        );
+
         if (mounted) {
           setState(() {
             _manejaInventario = manejaInventario;
-            print('✅ setState ejecutado - _manejaInventario ahora es: $_manejaInventario');
+            print(
+              '✅ setState ejecutado - _manejaInventario ahora es: $_manejaInventario',
+            );
           });
         } else {
           print('⚠️ Widget no montado, no se puede ejecutar setState');
@@ -148,7 +153,7 @@ class _CierreScreenState extends State<CierreScreen> {
 
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline activado - Cargando datos desde cache...');
         await _loadDailySummaryOffline();
@@ -193,9 +198,10 @@ class _CierreScreenState extends State<CierreScreen> {
 
         if (resumenCierreResponse != null) {
           Map<String, dynamic> data;
-          
+
           // Manejar tanto List como Map de respuesta
-          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+          if (resumenCierreResponse is List &&
+              resumenCierreResponse.isNotEmpty) {
             // Si es una lista, tomar el primer elemento
             data = resumenCierreResponse[0] as Map<String, dynamic>;
             print('📈 Datos extraídos de lista: ${data.keys.toList()}');
@@ -278,37 +284,66 @@ class _CierreScreenState extends State<CierreScreen> {
   Future<void> _loadDailySummaryOffline() async {
     try {
       print('📱 Cargando resumen de cierre desde cache offline...');
-      
+
       // Obtener resumen de cierre actualizado con órdenes offline
-      final resumenCierre = await _userPrefs.getResumenCierreWithOfflineOrders();
-      
+      final resumenCierre =
+          await _userPrefs.getResumenCierreWithOfflineOrders();
+
       if (resumenCierre != null) {
         print('✅ Resumen de cierre cargado desde cache offline');
         print('📊 Datos disponibles: ${resumenCierre.keys.toList()}');
-        
+
         setState(() {
           // Mapear campos desde el cache del resumen de cierre
-          _montoInicialCaja = (resumenCierre['efectivo_inicial'] ?? resumenCierre['monto_inicial_caja'] ?? 0.0).toDouble();
-          _ventasTotales = (resumenCierre['total_ventas'] ?? resumenCierre['ventas_totales'] ?? 0.0).toDouble();
-          _productosVendidos = (resumenCierre['productos_vendidos'] ?? 0).toInt();
-          _ticketPromedio = (resumenCierre['ticket_promedio'] ?? 0.0).toDouble();
-          
+          _montoInicialCaja =
+              (resumenCierre['efectivo_inicial'] ??
+                      resumenCierre['monto_inicial_caja'] ??
+                      0.0)
+                  .toDouble();
+          _ventasTotales =
+              (resumenCierre['total_ventas'] ??
+                      resumenCierre['ventas_totales'] ??
+                      0.0)
+                  .toDouble();
+          _productosVendidos =
+              (resumenCierre['productos_vendidos'] ?? 0).toInt();
+          _ticketPromedio =
+              (resumenCierre['ticket_promedio'] ?? 0.0).toDouble();
+
           // Campos específicos del resumen de cierre
-          _operacionesTotales = (resumenCierre['operaciones_totales'] ?? 0).toInt();
-          _operacionesPorHora = (resumenCierre['operaciones_por_hora'] ?? 0.0).toDouble();
-          _totalEfectivo = (resumenCierre['total_efectivo'] ?? resumenCierre['efectivo_real'] ?? _ventasTotales * 0.7).toDouble();
-          _totalTransferencias = (resumenCierre['total_transferencias'] ?? _ventasTotales - _totalEfectivo).toDouble();
-          _porcentajeEfectivo = (resumenCierre['porcentaje_efectivo'] ?? 70.0).toDouble();
-          _porcentajeOtros = (resumenCierre['porcentaje_otros'] ?? 30.0).toDouble();
-          _efectivoEsperado = (resumenCierre['efectivo_esperado'] ?? _montoInicialCaja + _totalEfectivo).toDouble();
-          _conciliacionEstado = resumenCierre['conciliacion_estado'] ?? 'Pendiente';
-          _efectivoRealAjustado = (resumenCierre['efectivo_real_ajustado'] ?? _efectivoEsperado).toDouble();
-          _diferenciaAjustada = (resumenCierre['diferencia_ajustada'] ?? 0.0).toDouble();
+          _operacionesTotales =
+              (resumenCierre['operaciones_totales'] ?? 0).toInt();
+          _operacionesPorHora =
+              (resumenCierre['operaciones_por_hora'] ?? 0.0).toDouble();
+          _totalEfectivo =
+              (resumenCierre['total_efectivo'] ??
+                      resumenCierre['efectivo_real'] ??
+                      _ventasTotales * 0.7)
+                  .toDouble();
+          _totalTransferencias =
+              (resumenCierre['total_transferencias'] ??
+                      _ventasTotales - _totalEfectivo)
+                  .toDouble();
+          _porcentajeEfectivo =
+              (resumenCierre['porcentaje_efectivo'] ?? 70.0).toDouble();
+          _porcentajeOtros =
+              (resumenCierre['porcentaje_otros'] ?? 30.0).toDouble();
+          _efectivoEsperado =
+              (resumenCierre['efectivo_esperado'] ??
+                      _montoInicialCaja + _totalEfectivo)
+                  .toDouble();
+          _conciliacionEstado =
+              resumenCierre['conciliacion_estado'] ?? 'Pendiente';
+          _efectivoRealAjustado =
+              (resumenCierre['efectivo_real_ajustado'] ?? _efectivoEsperado)
+                  .toDouble();
+          _diferenciaAjustada =
+              (resumenCierre['diferencia_ajustada'] ?? 0.0).toDouble();
           // _manejaInventario = resumenCierre['maneja_inventario'] ?? false; // Comentado: se usa valor de configuración
-          
+
           _isLoadingData = false;
         });
-        
+
         print('💰 Datos cargados desde cache offline (con órdenes offline):');
         print('  - Monto inicial: $_montoInicialCaja');
         print('  - Ventas totales: $_ventasTotales');
@@ -316,27 +351,30 @@ class _CierreScreenState extends State<CierreScreen> {
         print('  - Ticket promedio: $_ticketPromedio');
         print('  - Total efectivo: $_totalEfectivo');
         print('  - Total transferencias: $_totalTransferencias');
-        
+
         // Mostrar información de órdenes offline si las hay
-        if (resumenCierre['ordenes_offline'] != null && resumenCierre['ordenes_offline'] > 0) {
+        if (resumenCierre['ordenes_offline'] != null &&
+            resumenCierre['ordenes_offline'] > 0) {
           print('📱 Órdenes offline incluidas:');
           print('  - Órdenes offline: ${resumenCierre['ordenes_offline']}');
           print('  - Ventas offline: \$${resumenCierre['ventas_offline']}');
         }
-        
       } else {
         // Fallback: intentar cargar desde resumen de turno si no hay resumen de cierre
         print('⚠️ No hay resumen de cierre - intentando resumen de turno...');
         final resumenTurno = await _userPrefs.getTurnoResumenCache();
-        
+
         if (resumenTurno != null) {
           print('✅ Usando resumen de turno como fallback');
           setState(() {
-            _montoInicialCaja = (resumenTurno['efectivo_inicial'] ?? 0.0).toDouble();
+            _montoInicialCaja =
+                (resumenTurno['efectivo_inicial'] ?? 0.0).toDouble();
             _ventasTotales = (resumenTurno['ventas_totales'] ?? 0.0).toDouble();
-            _productosVendidos = (resumenTurno['productos_vendidos'] ?? 0).toInt();
-            _ticketPromedio = (resumenTurno['ticket_promedio'] ?? 0.0).toDouble();
-            
+            _productosVendidos =
+                (resumenTurno['productos_vendidos'] ?? 0).toInt();
+            _ticketPromedio =
+                (resumenTurno['ticket_promedio'] ?? 0.0).toDouble();
+
             // Estimaciones para campos faltantes
             _operacionesTotales = 0;
             _operacionesPorHora = 0.0;
@@ -349,7 +387,7 @@ class _CierreScreenState extends State<CierreScreen> {
             _efectivoRealAjustado = _efectivoEsperado;
             _diferenciaAjustada = 0.0;
             // _manejaInventario = false; // Comentado: se usa valor de configuración
-            
+
             _isLoadingData = false;
           });
         } else {
@@ -371,7 +409,7 @@ class _CierreScreenState extends State<CierreScreen> {
             _efectivoRealAjustado = 500.0;
             _diferenciaAjustada = 0.0;
             // _manejaInventario = false; // Comentado: se usa valor de configuración
-            
+
             _isLoadingData = false;
           });
         }
@@ -442,7 +480,9 @@ class _CierreScreenState extends State<CierreScreen> {
       }
       final idAlmacen = await _userPrefs.getIdAlmacen();
 
-      print('🔄 Llamando a fn_listar_inventario_productos_paged... idAlmacen');
+      print(
+        '🔄 Llamando a fn_listar_inventario_productos_paged... idAlmacen',
+      );
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged',
         params: {
@@ -450,7 +490,7 @@ class _CierreScreenState extends State<CierreScreen> {
           'p_limite': 9999,
           'p_mostrar_sin_stock': true,
           'p_pagina': 1,
-          'p_id_almacen':idAlmacen,
+          'p_id_almacen': idAlmacen,
         },
       );
       print('✅ Respuesta recibida: ${response?.length ?? 0} items');
@@ -458,21 +498,28 @@ class _CierreScreenState extends State<CierreScreen> {
       if (response != null && response is List) {
         // Agrupar productos SOLO por id_producto (sin considerar ubicaciones ni presentaciones)
         final Map<int, InventoryProduct> productsByIdMap = {};
-        
+
         for (var item in response) {
-          try {
-            final product = InventoryProduct.fromSupabaseRpc(item);
-            
-            // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
-            if (!productsByIdMap.containsKey(product.id)) {
-              productsByIdMap[product.id] = product;
-              print('📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})');
-            } else {
-              print('⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})');
+          // print(item);
+          // if (!item['es_elaborado'] && !item['es_servicio']) {
+            try {
+              final product = InventoryProduct.fromSupabaseRpc(item);
+
+              // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
+              if (!productsByIdMap.containsKey(product.id)) {
+                productsByIdMap[product.id] = product;
+                print(
+                  '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
+                );
+              } else {
+                print(
+                  '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
+                );
+              }
+            } catch (e) {
+              print('❌ Error procesando producto: $e');
             }
-          } catch (e) {
-            print('❌ Error procesando producto: $e');
-          }
+          // }
         }
 
         // Crear lista consolidada y controllers
@@ -510,7 +557,7 @@ class _CierreScreenState extends State<CierreScreen> {
     print('  - _inventoryProducts.isEmpty: ${_inventoryProducts.isEmpty}');
     print('  - _isLoadingInventory: $_isLoadingInventory');
     print('  - _inventoryProducts.length: ${_inventoryProducts.length}');
-    
+
     // Cargar productos ANTES de mostrar el modal
     if (_inventoryProducts.isEmpty && !_isLoadingInventory) {
       print('📦 Cargando productos antes de mostrar modal...');
@@ -518,9 +565,9 @@ class _CierreScreenState extends State<CierreScreen> {
     } else {
       print('⏭️ Omitiendo carga - Condición no cumplida');
     }
-    
+
     if (!mounted) return;
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -598,95 +645,106 @@ class _CierreScreenState extends State<CierreScreen> {
 
               // Lista de productos
               Expanded(
-                child: _isLoadingInventory
-                    ? const Center(child: CircularProgressIndicator())
-                    : _inventoryProducts.isEmpty
+                child:
+                    _isLoadingInventory
+                        ? const Center(child: CircularProgressIndicator())
+                        : _inventoryProducts.isEmpty
                         ? const Center(
-                            child: Text('No hay productos de inventario'),
-                          )
+                          child: Text('No hay productos de inventario'),
+                        )
                         : ListView.builder(
-                            controller: scrollController,
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _inventoryProducts.length,
-                            itemBuilder: (context, index) {
-                              final product = _inventoryProducts[index];
-                              final controller = _inventoryControllers[product.id]!;
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _inventoryProducts.length,
+                          itemBuilder: (context, index) {
+                            final product = _inventoryProducts[index];
+                            final controller =
+                                _inventoryControllers[product.id]!;
 
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.grey[300]!),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.grey.withOpacity(0.1),
-                                      spreadRadius: 1,
-                                      blurRadius: 3,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    // Producto info - SIN mostrar cantidad del sistema
-                                    Expanded(
-                                      flex: 2,
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            product.nombreProducto,
-                                            style: const TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'SKU: ${product.skuProducto}',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                    const SizedBox(width: 12),
-
-                                    // Input de cantidad real
-                                    SizedBox(
-                                      width: 100,
-                                      child: TextField(
-                                        controller: controller,
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                        textAlign: TextAlign.center,
-                                        decoration: InputDecoration(
-                                          labelText: 'Real',
-                                          labelStyle: const TextStyle(fontSize: 12),
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          contentPadding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 12,
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey[300]!),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.grey.withOpacity(0.1),
+                                    spreadRadius: 1,
+                                    blurRadius: 3,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  // Producto info - SIN mostrar cantidad del sistema
+                                  Expanded(
+                                    flex: 2,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          product.nombreProducto,
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
-                                        inputFormatters: [
-                                          FilteringTextInputFormatter.allow(
-                                            RegExp(r'^\d+\.?\d{0,2}'),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'SKU: ${product.skuProducto}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
+                                  ),
+
+                                  const SizedBox(width: 12),
+
+                                  // Input de cantidad real
+                                  SizedBox(
+                                    width: 100,
+                                    child: TextField(
+                                      controller: controller,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                      textAlign: TextAlign.center,
+                                      decoration: InputDecoration(
+                                        labelText: 'Real',
+                                        labelStyle: const TextStyle(
+                                          fontSize: 12,
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 12,
+                                            ),
+                                      ),
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.allow(
+                                          RegExp(r'^\d+\.?\d{0,2}'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
               ),
 
               // Botones
@@ -726,7 +784,9 @@ class _CierreScreenState extends State<CierreScreen> {
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Inventario controlado correctamente'),
+                              content: Text(
+                                'Inventario controlado correctamente',
+                              ),
                               backgroundColor: Colors.green,
                             ),
                           );
@@ -763,9 +823,9 @@ class _CierreScreenState extends State<CierreScreen> {
 
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      
+
       List<Expense> expenses = [];
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline activado - Cargando egresos desde cache...');
         // Cargar egresos desde cache offline
@@ -809,28 +869,31 @@ class _CierreScreenState extends State<CierreScreen> {
   Future<List<Expense>> _loadExpensesOffline() async {
     try {
       print('📱 Cargando egresos desde cache offline...');
-      
+
       // Obtener egresos desde cache específico (no desde offlineData general)
       final egresosData = await _userPrefs.getEgresosCache();
-      
+
       if (egresosData.isNotEmpty) {
-        final expenses = egresosData.map((expenseJson) {
-          return Expense(
-            idEgreso: expenseJson['id_egreso'] ?? 0,
-            montoEntrega: (expenseJson['monto_entrega'] ?? 0.0).toDouble(),
-            motivoEntrega: expenseJson['motivo_entrega'] ?? 'Sin motivo',
-            nombreRecibe: expenseJson['nombre_recibe'] ?? 'Sin nombre',
-            nombreAutoriza: expenseJson['nombre_autoriza'] ?? 'Sin autorización',
-            fechaEntrega: expenseJson['fecha_entrega'] != null 
-                ? DateTime.parse(expenseJson['fecha_entrega'])
-                : DateTime.now(),
-            idMedioPago: expenseJson['id_medio_pago'],
-            turnoEstado: expenseJson['turno_estado'] ?? 1,
-            medioPago: expenseJson['medio_pago'],
-            esDigital: expenseJson['es_digital'] ?? false,
-          );
-        }).toList();
-        
+        final expenses =
+            egresosData.map((expenseJson) {
+              return Expense(
+                idEgreso: expenseJson['id_egreso'] ?? 0,
+                montoEntrega: (expenseJson['monto_entrega'] ?? 0.0).toDouble(),
+                motivoEntrega: expenseJson['motivo_entrega'] ?? 'Sin motivo',
+                nombreRecibe: expenseJson['nombre_recibe'] ?? 'Sin nombre',
+                nombreAutoriza:
+                    expenseJson['nombre_autoriza'] ?? 'Sin autorización',
+                fechaEntrega:
+                    expenseJson['fecha_entrega'] != null
+                        ? DateTime.parse(expenseJson['fecha_entrega'])
+                        : DateTime.now(),
+                idMedioPago: expenseJson['id_medio_pago'],
+                turnoEstado: expenseJson['turno_estado'] ?? 1,
+                medioPago: expenseJson['medio_pago'],
+                esDigital: expenseJson['es_digital'] ?? false,
+              );
+            }).toList();
+
         print('✅ Egresos cargados desde cache offline: ${expenses.length}');
         return expenses;
       } else {
@@ -883,7 +946,7 @@ class _CierreScreenState extends State<CierreScreen> {
   Widget build(BuildContext context) {
     // Calcular efectivo esperado final (efectivo_esperado - egresos en efectivo)
     final montoEsperado = _efectivoEsperado - _egresosEfectivo;
-    
+
     print('🔍 BUILD - _manejaInventario: $_manejaInventario');
 
     return Scaffold(
@@ -1377,9 +1440,14 @@ class _CierreScreenState extends State<CierreScreen> {
                   child: ElevatedButton.icon(
                     onPressed: _showInventoryCountModal,
                     icon: Icon(_inventorySet ? Icons.edit : Icons.inventory_2),
-                    label: Text(_inventorySet ? 'Editar Inventario' : 'Controlar Inventario'),
+                    label: Text(
+                      _inventorySet
+                          ? 'Editar Inventario'
+                          : 'Controlar Inventario',
+                    ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _inventorySet ? Colors.green : Colors.orange,
+                      backgroundColor:
+                          _inventorySet ? Colors.green : Colors.orange,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
@@ -1725,11 +1793,13 @@ class _CierreScreenState extends State<CierreScreen> {
             productosVacios++;
           }
         }
-        
+
         if (productosVacios > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Debes ingresar la cantidad para todos los productos ($productosVacios pendientes)'),
+              content: Text(
+                'Debes ingresar la cantidad para todos los productos ($productosVacios pendientes)',
+              ),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 4),
             ),
@@ -1744,16 +1814,16 @@ class _CierreScreenState extends State<CierreScreen> {
       // Preparar datos de inventario y generar observaciones si está habilitado
       List<Map<String, dynamic>>? productCounts;
       String observacionesInventario = '';
-      
+
       if (_manejaInventario && _inventorySet) {
         productCounts = [];
         final List<String> excesos = [];
         final List<String> defectos = [];
-        
+
         for (var product in _inventoryProducts) {
           final controller = _inventoryControllers[product.id];
           final cantidadText = controller?.text ?? '';
-          
+
           if (cantidadText.isNotEmpty) {
             final cantidadContada = double.tryParse(cantidadText);
             if (cantidadContada != null && cantidadContada >= 0) {
@@ -1765,42 +1835,46 @@ class _CierreScreenState extends State<CierreScreen> {
                 'id_presentacion': product.idPresentacion,
                 'cantidad': cantidadContada,
               });
-              
+
               // Calcular diferencia con cantidad del sistema
               final cantidadSistema = product.cantidadFinal;
               final diferencia = cantidadContada - cantidadSistema;
-              
+
               if (diferencia > 0) {
                 // Hay exceso
-                excesos.add('Sobran ${diferencia.toStringAsFixed(2)} unidades de ${product.nombreProducto}');
+                excesos.add(
+                  'Sobran ${diferencia.toStringAsFixed(2)} unidades de ${product.nombreProducto}',
+                );
               } else if (diferencia < 0) {
                 // Hay defecto
-                defectos.add('Faltan ${diferencia.abs().toStringAsFixed(2)} unidades de ${product.nombreProducto}');
+                defectos.add(
+                  'Faltan ${diferencia.abs().toStringAsFixed(2)} unidades de ${product.nombreProducto}',
+                );
               }
             }
           }
         }
-        
+
         // Construir observaciones de inventario
         if (excesos.isNotEmpty || defectos.isNotEmpty) {
           final List<String> observaciones = [];
-          
+
           if (defectos.isNotEmpty) {
             observaciones.add('FALTANTES:');
             observaciones.addAll(defectos);
           }
-          
+
           if (excesos.isNotEmpty) {
             if (observaciones.isNotEmpty) observaciones.add('');
             observaciones.add('EXCESOS:');
             observaciones.addAll(excesos);
           }
-          
+
           observacionesInventario = observaciones.join('\n');
           print('📋 Observaciones de inventario generadas:');
           print(observacionesInventario);
         }
-        
+
         print('📦 Productos contados: ${productCounts.length}');
       }
 
@@ -1808,16 +1882,19 @@ class _CierreScreenState extends State<CierreScreen> {
       String observacionesFinales = _observacionesController.text.trim();
       if (observacionesInventario.isNotEmpty) {
         if (observacionesFinales.isNotEmpty) {
-          observacionesFinales += '\n\n--- INVENTARIO ---\n$observacionesInventario';
+          observacionesFinales +=
+              '\n\n--- INVENTARIO ---\n$observacionesInventario';
         } else {
           observacionesFinales = observacionesInventario;
         }
       }
-      
+
       print('📦 Productos para cierre:');
       if (productCounts != null && productCounts.isNotEmpty) {
         for (var prod in productCounts) {
-          print('  - ID: ${prod['id_producto']}, Ubicación: ${prod['id_ubicacion']}, Variante: ${prod['id_variante']}, Presentación: ${prod['id_presentacion']}, Cantidad: ${prod['cantidad']}');
+          print(
+            '  - ID: ${prod['id_producto']}, Ubicación: ${prod['id_ubicacion']}, Variante: ${prod['id_variante']}, Presentación: ${prod['id_presentacion']}, Cantidad: ${prod['cantidad']}',
+          );
         }
       }
       print('📊 Total productos: ${productCounts?.length ?? 0}');
@@ -1828,7 +1905,7 @@ class _CierreScreenState extends State<CierreScreen> {
 
       // Verificar si el modo offline está activado
       final isOfflineModeEnabled = await _userPrefs.isOfflineModeEnabled();
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Creando cierre offline...');
         await _createOfflineCierre(
@@ -1843,7 +1920,8 @@ class _CierreScreenState extends State<CierreScreen> {
         final success = await TurnoService.cerrarTurno(
           efectivoReal: montoFinal,
           productos: productCounts ?? [],
-          observaciones: observacionesFinales.isEmpty ? null : observacionesFinales,
+          observaciones:
+              observacionesFinales.isEmpty ? null : observacionesFinales,
         );
 
         if (success) {
@@ -1870,7 +1948,7 @@ class _CierreScreenState extends State<CierreScreen> {
   Future<void> _closeActiveWorkers() async {
     try {
       print('👥 Verificando trabajadores activos para cerrar...');
-      
+
       // Obtener turno abierto
       final turnoAbierto = await TurnoService.getTurnoAbierto();
       if (turnoAbierto == null) {
@@ -1879,23 +1957,23 @@ class _CierreScreenState extends State<CierreScreen> {
       }
 
       final idTurno = turnoAbierto['id'] as int;
-      
+
       // Obtener trabajadores del turno
       final workers = await ShiftWorkersService.getShiftWorkers(idTurno);
-      
+
       // Filtrar solo los trabajadores activos (sin hora de salida)
       final activeWorkers = workers.where((w) => w.isActive).toList();
-      
+
       if (activeWorkers.isEmpty) {
         print('✅ No hay trabajadores activos para cerrar');
         return;
       }
 
       print('👥 Cerrando ${activeWorkers.length} trabajador(es) activo(s)...');
-      
+
       // Hora de cierre del turno (ahora)
       final horaCierre = DateTime.now();
-      
+
       // Registrar salida de todos los trabajadores activos
       final idsRegistros = activeWorkers.map((w) => w.id!).toList();
       final result = await ShiftWorkersService.registerWorkersExit(
@@ -1905,7 +1983,9 @@ class _CierreScreenState extends State<CierreScreen> {
 
       if (result['success'] == true) {
         _trabajadoresCerrados = activeWorkers.length;
-        print('✅ $_trabajadoresCerrados trabajador(es) cerrado(s) automáticamente');
+        print(
+          '✅ $_trabajadoresCerrados trabajador(es) cerrado(s) automáticamente',
+        );
         print('⏰ Hora de cierre: ${horaCierre.toIso8601String()}');
       } else {
         print('⚠️ Error cerrando trabajadores: ${result['message']}');
@@ -2008,14 +2088,14 @@ class _CierreScreenState extends State<CierreScreen> {
       final userData = await _userPrefs.getUserData();
       final idTpv = await _userPrefs.getIdTpv();
       final userUuid = userData['userId'];
-      
+
       if (idTpv == null || userUuid == null) {
         throw Exception('Faltan datos requeridos para el cierre offline');
       }
-      
+
       // Generar ID único para el cierre offline
       final cierreId = '${DateTime.now().millisecondsSinceEpoch}';
-      
+
       // Crear estructura de cierre offline
       final cierreData = {
         'id': cierreId,
@@ -2030,40 +2110,41 @@ class _CierreScreenState extends State<CierreScreen> {
         'productos': productos,
         'created_offline_at': DateTime.now().toIso8601String(),
       };
-      
+
       // Guardar operación pendiente
       await _userPrefs.savePendingOperation({
         'type': 'cierre_turno',
         'data': cierreData,
       });
-      
+
       // Limpiar turno offline (ya que se está cerrando)
       await _userPrefs.clearOfflineTurno();
-      
+
       // Cerrar órdenes pendientes localmente
       for (final order in _ordenesPendientes) {
         _orderService.updateOrderStatus(order.id, OrderStatus.completada);
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Cierre creado offline. Se sincronizará cuando tengas conexión.'),
+            content: Text(
+              'Cierre creado offline. Se sincronizará cuando tengas conexión.',
+            ),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 3),
           ),
         );
-        
+
         // Mostrar diálogo de éxito offline
         _showOfflineSuccessDialog(efectivoFinal, diferencia);
       }
-      
+
       print('✅ Cierre offline creado: $cierreId');
-      
     } catch (e, stackTrace) {
       print('❌ Error creando cierre offline: $e');
       print('Stack trace: $stackTrace');
-      
+
       if (mounted) {
         _showErrorMessage('Error creando cierre offline: $e');
       }
@@ -2074,63 +2155,70 @@ class _CierreScreenState extends State<CierreScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.cloud_off, color: Colors.orange[700], size: 28),
-            const SizedBox(width: 8),
-            const Text(
-              'Cierre Offline Creado',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.cloud_off, color: Colors.orange[700], size: 28),
+                const SizedBox(width: 8),
+                const Text(
+                  'Cierre Offline Creado',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'El cierre se ha guardado localmente y se sincronizará automáticamente cuando tengas conexión a internet.',
-              style: TextStyle(fontSize: 14),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'El cierre se ha guardado localmente y se sincronizará automáticamente cuando tengas conexión a internet.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildDialogInfoRow(
+                        'Monto Final:',
+                        '\$${montoFinal.toStringAsFixed(2)}',
+                      ),
+                      if (diferencia.abs() > 0.01)
+                        _buildDialogInfoRow(
+                          'Diferencia:',
+                          '${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
+                          isHighlight: true,
+                          color: diferencia >= 0 ? Colors.green : Colors.red,
+                        ),
+                      _buildDialogInfoRow(
+                        'Estado:',
+                        'Pendiente de sincronización',
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[300]!),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange[700],
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Continuar'),
               ),
-              child: Column(
-                children: [
-                  _buildDialogInfoRow('Monto Final:', '\$${montoFinal.toStringAsFixed(2)}'),
-                  if (diferencia.abs() > 0.01)
-                    _buildDialogInfoRow(
-                      'Diferencia:',
-                      '${diferencia >= 0 ? '+' : ''}\$${diferencia.toStringAsFixed(2)}',
-                      isHighlight: true,
-                      color: diferencia >= 0 ? Colors.green : Colors.red,
-                    ),
-                  _buildDialogInfoRow('Estado:', 'Pendiente de sincronización'),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange[700],
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Continuar'),
+            ],
           ),
-        ],
-      ),
     );
   }
 
