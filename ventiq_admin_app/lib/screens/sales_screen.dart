@@ -822,13 +822,13 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                           DataCell(
                             Text(
-                              '\$${analysis.precioCostoUsd.toStringAsFixed(2)}',
+                              '\$${analysis.precioCostoUsd.toStringAsFixed(4)}',
                               style: const TextStyle(color: AppColors.warning),
                             ),
                           ),
                           DataCell(
                             Text(
-                              '\$${analysis.precioVentaUsd.toStringAsFixed(2)}',
+                              '\$${analysis.precioVentaUsd.toStringAsFixed(4)}',
                               style: const TextStyle(color: AppColors.info),
                             ),
                           ),
@@ -846,7 +846,7 @@ class _SalesScreenState extends State<SalesScreen>
                           ),
                           DataCell(
                             Text(
-                              '\$${analysis.gananciaUsd.toStringAsFixed(2)}',
+                              '\$${analysis.gananciaUsd.toStringAsFixed(4)}',
                               style: TextStyle(
                                 color:
                                     analysis.gananciaUsd >= 0
