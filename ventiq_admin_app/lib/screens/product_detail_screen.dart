@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:excel/excel.dart' as excel_lib;
+import 'dart:typed_data';
 import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
@@ -263,6 +266,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           Icon(Icons.copy, size: 20),
                           SizedBox(width: 8),
                           Text('Duplicar producto'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'import_excel',
+                      child: Row(
+                        children: [
+                          Icon(Icons.upload_file, size: 20, color: Colors.blue),
+                          SizedBox(width: 8),
+                          Text(
+                            'Importar códigos Excel',
+                            style: TextStyle(color: Colors.blue),
+                          ),
                         ],
                       ),
                     ),
@@ -2261,6 +2277,289 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error al duplicar producto: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _importExcelCodes() async {
+    try {
+      // Seleccionar archivo Excel
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+        withData: true,
+      );
+
+      if (result != null && result.files.single.bytes != null) {
+        setState(() => _isLoading = true);
+
+        Uint8List bytes = result.files.single.bytes!;
+        var excel = excel_lib.Excel.decodeBytes(bytes);
+
+        // Obtener la primera hoja
+        String sheetName = excel.tables.keys.first;
+        excel_lib.Sheet sheet = excel.tables[sheetName]!;
+
+        List<Map<String, String>> validData = [];
+        int processedRows = 0;
+        int skippedRows = 0;
+
+        // Procesar filas (empezar desde la fila 1 para saltar encabezados)
+        for (int rowIndex = 1; rowIndex < sheet.maxRows; rowIndex++) {
+          var row = sheet.rows[rowIndex];
+          
+          if (row.length >= 2) {
+            String? codigo = row[0]?.value?.toString()?.trim();
+            String? denominacion = row[1]?.value?.toString()?.trim();
+
+            // Filtrar solo los que tienen valor en código
+            if (codigo != null && codigo.isNotEmpty && 
+                denominacion != null && denominacion.isNotEmpty) {
+              validData.add({
+                'codigo': codigo,
+                'denominacion': denominacion,
+              });
+              processedRows++;
+            } else {
+              skippedRows++;
+            }
+          } else {
+            skippedRows++;
+          }
+        }
+
+        if (validData.isEmpty) {
+          throw Exception('No se encontraron datos válidos en el Excel');
+        }
+
+        // Mostrar diálogo de confirmación con resumen
+        bool? confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.upload_file, color: Colors.blue),
+                SizedBox(width: 8),
+                Text('Confirmar Importación'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Se procesarán $processedRows registros válidos:'),
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: validData.take(10).map((item) => 
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text(
+                            '• ${item['denominacion']} → ${item['codigo']}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        )
+                      ).toList() + 
+                      (validData.length > 10 ? [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text(
+                            '... y ${validData.length - 10} más',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        )
+                      ] : []),
+                    ),
+                  ),
+                ),
+                if (skippedRows > 0) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Se omitieron $skippedRows filas sin datos válidos',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange[700],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                const Text(
+                  'Esto actualizará la "denominación corta" de los productos encontrados.',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Importar'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmed == true) {
+          // Procesar actualizaciones usando el método masivo
+          final result = await ProductService.updateMultipleProductShortNames(validData);
+          
+          // Extraer estadísticas del resultado
+          final summary = result['summary'] ?? {};
+          final updatedCount = summary['successful'] ?? 0;
+          final notFoundCount = summary['failed'] ?? 0;
+          final totalProcessed = summary['total_processed'] ?? 0;
+          final successRate = summary['success_rate'] ?? 0.0;
+          
+          // Extraer errores detallados si existen
+          List<String> errors = [];
+          if (result['results'] != null) {
+            final results = result['results'] as List<dynamic>;
+            for (var res in results) {
+              if (res['success'] == false) {
+                final denomination = res['searched_denomination'] ?? 'Desconocido';
+                final error = res['error'] ?? 'Error desconocido';
+                errors.add('$denomination: $error');
+              }
+            }
+          }
+
+          // Mostrar resultado
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    result['success'] == true ? Icons.check_circle : Icons.warning,
+                    color: result['success'] == true ? Colors.green : Colors.orange,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Importación Completada'),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Resumen de Procesamiento',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue[800],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text('📊 Total procesados: $totalProcessed'),
+                          Text('✅ Actualizados exitosamente: $updatedCount'),
+                          Text('⚠️ No encontrados/fallidos: $notFoundCount'),
+                          Text('📈 Tasa de éxito: ${successRate.toStringAsFixed(1)}%'),
+                        ],
+                      ),
+                    ),
+                    if (errors.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        '❌ Detalles de errores (${errors.length}):',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 150),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: errors.take(10).map((error) => 
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 1),
+                                child: Text(
+                                  '• $error',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              )
+                            ).toList() + 
+                            (errors.length > 10 ? [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 1),
+                                child: Text(
+                                  '... y ${errors.length - 10} errores más',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              )
+                            ] : []),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (updatedCount > 0) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '✨ Se actualizaron $updatedCount productos exitosamente',
+                          style: TextStyle(
+                            color: Colors.green[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al importar Excel: $e'),
           backgroundColor: AppColors.error,
         ),
       );

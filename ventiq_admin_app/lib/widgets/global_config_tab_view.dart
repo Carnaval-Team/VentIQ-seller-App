@@ -28,6 +28,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
+  bool _showDescriptionInSelectors = false;
   int? _storeId;
   
   // Variables para suscripción
@@ -60,6 +61,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       // Verificar si existe master password
       final hasMasterPassword = await StoreConfigService.hasMasterPassword(_storeId!);
       
+      // Cargar configuración de UI desde preferencias locales
+      final showDescriptionInSelectors = await _userPreferencesService.getShowDescriptionInSelectors();
+      
       setState(() {
         _needMasterPasswordToCancel = config['need_master_password_to_cancel'] ?? false;
         _needAllOrdersCompletedToContinue = config['need_all_orders_completed_to_continue'] ?? false;
@@ -67,6 +71,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _permiteVenderAunSinDisponibilidad = config['permite_vender_aun_sin_disponibilidad'] ?? false;
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
+        _showDescriptionInSelectors = showDescriptionInSelectors;
         _isLoading = false;
       });
 
@@ -93,6 +98,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('  - Maneja inventario: $_manejaInventario');
       print('  - Permite vender sin disponibilidad: $_permiteVenderAunSinDisponibilidad');
       print('  - Tiene contraseña maestra: $_hasMasterPassword');
+      print('  - Mostrar descripción en selectores: $_showDescriptionInSelectors');
       print('  - Suscripción actual: ${_activeSubscription?.planDenominacion ?? 'No encontrada'} (${_activeSubscription?.estadoText ?? 'N/A'})');
 
       // Actualizar UI después de cargar la suscripción
@@ -457,6 +463,49 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     );
   }
 
+  Future<void> _updateShowDescriptionSetting(bool value) async {
+    try {
+      print('🔧 Actualizando configuración de mostrar descripción en selectores: $value');
+      
+      await _userPreferencesService.setShowDescriptionInSelectors(value);
+      
+      setState(() {
+        _showDescriptionInSelectors = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value 
+                ? 'Ahora se mostrarán las descripciones en los selectores de productos'
+                : 'Las descripciones en los selectores de productos están ocultas'
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Configuración de mostrar descripción actualizada');
+    } catch (e) {
+      print('❌ Error al actualizar configuración de mostrar descripción: $e');
+      
+      // Revertir el cambio en caso de error
+      setState(() {
+        _showDescriptionInSelectors = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _updateMasterPassword() async {
     if (_storeId == null) return;
 
@@ -607,6 +656,20 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             onChanged: _updateElaboratedProductsSetting,
           ),
 
+          const SizedBox(height: 16),
+
+          // Configuración de Mostrar Descripción en Selectores
+          _buildConfigCard(
+            icon: Icons.description_outlined,
+            iconColor: Colors.purple,
+            title: 'Mostrar Descripción en Selectores',
+            subtitle: _showDescriptionInSelectors
+                ? 'Las descripciones de productos se muestran en los selectores para facilitar la identificación'
+                : 'Solo se muestra el nombre del producto en los selectores (vista compacta)',
+            value: _showDescriptionInSelectors,
+            onChanged: _updateShowDescriptionSetting,
+          ),
+
           const SizedBox(height: 24),
 
           // Información adicional
@@ -644,7 +707,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Estas configuraciones afectan el comportamiento de la aplicación de vendedores (Inventtia App). Los cambios se aplicarán inmediatamente para todos los usuarios.',
+                  'Estas configuraciones afectan el comportamiento de la aplicación de vendedores (Inventtia App). Los cambios se aplicarán inmediatamente para todos los usuarios. La configuración de "Mostrar Descripción en Selectores" es una preferencia local que se guarda en este dispositivo.',
                   style: TextStyle(
                     color: Colors.blue,
                     fontSize: 14,

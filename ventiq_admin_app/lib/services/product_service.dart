@@ -2128,4 +2128,129 @@ class ProductService {
       return false;
     }
   }
+
+  /// Actualiza la denominación corta de un producto buscándolo por denominación
+  /// Usa la función RPC de Supabase para mayor seguridad y mejor manejo de errores
+  static Future<bool> updateProductShortNameByDenomination(
+    String denominacion,
+    String nuevaDenominacionCorta,
+  ) async {
+    try {
+      debugPrint('🔍 Actualizando denominación corta por denominación: $denominacion');
+      debugPrint('📝 Nueva denominación corta: $nuevaDenominacionCorta');
+      
+      // Obtener ID de tienda desde las preferencias del usuario
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda en las preferencias del usuario');
+      }
+
+      debugPrint('🏪 ID de tienda: $idTienda');
+
+      // Llamar a la función RPC de Supabase
+      final response = await _supabase.rpc(
+        'fn_actualizar_denominacion_corta_por_denominacion',
+        params: {
+          'p_id_tienda': idTienda,
+          'p_denominacion': denominacion,
+          'p_nueva_denominacion_corta': nuevaDenominacionCorta,
+        },
+      );
+
+      debugPrint('📦 Respuesta RPC: $response');
+
+      if (response == null) {
+        debugPrint('❌ Respuesta nula de la función RPC');
+        return false;
+      }
+
+      // Verificar si la operación fue exitosa
+      final success = response['success'] as bool? ?? false;
+      
+      if (success) {
+        debugPrint('✅ Denominación corta actualizada exitosamente');
+        debugPrint('📊 Producto ID: ${response['product_id']}');
+        debugPrint('📝 Denominación anterior: ${response['previous_short_name']}');
+        debugPrint('📝 Denominación nueva: ${response['new_short_name']}');
+        return true;
+      } else {
+        final error = response['error'] ?? 'Error desconocido';
+        final message = response['message'] ?? 'Sin mensaje';
+        debugPrint('⚠️ Error en la actualización: $error');
+        debugPrint('💬 Mensaje: $message');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('❌ Error al actualizar denominación corta: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza múltiples denominaciones cortas de forma masiva
+  /// Usa la función RPC masiva para mejor rendimiento
+  static Future<Map<String, dynamic>> updateMultipleProductShortNames(
+    List<Map<String, String>> actualizaciones,
+  ) async {
+    try {
+      debugPrint('🔄 Iniciando actualización masiva de ${actualizaciones.length} productos');
+      
+      // Obtener ID de tienda desde las preferencias del usuario
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda en las preferencias del usuario');
+      }
+
+      debugPrint('🏪 ID de tienda: $idTienda');
+
+      // Convertir la lista a JSON para la función RPC
+      final jsonActualizaciones = actualizaciones.map((item) => {
+        'denominacion': item['denominacion'],
+        'codigo': item['codigo'],
+      }).toList();
+
+      debugPrint('📋 Datos a procesar: $jsonActualizaciones');
+
+      // Llamar a la función RPC masiva
+      debugPrint('🔄 Llamando a función RPC: fn_actualizar_denominacion_corta_masivo');
+      debugPrint('📊 Parámetros: p_id_tienda=$idTienda, p_actualizaciones=$jsonActualizaciones');
+      
+      final response = await _supabase.rpc(
+        'fn_actualizar_denominacion_corta_masivo',
+        params: {
+          'p_id_tienda': idTienda,
+          'p_actualizaciones': jsonActualizaciones,
+        },
+      );
+
+      debugPrint('📦 Respuesta RPC masiva: $response');
+      debugPrint('📊 Tipo de respuesta: ${response.runtimeType}');
+
+      if (response == null) {
+        return {
+          'success': false,
+          'error': 'Respuesta nula de la función RPC',
+          'summary': {
+            'total_processed': 0,
+            'successful': 0,
+            'failed': actualizaciones.length,
+          }
+        };
+      }
+
+      return Map<String, dynamic>.from(response);
+    } catch (e) {
+      debugPrint('❌ Error en actualización masiva: $e');
+      return {
+        'success': false,
+        'error': 'Error en actualización masiva: $e',
+        'summary': {
+          'total_processed': 0,
+          'successful': 0,
+          'failed': actualizaciones.length,
+        }
+      };
+    }
+  }
 }

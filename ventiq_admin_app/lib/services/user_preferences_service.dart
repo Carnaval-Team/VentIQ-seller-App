@@ -35,6 +35,9 @@ class UserPreferencesService {
   static const String _subscriptionFeaturesKey = 'subscription_features';
   static const String _subscriptionLastCheckKey = 'subscription_last_check';
 
+  // UI Configuration keys
+  static const String _showDescriptionInSelectorsKey = 'show_description_in_selectors';
+
   // Guardar datos del usuario admin
   Future<void> saveUserData({
     required String userId,
@@ -460,6 +463,20 @@ class UserPreferencesService {
     print('🧹 Datos de suscripción limpiados');
   }
 
+  /// Guarda la configuración de mostrar descripción en selectores
+  Future<void> setShowDescriptionInSelectors(bool showDescription) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_showDescriptionInSelectorsKey, showDescription);
+    print('💾 Configuración "Mostrar descripción en selectores" guardada: $showDescription');
+  }
+
+  /// Obtiene la configuración de mostrar descripción en selectores
+  /// Por defecto retorna false si no está configurado
+  Future<bool> getShowDescriptionInSelectors() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_showDescriptionInSelectorsKey) ?? false;
+  }
+
   /// Limpia todos los datos del usuario incluyendo suscripción
   Future<void> clearUserData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -477,6 +494,9 @@ class UserPreferencesService {
     
     // Limpiar datos de suscripción
     await clearSubscriptionData();
+    
+    // Limpiar configuraciones de UI (opcional - mantener preferencias del usuario)
+    // await prefs.remove(_showDescriptionInSelectorsKey);
     
     print('🧹 Todos los datos del usuario limpiados');
   }

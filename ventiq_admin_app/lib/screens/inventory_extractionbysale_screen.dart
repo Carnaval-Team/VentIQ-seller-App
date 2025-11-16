@@ -34,6 +34,7 @@ class _InventoryExtractionBySaleScreenState
   List<Map<String, dynamic>> _selectedProducts = [];
   WarehouseZone? _selectedSourceLocation;
   bool _isLoading = false;
+  bool _showDescriptionInSelectors = false;
 
   // Motivos de venta
   List<Map<String, dynamic>> _motivoVentaOptions = [];
@@ -54,6 +55,7 @@ class _InventoryExtractionBySaleScreenState
   void initState() {
     super.initState();
     _loadPersistedValues();
+    _loadShowDescriptionConfig();
     _loadMotivoVentaOptions();
     _loadMedioPagoOptions();
     _loadTPVOptions();
@@ -67,6 +69,20 @@ class _InventoryExtractionBySaleScreenState
   void _savePersistedValues() {
     _lastCliente = _clienteController.text;
     _lastObservaciones = _observacionesController.text;
+  }
+
+  Future<void> _loadShowDescriptionConfig() async {
+    try {
+      final userPreferencesService = UserPreferencesService();
+      final showDescription = await userPreferencesService.getShowDescriptionInSelectors();
+      setState(() {
+        _showDescriptionInSelectors = showDescription;
+      });
+      print('📋 ExtractionBySale - Configuración "Mostrar descripción en selectores" cargada: $showDescription');
+    } catch (e) {
+      print('❌ ExtractionBySale - Error al cargar configuración de mostrar descripción: $e');
+      // Mantener valor por defecto (false)
+    }
   }
 
   Future<void> _loadMotivoVentaOptions() async {
@@ -1047,6 +1063,20 @@ class _InventoryExtractionBySaleScreenState
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
+                                        // Mostrar descripción si está habilitado y existe
+                                        if (_showDescriptionInSelectors && _hasDescription(product)) ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            _getProductDescription(product),
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey[600],
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
                                         if (product['sku_producto'] != null && product['sku_producto'].toString().isNotEmpty) ...[
                                           const SizedBox(height: 2),
                                           Text(
@@ -1166,6 +1196,29 @@ class _InventoryExtractionBySaleScreenState
         ],
       ),
     );
+  }
+
+  /// Verifica si el producto tiene descripción disponible
+  bool _hasDescription(Map<String, dynamic> product) {
+    final descripcion = product['descripcion'];
+    final descripcionCorta = product['descripcion_corta'];
+    
+    return (descripcion != null && descripcion.toString().isNotEmpty) ||
+           (descripcionCorta != null && descripcionCorta.toString().isNotEmpty);
+  }
+
+  /// Obtiene la descripción del producto, priorizando descripcion sobre descripcion_corta
+  String _getProductDescription(Map<String, dynamic> product) {
+    final descripcion = product['descripcion'];
+    final descripcionCorta = product['descripcion_corta'];
+    
+    if (descripcion != null && descripcion.toString().isNotEmpty) {
+      return descripcion.toString();
+    } else if (descripcionCorta != null && descripcionCorta.toString().isNotEmpty) {
+      return descripcionCorta.toString();
+    }
+    
+    return '';
   }
 }
 
