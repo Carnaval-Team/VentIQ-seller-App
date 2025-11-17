@@ -27,6 +27,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   String _stockFilter = 'Todos';
   String _errorMessage = '';
   bool _isDetailedView = false; // Toggle between summary and detailed view
+  bool _showDescriptionInSelectors = false; // Configuration for showing product descriptions
 
   // Pagination and summary data
   int _currentPage = 1;
@@ -46,6 +47,7 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_scrollListener);
+    _loadShowDescriptionConfig();
     _loadWarehouses();
     _loadInventoryData();
   }
@@ -56,6 +58,19 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
       if (_isDetailedView) {
         _loadNextPage();
       }
+    }
+  }
+
+  Future<void> _loadShowDescriptionConfig() async {
+    try {
+      final showDescription = await _userPreferencesService.getShowDescriptionInSelectors();
+      setState(() {
+        _showDescriptionInSelectors = showDescription;
+      });
+      print('📋 Configuración "Mostrar descripción en selectores" cargada: $showDescription');
+    } catch (e) {
+      print('❌ Error al cargar configuración de mostrar descripción: $e');
+      // Mantener valor por defecto (false)
     }
   }
 
@@ -783,6 +798,18 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Mostrar descripción si está habilitado y existe
+            if (_showDescriptionInSelectors && item.descripcionCorta != null && item.descripcionCorta!.isNotEmpty)
+              Text(
+                item.descripcionCorta!,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                  fontStyle: FontStyle.italic,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
             Text('${item.variante} ${item.opcionVariante}'),
             Text('Almacén: ${item.almacen}'),
             if (item.ubicacion.isNotEmpty)

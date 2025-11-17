@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/product_search_service.dart';
+import '../services/user_preferences_service.dart';
 import 'dart:async';
 
 /// Widget genérico para selección de productos con búsqueda paginada
@@ -26,15 +27,18 @@ class ProductSelectorWidget extends StatefulWidget {
 class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final UserPreferencesService _userPreferencesService = UserPreferencesService();
   ProductSearchResult _searchResult = ProductSearchResult.empty();
   bool _isLoading = false;
   bool _isLoadingMore = false;
+  bool _showDescriptionInSelectors = false;
   Timer? _debounceTimer;
   String _lastSearchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _loadShowDescriptionConfig();
     _loadInitialProducts();
     _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(_onScroll);
@@ -45,6 +49,19 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadShowDescriptionConfig() async {
+    try {
+      final showDescription = await _userPreferencesService.getShowDescriptionInSelectors();
+      setState(() {
+        _showDescriptionInSelectors = showDescription;
+      });
+      print('📋 ProductSelector - Configuración "Mostrar descripción en selectores" cargada: $showDescription');
+    } catch (e) {
+      print('❌ ProductSelector - Error al cargar configuración de mostrar descripción: $e');
+      // Mantener valor por defecto (false)
+    }
   }
   
   Future<void> _loadInitialProducts() async {
@@ -162,7 +179,19 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('SKU: ${product['sku_producto'] ?? product['sku'] ?? 'N/A'}'),
+            // Mostrar descripción si está habilitado y existe
+            if (_showDescriptionInSelectors && _hasDescription(product))
+              Text(
+                _getProductDescription(product),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[800],
+                  fontStyle: FontStyle.italic,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            Text('SKU: ${product['sku'] ?? product['sku_producto'] ?? 'N/A'}'),
             if (product['precio_venta_cup'] != null)
               Text(
                 'Precio: \$${product['precio_venta_cup'].toStringAsFixed(2)}',
@@ -196,6 +225,29 @@ class _ProductSelectorWidgetState extends State<ProductSelectorWidget> {
         },
       ),
     );
+  }
+
+  /// Verifica si el producto tiene descripción disponible
+  bool _hasDescription(Map<String, dynamic> product) {
+    final descripcion = product['descripcion'];
+    final descripcionCorta = product['descripcion_corta'];
+    
+    return (descripcion != null && descripcion.toString().isNotEmpty) ||
+           (descripcionCorta != null && descripcionCorta.toString().isNotEmpty);
+  }
+
+  /// Obtiene la descripción del producto, priorizando descripcion sobre descripcion_corta
+  String _getProductDescription(Map<String, dynamic> product) {
+    final descripcion = product['descripcion'] ?? product['description'];
+    final descripcionCorta = product['descripcion_corta'];
+    
+    if (descripcion != null && descripcion.toString().isNotEmpty) {
+      return descripcion.toString();
+    } else if (descripcionCorta != null && descripcionCorta.toString().isNotEmpty) {
+      return descripcionCorta.toString();
+    }
+    
+    return '';
   }
 
   void _onSearchChanged() {
