@@ -172,11 +172,13 @@ class ProductSearchService {
       final denominacion = (product['denominacion'] ?? '').toString().toLowerCase();
       final sku = (product['sku'] ?? '').toString().toLowerCase();
       final nombreProducto = (product['nombre_producto'] ?? '').toString().toLowerCase();
+      final descripcion = (product['descripcion'] ?? '').toString().toLowerCase();
       final query = searchQuery.toLowerCase();
       
       return denominacion.contains(query) || 
              sku.contains(query) || 
-             nombreProducto.contains(query);
+             nombreProducto.contains(query) ||
+             descripcion.contains(query);
     }).toList();
     
     // Filtrar por tipo de producto
