@@ -39,40 +39,58 @@ class ProductSearchService {
     ProductSearchType searchType,
     int? locationId,
   ) async {
-    // Usar función RPC existente fn_listar_inventario_productos_paged
-    final response = await _supabase.rpc('fn_listar_inventario_productos_paged', params: {
-      'p_busqueda': searchQuery,
-      'p_es_vendible': _getElaboradoFilter(searchType),
+    // Usar función RPC existente fn_listar_inventario_productos_paged2
+    final response = await _supabase.rpc('fn_listar_inventario_productos_paged2', params: {
       'p_pagina': page,
       'p_limite': pageSize,
       'p_id_tienda': await _getUserStoreId(),
-      'p_mostrar_sin_stock': true,
-      'p_id_ubicacion': locationId, // Nuevo parámetro para filtrar por ubicación
-      // Otros parámetros opcionales como null
-      'p_clasificacion_abc': null,
-      'p_con_stock_minimo': null,
-      'p_es_inventariable': null,
       'p_id_almacen': null,
-      'p_id_categoria': null,
+      'p_id_ubicacion': locationId,
+      'p_id_producto': null,
+      'p_id_variante': null,
       'p_id_opcion_variante': null,
       'p_id_presentacion': null,
-      'p_id_producto': null,
-      'p_id_proveedor': null,
+      'p_id_categoria': null,
       'p_id_subcategoria': null,
+      'p_id_proveedor': null,
       'p_origen_cambio': null,
+      'p_es_vendible': true,
+      'p_es_inventariable': null,
+      'p_clasificacion_abc': null,
+      'p_mostrar_sin_stock': true,
+      'p_con_stock_minimo': null,
+      'p_busqueda': searchQuery,
     });
     
-    // La función retorna una estructura con productos y metadatos
-    final data = response is List ? response : [response];
-    final products = List<Map<String, dynamic>>.from(data);
+    print('🔍 Respuesta RPC tipo: ${response.runtimeType}');
+    print('🔍 Respuesta RPC: $response');
     
-    // Filtrar por tipo de producto si es necesario (ya que fn_listar_inventario_productos_paged no tiene filtro es_elaborado directo)
+    // La función retorna una lista de registros
+    List<Map<String, dynamic>> products = [];
+    
+    if (response is List) {
+      products = List<Map<String, dynamic>>.from(response);
+      print('✅ Respuesta es List con ${products.length} elementos');
+      if (products.isNotEmpty) {
+        print('📋 Primer producto: ${products.first.keys.toList()}');
+      }
+    } else if (response is Map) {
+      // Si es un mapa único, convertir a lista
+      products = [Map<String, dynamic>.from(response)];
+      print('✅ Respuesta es Map, convertida a lista con 1 elemento');
+      print('📋 Campos del mapa: ${response.keys.toList()}');
+    } else {
+      print('❌ Respuesta inesperada: ${response.runtimeType}');
+      return ProductSearchResult.empty();
+    }
+    
+    // Filtrar por tipo de producto si es necesario
     final filteredProducts = _filterByProductType(products, searchType);
     
     // Agrupar productos duplicados por ID
     final uniqueProducts = _groupDuplicateProducts(filteredProducts);
     
-    print('✅ Productos encontrados: ${uniqueProducts.length} (${filteredProducts.length} registros originales)');
+    print('✅ Productos2 encontrados: ${uniqueProducts.length} (${filteredProducts.length} registros originales)');
     
     return ProductSearchResult(
       products: uniqueProducts,
@@ -117,7 +135,7 @@ class ProductSearchService {
     final endIndex = startIndex + pageSize;
     final paginatedProducts = filteredProducts.skip(startIndex).take(pageSize).toList();
     
-    print('✅ Productos encontrados: ${paginatedProducts.length}/${filteredProducts.length}');
+    print('✅ Productos encontrados3: ${paginatedProducts.length}/${filteredProducts.length}');
     
     return ProductSearchResult(
       products: paginatedProducts,
@@ -169,7 +187,7 @@ class ProductSearchService {
     final endIndex = startIndex + pageSize;
     final paginatedProducts = filteredProducts.skip(startIndex).take(pageSize).toList();
     
-    print('✅ Productos encontrados: ${paginatedProducts.length}/${filteredProducts.length}');
+    print('✅ Productos encontrados1: ${paginatedProducts.length}/${filteredProducts.length}');
     
     return ProductSearchResult(
       products: paginatedProducts,
@@ -192,54 +210,83 @@ class ProductSearchService {
   }
 
   static List<Map<String, dynamic>> _filterByProductType(List<Map<String, dynamic>> products, ProductSearchType? searchType) {
-    if (searchType == null) {
+    if (searchType == null || searchType == ProductSearchType.all || searchType == ProductSearchType.withStock) {
       return products;
     }
 
     if (searchType == ProductSearchType.elaborated) {
-      return products.where((product) => product['es_elaborado'] == true).toList();
+      final filtered = products.where((product) {
+        final esElaborado = _getFieldValue(product, ['es_elaborado'], false);
+        return esElaborado == true;
+      }).toList();
+      print('🔍 Filtrados por elaborado: ${filtered.length}/${products.length}');
+      return filtered;
     } else if (searchType == ProductSearchType.simple) {
-      return products.where((product) => product['es_elaborado'] == false).toList();
+      final filtered = products.where((product) {
+        final esElaborado = _getFieldValue(product, ['es_elaborado'], false);
+        return esElaborado == false;
+      }).toList();
+      print('🔍 Filtrados por simple: ${filtered.length}/${products.length}');
+      return filtered;
     } else {
       return products;
     }
   }
 
+  /// Obtiene un valor de un mapa buscando en múltiples claves posibles
+  static dynamic _getFieldValue(Map<String, dynamic> map, List<String> possibleKeys, [dynamic defaultValue]) {
+    for (final key in possibleKeys) {
+      if (map.containsKey(key)) {
+        return map[key];
+      }
+    }
+    return defaultValue;
+  }
+
   static List<Map<String, dynamic>> _groupDuplicateProducts(List<Map<String, dynamic>> products) {
     if (products.isEmpty) return products;
     
-    final Map<int, Map<String, dynamic>> groupedProducts = {};
+    final Map<dynamic, Map<String, dynamic>> groupedProducts = {};
     
     for (final product in products) {
-      final productId = product['id'] as int?;
-      if (productId == null) continue;
+      // Obtener el ID del producto - acepta 'id_producto' o 'id'
+      final productId = _getFieldValue(product, ['id_producto', 'id']);
+      
+      if (productId == null) {
+        print('⚠️ Producto sin ID: ${product.keys.toList()}');
+        continue;
+      }
       
       if (groupedProducts.containsKey(productId)) {
         // Producto ya existe, consolidar información de stock
         final existing = groupedProducts[productId]!;
         
-        // Sumar stocks disponibles
-        final existingStock = (existing['stock_disponible'] as num?)?.toDouble() ?? 0.0;
-        final currentStock = (product['stock_disponible'] as num?)?.toDouble() ?? 0.0;
+        // Sumar stocks disponibles - acepta 'stock_disponible' o 'cantidad_final'
+        final existingStock = (_getFieldValue(existing, ['stock_disponible', 'cantidad_final']) as num?)?.toDouble() ?? 0.0;
+        final currentStock = (_getFieldValue(product, ['stock_disponible', 'cantidad_final']) as num?)?.toDouble() ?? 0.0;
         existing['stock_disponible'] = existingStock + currentStock;
         
         // Sumar stocks reservados
-        final existingReserved = (existing['stock_reservado'] as num?)?.toDouble() ?? 0.0;
-        final currentReserved = (product['stock_reservado'] as num?)?.toDouble() ?? 0.0;
+        final existingReserved = (_getFieldValue(existing, ['stock_reservado']) as num?)?.toDouble() ?? 0.0;
+        final currentReserved = (_getFieldValue(product, ['stock_reservado']) as num?)?.toDouble() ?? 0.0;
         existing['stock_reservado'] = existingReserved + currentReserved;
         
-        // Sumar stocks actuales
-        final existingActual = (existing['stock_actual'] as num?)?.toDouble() ?? 0.0;
-        final currentActual = (product['stock_actual'] as num?)?.toDouble() ?? 0.0;
-        existing['stock_actual'] = existingActual + currentActual;
+        // Sumar stocks actuales (si existe este campo)
+        final existingActual = (_getFieldValue(existing, ['stock_actual']) as num?)?.toDouble() ?? 0.0;
+        final currentActual = (_getFieldValue(product, ['stock_actual']) as num?)?.toDouble() ?? 0.0;
+        if (existingActual > 0 || currentActual > 0) {
+          existing['stock_actual'] = existingActual + currentActual;
+        }
         
-        // Mantener el resto de información del primer registro
+        print('✅ Producto agrupado: $productId (stock consolidado)');
       } else {
         // Primer registro de este producto
         groupedProducts[productId] = Map<String, dynamic>.from(product);
+        print('✅ Producto agregado: $productId');
       }
     }
     
+    print('📊 Productos agrupados: ${groupedProducts.length}/${products.length}');
     return groupedProducts.values.toList();
   }
 

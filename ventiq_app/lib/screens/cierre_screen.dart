@@ -484,7 +484,7 @@ class _CierreScreenState extends State<CierreScreen> {
         '🔄 Llamando a fn_listar_inventario_productos_paged... idAlmacen',
       );
       final response = await Supabase.instance.client.rpc(
-        'fn_listar_inventario_productos_paged',
+        'fn_listar_inventario_productos_paged2',
         params: {
           'p_id_tienda': idTienda,
           'p_limite': 9999,

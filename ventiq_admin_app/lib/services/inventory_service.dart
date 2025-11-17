@@ -316,7 +316,7 @@ class InventoryService {
 
       // Call the RPC function
       final response = await _supabase.rpc(
-        'fn_listar_inventario_productos_paged',
+        'fn_listar_inventario_productos_paged2',
         params: {
           'p_busqueda': busqueda,
           'p_clasificacion_abc': clasificacionAbc,
@@ -536,6 +536,51 @@ class InventoryService {
           'id_motivo_operacion':
               2, // ID correcto para entrada por transferencia
         });
+
+        final response = await _supabase.rpc(
+          'fn_get_producto',
+          params: {
+            'p_id_producto': idProducto,
+          },
+        );
+
+        if (response.isNotEmpty) {
+          final productoData = response.first;
+
+          receptionProducts.last.addAll({
+            'prod_id': productoData['prod_id'],
+            'prod_nombre': productoData['prod_nombre'],
+            'prod_sku': productoData['prod_sku'],
+            'prod_descripcion': productoData['prod_descripcion'],
+            'prod_nombre_comercial': productoData['prod_nombre_comercial'],
+            'prod_denominacion_corta': productoData['prod_denominacion_corta'],
+            'prod_descripcion_corta': productoData['prod_descripcion_corta'],
+            'prod_um': productoData['prod_um'],
+            'prod_es_refrigerado': productoData['prod_es_refrigerado'],
+            'prod_es_fragil': productoData['prod_es_fragil'],
+            'prod_es_peligroso': productoData['prod_es_peligroso'],
+            'prod_es_vendible': productoData['prod_es_vendible'],
+            'prod_es_comprable': productoData['prod_es_comprable'],
+            'prod_es_inventariable': productoData['prod_es_inventariable'],
+            'prod_es_por_lotes': productoData['prod_es_por_lotes'],
+            'prod_dias_alert_caducidad': productoData['prod_dias_alert_caducidad'],
+            'prod_codigo_barras': productoData['prod_codigo_barras'],
+            'prod_imagen': productoData['prod_imagen'],
+            'prod_es_elaborado': productoData['prod_es_elaborado'],
+            'prod_es_servicio': productoData['prod_es_servicio'],
+            'variante_id': productoData['variante_id'],
+            'variante_valor': productoData['variante_valor'],
+            'opcion_variante_id': productoData['opcion_variante_id'],
+            'opcion_variante_valor': productoData['opcion_variante_valor'],
+            'cant_unidades_base': productoData['cant_unidades_base'],
+            'cant_almacen_total': productoData['cant_almacen_total'],
+            'stock_disponible': productoData['stock_disponible'],
+            'stock_reservado': productoData['stock_reservado'],
+            'zonas_count': productoData['zonas_count'],
+            'presentaciones_count': productoData['presentaciones_count'],
+            'total_count': productoData['total_count'],
+          });
+        }
       }
 
       print('✅ Productos preparados para recepción con precios de compra');
@@ -916,7 +961,7 @@ class InventoryService {
 
         // Obtener inventario del producto en la zona específica
         final response = await _supabase.rpc(
-          'fn_listar_inventario_productos_paged',
+          'fn_listar_inventario_productos_paged2',
           params: {
             'p_id_tienda': storeId,
             'p_id_ubicacion': int.tryParse(zoneId) ?? 1,
@@ -1114,7 +1159,7 @@ class InventoryService {
       );
 
       final response = await _supabase.rpc(
-        'fn_listar_inventario_productos_paged',
+        'fn_listar_inventario_productos_paged2',
         params: {
           'p_id_producto': idProducto,
           'p_id_ubicacion':
@@ -1243,7 +1288,7 @@ class InventoryService {
 
       // Query to get all presentations configured for this product in this zone
       final response = await _supabase.rpc(
-        'fn_listar_inventario_productos_paged',
+        'fn_listar_inventario_productos_paged2',
         params: {
           'p_id_producto': idProducto,
           'p_id_ubicacion':
@@ -1783,7 +1828,7 @@ class InventoryService {
       print('🔍 InventoryService: Getting inventory summary by user...');
 
       final response = await _supabase.rpc(
-        'fn_inventario_resumen_por_usuario_almacen2',
+        'fn_inventario_resumen_por_usuario_almacen',
         params: {
           'p_id_tienda': idTienda,
           'p_id_almacen': idAlmacen,

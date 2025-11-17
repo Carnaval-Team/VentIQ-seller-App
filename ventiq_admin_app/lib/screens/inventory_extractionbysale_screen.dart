@@ -886,11 +886,12 @@ class _InventoryExtractionBySaleScreenState
                                       ),
                                     ),
                                   ],
-                                ),
+                                )
                               )
                             else
                               DropdownButtonFormField<Map<String, dynamic>>(
                                 value: _selectedMedioPago,
+                                isExpanded: true,
                                 decoration: const InputDecoration(
                                   labelText: 'Medio de Pago',
                                   border: OutlineInputBorder(),
@@ -912,9 +913,13 @@ class _InventoryExtractionBySaleScreenState
                                           color: Colors.grey[600],
                                         ),
                                         const SizedBox(width: 8),
-                                        Text(
-                                          medio['denominacion'] ?? 'Sin nombre',
-                                          style: const TextStyle(fontSize: 14),
+                                        Expanded(
+                                          child: Text(
+                                            medio['denominacion'] ?? 'Sin nombre',
+                                            style: const TextStyle(fontSize: 14),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ),
                                       ],
                                     ),
