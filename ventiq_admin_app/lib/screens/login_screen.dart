@@ -381,69 +381,49 @@ class _LoginScreenState extends State<LoginScreen> {
       // Limpiar caché de permisos antes de detectar rol
       _permissionsService.clearCache();
 
-      // Paso 2: Detectar rol con mayor jerarquía
-      final userRole = await _permissionsService.getUserRole();
-      final roleName = _permissionsService.getRoleName(userRole);
+      // Paso 2: Obtener todos los roles del usuario por tienda
+      final rolesByStore = await _permissionsService.getUserRolesByStore();
+      print('🔍 Roles por tienda detectados: $rolesByStore');
 
-      print('🔍 Rol detectado: $roleName ($userRole)');
+      // Paso 3: Verificar que tenga acceso a al menos una tienda como admin
+      // Filtrar solo roles de admin (gerente, supervisor, almacenero)
+      final adminRolesByStore = Map<int, UserRole>.fromEntries(
+        rolesByStore.entries
+            .where((entry) => entry.value != UserRole.vendedor && entry.value != UserRole.none),
+      );
 
-      // Paso 3: Verificar que tenga acceso (bloquear vendedores y sin rol)
-      if (userRole == UserRole.none || userRole == UserRole.vendedor) {
+      if (adminRolesByStore.isEmpty) {
         await _authService.signOut();
         throw Exception('NO_ADMIN_PRIVILEGES');
       }
 
-      // Paso 4: Obtener tiendas según el rol
+      // Usar el primer rol de admin para compatibilidad con código existente
+      final defaultStoreId = adminRolesByStore.keys.first;
+      final userRole = adminRolesByStore[defaultStoreId]!;
+      final roleName = _permissionsService.getRoleName(userRole);
+      print('🔍 Rol principal detectado: $roleName ($userRole) en tienda $defaultStoreId');
+
+      // Paso 4: Obtener tiendas del usuario (todas las tiendas donde tiene algún rol)
       List<Map<String, dynamic>> userStores = [];
-      int? defaultStoreId;
       final supabase = Supabase.instance.client;
 
-      if (userRole == UserRole.gerente) {
-        // Gerente: obtener desde app_dat_gerente
-        final gerenteData = await supabase
-            .from('app_dat_gerente')
-            .select('id_tienda, app_dat_tienda(id, denominacion)')
-            .eq('uuid', user.id);
+      // Obtener información de todas las tiendas donde el usuario tiene acceso
+      for (final storeId in adminRolesByStore.keys) {
+        try {
+          final tiendaData = await supabase
+              .from('app_dat_tienda')
+              .select('id, denominacion')
+              .eq('id', storeId)
+              .maybeSingle();
 
-        if (gerenteData.isNotEmpty) {
-          userStores = List<Map<String, dynamic>>.from(gerenteData);
-          defaultStoreId = gerenteData.first['id_tienda'];
-        }
-      } else if (userRole == UserRole.supervisor) {
-        // Supervisor: obtener desde app_dat_supervisor
-        final supervisorData = await supabase
-            .from('app_dat_supervisor')
-            .select('id_tienda, app_dat_tienda(id, denominacion)')
-            .eq('uuid', user.id);
-
-        if (supervisorData.isNotEmpty) {
-          userStores = List<Map<String, dynamic>>.from(supervisorData);
-          defaultStoreId = supervisorData.first['id_tienda'];
-        }
-      } else if (userRole == UserRole.almacenero) {
-        // Almacenero: obtener desde app_dat_almacenero
-        final almaceneroData =
-            await supabase
-                .from('app_dat_almacenero')
-                .select('id_almacen, app_dat_almacen(id_tienda)')
-                .eq('uuid', user.id)
-                .maybeSingle();
-
-        if (almaceneroData != null) {
-          final idTienda = almaceneroData['app_dat_almacen']['id_tienda'];
-          defaultStoreId = idTienda;
-
-          // Obtener info de la tienda
-          final tiendaData =
-              await supabase
-                  .from('app_dat_tienda')
-                  .select('id, denominacion')
-                  .eq('id', idTienda)
-                  .maybeSingle();
-
-          userStores = [
-            {'id_tienda': idTienda, 'app_dat_tienda': tiendaData},
-          ];
+          if (tiendaData != null) {
+            userStores.add({
+              'id_tienda': storeId,
+              'app_dat_tienda': tiendaData,
+            });
+          }
+        } catch (e) {
+          print('⚠️ Error obteniendo datos de tienda $storeId: $e');
         }
       }
 
@@ -497,12 +477,21 @@ class _LoginScreenState extends State<LoginScreen> {
         userStores: storesForPreferences,
       );
 
+      // Paso 7b: Guardar roles por tienda
+      final rolesForStorage = <int, String>{};
+      for (final entry in adminRolesByStore.entries) {
+        rolesForStorage[entry.key] = _permissionsService.getRoleName(entry.value);
+      }
+      await _userPreferencesService.saveUserRolesByStore(rolesForStorage);
+      print('💾 Roles por tienda guardados: $rolesForStorage');
+
       print('✅ Usuario autenticado:');
       print('  - ID: ${user.id}');
       print('  - Email: ${user.email}');
-      print('  - Rol: $roleName');
-      print('  - Tienda: $defaultStoreId');
+      print('  - Rol principal: $roleName');
+      print('  - Tienda principal: $defaultStoreId');
       print('  - Total tiendas: ${userStores.length}');
+      print('  - Roles por tienda: $rolesForStorage');
 
       // Save credentials if user marked "Remember me"
       if (_rememberMe) {
@@ -534,7 +523,18 @@ class _LoginScreenState extends State<LoginScreen> {
           print('💾 Datos de suscripción guardados en preferencias');
         }
         
-        if (hasActiveSubscription) {
+        // Si hay múltiples tiendas, mostrar pantalla de selección
+        if (userStores.length > 1) {
+          print('🏪 Múltiples tiendas detectadas - Mostrando selector');
+          Navigator.pushReplacementNamed(
+            context,
+            '/store-selection',
+            arguments: {
+              'stores': userStores,
+              'defaultStoreId': defaultStoreId,
+            },
+          );
+        } else if (hasActiveSubscription) {
           print('✅ Suscripción válida - Navegando al dashboard');
           Navigator.pushReplacementNamed(context, '/dashboard');
         } else {

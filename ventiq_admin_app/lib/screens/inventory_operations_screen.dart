@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
 
 class InventoryOperationsScreen extends StatefulWidget {
   const InventoryOperationsScreen({super.key});
@@ -2394,8 +2395,26 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   Future<String> _getUserRole() async {
     try {
       final userPrefs = UserPreferencesService();
-      final adminProfile = await userPrefs.getAdminProfile();
-      return adminProfile['role'] ?? 'trabajador';
+      final permissionsService = PermissionsService();
+      
+      // Obtener tienda actual
+      final currentStoreId = await userPrefs.getIdTienda();
+      UserRole role;
+      
+      if (currentStoreId != null) {
+        // Obtener rol para la tienda actual
+        role = await permissionsService.getUserRoleForStore(currentStoreId);
+        
+        // Si no se encuentra el rol en la tienda, intentar con el rol principal
+        if (role == UserRole.none) {
+          role = await permissionsService.getUserRole();
+        }
+      } else {
+        // Fallback al rol principal si no hay tienda seleccionada
+        role = await permissionsService.getUserRole();
+      }
+      
+      return permissionsService.getRoleName(role).toLowerCase();
     } catch (e) {
       print('Error getting user role: $e');
       return 'trabajador'; // Default role

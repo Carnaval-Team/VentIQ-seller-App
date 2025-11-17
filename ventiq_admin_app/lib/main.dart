@@ -48,6 +48,7 @@ import 'screens/suppliers/supplier_detail_screen.dart';
 import 'screens/suppliers/add_edit_supplier_screen.dart';
 import 'screens/inventory_extractionbysale_screen.dart';
 import 'screens/subscription_detail_screen.dart';
+import 'screens/store_selection_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -133,6 +134,19 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(
               builder:
                   (context) => const AddEditSupplierScreen(),
+            );
+          case '/store-selection':
+            final args = settings.arguments as Map<String, dynamic>?;
+            if (args != null) {
+              return MaterialPageRoute(
+                builder: (context) => StoreSelectionScreen(
+                  stores: args['stores'] as List<Map<String, dynamic>>,
+                  defaultStoreId: args['defaultStoreId'] as int,
+                ),
+              );
+            }
+            return MaterialPageRoute(
+              builder: (context) => const SplashScreen(),
             );
           default:
             return null;

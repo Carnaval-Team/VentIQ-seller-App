@@ -18,6 +18,7 @@ class UserPreferencesService {
   static const String _appVersionKey = 'app_version';
   static const String _idTiendaKey = 'id_tienda';
   static const String _userStoresKey = 'user_stores';
+  static const String _userRolesByStoreKey = 'user_roles_by_store';
 
   // Remember me keys
   static const String _rememberMeKey = 'remember_me';
@@ -477,6 +478,39 @@ class UserPreferencesService {
     return prefs.getBool(_showDescriptionInSelectorsKey) ?? false;
   }
 
+  // ========== ROLES BY STORE MANAGEMENT ==========
+
+  /// Guarda los roles del usuario para cada tienda
+  /// rolesByStore: Map<idTienda, roleName> ej: {1: 'gerente', 2: 'supervisor'}
+  Future<void> saveUserRolesByStore(Map<int, String> rolesByStore) async {
+    final prefs = await SharedPreferences.getInstance();
+    final rolesMap = rolesByStore.map((key, value) => MapEntry(key.toString(), value));
+    await prefs.setString(_userRolesByStoreKey, jsonEncode(rolesMap));
+    print('💾 Roles por tienda guardados: $rolesMap');
+  }
+
+  /// Obtiene los roles del usuario para cada tienda
+  /// Retorna: Map<idTienda, roleName> ej: {1: 'gerente', 2: 'supervisor'}
+  Future<Map<int, String>> getUserRolesByStore() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rolesJson = prefs.getString(_userRolesByStoreKey);
+    if (rolesJson == null) return {};
+    
+    try {
+      final Map<String, dynamic> rolesMap = jsonDecode(rolesJson);
+      return rolesMap.map((key, value) => MapEntry(int.parse(key), value.toString()));
+    } catch (e) {
+      print('❌ Error parsing user roles by store: $e');
+      return {};
+    }
+  }
+
+  /// Obtiene el rol del usuario para una tienda específica
+  Future<String?> getUserRoleForStore(int storeId) async {
+    final rolesByStore = await getUserRolesByStore();
+    return rolesByStore[storeId];
+  }
+
   /// Limpia todos los datos del usuario incluyendo suscripción
   Future<void> clearUserData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -489,6 +523,7 @@ class UserPreferencesService {
     await prefs.remove(_adminRoleKey);
     await prefs.remove(_idTiendaKey);
     await prefs.remove(_userStoresKey);
+    await prefs.remove(_userRolesByStoreKey);
     await prefs.remove(_tokenExpiryKey);
     await prefs.setBool(_isLoggedInKey, false);
     

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/permissions_service.dart';
+import '../services/user_preferences_service.dart';
 import '../utils/navigation_guard.dart';
 
 class AdminBottomNavigation extends StatefulWidget {
@@ -21,6 +22,7 @@ class AdminBottomNavigation extends StatefulWidget {
 
 class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
   final PermissionsService _permissionsService = PermissionsService();
+  final UserPreferencesService _userPrefs = UserPreferencesService();
   List<BottomNavigationBarItem> _items = [];
   List<String> _routes = [];
   bool _isLoading = true;
@@ -32,7 +34,16 @@ class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
   }
 
   Future<void> _loadNavigationItems() async {
-    final userRole = await _permissionsService.getUserRole();
+    // Obtener tienda actual y rol para esa tienda
+    final currentStoreId = await _userPrefs.getIdTienda();
+    UserRole userRole;
+    
+    if (currentStoreId != null) {
+      userRole = await _permissionsService.getUserRoleForStore(currentStoreId);
+    } else {
+      userRole = await _permissionsService.getUserRole();
+    }
+    
     final items = <BottomNavigationBarItem>[];
     final routes = <String>[];
 
