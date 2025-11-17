@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/app_snackbar.dart';
 
 class ProductSearchWidget extends StatefulWidget {
   final Function(Product) onProductSelected;
@@ -128,11 +129,10 @@ class _ProductSearchWidgetState extends State<ProductSearchWidget> {
       });
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al buscar productos: $e'),
-            backgroundColor: Colors.red,
-          ),
+        AppSnackBar.showPersistent(
+          context,
+          message: 'Error al buscar productos: $e',
+          backgroundColor: Colors.red,
         );
       }
     } finally {

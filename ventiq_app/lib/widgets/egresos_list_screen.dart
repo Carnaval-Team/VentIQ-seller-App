@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/expense.dart';
-import '../services/turno_service.dart';
+import '../services/user_preferences_service.dart';
+import '../utils/app_snackbar.dart';
 import '../services/user_preferences_service.dart';
 
 class EgresosListScreen extends StatefulWidget {
@@ -64,11 +65,10 @@ class _EgresosListScreenState extends State<EgresosListScreen> {
       });
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al actualizar egresos: $e'),
-            backgroundColor: Colors.red,
-          ),
+        AppSnackBar.showPersistent(
+          context,
+          message: 'Error al actualizar egresos: $e',
+          backgroundColor: Colors.red,
         );
       }
     }
