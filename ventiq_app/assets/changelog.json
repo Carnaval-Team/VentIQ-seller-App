@@ -1,10 +1,10 @@
 {
-  "current_version": "1.6.2",
-  "build": 602,
+  "current_version": "1.7.0",
+  "build": 700,
   "app_name":"ventiq_app",
   "changelogs": [
     {
-      "version": "1.6.2",
+      "version": "1.7.0",
       "date": "2025-11-14",
       "title": "💰 Sistema Inteligente de Conteo de Billetes con Conversión USD",
       "changes": [
