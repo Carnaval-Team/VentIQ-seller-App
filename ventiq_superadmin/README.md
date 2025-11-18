@@ -1,4 +1,4 @@
-# VentIQ Super Admin
+# Inventtia Super Admin
 
 Sistema de administración global para la plataforma VentIQ, optimizado para web y desktop con soporte responsive para móviles.
 
@@ -217,7 +217,7 @@ Para soporte técnico o consultas:
 
 ---
 
-**VentIQ Super Admin v1.0.0** - Sistema de Administración Global
+**Inventtia Super Admin v1.0.0** - Sistema de Administración Global
 
 ## Getting Started
 

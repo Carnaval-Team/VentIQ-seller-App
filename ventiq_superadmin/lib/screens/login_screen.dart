@@ -142,7 +142,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 24),
         Text(
-          'VentIQ Super Admin',
+          'Inventtia Super Admin',
           style: Theme.of(context).textTheme.displaySmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: AppColors.textPrimary,
@@ -301,7 +301,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          'VentIQ Super Admin v1.0.0',
+          'Inventtia Super Admin v1.0.0',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: AppColors.textHint,
           ),

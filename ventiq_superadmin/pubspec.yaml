@@ -1,5 +1,5 @@
 name: ventiq_superadmin
-description: "VentIQ Super Admin - Sistema de administración global para tiendas VentIQ"
+description: "Inventtia Super Admin - Sistema de administración global para tiendas VentIQ"
 publish_to: 'none'
 
 version: 1.0.0+1

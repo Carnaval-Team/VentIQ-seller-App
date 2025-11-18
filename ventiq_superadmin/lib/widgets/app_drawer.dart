@@ -71,6 +71,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Renovaciones',
                       route: '/renovaciones',
                     ),
+                    _DrawerItem(
+                      icon: Icons.layers,
+                      title: 'Planes',
+                      route: '/configuracion',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -126,20 +131,19 @@ class AppDrawer extends StatelessWidget {
 
   Widget _buildHeader(BuildContext context) {
     return Container(
-      height: 200,
       decoration: const BoxDecoration(
         gradient: AppColors.primaryGradient,
       ),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 60,
-                height: 60,
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   shape: BoxShape.circle,
@@ -147,15 +151,15 @@ class AppDrawer extends StatelessWidget {
                 child: const Icon(
                   Icons.admin_panel_settings,
                   color: Colors.white,
-                  size: 30,
+                  size: 26,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               const Text(
-                'VentIQ Super Admin',
+                'Inventtia Super Admin',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -163,12 +167,12 @@ class AppDrawer extends StatelessWidget {
                 'Sistema de Administración Global',
                 style: TextStyle(
                   color: Colors.white70,
-                  fontSize: 12,
+                  fontSize: 11,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
@@ -177,7 +181,7 @@ class AppDrawer extends StatelessWidget {
                   'Super Administrador',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 10,
+                    fontSize: 9,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -251,7 +255,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/tpvs' ||
                 item.route == '/trabajadores' ||
                 item.route == '/licencias' ||
-                item.route == '/renovaciones') {
+                item.route == '/renovaciones' ||
+                item.route == '/configuracion') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas
@@ -292,7 +297,7 @@ class AppDrawer extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'VentIQ Super Admin v1.0.0',
+            'Inventtia Super Admin v1.0.0',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: AppColors.textHint,
             ),
