@@ -783,37 +783,8 @@ class _RenovacionesScreenState extends State<RenovacionesScreen> {
   }
 
   void _showRenovarDialog(Map<String, dynamic> renovacion) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Renovar Licencia'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('¿Confirmar renovación de ${renovacion['tienda_nombre']}?'),
-            const SizedBox(height: 16),
-            Text('Plan: ${renovacion['plan']}'),
-            Text('Precio: \$${renovacion['precio']}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Funcionalidad en desarrollo')),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
-            child: const Text('Confirmar Renovación'),
-          ),
-        ],
-      ),
-    );
+    // Navegar a la pantalla de Licencias
+    Navigator.of(context).pushNamed('/licencias');
   }
 
   void _showNotasDialog(Map<String, dynamic> renovacion) {
