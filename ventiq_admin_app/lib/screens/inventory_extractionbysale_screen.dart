@@ -8,6 +8,7 @@ import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/tpv_service.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
 import '../widgets/location_selector_widget.dart';
@@ -178,7 +179,7 @@ class _InventoryExtractionBySaleScreenState
         throw Exception('No se encontró ID de tienda');
       }
 
-      final tpvs = await InventoryService.getTPVsByTienda(idTienda);
+      final tpvs = await TpvService.getTpvsByStore();
       _tpvOptions = tpvs;
 
       // Seleccionar el primero por defecto
