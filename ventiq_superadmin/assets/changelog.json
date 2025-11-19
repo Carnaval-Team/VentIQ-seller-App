@@ -1,0 +1,288 @@
+{
+  "current_version": "1.3.1",
+  "build": 131,
+  "app_name": "ventiq_admin",
+  "changelogs": [
+    {
+      "version": "1.3.1",
+      "date": "2025-11-13",
+      "title": "🍽️ Configuración de Venta de Productos Sin Disponibilidad",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Control de Venta Sin Verificación de Disponibilidad",
+          "description": "Nueva configuración global que permite a las tiendas vender productos sin verificar si hay ingredientes o cantidad suficientes disponibles"
+        },
+        {
+          "type": "feature",
+          "title": "Diálogo de Advertencia Inteligente",
+          "description": "Sistema de advertencia detallado que informa sobre los riesgos de activar la venta sin verificación de disponibilidad, con recomendaciones de seguridad"
+        },
+        {
+          "type": "feature",
+          "title": "Switch de Control en Configuración Global",
+          "description": "Nuevo switch en el tab Global de Configuración para gestionar si los vendedores deben verificar disponibilidad antes de vender productos"
+        },
+        {
+          "type": "improvement",
+          "title": "Flexibilidad Operativa por Tienda",
+          "description": "Cada tienda puede decidir independientemente su política de venta según sus necesidades operativas y nivel de confianza en el control manual"
+        },
+        {
+          "type": "improvement",
+          "title": "Mensajes Informativos Dinámicos",
+          "description": "Subtítulos y notificaciones que explican claramente el comportamiento cuando la verificación está activada o desactivada"
+        },
+        {
+          "type": "improvement",
+          "title": "Integración con Seller App",
+          "description": "La configuración se sincroniza automáticamente con la aplicación de vendedores para aplicar la política de venta inmediatamente"
+        }
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "date": "2025-11-10",
+      "title": "🎉 ¡Bienvenido a Inventtia® - Marca Registrada!",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Marca Registrada Inventtia®",
+          "description": "¡Ahora somos Inventtia®! Nuestra marca está oficialmente registrada, garantizando calidad, innovación y compromiso con la gestión empresarial"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión Completa de Suscripciones",
+          "description": "Nuevo módulo para administrar suscripciones de tiendas: visualiza estado, fechas de vencimiento y gestiona renovaciones desde el panel de administración"
+        },
+        {
+          "type": "feature",
+          "title": "1 Mes de Prueba Automático",
+          "description": "Al registrar una nueva tienda, el sistema automáticamente asigna 1 mes de prueba con acceso completo a todas las funcionalidades premium de Inventtia®"
+        },
+        {
+          "type": "feature",
+          "title": "Monitoreo de Estado de Suscripciones",
+          "description": "Visualiza el estado de todas las tiendas: activas, próximas a vencer, vencidas o en período de prueba con indicadores visuales de colores"
+        },
+        {
+          "type": "feature",
+          "title": "Alertas de Vencimiento Inteligentes",
+          "description": "Sistema de notificaciones automáticas que alerta cuando una suscripción está próxima a vencer para gestionar renovaciones a tiempo"
+        },
+        {
+          "type": "improvement",
+          "title": "Dashboard de Suscripciones",
+          "description": "Nueva sección en el dashboard mostrando métricas de suscripciones: total activas, próximas a vencer, vencidas y en período de prueba"
+        },
+        {
+          "type": "improvement",
+          "title": "Filtros y Búsqueda de Suscripciones",
+          "description": "Herramientas avanzadas para filtrar tiendas por estado de suscripción, fecha de vencimiento y buscar por nombre de tienda"
+        },
+        {
+          "type": "improvement",
+          "title": "Historial de Renovaciones",
+          "description": "Registro completo del historial de renovaciones de cada tienda con fechas, duraciones y estados anteriores"
+        }
+      ]
+    },
+    {
+      "version": "1.2.1",
+      "date": "2025-11-06",
+      "title": "⚙️ Configuración de Control de Inventario en Turnos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Control de Inventario Configurable",
+          "description": "Nueva configuración global que permite activar o desactivar el control de inventario al abrir y cerrar turnos para los vendedores"
+        },
+        {
+          "type": "feature",
+          "title": "Switch de Control en Configuración Global",
+          "description": "Nuevo switch en el tab Global de Configuración para gestionar si los vendedores deben hacer conteo de inventario en sus turnos"
+        },
+        {
+          "type": "improvement",
+          "title": "Flexibilidad por Tienda",
+          "description": "Cada tienda puede decidir independientemente si requiere control de inventario en turnos según sus necesidades operativas"
+        },
+        {
+          "type": "improvement",
+          "title": "Mensajes Informativos",
+          "description": "Subtítulos dinámicos que explican claramente el comportamiento cuando el control está activado o desactivado"
+        },
+        {
+          "type": "improvement",
+          "title": "Persistencia en Base de Datos",
+          "description": "La configuración se guarda automáticamente en la base de datos y se aplica inmediatamente para todos los vendedores de la tienda"
+        }
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "date": "2025-11-05",
+      "title": "🔔 Sistema de Notificaciones en Tiempo Real",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Notificaciones Instantáneas",
+          "description": "Recibe alertas importantes al instante sobre inventario, ventas y operaciones del negocio"
+        },
+        {
+          "type": "feature",
+          "title": "Centro de Notificaciones",
+          "description": "Accede a todas tus notificaciones desde el ícono de campana en la barra superior"
+        },
+        {
+          "type": "feature",
+          "title": "Alertas con Sonido",
+          "description": "Las notificaciones importantes llegan con sonido y vibración para que no te pierdas nada"
+        },
+        {
+          "type": "feature",
+          "title": "Historial Completo",
+          "description": "Consulta todas tus notificaciones anteriores y marca las importantes como leídas"
+        },
+        {
+          "type": "improvement",
+          "title": "Contador Visual",
+          "description": "Badge rojo muestra cuántas notificaciones nuevas tienes sin leer"
+        }
+      ]
+    },
+    {
+      "version": "1.1.2",
+      "date": "2025-10-26",
+      "title": "🔧 Corrección de Productos Duplicados",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Productos Duplicados en Órdenes",
+          "description": "Eliminados productos duplicados en el detalle de órdenes del módulo de Ventas"
+        }
+      ]
+    },
+     {
+      "version": "1.1.1",
+      "date": "2025-10-25",
+      "title": "🔧 Correcciones de Validación y Selección de Fechas",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Validación de Roles sin UUID",
+          "description": "Corregida validación en edición de trabajadores para permitir guardar sin roles cuando no tienen cuenta de usuario (UUID)"
+        },
+        {
+          "type": "fix",
+          "title": "Selector de Fechas en RR.HH.",
+          "description": "Solucionado problema de pantalla en blanco al seleccionar fechas en el módulo de Recursos Humanos"
+        },
+        {
+          "type": "fix",
+          "title": "Zona Horaria de La Habana en Vista y PDF",
+          "description": "Corregida conversión de fechas y horas UTC a zona horaria de (UTC-4) en la vista de turnos, trabajadores y exportación PDF del módulo de Recursos Humanos"
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2025-10-25",
+      "title": "💰 Módulo de Recursos Humanos y Desglose de Salarios",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Tab de Recursos Humanos",
+          "description": "Nuevo módulo completo para gestión de salarios y horas trabajadas con filtros de período personalizable"
+        },
+        {
+          "type": "feature",
+          "title": "Desglose de Salarios por Trabajador",
+          "description": "Visualización detallada de horas trabajadas, salario por hora y salario total por cada trabajador en el período seleccionado"
+        },
+        {
+          "type": "feature",
+          "title": "Desglose por Turnos",
+          "description": "Vista expandible de cada turno mostrando todos los trabajadores con sus horarios de entrada/salida y salarios calculados"
+        },
+        {
+          "type": "feature",
+          "title": "Exportación de Reportes de Salarios a PDF",
+          "description": "Botón flotante para exportar desglose completo de salarios en PDF con resumen general, detalle por trabajador y desglose por turnos"
+        },
+        {
+          "type": "feature",
+          "title": "Campo de Salario por Hora",
+          "description": "Nuevo campo en la creación/edición de trabajadores para especificar el salario por hora de cada empleado"
+        },
+        {
+          "type": "feature",
+          "title": "Visualización de Salarios en Listado",
+          "description": "Indicador visual del salario por hora en las tarjetas de trabajadores del módulo Personal"
+        },
+        {
+          "type": "improvement",
+          "title": "Cálculo Automático de Salarios",
+          "description": "Sistema automático que calcula el salario total multiplicando horas trabajadas por salario/hora configurado"
+        },
+        {
+          "type": "improvement",
+          "title": "Filtros de Fecha Mejorados",
+          "description": "Filtros de fecha ajustados para incluir todo el día desde 00:00:00 hasta 23:59:59 en consultas de turnos"
+        },
+        {
+          "type": "improvement",
+          "title": "Resumen Estadístico de RR.HH.",
+          "description": "Tarjeta de resumen con total de turnos, trabajadores, horas trabajadas y salarios totales del período"
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2025-10-21",
+      "title": "🎉 Lanzamiento Inicial de VentIQ Admin",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Panel de Administración Completo",
+          "description": "Sistema completo de administración empresarial con dashboard, gestión de productos, inventario y reportes avanzados"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión Avanzada de Productos",
+          "description": "Creación, edición y gestión completa de productos con ingredientes, presentaciones, variantes y multimedia"
+        },
+        {
+          "type": "feature",
+          "title": "Control de Inventario Inteligente",
+          "description": "Sistema de inventario con ubicaciones, operaciones de entrada/salida, históricos y reportes detallados"
+        },
+        {
+          "type": "feature",
+          "title": "Dashboard Empresarial",
+          "description": "Métricas en tiempo real de ventas, productos, gastos y análisis de rendimiento del negocio"
+        },
+        {
+          "type": "feature",
+          "title": "Sistema de Permisos y Roles",
+          "description": "Control granular de acceso basado en roles (Gerente, Supervisor, Empleado) con navegación protegida"
+        },
+        {
+          "type": "feature",
+          "title": "Exportación de Reportes",
+          "description": "Exportación de inventarios y reportes en formatos Excel y PDF con filtros de fecha personalizables"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de Almacenes",
+          "description": "Control completo de múltiples almacenes con ubicaciones específicas y seguimiento de stock por ubicación"
+        },
+        {
+          "type": "feature",
+          "title": "Sección 'Es Ingrediente'",
+          "description": "Visualización de productos que utilizan un ingrediente específico con navegación directa al detalle"
+        }
+      ]
+    }
+  ]
+}

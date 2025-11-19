@@ -134,10 +134,11 @@ class _LoginScreenState extends State<LoginScreen> {
             color: AppColors.primary.withOpacity(0.1),
             shape: BoxShape.circle,
           ),
-          child: const Icon(
-            Icons.admin_panel_settings,
-            size: 40,
-            color: AppColors.primary,
+          child: Image.asset(
+            'assets/images/ic_superadmin.png',
+            width: 60,
+            height: 60,
+            fit: BoxFit.contain,
           ),
         ),
         const SizedBox(height: 24),

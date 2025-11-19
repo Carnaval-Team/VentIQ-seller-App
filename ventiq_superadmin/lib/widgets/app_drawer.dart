@@ -148,10 +148,11 @@ class AppDrawer extends StatelessWidget {
                   color: Colors.white.withOpacity(0.2),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.admin_panel_settings,
-                  color: Colors.white,
-                  size: 26,
+                child: Image.asset(
+                  'assets/images/ic_superadmin.png',
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.contain,
                 ),
               ),
               const SizedBox(height: 8),

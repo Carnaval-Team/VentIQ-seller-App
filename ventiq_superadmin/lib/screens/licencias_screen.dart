@@ -101,9 +101,10 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
         setState(() {
           _tiendas = List<Map<String, dynamic>>.from(tiendasResponse);
           _suscripciones = suscripciones;
-          _filteredSuscripciones = suscripciones;
           _isLoading = false;
         });
+        // Aplicar filtros guardados después de cargar datos
+        _filterSuscripciones();
       }
     } catch (e) {
       debugPrint('Error cargando suscripciones: $e');
@@ -888,10 +889,8 @@ class _RenovarDialogContent extends StatefulWidget {
 class _RenovarDialogContentState extends State<_RenovarDialogContent> {
   List<Map<String, dynamic>> _planesDisponibles = [];
   Map<String, dynamic>? _planSeleccionado;
-  List<Map<String, dynamic>> _tiendasDelGerente = [];
   bool _isLoading = true;
   bool _isProcessing = false;
-  bool _aplicarATodas = false;
 
   @override
   void initState() {
@@ -908,44 +907,26 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
           .eq('es_activo', true)
           .order('id', ascending: true);
 
-      // Cargar gerente de la tienda actual
-      final gerenteResponse = await widget.supabase
-          .from('app_dat_gerente')
-          .select('uuid, id_tienda')
-          .eq('id_tienda', widget.suscripcion['id_tienda'])
-          .maybeSingle();
-
-      List<Map<String, dynamic>> tiendasDelGerente = [];
-
-      if (gerenteResponse != null) {
-        // Si hay gerente, buscar todas sus tiendas
-        final tiendasResponse = await widget.supabase
-            .from('app_dat_gerente')
-            .select('id_tienda, app_dat_tienda(id, denominacion)')
-            .eq('uuid', gerenteResponse['uuid']);
-
-        tiendasDelGerente = List<Map<String, dynamic>>.from(tiendasResponse);
-      }
-
       if (mounted) {
         setState(() {
           _planesDisponibles = List<Map<String, dynamic>>.from(planesResponse);
-          _tiendasDelGerente = tiendasDelGerente;
           // Seleccionar el plan actual por defecto
-          _planSeleccionado = _planesDisponibles.firstWhere(
-            (p) => p['id'] == widget.suscripcion['id_plan'],
-            orElse: () => _planesDisponibles.first,
-          );
+          if (_planesDisponibles.isNotEmpty) {
+            _planSeleccionado = _planesDisponibles.firstWhere(
+              (p) => p['id'] == widget.suscripcion['id_plan'],
+              orElse: () => _planesDisponibles.first,
+            );
+          }
           _isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint('Error cargando planes y gerente: $e');
+      debugPrint('Error cargando planes: $e');
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cargar datos: $e'),
+            content: Text('Error al cargar planes: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -967,66 +948,79 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
     setState(() => _isProcessing = true);
 
     try {
-      // Obtener UUID del usuario actual
-      final usuarioActual = widget.supabase.auth.currentUser;
-      final uuidUsuario = usuarioActual?.id ?? '';
+      final idTienda = widget.suscripcion['id_tienda'];
+      final idSuscripcionActual = widget.suscripcion['id'];
+      final esPlanPro = _planSeleccionado!['denominacion']
+              ?.toString()
+              .toLowerCase()
+              .contains('pro') ??
+          false;
 
+      // Nueva fecha de fin: hoy + 30 días
       final ahora = DateTime.now();
-      final fechaInicio = ahora;
-      final fechaFin = ahora.add(const Duration(days: 30)); // 30 días de renovación
+      final nuevaFechaFin = ahora.add(const Duration(days: 30));
 
-      // Tiendas a renovar
-      final tiendasAActualizar = _aplicarATodas && _tiendasDelGerente.isNotEmpty
-          ? _tiendasDelGerente.map((t) => t['id_tienda']).toList()
-          : [widget.suscripcion['id_tienda']];
-
-      // Actualizar o crear suscripciones para cada tienda
-      for (final idTienda in tiendasAActualizar) {
-        // Buscar suscripción existente
-        final suscripcionExistente = await widget.supabase
-            .from('app_suscripciones')
-            .select('id')
-            .eq('id_tienda', idTienda)
-            .eq('id_plan', _planSeleccionado!['id'])
-            .maybeSingle();
-
-        if (suscripcionExistente != null) {
-          // Actualizar suscripción existente
-          await widget.supabase
-              .from('app_suscripciones')
-              .update({
-                'fecha_inicio': fechaInicio.toIso8601String(),
-                'fecha_fin': fechaFin.toIso8601String(),
-                'estado': 1, // Activa
-                'updated_at': ahora.toIso8601String(),
-              })
-              .eq('id', suscripcionExistente['id']);
-        } else {
-          // Crear nueva suscripción
-          await widget.supabase.from('app_suscripciones').insert({
-            'id_tienda': idTienda,
+      // Actualizar la suscripción actual
+      await widget.supabase
+          .from('app_suscripciones')
+          .update({
             'id_plan': _planSeleccionado!['id'],
-            'fecha_inicio': fechaInicio.toIso8601String(),
-            'fecha_fin': fechaFin.toIso8601String(),
+            'fecha_fin': nuevaFechaFin.toIso8601String(),
             'estado': 1, // Activa
-            'metodo_pago': 'manual',
-            'creado_por': uuidUsuario,
-            'renovacion_automatica': false,
-          });
-        }
+            'updated_at': ahora.toIso8601String(),
+          })
+          .eq('id', idSuscripcionActual);
 
-        // Guardar historial de renovación para cada tienda
-        await widget.supabase.from('app_historial_renovaciones').insert({
-          'id_tienda': idTienda,
-          'id_plan': _planSeleccionado!['id'],
-          'plan_nombre': _planSeleccionado!['denominacion'],
-          'fecha_renovacion': ahora.toIso8601String(),
-          'fecha_inicio': fechaInicio.toIso8601String(),
-          'fecha_fin': fechaFin.toIso8601String(),
-          'aplicado_a_gerente': _aplicarATodas && _tiendasDelGerente.isNotEmpty,
-          'cantidad_tiendas': tiendasAActualizar.length,
-          'creado_por': uuidUsuario,
-        });
+      // Si es plan pro, buscar todas las tiendas del gerente y aplicar el mismo plan
+      if (esPlanPro) {
+        // Buscar gerentes de la tienda actual
+        final gerentesResponse = await widget.supabase
+            .from('app_dat_gerente')
+            .select('uuid')
+            .eq('id_tienda', idTienda);
+
+        if (gerentesResponse.isNotEmpty) {
+          // Obtener UUIDs únicos de gerentes
+          final uuidsGerentes = <String>{};
+          for (final gerente in gerentesResponse) {
+            uuidsGerentes.add(gerente['uuid']);
+          }
+
+          // Para cada gerente, buscar todas sus tiendas
+          for (final uuidGerente in uuidsGerentes) {
+            final tiendasDelGerente = await widget.supabase
+                .from('app_dat_gerente')
+                .select('id_tienda')
+                .eq('uuid', uuidGerente);
+
+            // Aplicar el mismo plan a todas las tiendas del gerente
+            for (final tiendaGerente in tiendasDelGerente) {
+              final idTiendaGerente = tiendaGerente['id_tienda'];
+
+              if (idTiendaGerente != idTienda) {
+                // Buscar suscripción existente de esta tienda
+                final suscripcionesExistentes = await widget.supabase
+                    .from('app_suscripciones')
+                    .select('id')
+                    .eq('id_tienda', idTiendaGerente);
+
+                if (suscripcionesExistentes.isNotEmpty) {
+                  // Actualizar la primera suscripción existente
+                  final suscripcionExistente = suscripcionesExistentes.first;
+                  await widget.supabase
+                      .from('app_suscripciones')
+                      .update({
+                        'id_plan': _planSeleccionado!['id'],
+                        'fecha_fin': nuevaFechaFin.toIso8601String(),
+                        'estado': 1,
+                        'updated_at': ahora.toIso8601String(),
+                      })
+                      .eq('id', suscripcionExistente['id']);
+                }
+              }
+            }
+          }
+        }
       }
 
       if (mounted) {
@@ -1034,8 +1028,8 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _aplicarATodas && _tiendasDelGerente.isNotEmpty
-                  ? 'Renovación aplicada a ${tiendasAActualizar.length} tienda(s)'
+              esPlanPro
+                  ? 'Renovación aplicada a todas las tiendas del gerente'
                   : 'Renovación completada',
             ),
             backgroundColor: AppColors.success,
@@ -1072,13 +1066,6 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
       );
     }
 
-    final esPlanPro = _planSeleccionado?['denominacion']
-            ?.toString()
-            .toLowerCase()
-            .contains('pro') ??
-        false;
-    final tieneGerente = _tiendasDelGerente.isNotEmpty;
-
     return AlertDialog(
       title: const Text('Renovar Licencia'),
       content: SingleChildScrollView(
@@ -1108,69 +1095,6 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
                 setState(() => _planSeleccionado = plan);
               },
             ),
-            const SizedBox(height: 16),
-            if (esPlanPro && tieneGerente) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.info.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.info),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Plan Pro - Aplicar a todas las tiendas del gerente',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Este gerente tiene ${_tiendasDelGerente.length} tienda(s):',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    const SizedBox(height: 4),
-                    ..._tiendasDelGerente.map((t) {
-                      final tiendaNombre = t['app_dat_tienda'] is Map
-                          ? t['app_dat_tienda']['denominacion']
-                          : 'Tienda ${t['id_tienda']}';
-                      return Padding(
-                        padding: const EdgeInsets.only(left: 16, top: 4),
-                        child: Text(
-                          '• $tiendaNombre',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                      );
-                    }).toList(),
-                    const SizedBox(height: 12),
-                    CheckboxListTile(
-                      value: _aplicarATodas,
-                      onChanged: (value) {
-                        setState(() => _aplicarATodas = value ?? false);
-                      },
-                      title: const Text(
-                        'Aplicar plan a todas las tiendas',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ],
-                ),
-              ),
-            ] else if (esPlanPro && !tieneGerente)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.warning),
-                ),
-                child: const Text(
-                  'Plan Pro: Esta tienda no tiene gerente asignado, se renovará solo esta tienda.',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ),
           ],
         ),
       ),
