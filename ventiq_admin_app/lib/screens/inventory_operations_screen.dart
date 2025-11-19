@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
@@ -106,7 +107,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       );
 
       final newOperations = result['operations'] ?? [];
-      final newTotalCount = result['totalCount'] ?? 0;
+      final newTotalCount = result['total_count'] ?? 0;
       
       print('📊 Resultado de _loadOperations:');
       print('  • isLoadMore: $isLoadMore');
@@ -127,12 +128,15 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           print('  • Lista reemplazada con ${newOperations.length} operaciones');
         }
         _totalCount = newTotalCount;
-        _hasNextPage = (_currentPage * _itemsPerPage) < _totalCount;
+        // Hay más páginas si el total de operaciones mostradas es menor que el total disponible
+        _hasNextPage = _operations.length < _totalCount;
         _isLoading = false;
         _isLoadingMore = false;
         
         print('  • _hasNextPage calculado: $_hasNextPage');
-        print('  • Cálculo: ($_currentPage * $_itemsPerPage) < $_totalCount = ${(_currentPage * _itemsPerPage)} < $_totalCount');
+        print('  • Cálculo: ${_operations.length} < $_totalCount = $_hasNextPage');
+        print('  • Operaciones cargadas hasta ahora: ${_operations.length}');
+        print('  • Total disponible en servidor: $_totalCount');
       });
     } catch (e) {
       setState(() {
@@ -691,25 +695,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
-  void _nextPage() {
-    if (_hasNextPage) {
-      setState(() => _currentPage++);
-      _loadOperations();
-    }
-  }
-
-  void _previousPage() {
-    if (_currentPage > 1) {
-      setState(() => _currentPage--);
-      _loadOperations();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Column(
-        children: [_buildFilters(), _buildOperationsList(), _buildPagination()],
+        children: [_buildFilters(), _buildOperationsList()],
       ),
     );
   }
@@ -867,21 +857,27 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     ),
                   ],
                 )
-                : ListView.builder(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _operations.length + (_isLoadingMore ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index == _operations.length) {
-                      // Mostrar indicador de carga al final
-                      return _buildLoadingMoreIndicator();
-                    }
-                    final operation = _operations[index];
-                    return _buildOperationCard(operation);
-                  },
-                ),
+                : _buildOperationsListContent(),
       ),
+    );
+  }
+
+  /// Construye el contenido de la lista de operaciones
+  /// Usa infinite scroll en ambas plataformas (móvil y web)
+  Widget _buildOperationsListContent() {
+    return ListView.builder(
+      controller: _scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      itemCount: _operations.length + (_isLoadingMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == _operations.length) {
+          // Mostrar indicador de carga al final
+          return _buildLoadingMoreIndicator();
+        }
+        final operation = _operations[index];
+        return _buildOperationCard(operation);
+      },
     );
   }
 
@@ -1131,48 +1127,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     // Default - Grey más oscuro para mejor contraste
     print('   → Grey (Default) - Status not recognized');
     return Colors.blueGrey[600] ?? Colors.blueGrey;
-  }
-
-  Widget _buildPagination() {
-    if (_totalCount <= _itemsPerPage) return const SizedBox.shrink();
-
-    final totalPages = (_totalCount / _itemsPerPage).ceil();
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'Página $_currentPage de $totalPages ($_totalCount total)',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-          Row(
-            children: [
-              IconButton(
-                onPressed: _currentPage > 1 ? _previousPage : null,
-                icon: const Icon(Icons.chevron_left),
-              ),
-              IconButton(
-                onPressed: _hasNextPage ? _nextPage : null,
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 
   void _showOperationDetails(Map<String, dynamic> operation) {
