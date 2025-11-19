@@ -231,6 +231,8 @@ class _InventoryExtractionBySaleScreenState
         product: product,
         sourceLocation: _selectedSourceLocation,
         onProductAdded: (productData) {
+          print('productData');
+          print(productData);
           setState(() {
             _selectedProducts.add(productData);
           });
@@ -509,11 +511,11 @@ class _InventoryExtractionBySaleScreenState
       // Preparar productos usando el mismo formato que order_service.dart
       final productos = _selectedProducts.map((product) {
         return {
-          'id_producto': product['id_producto'],
+          'id_producto': product['meta']['id_producto'],
           'id_variante': product['id_variante'],
           'id_opcion_variante': product['id_opcion_variante'],
           'id_ubicacion': product['id_ubicacion'],
-          'id_presentacion': product['id_presentacion'] ?? 1,
+          'id_presentacion': product['meta']['id_presentacion'] ?? 1,
           'cantidad': product['cantidad'],
           'precio_unitario': product['precio_unitario'],
           'sku_producto': product['sku_producto'] ?? product['id_producto'].toString(),
