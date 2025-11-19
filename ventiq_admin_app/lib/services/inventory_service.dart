@@ -538,9 +538,9 @@ class InventoryService {
         });
 
         final response = await _supabase.rpc(
-          'fn_get_producto',
+          'get_detalle_producto',
           params: {
-            'p_id_producto': idProducto,
+            'id_producto_param': idProducto,
           },
         );
 

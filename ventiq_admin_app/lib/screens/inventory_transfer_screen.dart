@@ -7,6 +7,7 @@ import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/product_selector_widget.dart';
 import '../services/product_search_service.dart';
+import '../widgets/transfer_product_quantity_dialog.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   const InventoryTransferScreen({super.key});
@@ -92,7 +93,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     showDialog(
       context: context,
       builder:
-          (context) => _ProductQuantityDialog(
+          (context) => TransferProductQuantityDialog(
             product: product,
             sourceLayoutId: _getZoneIdFromLocation(_selectedSourceLocation!),
             onAdd: (productData) {
@@ -110,7 +111,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               setState(() {
                 _selectedProducts.add(productData);
               });
-              Navigator.pop(context);
             },
           ),
     );
