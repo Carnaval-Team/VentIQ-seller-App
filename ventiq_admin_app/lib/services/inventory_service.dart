@@ -544,9 +544,16 @@ class InventoryService {
           },
         );
 
-        if (response.isNotEmpty) {
-          final productoData = response.first;
+        // Verificar si response es un Map (respuesta única) o List (múltiples resultados)
+        Map<String, dynamic>? productoData;
+        
+        if (response is Map<String, dynamic> && response.isNotEmpty) {
+          productoData = response;
+        } else if (response is List && response.isNotEmpty) {
+          productoData = response.first as Map<String, dynamic>;
+        }
 
+        if (productoData != null) {
           receptionProducts.last.addAll({
             'prod_id': productoData['prod_id'],
             'prod_nombre': productoData['prod_nombre'],
