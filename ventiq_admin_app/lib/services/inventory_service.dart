@@ -2599,7 +2599,7 @@ class InventoryService {
 
       final response = await _supabase
           .from('app_nom_medio_pago')
-          .select('id, denominacion, es_efectivo, es_digital, id_tienda')
+          .select('id, denominacion, es_efectivo, es_digital')
           .order('denominacion');
 
       print('✅ Medios de pago obtenidos: ${response.length}');
