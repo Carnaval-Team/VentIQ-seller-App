@@ -197,11 +197,12 @@ class SalesService {
 
       // Call the RPC function
       final response = await _supabase.rpc(
-        'fn_reporte_ventas_ganancias',
+        'fn_reporte_ventas_gananciasv3',
         params: params,
       );
 
-      print('Response received: ${response.length} products');
+      print('Response ventas received: ${response.length} products');
+      print('${response}');
 
       if (response == null) {
         print('No data received from RPC call');
@@ -417,7 +418,7 @@ class SalesService {
 
       // Call the RPC function
       final response = await _supabase.rpc(
-        'fn_vista_precios_productos2',
+        'fn_vista_precios_productos3',
         params: params,
       );
 
