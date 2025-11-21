@@ -6,6 +6,7 @@ import '../widgets/admin_bottom_navigation.dart';
 import '../services/dashboard_service.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
 import '../services/changelog_service.dart';
 import '../widgets/changelog_dialog.dart';
 import '../widgets/notification_widget.dart';
@@ -29,6 +30,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
   final DashboardService _dashboardService = DashboardService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
+  final PermissionsService _permissionsService = PermissionsService();
   final ChangelogService _changelogService = ChangelogService();
   final NotificationService _notificationService = NotificationService();
 
@@ -260,44 +262,92 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
           ),
           content: SizedBox(
             width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _userStores.length,
-              itemBuilder: (context, index) {
-                final store = _userStores[index];
-                final isCurrentStore =
-                    store['denominacion'] == _currentStoreName;
+            child: FutureBuilder<Map<int, UserRole>>(
+              future: _permissionsService.getUserRolesByStore(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
 
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor:
-                        isCurrentStore
-                            ? AppColors.primary
-                            : AppColors.primary.withOpacity(0.1),
-                    child: Icon(
-                      Icons.store,
-                      color: isCurrentStore ? Colors.white : AppColors.primary,
-                      size: 20,
-                    ),
-                  ),
-                  title: Text(
-                    store['denominacion'] ?? 'Tienda ${store['id_tienda']}',
-                    style: TextStyle(
-                      fontWeight:
-                          isCurrentStore ? FontWeight.bold : FontWeight.normal,
-                      color: isCurrentStore ? AppColors.primary : null,
-                    ),
-                  ),
-                  subtitle: Text('ID: ${store['id_tienda']}'),
-                  trailing:
-                      isCurrentStore
-                          ? const Icon(
-                            Icons.check_circle,
-                            color: AppColors.primary,
-                          )
-                          : null,
-                  onTap: () {
-                    Navigator.of(context).pop(store);
+                final rolesByStore = snapshot.data ?? {};
+
+                return ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _userStores.length,
+                  itemBuilder: (context, index) {
+                    final store = _userStores[index];
+                    final storeId = store['id_tienda'] as int;
+                    final isCurrentStore =
+                        store['denominacion'] == _currentStoreName;
+                    final userRole = rolesByStore[storeId] ?? UserRole.none;
+                    final roleName =
+                        _permissionsService.getRoleName(userRole);
+
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor:
+                            isCurrentStore
+                                ? AppColors.primary
+                                : AppColors.primary.withOpacity(0.1),
+                        child: Icon(
+                          Icons.store,
+                          color:
+                              isCurrentStore
+                                  ? Colors.white
+                                  : AppColors.primary,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(
+                        store['denominacion'] ??
+                            'Tienda ${store['id_tienda']}',
+                        style: TextStyle(
+                          fontWeight:
+                              isCurrentStore
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                          color: isCurrentStore ? AppColors.primary : null,
+                        ),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('ID: ${store['id_tienda']}'),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getRoleColor(userRole)
+                                  .withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'Rol: $roleName',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: _getRoleColor(userRole),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      trailing:
+                          isCurrentStore
+                              ? const Icon(
+                                Icons.check_circle,
+                                color: AppColors.primary,
+                              )
+                              : null,
+                      onTap: () {
+                        Navigator.of(context).pop(store);
+                      },
+                    );
                   },
                 );
               },
@@ -319,6 +369,22 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
     }
   }
 
+  /// Obtener color según el rol
+  Color _getRoleColor(UserRole role) {
+    switch (role) {
+      case UserRole.gerente:
+        return Colors.green;
+      case UserRole.supervisor:
+        return Colors.blue;
+      case UserRole.almacenero:
+        return Colors.orange;
+      case UserRole.vendedor:
+        return Colors.purple;
+      case UserRole.none:
+        return Colors.grey;
+    }
+  }
+
   Future<void> _switchStore(Map<String, dynamic> store) async {
     try {
       // Show loading indicator
@@ -337,8 +403,24 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
             ),
       );
 
+      final storeId = store['id_tienda'] as int;
+
+      // Limpiar caché de roles para forzar recarga
+      _permissionsService.clearCache();
+      print('🧹 Caché de roles limpiado');
+
       // Update selected store in preferences
-      await _userPreferencesService.updateSelectedStore(store['id_tienda']);
+      await _userPreferencesService.updateSelectedStore(storeId);
+
+      // Obtener el rol para esta tienda y guardarlo
+      final userRole = await _permissionsService.getUserRoleForStore(storeId);
+      print('🔄 Rol obtenido para tienda $storeId: ${_permissionsService.getRoleName(userRole)}');
+      
+      // Guardar el rol en preferencias para esta tienda
+      final rolesByStore = await _userPreferencesService.getUserRolesByStore();
+      rolesByStore[storeId] = _permissionsService.getRoleName(userRole).toLowerCase();
+      await _userPreferencesService.saveUserRolesByStore(rolesByStore);
+      print('💾 Rol guardado para tienda $storeId: ${rolesByStore[storeId]}');
 
       // Update current store name
       setState(() {

@@ -25,6 +25,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _needAllOrdersCompletedToContinue = false;
   bool _manejaInventario = false;
   bool _permiteVenderAunSinDisponibilidad = false;
+  bool _noSolicitarCliente = false;
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
@@ -69,6 +70,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _needAllOrdersCompletedToContinue = config['need_all_orders_completed_to_continue'] ?? false;
         _manejaInventario = config['maneja_inventario'] ?? false;
         _permiteVenderAunSinDisponibilidad = config['permite_vender_aun_sin_disponibilidad'] ?? false;
+        _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
         _showDescriptionInSelectors = showDescriptionInSelectors;
@@ -97,6 +99,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('  - Completar todas las órdenes: $_needAllOrdersCompletedToContinue');
       print('  - Maneja inventario: $_manejaInventario');
       print('  - Permite vender sin disponibilidad: $_permiteVenderAunSinDisponibilidad');
+      print('  - No solicitar cliente en venta: $_noSolicitarCliente');
       print('  - Tiene contraseña maestra: $_hasMasterPassword');
       print('  - Mostrar descripción en selectores: $_showDescriptionInSelectors');
       print('  - Suscripción actual: ${_activeSubscription?.planDenominacion ?? 'No encontrada'} (${_activeSubscription?.estadoText ?? 'N/A'})');
@@ -297,6 +300,51 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       // Revertir el cambio en caso de error
       setState(() {
         _permiteVenderAunSinDisponibilidad = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateNoSolicitarClienteSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print('🔧 Actualizando configuración de no solicitar cliente: $value');
+      
+      await StoreConfigService.updateNoSolicitarCliente(_storeId!, value);
+      
+      setState(() {
+        _noSolicitarCliente = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value 
+                ? 'No se solicitarán datos del comprador en ventas - Se usará "Cliente" automáticamente'
+                : 'Se solicitarán datos del comprador en ventas'
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Configuración de no solicitar cliente actualizada');
+    } catch (e) {
+      print('❌ Error al actualizar configuración de no solicitar cliente: $e');
+      
+      // Revertir el cambio en caso de error
+      setState(() {
+        _noSolicitarCliente = !value;
       });
 
       if (mounted) {
@@ -668,6 +716,20 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 : 'Solo se muestra el nombre del producto en los selectores (vista compacta)',
             value: _showDescriptionInSelectors,
             onChanged: _updateShowDescriptionSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          // Configuración de No Pedir Datos en Venta
+          _buildConfigCard(
+            icon: Icons.person_off_outlined,
+            iconColor: Colors.teal,
+            title: 'No Pedir Datos en Venta',
+            subtitle: _noSolicitarCliente
+                ? '✅ No se solicitan datos del comprador - Se usa "Cliente" automáticamente'
+                : '📋 Se solicitan datos del comprador (nombre, teléfono, contactos adicionales)',
+            value: _noSolicitarCliente,
+            onChanged: _updateNoSolicitarClienteSetting,
           ),
 
           const SizedBox(height: 24),
