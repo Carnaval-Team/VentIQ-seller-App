@@ -21,6 +21,7 @@ class StoreConfigService {
         print('  - need_master_password_to_cancel: ${response['need_master_password_to_cancel']}');
         print('  - need_all_orders_completed_to_continue: ${response['need_all_orders_completed_to_continue']}');
         print('  - permite_vender_aun_sin_disponibilidad: ${response['permite_vender_aun_sin_disponibilidad']}');
+        print('  - no_solicitar_cliente: ${response['no_solicitar_cliente']}');
         return response;
       } else {
         print('⚠️ No existe configuración para tienda $storeId en Supabase');
@@ -43,6 +44,7 @@ class StoreConfigService {
       print('  - need_master_password_to_cancel: ${config['need_master_password_to_cancel']}');
       print('  - need_all_orders_completed_to_continue: ${config['need_all_orders_completed_to_continue']}');
       print('  - permite_vender_aun_sin_disponibilidad: ${config['permite_vender_aun_sin_disponibilidad']}');
+      print('  - no_solicitar_cliente: ${config['no_solicitar_cliente']}');
     } catch (e) {
       print('❌ Error al guardar configuración de tienda en cache: $e');
     }
@@ -60,6 +62,7 @@ class StoreConfigService {
         print('  - need_master_password_to_cancel: ${config['need_master_password_to_cancel']}');
         print('  - need_all_orders_completed_to_continue: ${config['need_all_orders_completed_to_continue']}');
         print('  - permite_vender_aun_sin_disponibilidad: ${config['permite_vender_aun_sin_disponibilidad']}');
+        print('  - no_solicitar_cliente: ${config['no_solicitar_cliente']}');
       } else {
         print('⚠️ No hay configuración de tienda en cache offline');
       }
@@ -155,6 +158,17 @@ class StoreConfigService {
       return config?['permite_vender_aun_sin_disponibilidad'] ?? false;
     } catch (e) {
       print('❌ Error al obtener permite_vender_aun_sin_disponibilidad: $e');
+      return false; // Valor por defecto en caso de error
+    }
+  }
+
+  /// Obtiene solo el valor de no_solicitar_cliente
+  static Future<bool> getNoSolicitarCliente(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config?['no_solicitar_cliente'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener no_solicitar_cliente: $e');
       return false; // Valor por defecto en caso de error
     }
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/store_config_service.dart';
 import '../utils/price_utils.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
@@ -30,12 +31,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double _promoDiscount = 0.0;
   bool _promoApplied = false;
   bool _isProcessing = false;
+  bool _noSolicitarCliente = false;
+  bool _configLoading = true;
   
   // Discount percentages (you can make these configurable)
   static const double promoDiscountPercentage = 0.10; // 10% promo discount
   
   // Calculate and round promo discount
   double get roundedPromoDiscount => PriceUtils.roundDiscountPrice(_promoDiscount);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStoreConfig();
+  }
+
+  Future<void> _loadStoreConfig() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId != null) {
+        final noSolicitar = await StoreConfigService.getNoSolicitarCliente(storeId);
+        setState(() {
+          _noSolicitarCliente = noSolicitar;
+          _configLoading = false;
+          
+          // Si no se solicita cliente, establecer nombre automáticamente
+          if (_noSolicitarCliente) {
+            _buyerNameController.text = 'Cliente';
+          }
+        });
+        print('🔧 Configuración cargada - No solicitar cliente: $_noSolicitarCliente');
+      } else {
+        setState(() => _configLoading = false);
+      }
+    } catch (e) {
+      print('❌ Error cargando configuración: $e');
+      setState(() => _configLoading = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -358,6 +391,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildBuyerInfoSection() {
+    // Si no se solicita cliente, ocultar esta sección
+    if (_noSolicitarCliente) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -415,6 +453,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildExtraContactsSection() {
+    // Si no se solicita cliente, ocultar esta sección también
+    if (_noSolicitarCliente) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
