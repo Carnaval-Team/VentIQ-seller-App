@@ -196,9 +196,10 @@ class SalesService {
       }
 
       // Call the RPC function
-      // ✅ CAMBIO: Usar fn_reporte_ventas_gananciasv4 que obtiene costo real de app_dat_producto_presentacion
+      // ✅ CAMBIO: Usar fn_reporte_ventas_gananciasv5_por_presentacion que agrupa por producto-presentación
+      // y usa precio_promedio de app_dat_producto_presentacion como costo real
       final response = await _supabase.rpc(
-        'fn_reporte_ventas_gananciasv4',
+        'fn_reporte_ventas_gananciasv5',
         params: params,
       );
 
