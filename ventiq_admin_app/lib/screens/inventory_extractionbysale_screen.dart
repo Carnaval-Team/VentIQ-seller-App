@@ -11,6 +11,7 @@ import '../services/inventory_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/tpv_service.dart';
+import '../services/printer_manager.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
 import '../widgets/location_selector_widget.dart';
@@ -666,19 +667,9 @@ class _InventoryExtractionBySaleScreenState
             ),
           );
           
-          // ✅ NUEVO: Mostrar diálogo de impresión ANTES de cerrar la pantalla
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              _showPrintDialog();
-            }
-          });
-          
-          // Cerrar la pantalla después de un pequeño delay para que el diálogo se muestre
-          Future.delayed(const Duration(milliseconds: 100), () {
-            if (mounted) {
-              Navigator.pop(context);
-            }
-          });
+          // ✅ Mostrar diálogo de impresión INMEDIATAMENTE (sin delay)
+          // El diálogo se mostrará antes de que se cierre la pantalla
+          _showPrintDialog();
         }
       } else {
         throw Exception(response?['message'] ?? 'Error en el registro de venta');
@@ -1248,6 +1239,7 @@ class _InventoryExtractionBySaleScreenState
   void _showPrintDialog() {
     showDialog(
       context: context,
+      barrierDismissible: false, // Evitar cerrar tocando afuera
       builder: (context) => AlertDialog(
         title: Row(
           children: [
@@ -1263,13 +1255,17 @@ class _InventoryExtractionBySaleScreenState
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Navigator.pop(context); // Cerrar diálogo
+              Navigator.pop(context); // Cerrar pantalla
+            },
             child: const Text('No'),
           ),
           ElevatedButton.icon(
             onPressed: () {
-              Navigator.pop(context);
-              _printExtractionTicket();
+              Navigator.pop(context); // Cerrar diálogo
+              _printExtractionTicket(); // Iniciar impresión
+              // La pantalla se cerrará después de que termine la impresión
             },
             icon: const Icon(Icons.print),
             label: const Text('Sí, Imprimir'),
@@ -1283,18 +1279,57 @@ class _InventoryExtractionBySaleScreenState
     );
   }
 
-  /// 🖨️ Método para imprimir ticket de extracción
+  /// 🖨️ Método para imprimir ticket de extracción usando PrinterManager
   Future<void> _printExtractionTicket() async {
     try {
       print('🖨️ Iniciando impresión de ticket de extracción...');
 
-      // Verificar si hay productos para imprimir
-      if (_selectedProducts.isEmpty) {
-        _showErrorDialog('Error', 'No hay productos para imprimir');
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado, cancelando impresión');
         return;
       }
 
-      // Mostrar diálogo de progreso
+      // Verificar si hay productos para imprimir
+      if (_selectedProducts.isEmpty) {
+        if (mounted) _showErrorDialog('Error', 'No hay productos para imprimir');
+        return;
+      }
+
+      // Crear instancia del PrinterManager
+      final printerManager = PrinterManager();
+
+      // Paso 1: Mostrar diálogo de confirmación
+      print('📋 Paso 1: Mostrar diálogo de confirmación');
+      bool shouldPrint = await printerManager.showPrintConfirmationDialog(context);
+      if (!shouldPrint) {
+        print('❌ Usuario canceló la impresión');
+        return;
+      }
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado después de confirmación');
+        return;
+      }
+
+      // Paso 2: Mostrar diálogo de selección de dispositivo
+      print('🔍 Paso 2: Seleccionar dispositivo Bluetooth');
+      final bluetoothService = printerManager.bluetoothService;
+      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(context);
+      if (selectedDevice == null) {
+        print('❌ No se seleccionó dispositivo');
+        return;
+      }
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado después de seleccionar dispositivo');
+        return;
+      }
+
+      // Paso 3: Mostrar diálogo de progreso - Conectando
+      print('🔌 Paso 3: Conectando a impresora');
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -1304,61 +1339,107 @@ class _InventoryExtractionBySaleScreenState
             children: const [
               CircularProgressIndicator(color: Color(0xFF4A90E2)),
               SizedBox(height: 16),
-              Text('Preparando impresión...'),
+              Text('Conectando a impresora...'),
             ],
           ),
         ),
       );
 
-      // Intentar conectar a impresora Bluetooth
-      bool bluetoothEnabled = await PrintBluetoothThermal.bluetoothEnabled;
-      if (!bluetoothEnabled) {
-        Navigator.pop(context); // Cerrar diálogo de progreso
-        _showErrorDialog('Bluetooth Deshabilitado', 'Por favor habilita Bluetooth en tu dispositivo');
-        return;
-      }
-
-      // Obtener dispositivos emparejados
-      List<BluetoothInfo> pairedDevices = await PrintBluetoothThermal.pairedBluetooths;
-      if (pairedDevices.isEmpty) {
-        Navigator.pop(context); // Cerrar diálogo de progreso
-        _showErrorDialog('Sin Impresoras', 'No se encontraron impresoras Bluetooth emparejadas');
-        return;
-      }
-
-      // Conectar al primer dispositivo disponible
-      bool connected = await PrintBluetoothThermal.connect(macPrinterAddress: pairedDevices[0].macAdress);
+      // Conectar a la impresora
+      bool connected = await bluetoothService.connectToDevice(selectedDevice);
       if (!connected) {
-        Navigator.pop(context); // Cerrar diálogo de progreso
-        _showErrorDialog('Conexión Fallida', 'No se pudo conectar a la impresora');
+        if (mounted) {
+          Navigator.pop(context);
+          _showErrorDialog('Conexión Fallida', 'No se pudo conectar a la impresora');
+        }
         return;
       }
 
-      // Generar ticket
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado después de conectar');
+        await bluetoothService.disconnect();
+        return;
+      }
+
+      // Paso 4: Actualizar diálogo - Imprimiendo
+      print('🖨️ Paso 4: Imprimiendo ticket');
+      Navigator.pop(context);
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Imprimiendo ticket...'),
+            ],
+          ),
+        ),
+      );
+
+      // Generar y enviar ticket
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
       List<int> bytes = _generateExtractionTicket(generator);
 
-      // Enviar a impresora
       bool printed = await PrintBluetoothThermal.writeBytes(bytes);
-      
-      // Desconectar
-      await PrintBluetoothThermal.disconnect;
 
-      // Cerrar diálogo de progreso
+      // Desconectar
+      await bluetoothService.disconnect();
+
+      // ✅ Verificar si el widget sigue montado antes de cerrar diálogo
+      if (!mounted) {
+        print('⚠️ Widget desmontado antes de mostrar resultado');
+        return;
+      }
+
+      // Paso 5: Cerrar diálogo y mostrar resultado
+      print(' Paso 5: Mostrar resultado');
       Navigator.pop(context);
 
       if (printed) {
-        _showSuccessDialog('¡Ticket Impreso!', 'El ticket se imprimió correctamente');
-        print('✅ Ticket impreso exitosamente');
+        if (mounted) {
+          _showSuccessDialog('¡Ticket Impreso!', 'El ticket se imprimió correctamente');
+          // Cerrar la pantalla después de mostrar el éxito
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) {
+              Navigator.pop(context); // Cerrar diálogo de éxito
+              Navigator.pop(context); // Cerrar pantalla de venta
+            }
+          });
+        }
+        print(' Ticket impreso exitosamente');
       } else {
-        _showErrorDialog('Error de Impresión', 'No se pudo imprimir el ticket');
-        print('❌ Error al imprimir ticket');
+        if (mounted) {
+          _showErrorDialog('Error de Impresión', 'No se pudo imprimir el ticket');
+          // Cerrar la pantalla después de mostrar el error
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) {
+              Navigator.pop(context); // Cerrar diálogo de error
+              Navigator.pop(context); // Cerrar pantalla de venta
+            }
+          });
+        }
+        print(' Error al imprimir ticket');
       }
     } catch (e) {
-      Navigator.pop(context); // Cerrar diálogo de progreso si está abierto
-      _showErrorDialog('Error', 'Ocurrió un error al imprimir: $e');
-      print('❌ Error en _printExtractionTicket: $e');
+      if (mounted) {
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        _showErrorDialog('Error', 'Ocurrió un error al imprimir: $e');
+        // Cerrar la pantalla después de mostrar el error
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) {
+            Navigator.pop(context); // Cerrar diálogo de error
+            Navigator.pop(context); // Cerrar pantalla de venta
+          }
+        });
+      }
+      print(' Error en _printExtractionTicket: $e');
     }
   }
 
