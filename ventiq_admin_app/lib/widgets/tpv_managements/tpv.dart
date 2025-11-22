@@ -270,6 +270,12 @@ class _TpvListWidgetState extends State<TpvListWidget> {
               runSpacing: 8,
               children: [
                 _buildInfoChip('ID: ${tpv['id']}', Icons.tag),
+                if (tpv['almacen'] != null)
+                  _buildInfoChip(
+                    'Almacén: ${tpv['almacen']['denominacion'] ?? 'Sin nombre'}',
+                    Icons.warehouse,
+                    color: AppColors.info,
+                  ),
                 _buildInfoChip(
                   hasVendedor ? '${vendedores.length} Vendedor(es)' : 'Sin vendedor',
                   hasVendedor ? Icons.person : Icons.person_off,
