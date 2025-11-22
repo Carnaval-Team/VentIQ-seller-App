@@ -1445,17 +1445,6 @@ class _PreorderScreenState extends State<PreorderScreen> {
         }
       }
     });
-
-    // Show confirmation
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Método "${paymentMethod.displayName}" aplicado a todos los productos',
-        ),
-        backgroundColor: const Color(0xFF4A90E2),
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   void _clearGlobalPaymentMethod() {

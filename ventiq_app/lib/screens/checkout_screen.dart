@@ -31,8 +31,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double _promoDiscount = 0.0;
   bool _promoApplied = false;
   bool _isProcessing = false;
-  bool _noSolicitarCliente = false;
-  bool _configLoading = true;
+  late bool _noSolicitarCliente;
   
   // Discount percentages (you can make these configurable)
   static const double promoDiscountPercentage = 0.10; // 10% promo discount
@@ -50,23 +49,38 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final storeId = await _userPreferencesService.getIdTienda();
       if (storeId != null) {
-        final noSolicitar = await StoreConfigService.getNoSolicitarCliente(storeId);
-        setState(() {
+        // Primero intentar obtener del cache (debe estar disponible desde login)
+        final config = await StoreConfigService.getStoreConfigFromCache();
+        
+        if (config != null) {
+          // Usar configuración del cache
+          _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
+          print('✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente');
+        } else {
+          // Fallback: cargar desde Supabase si no está en cache
+          print('⚠️ Configuración no encontrada en cache, cargando desde Supabase...');
+          final noSolicitar = await StoreConfigService.getNoSolicitarCliente(storeId);
           _noSolicitarCliente = noSolicitar;
-          _configLoading = false;
-          
-          // Si no se solicita cliente, establecer nombre automáticamente
-          if (_noSolicitarCliente) {
-            _buyerNameController.text = 'Cliente';
-          }
-        });
-        print('🔧 Configuración cargada - No solicitar cliente: $_noSolicitarCliente');
-      } else {
-        setState(() => _configLoading = false);
+          print('✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente');
+        }
+        
+        // Si no se solicita cliente, establecer nombre automáticamente
+        if (_noSolicitarCliente) {
+          _buyerNameController.text = 'Cliente';
+        }
+        
+        // Notificar al widget que se actualizó la configuración
+        if (mounted) {
+          setState(() {});
+        }
       }
     } catch (e) {
       print('❌ Error cargando configuración: $e');
-      setState(() => _configLoading = false);
+      // Usar valor por defecto en caso de error
+      _noSolicitarCliente = false;
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 

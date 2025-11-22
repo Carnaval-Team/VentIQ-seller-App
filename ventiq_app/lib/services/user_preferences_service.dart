@@ -1867,10 +1867,10 @@ class UserPreferencesService {
               )
               .toList();
 
-      // Ordenar por denominación de menor a mayor
+      // Ordenar por denominación de mayor a menor
       denominacionesMoneda.sort(
         (a, b) =>
-            (a['denominacion'] as num).compareTo(b['denominacion'] as num),
+            (b['denominacion'] as num).compareTo(a['denominacion'] as num),
       );
 
       print(
