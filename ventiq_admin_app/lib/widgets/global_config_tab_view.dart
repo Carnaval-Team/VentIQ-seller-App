@@ -31,6 +31,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _obscureMasterPassword = true;
   bool _showDescriptionInSelectors = false;
   int? _storeId;
+  String? _storeName;
   
   // Variables para suscripción
   Subscription? _activeSubscription;
@@ -54,7 +55,11 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         throw Exception('No se pudo obtener el ID de la tienda');
       }
 
-      print('🏪 Cargando configuración para tienda ID: $_storeId');
+      // Obtener información de la tienda actual
+      final storeInfo = await _userPreferencesService.getCurrentStoreInfo();
+      _storeName = storeInfo?['denominacion'] ?? 'Tienda Desconocida';
+
+      print('🏪 Cargando configuración para tienda ID: $_storeId - Nombre: $_storeName');
 
       // Obtener configuración de la tienda
       final config = await StoreConfigService.getStoreConfig(_storeId!);
@@ -636,6 +641,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Detalles de la Tienda Activa
+          _buildStoreDetailsCard(),
+          const SizedBox(height: 24),
+
           // Sección de Suscripción
           if (_activeSubscription != null) ...[
             _buildSubscriptionCard(),
@@ -773,6 +782,95 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                   style: TextStyle(
                     color: Colors.blue,
                     fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoreDetailsCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4A90E2).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF4A90E2).withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A90E2).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.store,
+                  color: Color(0xFF4A90E2),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Tienda Activa',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _storeName ?? 'Cargando...',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: Color(0xFF4A90E2),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'ID: $_storeId',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF4A90E2),
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ],
