@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
@@ -1260,6 +1262,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               const SizedBox(height: 12),
                               _buildCancelButton(operation),
                             ],
+
+                            // Show print button for all operations
+                            const SizedBox(height: 24),
+                            _buildPrintButton(operation),
                           ],
                         ),
                       ),
@@ -2422,6 +2428,192 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               ),
             ],
           ),
+    );
+  }
+
+  /// 🖨️ Construir botón de impresión
+  Widget _buildPrintButton(Map<String, dynamic> operation) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () => _printOperation(operation),
+        icon: const Icon(Icons.print),
+        label: const Text('Imprimir Operación'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF4A90E2),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 🖨️ Imprimir operación
+  Future<void> _printOperation(Map<String, dynamic> operation) async {
+    try {
+      print('🖨️ Iniciando impresión de operación...');
+
+      // Mostrar diálogo de progreso
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Preparando impresión...'),
+            ],
+          ),
+        ),
+      );
+
+      // Intentar conectar a impresora Bluetooth
+      bool bluetoothEnabled = await PrintBluetoothThermal.bluetoothEnabled;
+      if (!bluetoothEnabled) {
+        Navigator.pop(context);
+        _showPrintError('Bluetooth Deshabilitado', 'Por favor habilita Bluetooth en tu dispositivo');
+        return;
+      }
+
+      // Obtener dispositivos emparejados
+      List<BluetoothInfo> pairedDevices = await PrintBluetoothThermal.pairedBluetooths;
+      if (pairedDevices.isEmpty) {
+        Navigator.pop(context);
+        _showPrintError('Sin Impresoras', 'No se encontraron impresoras Bluetooth emparejadas');
+        return;
+      }
+
+      // Conectar al primer dispositivo disponible
+      bool connected = await PrintBluetoothThermal.connect(macPrinterAddress: pairedDevices[0].macAdress);
+      if (!connected) {
+        Navigator.pop(context);
+        _showPrintError('Conexión Fallida', 'No se pudo conectar a la impresora');
+        return;
+      }
+
+      // Generar ticket
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(PaperSize.mm58, profile);
+      List<int> bytes = _generateOperationTicket(generator, operation);
+
+      // Enviar a impresora
+      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+      
+      // Desconectar
+      await PrintBluetoothThermal.disconnect;
+
+      // Cerrar diálogo de progreso
+      Navigator.pop(context);
+
+      if (printed) {
+        _showPrintSuccess('¡Ticket Impreso!', 'La operación se imprimió correctamente');
+        print('✅ Ticket impreso exitosamente');
+      } else {
+        _showPrintError('Error de Impresión', 'No se pudo imprimir el ticket');
+        print('❌ Error al imprimir ticket');
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      _showPrintError('Error', 'Ocurrió un error al imprimir: $e');
+      print('❌ Error en _printOperation: $e');
+    }
+  }
+
+  /// Generar contenido del ticket de operación
+  List<int> _generateOperationTicket(Generator generator, Map<String, dynamic> operation) {
+    List<int> bytes = [];
+
+    // Header
+    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('OPERACIÓN DE INVENTARIO', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+    // Información de la operación
+    bytes += generator.text('ID: ${operation['id']}', styles: PosStyles(align: PosAlign.left, bold: true));
+    bytes += generator.text('Tipo: ${operation['tipo_operacion_nombre'] ?? 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Estado: ${operation['estado_nombre'] ?? 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Fecha: ${_formatDateTime(DateTime.parse(operation['created_at']))}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+    // Detalles
+    final totalPrice = _calculateTotalPrice(operation);
+    final totalItems = _calculateTotalItems(operation);
+
+    bytes += generator.text('Total Items: $totalItems', styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Total: \$${totalPrice.toStringAsFixed(2)}', 
+                           styles: PosStyles(align: PosAlign.left, bold: true));
+
+    // Observaciones
+    if (operation['observaciones']?.isNotEmpty == true) {
+      bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+      bytes += generator.text('Obs: ${operation['observaciones']}', 
+                             styles: PosStyles(align: PosAlign.left));
+    }
+
+    // Footer
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text('Gracias', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.emptyLines(2);
+    bytes += generator.cut();
+
+    return bytes;
+  }
+
+  /// Mostrar error de impresión
+  void _showPrintError(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.error, color: Colors.red),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mostrar éxito de impresión
+  void _showPrintSuccess(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('¡Genial!'),
+          ),
+        ],
+      ),
     );
   }
 }

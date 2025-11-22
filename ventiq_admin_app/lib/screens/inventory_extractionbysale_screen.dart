@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../config/app_colors.dart';
 import '../models/warehouse.dart';
 import '../models/inventory.dart';
@@ -663,7 +665,20 @@ class _InventoryExtractionBySaleScreenState
               backgroundColor: AppColors.success,
             ),
           );
-          Navigator.pop(context);
+          
+          // ✅ NUEVO: Mostrar diálogo de impresión ANTES de cerrar la pantalla
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              _showPrintDialog();
+            }
+          });
+          
+          // Cerrar la pantalla después de un pequeño delay para que el diálogo se muestre
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted) {
+              Navigator.pop(context);
+            }
+          });
         }
       } else {
         throw Exception(response?['message'] ?? 'Error en el registro de venta');
@@ -1227,6 +1242,232 @@ class _InventoryExtractionBySaleScreenState
     }
     
     return '';
+  }
+
+  /// 🖨️ Mostrar diálogo de impresión después de completar la extracción
+  void _showPrintDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.print, color: Color(0xFF4A90E2)),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('¿Deseas imprimir el ticket?'),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Se imprimirá un ticket con los detalles de la venta por acuerdo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _printExtractionTicket();
+            },
+            icon: const Icon(Icons.print),
+            label: const Text('Sí, Imprimir'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4A90E2),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 🖨️ Método para imprimir ticket de extracción
+  Future<void> _printExtractionTicket() async {
+    try {
+      print('🖨️ Iniciando impresión de ticket de extracción...');
+
+      // Verificar si hay productos para imprimir
+      if (_selectedProducts.isEmpty) {
+        _showErrorDialog('Error', 'No hay productos para imprimir');
+        return;
+      }
+
+      // Mostrar diálogo de progreso
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Preparando impresión...'),
+            ],
+          ),
+        ),
+      );
+
+      // Intentar conectar a impresora Bluetooth
+      bool bluetoothEnabled = await PrintBluetoothThermal.bluetoothEnabled;
+      if (!bluetoothEnabled) {
+        Navigator.pop(context); // Cerrar diálogo de progreso
+        _showErrorDialog('Bluetooth Deshabilitado', 'Por favor habilita Bluetooth en tu dispositivo');
+        return;
+      }
+
+      // Obtener dispositivos emparejados
+      List<BluetoothInfo> pairedDevices = await PrintBluetoothThermal.pairedBluetooths;
+      if (pairedDevices.isEmpty) {
+        Navigator.pop(context); // Cerrar diálogo de progreso
+        _showErrorDialog('Sin Impresoras', 'No se encontraron impresoras Bluetooth emparejadas');
+        return;
+      }
+
+      // Conectar al primer dispositivo disponible
+      bool connected = await PrintBluetoothThermal.connect(macPrinterAddress: pairedDevices[0].macAdress);
+      if (!connected) {
+        Navigator.pop(context); // Cerrar diálogo de progreso
+        _showErrorDialog('Conexión Fallida', 'No se pudo conectar a la impresora');
+        return;
+      }
+
+      // Generar ticket
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(PaperSize.mm58, profile);
+      List<int> bytes = _generateExtractionTicket(generator);
+
+      // Enviar a impresora
+      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+      
+      // Desconectar
+      await PrintBluetoothThermal.disconnect;
+
+      // Cerrar diálogo de progreso
+      Navigator.pop(context);
+
+      if (printed) {
+        _showSuccessDialog('¡Ticket Impreso!', 'El ticket se imprimió correctamente');
+        print('✅ Ticket impreso exitosamente');
+      } else {
+        _showErrorDialog('Error de Impresión', 'No se pudo imprimir el ticket');
+        print('❌ Error al imprimir ticket');
+      }
+    } catch (e) {
+      Navigator.pop(context); // Cerrar diálogo de progreso si está abierto
+      _showErrorDialog('Error', 'Ocurrió un error al imprimir: $e');
+      print('❌ Error en _printExtractionTicket: $e');
+    }
+  }
+
+  /// Generar contenido del ticket de extracción
+  List<int> _generateExtractionTicket(Generator generator) {
+    List<int> bytes = [];
+
+    // Header
+    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('VENTA POR ACUERDO', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+    // Información de la venta
+    bytes += generator.text('Cliente: ${_clienteController.text.isNotEmpty ? _clienteController.text : 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Tipo: ${_selectedMotivoVenta?['denominacion'] ?? 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Pago: ${_selectedMedioPago?['denominacion'] ?? 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Fecha: ${DateTime.now().toString().split('.')[0]}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+    // Productos
+    double total = 0;
+    for (var product in _selectedProducts) {
+      final cantidad = product['cantidad'] as double? ?? 0;
+      final precio = product['precio'] as double? ?? 0;
+      final subtotal = cantidad * precio;
+      total += subtotal;
+
+      String nombre = product['nombre'] ?? 'Producto';
+      if (nombre.length > 28) nombre = nombre.substring(0, 25) + '...';
+
+      bytes += generator.text('${cantidad.toStringAsFixed(1)}x $nombre', 
+                             styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text('  \$${precio.toStringAsFixed(0)} = \$${subtotal.toStringAsFixed(0)}', 
+                             styles: PosStyles(align: PosAlign.right));
+    }
+
+    // Total
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text('TOTAL: \$${total.toStringAsFixed(0)}', 
+                           styles: PosStyles(align: PosAlign.right, bold: true));
+
+    // Observaciones
+    if (_observacionesController.text.isNotEmpty) {
+      bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+      bytes += generator.text('Obs: ${_observacionesController.text}', 
+                             styles: PosStyles(align: PosAlign.left));
+    }
+
+    // Footer
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text('Gracias por su compra', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.emptyLines(2);
+    bytes += generator.cut();
+
+    return bytes;
+  }
+
+  /// Mostrar diálogo de error
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.error, color: Colors.red),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mostrar diálogo de éxito
+  void _showSuccessDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('¡Genial!'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
