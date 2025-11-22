@@ -2434,14 +2434,30 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
 
   /// 🖨️ Construir botón de impresión
   Widget _buildPrintButton(Map<String, dynamic> operation) {
+    // Obtener el estado de la operación
+    final estadoNombre = (operation['estado_nombre'] ?? '').toString().toLowerCase().trim();
+    
+    // Validar si la operación está completada
+    final isCompleted = estadoNombre.contains('completada') || 
+                        estadoNombre.contains('completed') ||
+                        estadoNombre.contains('finalizada');
+    
+    print('🖨️ Print Button - Estado: "$estadoNombre", ¿Completada?: $isCompleted');
+    
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: () => _printOperation(operation),
+        onPressed: isCompleted ? () => _printOperation(operation) : null,
         icon: const Icon(Icons.print),
-        label: const Text('Imprimir Operación'),
+        label: Text(
+          isCompleted 
+              ? 'Imprimir Operación' 
+              : 'Solo se pueden imprimir operaciones completadas',
+        ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF4A90E2),
+          backgroundColor: isCompleted 
+              ? const Color(0xFF4A90E2)
+              : Colors.grey[400],
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 12),
           shape: RoundedRectangleBorder(

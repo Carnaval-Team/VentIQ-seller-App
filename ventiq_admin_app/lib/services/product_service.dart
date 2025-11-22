@@ -1292,41 +1292,182 @@ class ProductService {
   /// Obtiene un producto completo por ID con todas sus variantes y presentaciones configuradas
   static Future<Product?> getProductoCompletoById(int productId) async {
     try {
-      // Obtener ID de tienda desde las preferencias del usuario
-      final userPrefs = UserPreferencesService();
-      final idTienda = await userPrefs.getIdTienda();
-      if (idTienda == null) {
-        throw Exception(
-          'No se encontró ID de tienda en las preferencias del usuario',
-        );
-      }
-
       print('🔍 Obteniendo producto completo por ID: $productId');
 
-      // Llamar a la función RPC para obtener un producto específico con todas sus configuraciones
-      final response = await _supabase.rpc(
-        'get_producto_completo_by_id',
-        params: {'id_producto_param': productId, 'id_tienda_param': idTienda},
-      );
+      // Obtener datos básicos del producto
+      final productResponse = await _supabase
+          .from('app_dat_producto')
+          .select('''
+            id,
+            denominacion,
+            denominacion_corta,
+            descripcion,
+            descripcion_corta,
+            nombre_comercial,
+            sku,
+            codigo_barras,
+            imagen,
+            es_refrigerado,
+            es_fragil,
+            es_peligroso,
+            es_vendible,
+            es_comprable,
+            es_inventariable,
+            es_por_lotes,
+            es_servicio,
+            es_elaborado,
+            um,
+            created_at,
+            id_categoria,
+            dias_alert_caducidad
+          ''')
+          .eq('id', productId)
+          .limit(1);
 
-      print('📦 Respuesta producto por ID: $response');
-
-      if (response == null || response.isEmpty) {
+      if (productResponse.isEmpty) {
         print('⚠️ No se encontró producto con ID: $productId');
         return null;
       }
 
-      // El response debería ser un objeto con la estructura del producto
-      final productData = response is List ? response.first : response;
+      final productData = productResponse.first as Map<String, dynamic>;
 
-      return Product.fromJson(productData);
-    } catch (e) {
-      print('❌ Error obteniendo producto por ID $productId: $e');
+      // Obtener categoría
+      final categoria = await _supabase
+          .from('app_dat_categoria')
+          .select('id, denominacion')
+          .eq('id', productData['id_categoria'])
+          .limit(1);
+
+      final categoriaData = categoria.isNotEmpty
+          ? categoria.first as Map<String, dynamic>
+          : {'id': '', 'denominacion': 'Sin categoría'};
+
+      // Obtener presentaciones con información de la tabla de presentaciones
+      final presentacionesResponse = await _supabase
+          .from('app_dat_producto_presentacion')
+          .select('''
+            id,
+            id_producto,
+            id_presentacion,
+            cantidad,
+            es_base,
+            precio_promedio,
+            app_nom_presentacion!inner(id, denominacion)
+          ''')
+          .eq('id_producto', productId);
+
+      final presentaciones = presentacionesResponse
+          .map<Map<String, dynamic>>((item) {
+            final itemMap = item as Map<String, dynamic>;
+            final nomPres = itemMap['app_nom_presentacion'] as Map<String, dynamic>?;
+            return {
+              'id': itemMap['id'],
+              'id_producto': itemMap['id_producto'],
+              'id_presentacion': itemMap['id_presentacion'],
+              'cantidad': itemMap['cantidad'],
+              'es_base': itemMap['es_base'],
+              'precio_promedio': itemMap['precio_promedio'] ?? 0.0,
+              'presentacion': nomPres?['denominacion'] ?? 'Presentación',
+            };
+          })
+          .toList();
+
+      // Obtener multimedias
+      final multimediasResponse = await _supabase
+          .from('app_dat_producto_multimedias')
+          .select('id, media, created_at')
+          .eq('id_producto', productId);
+
+      // Obtener etiquetas
+      final etiquetasResponse = await _supabase
+          .from('app_dat_producto_etiquetas')
+          .select('etiqueta')
+          .eq('id_producto', productId);
+
+      final etiquetas = etiquetasResponse
+          .map<String>((item) => (item as Map<String, dynamic>)['etiqueta'] as String)
+          .toList();
+
+      // Obtener subcategorías
+      final subcategoriasResponse = await _supabase
+          .from('app_dat_subcategorias')
+          .select('id, denominacion, idcategoria')
+          .eq('idcategoria', productData['id_categoria']);
+
+      // Obtener precio de venta (tabla separada)
+      double precioVenta = 0.0;
+      try {
+        final precioVentaResponse = await _supabase
+            .from('app_dat_precio_venta')
+            .select('precio_venta_cup')
+            .eq('id_producto', productId)
+            .order('fecha_desde', ascending: false)
+            .limit(1);
+
+        if (precioVentaResponse.isNotEmpty) {
+          precioVenta = (precioVentaResponse.first['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
+          print('💰 Precio de venta obtenido: $precioVenta');
+        }
+      } catch (e) {
+        print('⚠️ Error obteniendo precio de venta: $e');
+      }
+
+      print('✅ Producto obtenido: ${productData['denominacion']}');
+      print('📊 Presentaciones encontradas: ${presentaciones.length}');
+
+      // Construir el objeto Product
+      return Product(
+        id: productData['id'].toString(),
+        name: productData['denominacion'] ?? '',
+        denominacion: productData['denominacion'] ?? '',
+        denominacionCorta: productData['denominacion_corta'],
+        description: productData['descripcion'] ?? '',
+        descripcionCorta: productData['descripcion_corta'],
+        categoryId: categoriaData['id'].toString(),
+        categoryName: categoriaData['denominacion'] ?? '',
+        brand: productData['nombre_comercial'] ?? 'Sin marca',
+        sku: productData['sku'] ?? '',
+        barcode: productData['codigo_barras'] ?? '',
+        codigoBarras: productData['codigo_barras'],
+        basePrice: precioVenta, // Precio de venta obtenido de app_dat_precio_venta
+        imageUrl: productData['imagen'] ?? '',
+        isActive: productData['es_vendible'] ?? true,
+        createdAt: DateTime.parse(productData['created_at'] ?? DateTime.now().toIso8601String()),
+        updatedAt: DateTime.now(), // Usar fecha actual ya que no existe updated_at en BD
+        nombreComercial: productData['nombre_comercial'],
+        um: productData['um'],
+        esRefrigerado: productData['es_refrigerado'] ?? false,
+        esFragil: productData['es_fragil'] ?? false,
+        esPeligroso: productData['es_peligroso'] ?? false,
+        esVendible: productData['es_vendible'] ?? true,
+        esComprable: productData['es_comprable'] ?? true,
+        esInventariable: productData['es_inventariable'] ?? true,
+        esPorLotes: productData['es_por_lotes'] ?? false,
+        esServicio: productData['es_servicio'] ?? false,
+        precioVenta: precioVenta, // Precio de venta obtenido de app_dat_precio_venta
+        stockDisponible: 0, // Se carga en otra parte
+        tieneStock: false,
+        subcategorias: subcategoriasResponse.cast<Map<String, dynamic>>(),
+        presentaciones: presentaciones,
+        multimedias: multimediasResponse.cast<Map<String, dynamic>>(),
+        etiquetas: etiquetas,
+        inventario: const [],
+        variantesDisponibles: const [],
+        esOferta: false,
+        precioOferta: 0.0,
+        stockMinimo: 0,
+        stockMaximo: 0,
+        diasAlertCaducidad: (productData['dias_alert_caducidad'] as num?)?.toInt() ?? 0,
+        unidadMedida: productData['um'],
+        esElaborado: productData['es_elaborado'] ?? false,
+      );
+    } catch (e, stackTrace) {
+      print('❌ Error obteniendo producto completo: $e');
+      print('📍 StackTrace: $stackTrace');
       return null;
     }
   }
 
-  /// Obtiene productos para ingredientes filtrados por tienda del usuario
   static Future<List<Map<String, dynamic>>> getProductsForIngredients() async {
     try {
       print(
@@ -2251,6 +2392,150 @@ class ProductService {
           'failed': actualizaciones.length,
         }
       };
+    }
+  }
+
+  /// Inicializa los precios promedio de las presentaciones de un producto
+  /// Busca operaciones de recepción y calcula el promedio del precio unitario
+  static Future<Map<String, dynamic>> initializePresentationAveragePrices({
+    required String productId,
+  }) async {
+    try {
+      debugPrint('🔍 Inicializando precios promedio para producto: $productId');
+
+      // Obtener ID de tienda desde las preferencias del usuario
+      final userPrefs = UserPreferencesService();
+      final idTienda = await userPrefs.getIdTienda();
+      if (idTienda == null) {
+        throw Exception('No se encontró ID de tienda en las preferencias del usuario');
+      }
+
+      // Obtener presentaciones del producto
+      final presentaciones = await _supabase
+          .from('app_dat_producto_presentacion')
+          .select('id, id_producto, id_presentacion, cantidad')
+          .eq('id_producto', productId);
+
+      debugPrint('📊 Presentaciones encontradas: ${presentaciones.length}');
+
+      if (presentaciones.isEmpty) {
+        return {
+          'success': false,
+          'error': 'No hay presentaciones para este producto',
+          'updated': 0,
+        };
+      }
+
+      int updated = 0;
+
+      // Para cada presentación, calcular el precio promedio
+      for (final pres in presentaciones) {
+        final idPresentacion = pres['id'];
+        final cantidadPresentacion = (pres['cantidad'] as num?)?.toDouble() ?? 1.0;
+
+        debugPrint('🔄 Procesando presentación ID: $idPresentacion (cantidad: $cantidadPresentacion)');
+
+        // Obtener operaciones de recepción para este producto en esta tienda
+        // Necesitamos hacer JOIN con app_dat_operaciones para obtener id_tienda
+        final operaciones = await _supabase
+            .from('app_dat_recepcion_productos')
+            .select('precio_unitario, cantidad, app_dat_operaciones(id_tienda)')
+            .eq('id_producto', productId)
+            .not('precio_unitario', 'is', null);
+
+        // Filtrar por tienda
+        final operacionesPorTienda = (operaciones as List<dynamic>)
+            .where((op) {
+              final opData = op as Map<String, dynamic>;
+              final operacionData = opData['app_dat_operaciones'] as Map<String, dynamic>?;
+              final tiendaId = operacionData?['id_tienda'];
+              return tiendaId == idTienda;
+            })
+            .toList();
+
+        if (operacionesPorTienda.isNotEmpty) {
+          // Calcular promedio del precio unitario
+          double totalPrecio = 0;
+          for (final op in operacionesPorTienda) {
+            final opData = op as Map<String, dynamic>;
+            totalPrecio += (opData['precio_unitario'] as num).toDouble();
+          }
+          final precioPromedio = totalPrecio / operacionesPorTienda.length;
+
+          debugPrint('  💰 Precio promedio calculado: $precioPromedio');
+          debugPrint('  📊 Basado en ${operacionesPorTienda.length} operaciones de recepción');
+
+          // Actualizar el precio_promedio en la presentación
+          await _supabase
+              .from('app_dat_producto_presentacion')
+              .update({'precio_promedio': precioPromedio})
+              .eq('id', idPresentacion);
+
+          updated++;
+          debugPrint('  ✅ Presentación actualizada');
+        } else {
+          debugPrint('  ⚠️ No hay operaciones de recepción para este producto en esta tienda');
+        }
+      }
+
+      debugPrint('✅ Inicialización completada: $updated presentaciones actualizadas');
+      return {
+        'success': true,
+        'updated': updated,
+        'message': '$updated presentaciones actualizadas con precios promedio',
+      };
+    } catch (e) {
+      debugPrint('❌ Error al inicializar precios promedio: $e');
+      return {
+        'success': false,
+        'error': 'Error al inicializar precios: $e',
+        'updated': 0,
+      };
+    }
+  }
+
+  /// Actualiza el precio promedio de una presentación específica
+  static Future<bool> updatePresentationAveragePrice({
+    required String presentationId,
+    required double newPrice,
+  }) async {
+    try {
+      debugPrint('💰 Actualizando precio promedio de presentación: $presentationId');
+      debugPrint('📝 Nuevo precio: $newPrice');
+
+      await _supabase
+          .from('app_dat_producto_presentacion')
+          .update({'precio_promedio': newPrice})
+          .eq('id', presentationId);
+
+      debugPrint('✅ Precio promedio actualizado exitosamente');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error al actualizar precio promedio: $e');
+      return false;
+    }
+  }
+
+  /// Actualiza el precio base de venta de un producto
+  static Future<bool> updateBasePriceVenta({
+    required int productId,
+    required double newPrice,
+  }) async {
+    try {
+      debugPrint('💰 Actualizando precio base de venta para producto: $productId');
+      debugPrint('📝 Nuevo precio: $newPrice');
+
+      // Actualizar en app_dat_precio_venta
+      await _supabase
+          .from('app_dat_precio_venta')
+          .update({'precio_venta_cup': newPrice})
+          .eq('id_producto', productId);
+
+      debugPrint('✅ Precio base actualizado exitosamente');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error al actualizar precio base: $e');
+      return false;
     }
   }
 }
