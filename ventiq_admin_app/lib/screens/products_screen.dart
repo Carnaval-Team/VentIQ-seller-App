@@ -945,7 +945,26 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   void _showEditProductDialog(Product product) {
-    NavigationGuard.navigateWithPermission(context, '/edit-product', arguments: product);
+    // ✅ ACTUALIZADO: Usar Navigator.push como en product_detail_screen para consistencia
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddProductScreen(
+          product: product,
+          onProductSaved: () {
+            // Recargar la lista de productos después de editar
+            print('🔄 Producto editado, recargando lista...');
+            _loadProducts();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Producto actualizado exitosamente'),
+                backgroundColor: AppColors.success,
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Widget _buildReadOnlyField(String label, String value) {

@@ -170,6 +170,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _esElaborado = widget.product!.esElaborado ?? false;
       _esServicio = widget.product!.esServicio ?? false;
 
+      // ✅ AGREGADO: Cargar categoría en modo edición
+      final categoryId = int.tryParse(widget.product!.categoryId);
+      if (categoryId != null) {
+        _selectedCategoryId = categoryId;
+        print('✅ Categoría cargada en initState: ID $categoryId');
+      }
+
       // Cargar listas
       _etiquetas = widget.product!.etiquetas ?? [];
       _multimedias = widget.product!.multimedias ?? [];
@@ -258,6 +265,31 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ProductService.getAtributos(),
       ]);
 
+      // ✅ NUEVO: En modo edición, cargar categoría y subcategorías ANTES del setState
+      List<Map<String, dynamic>> subcategoriasParaEdicion = [];
+      if (widget.product != null) {
+        print('🏷️ Precargando categoría y subcategorías para edición...');
+        final categoryId = int.tryParse(widget.product!.categoryId);
+        if (categoryId != null) {
+          // Asignar categorías temporalmente para poder buscar
+          _categorias = futures[0];
+          subcategoriasParaEdicion = _loadSubcategoriasSyncDirect(categoryId);
+          print('✅ Subcategorías precargadas: ${subcategoriasParaEdicion.length}');
+          
+          // ✅ NUEVO: Si no hay subcategorías en la categoría, cargar desde API
+          if (subcategoriasParaEdicion.isEmpty && widget.product!.subcategorias.isNotEmpty) {
+            print('⚠️ No hay subcategorías en categoría pero el producto tiene subcategorías asignadas');
+            print('🔄 Cargando subcategorías desde API...');
+            try {
+              subcategoriasParaEdicion = await ProductService.getSubcategorias(categoryId);
+              print('✅ Subcategorías cargadas desde API: ${subcategoriasParaEdicion.length}');
+            } catch (e) {
+              print('❌ Error cargando subcategorías desde API: $e');
+            }
+          }
+        }
+      }
+
       setState(() {
         _categorias = futures[0];
         _presentaciones = futures[1];
@@ -271,8 +303,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
           // MODO EDICIÓN: Cargar presentación base después de tener las presentaciones disponibles
           _loadBasePresentationForEditing();
           _loadExistingIngredients();
-          // MODO EDICIÓN: Cargar categoría y subcategorías
-          _loadCategoryAndSubcategoriesForEditing();
+          // ✅ AGREGADO: Cargar unidad de medida en modo edición
+          _loadUnidadMedidaForEditing();
+          
+          // ✅ NUEVO: Cargar categoría y subcategorías directamente
+          _loadCategoryAndSubcategoriesForEditingDirect();
+          
+          // ✅ IMPORTANTE: Asignar las subcategorías precargadas
+          _subcategorias = subcategoriasParaEdicion;
+          print('📌 Subcategorías asignadas en setState: ${_subcategorias.length}');
+          print('📌 Subcategorías seleccionadas en setState: ${_selectedSubcategorias.length}');
         }
 
         _isLoadingData = false;
@@ -389,7 +429,98 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
-  /// Carga la categoría y subcategorías en modo edición
+  /// ✅ NUEVO: Carga categoría y subcategorías directamente sin setState adicional
+  void _loadCategoryAndSubcategoriesForEditingDirect() {
+    if (widget.product == null) return;
+
+    try {
+      print('🏷️ Cargando categoría y subcategorías existentes (directo)...');
+
+      // Cargar categoría usando categoryId del producto
+      print('🔍 Product categoryId string: "${widget.product!.categoryId}"');
+      final categoryId = int.tryParse(widget.product!.categoryId);
+      print('🔍 Parsed categoryId: $categoryId');
+      
+      if (categoryId != null) {
+        _selectedCategoryId = categoryId;
+        print('✅ Categoría cargada: ID $categoryId');
+
+        // Después de cargar las subcategorías, seleccionar las del producto
+        if (widget.product!.subcategorias.isNotEmpty) {
+          final subcategoriasIds =
+              widget.product!.subcategorias
+                  .map((sub) => sub['id'] as int?)
+                  .where((id) => id != null)
+                  .cast<int>()
+                  .toList();
+
+          _selectedSubcategorias = subcategoriasIds;
+
+          print('✅ Subcategorías seleccionadas: ${subcategoriasIds.length}');
+          for (final subcat in widget.product!.subcategorias) {
+            print('   - ${subcat['denominacion']} (ID: ${subcat['id']})');
+          }
+        } else {
+          print('⚠️ El producto no tiene subcategorías asignadas');
+        }
+      } else {
+        print('⚠️ ID de categoría inválido: ${widget.product!.categoryId}');
+      }
+    } catch (e) {
+      print('❌ Error cargando categoría y subcategorías: $e');
+      _showErrorSnackBar('Error al cargar categoría y subcategorías: $e');
+    }
+  }
+
+  /// ✅ NUEVO: Carga subcategorías sin setState (retorna la lista)
+  List<Map<String, dynamic>> _loadSubcategoriasSyncDirect(int categoryId) {
+    try {
+      print('📂 Cargando subcategorías para categoría $categoryId (sync directo)...');
+      print('📊 Total de categorías disponibles: ${_categorias.length}');
+      
+      // Buscar la categoría
+      final categoria = _categorias.firstWhere(
+        (cat) {
+          final catId = cat['id'];
+          print('🔍 Comparando: cat[id]=$catId vs categoryId=$categoryId');
+          return catId == categoryId;
+        },
+        orElse: () {
+          print('⚠️ No se encontró categoría con ID $categoryId');
+          return <String, dynamic>{};
+        },
+      );
+
+      if (categoria.isEmpty) {
+        print('❌ Categoría no encontrada');
+        return [];
+      }
+
+      print('✅ Categoría encontrada: ${categoria['denominacion']}');
+      
+      final subcategorias = categoria['subcategorias'] as List<dynamic>? ?? [];
+      print('📋 Subcategorías en categoría: ${subcategorias.length}');
+
+      final nuevasSubcategorias = subcategorias
+          .map((subcat) {
+            print('  - Subcategoría: ${subcat['denominacion']} (ID: ${subcat['id']})');
+            return {
+              'id': subcat['id'],
+              'denominacion': subcat['denominacion'],
+            };
+          })
+          .cast<Map<String, dynamic>>()
+          .toList();
+
+      print('✅ Subcategorías cargadas (sync directo): ${nuevasSubcategorias.length}');
+      return nuevasSubcategorias;
+    } catch (e) {
+      print('❌ Error cargando subcategorías (sync directo): $e');
+      return [];
+    }
+  }
+
+  /// Carga la categoría y subcategorías en modo edición (versión async para llamadas posteriores)
   Future<void> _loadCategoryAndSubcategoriesForEditing() async {
     if (widget.product == null) return;
 
@@ -435,6 +566,110 @@ class _AddProductScreenState extends State<AddProductScreen> {
     } catch (e) {
       print('❌ Error cargando categoría y subcategorías: $e');
       _showErrorSnackBar('Error al cargar categoría y subcategorías: $e');
+    }
+  }
+
+  /// ✅ NUEVO: Carga subcategorías de forma síncrona para modo edición
+  void _loadSubcategoriasSync(int categoryId) {
+    try {
+      print('📂 Cargando subcategorías para categoría $categoryId (sync)...');
+      print('📊 Total de categorías disponibles: ${_categorias.length}');
+      
+      // Buscar la categoría
+      final categoria = _categorias.firstWhere(
+        (cat) {
+          final catId = cat['id'];
+          print('🔍 Comparando: cat[id]=$catId vs categoryId=$categoryId');
+          return catId == categoryId;
+        },
+        orElse: () {
+          print('⚠️ No se encontró categoría con ID $categoryId');
+          return <String, dynamic>{};
+        },
+      );
+
+      if (categoria.isEmpty) {
+        print('❌ Categoría no encontrada');
+        return;
+      }
+
+      print('✅ Categoría encontrada: ${categoria['denominacion']}');
+      
+      final subcategorias = categoria['subcategorias'] as List<dynamic>? ?? [];
+      print('📋 Subcategorías en categoría: ${subcategorias.length}');
+
+      final nuevasSubcategorias = subcategorias
+          .map((subcat) {
+            print('  - Subcategoría: ${subcat['denominacion']} (ID: ${subcat['id']})');
+            return {
+              'id': subcat['id'],
+              'denominacion': subcat['denominacion'],
+            };
+          })
+          .cast<Map<String, dynamic>>()
+          .toList();
+
+      print('✅ Subcategorías cargadas (sync): ${nuevasSubcategorias.length}');
+      print('📌 Subcategorías seleccionadas antes: $_selectedSubcategorias');
+      
+      // ✅ IMPORTANTE: Usar setState para actualizar la UI
+      setState(() {
+        _subcategorias = nuevasSubcategorias;
+      });
+      
+      print('📌 Subcategorías seleccionadas después: $_selectedSubcategorias');
+    } catch (e) {
+      print('❌ Error cargando subcategorías (sync): $e');
+    }
+  }
+
+  /// ✅ NUEVO: Carga la unidad de medida en modo edición
+  Future<void> _loadUnidadMedidaForEditing() async {
+    if (widget.product == null) return;
+
+    try {
+      print('📏 Cargando unidad de medida existente...');
+
+      // Obtener unidades de medida disponibles
+      final unidades = await ProductService.getUnidadesMedida();
+
+      if (unidades.isEmpty) {
+        print('⚠️ No hay unidades de medida disponibles');
+        return;
+      }
+
+      // Buscar la unidad de medida del producto por su texto (widget.product!.um)
+      final umProducto = widget.product!.um ?? '';
+      print('🔍 Buscando unidad de medida: "$umProducto"');
+
+      final unidadEncontrada = unidades.firstWhere(
+        (unidad) {
+          final denominacion = (unidad['denominacion'] ?? '').toString().toLowerCase();
+          final abreviatura = (unidad['abreviatura'] ?? '').toString().toLowerCase();
+          return denominacion == umProducto.toLowerCase() || 
+                 abreviatura == umProducto.toLowerCase();
+        },
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (unidadEncontrada.isNotEmpty) {
+        setState(() {
+          _selectedUnidadMedidaId = unidadEncontrada['id'];
+        });
+        print('✅ Unidad de medida cargada: ID ${unidadEncontrada['id']}, ${unidadEncontrada['denominacion']}');
+      } else {
+        print('⚠️ No se encontró unidad de medida: "$umProducto"');
+        // Usar la primera unidad disponible como fallback
+        if (unidades.isNotEmpty) {
+          setState(() {
+            _selectedUnidadMedidaId = unidades.first['id'];
+          });
+          print('🔄 Usando unidad por defecto: ${unidades.first['denominacion']}');
+        }
+      }
+    } catch (e) {
+      print('❌ Error cargando unidad de medida: $e');
+      _showErrorSnackBar('Error al cargar unidad de medida: $e');
     }
   }
 
@@ -521,7 +756,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
       setState(() {
         _isLoadingSubcategorias = true;
         _subcategorias = [];
-        _selectedSubcategorias.clear(); // Limpiar selecciones previas
+        // ✅ ACTUALIZADO: Solo limpiar selecciones en modo creación, no en edición
+        if (widget.product == null) {
+          _selectedSubcategorias.clear(); // Limpiar selecciones previas solo en creación
+        }
       });
 
       final subcategorias = await ProductService.getSubcategorias(categoryId);
@@ -771,27 +1009,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        // SKU - Editable en creación, solo lectura en edición
+        // SKU - Editable en creación y edición
         TextFormField(
           controller: _skuController,
           decoration: InputDecoration(
             labelText: 'SKU *',
-            hintText: widget.product != null 
-                ? 'SKU del producto (no editable)'
-                : _skuManual 
-                    ? 'Ingrese el SKU manualmente'
-                    : 'Se genera automáticamente',
+            hintText: _skuManual || widget.product != null
+                ? 'Ingrese el SKU manualmente'
+                : 'Se genera automáticamente',
             border: const OutlineInputBorder(),
             suffixIcon: Icon(
-              widget.product != null 
-                  ? Icons.lock 
-                  : _skuManual 
-                      ? Icons.edit 
-                      : Icons.auto_awesome, 
+              _skuManual || widget.product != null
+                  ? Icons.edit 
+                  : Icons.auto_awesome, 
               color: AppColors.primary
             ),
           ),
-          readOnly: widget.product != null ? true : !_skuManual, // Editable solo si es creación y modo manual
+          readOnly: !_skuManual && widget.product == null, // Solo readOnly si es creación y modo automático
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'El SKU es requerido';
@@ -824,6 +1058,40 @@ class _AddProductScreenState extends State<AddProductScreen> {
               Expanded(
                 child: Text(
                   'SKU Manual',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _skuManual ? AppColors.primary : Colors.grey[600],
+                    fontWeight: _skuManual ? FontWeight.w500 : FontWeight.normal,
+                  ),
+                ),
+              ),
+              if (_skuManual)
+                Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: Colors.grey[600],
+                ),
+            ],
+          ),
+        ]
+        // ✅ NUEVO: Switch para editar SKU en modo edición
+        else if (widget.product != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Switch(
+                value: _skuManual,
+                onChanged: (value) {
+                  setState(() {
+                    _skuManual = value;
+                  });
+                },
+                activeColor: AppColors.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Editar SKU',
                   style: TextStyle(
                     fontSize: 14,
                     color: _skuManual ? AppColors.primary : Colors.grey[600],
@@ -971,6 +1239,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   /// Construye la sección de subcategorías con estados mejorados
   Widget _buildSubcategoriasSection() {
+    // ✅ DEBUG: Logs para verificar estado al renderizar
+    print('🎨 Renderizando subcategorías:');
+    print('  • _selectedCategoryId: $_selectedCategoryId');
+    print('  • _subcategorias.length: ${_subcategorias.length}');
+    print('  • _selectedSubcategorias.length: ${_selectedSubcategorias.length}');
+    print('  • _isLoadingSubcategorias: $_isLoadingSubcategorias');
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
