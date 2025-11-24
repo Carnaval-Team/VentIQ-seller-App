@@ -13,6 +13,7 @@ import 'screens/trabajadores_screen.dart';
 import 'screens/licencias_screen.dart';
 import 'screens/renovaciones_screen.dart';
 import 'screens/configuracion_screen.dart';
+import 'screens/consignacion_screen.dart';
 import 'services/auth_service.dart';
 
 void main() async {
@@ -50,6 +51,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/licencias': (context) => const LicenciasScreen(),
         '/renovaciones': (context) => const RenovacionesScreen(),
         '/configuracion': (context) => const ConfiguracionScreen(),
+        '/consignacion': (context) => const ConsignacionScreen(),
       },
     );
   }

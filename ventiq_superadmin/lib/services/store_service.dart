@@ -8,40 +8,13 @@ class StoreService {
   // Obtener todas las tiendas con estadísticas
   static Future<List<Store>> getAllStores() async {
     try {
-      debugPrint('📊 Obteniendo todas las tiendas con estadísticas...');
+      debugPrint('📊 Obteniendo todas las tiendas...');
       
-      // UNA SOLA CONSULTA RPC que obtiene todo
-      final response = await _supabase
-          .rpc('get_tiendas_con_estadisticas');
-
-      debugPrint('✅ Tiendas con estadísticas obtenidas: ${response.length}');
-
-      List<Store> stores = [];
-      
-      for (var storeData in response) {
-        stores.add(Store(
-          id: storeData['id'],
-          denominacion: storeData['denominacion'],
-          direccion: storeData['direccion'],
-          ubicacion: storeData['ubicacion'],
-          createdAt: DateTime.parse(storeData['created_at']),
-          totalVentas: (storeData['total_ventas'] ?? 0).toInt(),
-          totalProductos: (storeData['total_productos'] ?? 0).toInt(),
-          totalTrabajadores: (storeData['total_trabajadores'] ?? 0).toInt(),
-          ventasDelMes: (storeData['ventas_mes'] ?? 0).toDouble(),
-          activa: true,
-          planSuscripcion: storeData['plan_nombre'],
-          fechaVencimientoSuscripcion: storeData['fecha_vencimiento'] != null
-              ? DateTime.parse(storeData['fecha_vencimiento'])
-              : null,
-        ));
-      }
-
-      return stores;
-    } catch (e) {
-      debugPrint('❌ Error obteniendo tiendas con RPC: $e');
-      // Fallback a método simple si las funciones RPC no existen
+      // Usar método simple directamente (sin RPC para evitar ambigüedad)
       return await _getAllStoresSimple();
+    } catch (e) {
+      debugPrint('❌ Error obteniendo tiendas: $e');
+      return [];
     }
   }
 

@@ -80,6 +80,17 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuSection(
                   context,
+                  title: 'Operaciones',
+                  items: [
+                    _DrawerItem(
+                      icon: Icons.handshake,
+                      title: 'Gestión de Consignaciones',
+                      route: '/consignacion',
+                    ),
+                  ],
+                ),
+                _buildMenuSection(
+                  context,
                   title: 'Usuarios',
                   items: [
                     _DrawerItem(
@@ -257,7 +268,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/trabajadores' ||
                 item.route == '/licencias' ||
                 item.route == '/renovaciones' ||
-                item.route == '/configuracion') {
+                item.route == '/configuracion' ||
+                item.route == '/consignacion') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas

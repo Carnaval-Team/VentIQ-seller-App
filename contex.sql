@@ -1403,3 +1403,22 @@ CREATE TABLE public.tasas_conversion (
   CONSTRAINT tasas_conversion_moneda_origen_fkey FOREIGN KEY (moneda_origen) REFERENCES public.monedas(codigo),
   CONSTRAINT tasas_conversion_moneda_destino_fkey FOREIGN KEY (moneda_destino) REFERENCES public.monedas(codigo)
 );
+CREATE TABLE public.app_dat_contrato_consignacion (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_tienda_consignadora bigint NOT NULL,
+  id_tienda_consignataria bigint NOT NULL,
+  estado smallint NOT NULL DEFAULT 1,
+  fecha_inicio date NOT NULL DEFAULT CURRENT_DATE,
+  fecha_fin date,
+  porcentaje_comision numeric,
+  plazo_dias integer,
+  condiciones text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_contrato_consignacion_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_contrato_consignacion_id_tienda_consignadora_fkey FOREIGN KEY (id_tienda_consignadora) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_dat_contrato_consignacion_id_tienda_consignataria_fkey FOREIGN KEY (id_tienda_consignataria) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_dat_contrato_consignacion_tiendas_diferentes CHECK (id_tienda_consignadora != id_tienda_consignataria),
+  CONSTRAINT app_dat_contrato_consignacion_porcentaje_check CHECK (porcentaje_comision IS NULL OR (porcentaje_comision >= 0 AND porcentaje_comision <= 100)),
+  CONSTRAINT app_dat_contrato_consignacion_plazo_check CHECK (plazo_dias IS NULL OR plazo_dias > 0)
+);
