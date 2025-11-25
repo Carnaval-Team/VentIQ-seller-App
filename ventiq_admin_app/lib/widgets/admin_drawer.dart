@@ -5,6 +5,7 @@ import '../config/app_colors.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../services/auth_service.dart';
+import '../services/subscription_service.dart';
 import '../utils/navigation_guard.dart';
 import '../services/changelog_service.dart';
 import '../services/update_service.dart';
@@ -94,6 +95,23 @@ class _AdminDrawerState extends State<AdminDrawer> {
           _appVersion = 'v1.0.0 (100)'; // Fallback
         });
       }
+    }
+  }
+
+  /// Verificar si la tienda tiene la función de consignación habilitada
+  Future<bool> _hasConsignacionFeature() async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final storeData = await userPrefs.getCurrentStoreInfo();
+      final idTienda = storeData?['id_tienda'] as int?;
+      
+      if (idTienda == null) return false;
+      
+      final subscriptionService = SubscriptionService();
+      return await subscriptionService.hasFeatureEnabled(idTienda, 'consignacion');
+    } catch (e) {
+      print('❌ Error verificando función de consignación: $e');
+      return false;
     }
   }
 
@@ -380,6 +398,31 @@ class _AdminDrawerState extends State<AdminDrawer> {
                             onTap: () {
                               Navigator.pop(context);
                               NavigationGuard.navigateWithPermission(context, '/crm-dashboard');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+
+                // Consignaciones (solo con plan Avanzado)
+                FutureBuilder<bool>(
+                  future: _hasConsignacionFeature(),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.handshake,
+                            title: 'Consignaciones',
+                            subtitle: 'Gestión de consignaciones',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(context, '/consignacion');
                             },
                           ),
                           const Divider(height: 1),

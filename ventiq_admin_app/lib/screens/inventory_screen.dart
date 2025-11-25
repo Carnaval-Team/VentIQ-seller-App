@@ -12,6 +12,7 @@ import 'inventory_adjustment_screen.dart'; // Importar la pantalla de ajuste de 
 import 'elaborated_products_extraction_screen.dart'; // Nueva pantalla
 import 'inventory_extractionbysale_screen.dart'; // Venta por Acuerdo
 import 'inventory_dashboard.dart';
+import 'consignacion_screen.dart'; // Consignación
 import '../widgets/notification_widget.dart';
 
 class InventoryScreen extends StatefulWidget {
@@ -194,6 +195,17 @@ class _InventoryScreenState extends State<InventoryScreen>
                         ),
 
                         _buildMenuOption(
+                          icon: Icons.handshake,
+                          title: 'Asignar Productos en Consignación',
+                          subtitle: 'Enviar productos a otra tienda en consignación',
+                          color: const Color(0xFF9333EA),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _navigateToConsignacion();
+                          },
+                        ),
+
+                        _buildMenuOption(
                           icon: Icons.filter_list,
                           title: 'Filtro de Búsqueda',
                           subtitle: 'Filtrar y buscar productos',
@@ -252,6 +264,15 @@ class _InventoryScreenState extends State<InventoryScreen>
       context,
       MaterialPageRoute(
         builder: (context) => const InventoryExtractionBySaleScreen(),
+      ),
+    );
+  }
+
+  void _navigateToConsignacion() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const ConsignacionScreen(),
       ),
     );
   }

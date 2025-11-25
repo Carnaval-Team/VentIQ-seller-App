@@ -13,6 +13,7 @@ import '../widgets/notification_widget.dart';
 import '../services/notification_service.dart';
 import '../utils/subscription_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
+import '../widgets/consignaciones_widget.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -538,6 +539,22 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
           // Filtro de tiempo
           _buildTimeFilterSection(),
           const SizedBox(height: 24),
+
+          // Widget de consignaciones (si hay)
+          FutureBuilder<int?>(
+            future: _userPreferencesService.getIdTienda(),
+            builder: (context, snapshot) {
+              if (snapshot.hasData && snapshot.data != null) {
+                return Column(
+                  children: [
+                    ConsignacionesWidget(idTienda: snapshot.data!),
+                    const SizedBox(height: 24),
+                  ],
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
 
           // KPIs principales
           _buildKPISection(),

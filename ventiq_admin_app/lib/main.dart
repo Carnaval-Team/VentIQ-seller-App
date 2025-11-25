@@ -49,6 +49,7 @@ import 'screens/suppliers/add_edit_supplier_screen.dart';
 import 'screens/inventory_extractionbysale_screen.dart';
 import 'screens/subscription_detail_screen.dart';
 import 'screens/store_selection_screen.dart';
+import 'screens/consignacion_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -197,6 +198,7 @@ class MyApp extends StatelessWidget {
         '/store-registration': (context) => const StoreRegistrationScreen(),
         '/sale-by-agreement': (context) => const InventoryExtractionBySaleScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),
+        '/consignacion': (context) => const ConsignacionScreen(),
       },
     );
   }
