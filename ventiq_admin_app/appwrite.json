@@ -1,0 +1,20 @@
+{
+  "projectId": "ventiq-admin",
+  "projectName": "VentIQ Admin App",
+  "functions": [],
+  "deployments": [
+    {
+      "resourceType": "bucket",
+      "resourceId": "ventiq-admin-web",
+      "name": "VentIQ Admin Web",
+      "permission": "file",
+      "encrypt": false,
+      "antivirus": false,
+      "fileSecurity": false,
+      "enabled": true
+    }
+  ],
+  "variables": {
+    "FLUTTER_BASE_HREF": "/"
+  }
+}
