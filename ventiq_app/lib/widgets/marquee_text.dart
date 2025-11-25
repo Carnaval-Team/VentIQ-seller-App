@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/user_preferences_service.dart';
 
 class MarqueeText extends StatefulWidget {
   final String text;
@@ -11,8 +12,11 @@ class MarqueeText extends StatefulWidget {
     Key? key,
     required this.text,
     this.style,
-    this.scrollSpeed = 50.0, // pixels per second
-    this.pauseDuration = const Duration(seconds: 1),
+    this.scrollSpeed =
+        40.0, // pixels per second - Reducido para mejor rendimiento
+    this.pauseDuration = const Duration(
+      seconds: 2,
+    ), // Pausa más larga para menos animaciones
     this.maxLines = 1,
   }) : super(key: key);
 
@@ -25,7 +29,10 @@ class _MarqueeTextState extends State<MarqueeText>
   late AnimationController _controller;
   late Animation<double> _animation;
   late ScrollController _scrollController;
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
   bool _needsScrolling = false;
+  bool _isStaticTextEnabled = false;
   double _textWidth = 0;
   double _containerWidth = 0;
 
@@ -37,10 +44,21 @@ class _MarqueeTextState extends State<MarqueeText>
       duration: Duration.zero, // Will be calculated based on text length
       vsync: this,
     );
-    
+
+    _loadStaticTextSetting();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _calculateScrolling();
     });
+  }
+
+  Future<void> _loadStaticTextSetting() async {
+    final isStaticEnabled = await _userPreferencesService.isStaticTextEnabled();
+    if (mounted) {
+      setState(() {
+        _isStaticTextEnabled = isStaticEnabled;
+      });
+    }
   }
 
   @override
@@ -56,7 +74,15 @@ class _MarqueeTextState extends State<MarqueeText>
     final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox == null) return;
 
-    _containerWidth = renderBox.size.width;
+    final newContainerWidth = renderBox.size.width;
+
+    // Solo recalcular si el ancho cambió significativamente (optimización)
+    if ((newContainerWidth - _containerWidth).abs() < 5.0 &&
+        _containerWidth > 0) {
+      return;
+    }
+
+    _containerWidth = newContainerWidth;
 
     // Calculate text width
     final TextPainter textPainter = TextPainter(
@@ -68,7 +94,10 @@ class _MarqueeTextState extends State<MarqueeText>
     _textWidth = textPainter.size.width;
 
     setState(() {
-      _needsScrolling = _textWidth > _containerWidth;
+      // Si los textos estáticos están habilitados, nunca hacer scroll
+      _needsScrolling =
+          !_isStaticTextEnabled &&
+          (_textWidth > _containerWidth + 10); // Margen de tolerancia
     });
 
     if (_needsScrolling) {
@@ -79,19 +108,19 @@ class _MarqueeTextState extends State<MarqueeText>
   void _startScrolling() {
     if (!mounted || !_needsScrolling) return;
 
-    final double scrollDistance = _textWidth - _containerWidth + 50; // Extra padding
+    final double scrollDistance =
+        _textWidth - _containerWidth + 30; // Menos padding para menos scroll
     final Duration scrollDuration = Duration(
       milliseconds: (scrollDistance / widget.scrollSpeed * 1000).round(),
     );
 
     _controller.duration = scrollDuration;
-    _animation = Tween<double>(
-      begin: 0.0,
-      end: scrollDistance,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.linear,
-    ));
+    _animation = Tween<double>(begin: 0.0, end: scrollDistance).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOut, // Curva más suave para mejor rendimiento
+      ),
+    );
 
     _animation.addListener(() {
       if (_scrollController.hasClients) {

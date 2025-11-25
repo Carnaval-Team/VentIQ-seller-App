@@ -19,9 +19,9 @@ import '../widgets/sync_status_chip.dart';
 class WebScrollBehavior extends MaterialScrollBehavior {
   @override
   Set<PointerDeviceKind> get dragDevices => {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-      };
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+  };
 }
 
 class ProductsScreen extends StatefulWidget {
@@ -82,7 +82,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       _loadProducts();
     });
   }
-  
+
   Future<void> _loadDataUsageSettings() async {
     final isEnabled = await _userPreferencesService.isLimitDataUsageEnabled();
     if (mounted) {
@@ -216,30 +216,32 @@ class _ProductsScreenState extends State<ProductsScreen> {
       }
 
       // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-      
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+
       Map<String, List<Product>> products;
-      
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Cargando productos desde cache...');
-        
+
         // Cargar datos offline
         final offlineData = await _userPreferencesService.getOfflineData();
-        
+
         if (offlineData != null && offlineData['products'] != null) {
           final productsData = offlineData['products'] as Map<String, dynamic>;
-          
+
           // Buscar productos de esta categoría
           final categoryKey = widget.categoryId.toString();
-          
+
           if (productsData.containsKey(categoryKey)) {
             final categoryProducts = productsData[categoryKey] as List<dynamic>;
-            
+
             // Agrupar productos por subcategoría
             products = {};
             for (var prodData in categoryProducts) {
-              final subcategory = prodData['subcategoria'] as String? ?? 'General';
-              
+              final subcategory =
+                  prodData['subcategoria'] as String? ?? 'General';
+
               // Crear objeto Product desde datos offline
               final product = Product(
                 id: prodData['id'] as int,
@@ -260,14 +262,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 esServicio: false,
                 variantes: [],
               );
-              
+
               if (!products.containsKey(subcategory)) {
                 products[subcategory] = [];
               }
               products[subcategory]!.add(product);
             }
-            
-            print('✅ Productos cargados desde cache offline: ${categoryProducts.length}');
+
+            print(
+              '✅ Productos cargados desde cache offline: ${categoryProducts.length}',
+            );
           } else {
             products = {};
             print('⚠️ No hay productos para esta categoría en cache offline');
@@ -300,18 +304,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
       _filterProducts();
     } catch (e, stackTrace) {
       print('❌ Error loading products: $e $stackTrace');
-      
+
       final isConnectionError = ConnectionErrorHandler.isConnectionError(e);
-      
+
       setState(() {
         _isConnectionError = isConnectionError;
-        errorMessage = isConnectionError 
-            ? ConnectionErrorHandler.getConnectionErrorMessage()
-            : ConnectionErrorHandler.getGenericErrorMessage(e);
+        errorMessage =
+            isConnectionError
+                ? ConnectionErrorHandler.getConnectionErrorMessage()
+                : ConnectionErrorHandler.getGenericErrorMessage(e);
         isLoading = false;
         _showRetryWidget = isConnectionError;
       });
-      
+
       debugPrint('🔍 Es error de conexión: $isConnectionError');
     }
   }
@@ -358,7 +363,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos'),
+                    content: Text(
+                      '📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos',
+                    ),
                     backgroundColor: Colors.orange,
                     duration: Duration(seconds: 2),
                   ),
@@ -429,39 +436,40 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     : errorMessage != null
                     ? _showRetryWidget
                         ? ConnectionRetryWidget(
-                            message: errorMessage!,
-                            onRetry: () => _loadProducts(forceRefresh: true),
-                          )
+                          message: errorMessage!,
+                          onRetry: () => _loadProducts(forceRefresh: true),
+                        )
                         : Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.error_outline,
-                                  size: 80,
-                                  color: Colors.red.withOpacity(0.3),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 80,
+                                color: Colors.red.withOpacity(0.3),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                errorMessage!,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.red,
                                 ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  errorMessage!,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.red,
-                                  ),
-                                  textAlign: TextAlign.center,
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed:
+                                    () => _loadProducts(forceRefresh: true),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: widget.categoryColor,
+                                  foregroundColor: Colors.white,
                                 ),
-                                const SizedBox(height: 16),
-                                ElevatedButton(
-                                  onPressed: () => _loadProducts(forceRefresh: true),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: widget.categoryColor,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  child: const Text('Reintentar'),
-                                ),
-                              ],
-                            ),
-                    )
+                                child: const Text('Reintentar'),
+                              ),
+                            ],
+                          ),
+                        )
                     : filteredProductsBySubcategory.isEmpty
                     ? Center(
                       child: Column(
@@ -610,11 +618,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
           // USD Rate Chip positioned at bottom left
           Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
           // Sync Status Chip positioned at bottom left
-          const Positioned(
-            bottom: 80,
-            left: 16,
-            child: SyncStatusChip(),
-          ),
+          const Positioned(bottom: 80, left: 16, child: SyncStatusChip()),
         ],
       ),
     );
@@ -774,14 +778,71 @@ class _SubcategorySection extends StatelessWidget {
     return SizedBox(
       height:
           228, // Altura optimizada: 3 productos (70px) + espaciado (6px entre cards) = 3*70 + 2*6 = 222px + padding
-      child: kIsWeb
-          ? ScrollConfiguration(
-              behavior: WebScrollBehavior(),
-              child: ListView.builder(
+      child:
+          kIsWeb
+              ? ScrollConfiguration(
+                behavior: WebScrollBehavior(),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  physics:
+                      const BouncingScrollPhysics(), // Mejor física de scroll
+                  cacheExtent: 200, // Cache para mejor rendimiento
+                  itemCount:
+                      (products.length / 3)
+                          .ceil(), // Número de columnas de 3 productos
+                  itemBuilder: (context, columnIndex) {
+                    // Calcular productos para esta columna
+                    final startIndex = columnIndex * 3;
+                    final endIndex = (startIndex + 3).clamp(0, products.length);
+                    final columnProducts = products.sublist(
+                      startIndex,
+                      endIndex,
+                    );
+
+                    return Container(
+                      width:
+                          MediaQuery.of(context).size.width *
+                          0.85, // 85% del ancho
+                      margin: const EdgeInsets.only(right: 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children:
+                            columnProducts.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final product = entry.value;
+                              return Container(
+                                margin: EdgeInsets.only(
+                                  bottom:
+                                      index < columnProducts.length - 1
+                                          ? 6
+                                          : 0, // Solo espaciado entre cards, no al final
+                                ),
+                                child: _PlayStoreProductCard(
+                                  product: product,
+                                  categoryColor: categoryColor,
+                                  promotionData: promotionData,
+                                  isLimitDataUsageEnabled:
+                                      isLimitDataUsageEnabled,
+                                ),
+                              );
+                            }).toList(),
+                      ),
+                    );
+                  },
+                ),
+              )
+              : ListView.builder(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
+                physics:
+                    const BouncingScrollPhysics(), // Mejor física de scroll
+                cacheExtent: 300, // Cache más grande para móviles
+                addAutomaticKeepAlives: false, // Optimización de memoria
+                addRepaintBoundaries: false, // Reduce repaints innecesarios
                 itemCount:
-                    (products.length / 3).ceil(), // Número de columnas de 3 productos
+                    (products.length / 3)
+                        .ceil(), // Número de columnas de 3 productos
                 itemBuilder: (context, columnIndex) {
                   // Calcular productos para esta columna
                   final startIndex = columnIndex * 3;
@@ -789,7 +850,9 @@ class _SubcategorySection extends StatelessWidget {
                   final columnProducts = products.sublist(startIndex, endIndex);
 
                   return Container(
-                    width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
+                    width:
+                        MediaQuery.of(context).size.width *
+                        0.85, // 85% del ancho
                     margin: const EdgeInsets.only(right: 16),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -808,7 +871,8 @@ class _SubcategorySection extends StatelessWidget {
                                 product: product,
                                 categoryColor: categoryColor,
                                 promotionData: promotionData,
-                                isLimitDataUsageEnabled: isLimitDataUsageEnabled,
+                                isLimitDataUsageEnabled:
+                                    isLimitDataUsageEnabled,
                               ),
                             );
                           }).toList(),
@@ -816,46 +880,6 @@ class _SubcategorySection extends StatelessWidget {
                   );
                 },
               ),
-            )
-          : ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount:
-                  (products.length / 3).ceil(), // Número de columnas de 3 productos
-              itemBuilder: (context, columnIndex) {
-                // Calcular productos para esta columna
-                final startIndex = columnIndex * 3;
-                final endIndex = (startIndex + 3).clamp(0, products.length);
-                final columnProducts = products.sublist(startIndex, endIndex);
-
-                return Container(
-                  width: MediaQuery.of(context).size.width * 0.85, // 85% del ancho
-                  margin: const EdgeInsets.only(right: 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children:
-                        columnProducts.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final product = entry.value;
-                          return Container(
-                            margin: EdgeInsets.only(
-                              bottom:
-                                  index < columnProducts.length - 1
-                                      ? 6
-                                      : 0, // Solo espaciado entre cards, no al final
-                            ),
-                            child: _PlayStoreProductCard(
-                              product: product,
-                              categoryColor: categoryColor,
-                              promotionData: promotionData,
-                              isLimitDataUsageEnabled: isLimitDataUsageEnabled,
-                            ),
-                          );
-                        }).toList(),
-                  ),
-                );
-              },
-            ),
     );
   }
 }
@@ -976,7 +1000,9 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
     return GestureDetector(
       onTap: () {
         // Verificar si el producto está agotado (solo para productos no elaborados ni servicios)
-        if (!widget.product.esElaborado && !widget.product.esServicio && widget.product.cantidad <= 0) {
+        if (!widget.product.esElaborado &&
+            !widget.product.esServicio &&
+            widget.product.cantidad <= 0) {
           _showOutOfStockDialog(context);
           return;
         }
@@ -1017,44 +1043,47 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: widget.isLimitDataUsageEnabled
-                    ? Image.asset(
-                        'assets/no_image.png',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: Colors.grey[200],
-                            child: Icon(
-                              Icons.shopping_bag,
-                              size: 24,
-                              color: Colors.grey[400],
-                            ),
-                          );
-                        },
-                      )
-                    : Image.network(
-                        widget.product.foto ?? '',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: Colors.grey[200],
-                            child: Icon(
-                              Icons.shopping_bag,
-                              size: 24,
-                              color: Colors.grey[400],
-                            ),
-                          );
-                        },
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Container(
-                            color: Colors.grey[200],
-                            child: const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          );
-                        },
-                      ),
+                child:
+                    widget.isLimitDataUsageEnabled
+                        ? Image.asset(
+                          'assets/no_image.png',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey[200],
+                              child: Icon(
+                                Icons.shopping_bag,
+                                size: 24,
+                                color: Colors.grey[400],
+                              ),
+                            );
+                          },
+                        )
+                        : Image.network(
+                          widget.product.foto ?? '',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey[200],
+                              child: Icon(
+                                Icons.shopping_bag,
+                                size: 24,
+                                color: Colors.grey[400],
+                              ),
+                            );
+                          },
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
               ),
             ),
             const SizedBox(width: 16),
@@ -1163,19 +1192,20 @@ class _PlayStoreProductCardState extends State<_PlayStoreProductCard> {
                             widget.product.esElaborado
                                 ? '(elaborado)'
                                 : widget.product.esServicio
-                                    ? '(servicio)'
-                                    : widget.product.cantidad > 0
-                                        ? 'Stock: ${widget.product.cantidad}'
-                                        : 'Agotado',
+                                ? '(servicio)'
+                                : widget.product.cantidad > 0
+                                ? 'Stock: ${widget.product.cantidad}'
+                                : 'Agotado',
                             style: TextStyle(
                               fontSize: 13,
-                              color: widget.product.esElaborado
-                                  ? Colors.orange[600]
-                                  : widget.product.esServicio
+                              color:
+                                  widget.product.esElaborado
+                                      ? Colors.orange[600]
+                                      : widget.product.esServicio
                                       ? Colors.blue[600]
                                       : widget.product.cantidad > 0
-                                          ? Colors.green[600]
-                                          : Colors.red[600],
+                                      ? Colors.green[600]
+                                      : Colors.red[600],
                               height: 1.2,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -1420,8 +1450,8 @@ class _ProductCardState extends State<_ProductCard>
                                   widget.product.esElaborado
                                       ? '(elaborado)'
                                       : widget.product.esServicio
-                                          ? '(servicio)'
-                                          : 'Stock: ${widget.product.cantidad}',
+                                      ? '(servicio)'
+                                      : 'Stock: ${widget.product.cantidad}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,

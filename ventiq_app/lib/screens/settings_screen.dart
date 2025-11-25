@@ -28,17 +28,21 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   final OrderService _orderService = OrderService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
   final SettingsIntegrationService _integrationService =
       SettingsIntegrationService();
-  final SubscriptionGuardService _subscriptionGuard = SubscriptionGuardService();
+  final SubscriptionGuardService _subscriptionGuard =
+      SubscriptionGuardService();
 
   bool _isPrintEnabled = true; // Valor por defecto
+  bool _isStaticTextEnabled = false; // Valor por defecto (marquee activo)
   bool _isLimitDataUsageEnabled = false; // Valor por defecto
-  bool _isFluidModeEnabled = false; // Deshabilitado - Disponible en próxima versión
+  bool _isFluidModeEnabled =
+      false; // Deshabilitado - Disponible en próxima versión
   bool _isOfflineModeEnabled = false; // Valor por defecto
   bool _hasOfflineTurno = false; // Turno abierto offline
   Map<String, dynamic>? _offlineTurnoInfo; // Información del turno offline
@@ -68,9 +72,11 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   /// Cargar datos de suscripción
   Future<void> _loadSubscriptionData() async {
     setState(() => _isLoadingSubscription = true);
-    
+
     try {
-      _currentSubscription = await _subscriptionGuard.getCurrentSubscription(forceRefresh: false);
+      _currentSubscription = await _subscriptionGuard.getCurrentSubscription(
+        forceRefresh: false,
+      );
     } catch (e) {
       print('❌ Error cargando datos de suscripción: $e');
     } finally {
@@ -79,6 +85,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       }
     }
   }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -92,10 +99,10 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       print('📱 App reanudada en Settings - Verificando estado de conexión...');
-      
+
       // Verificar conexión cuando la app se reanuda
       _checkConnectionAfterResume();
-      
+
       // Recargar configuraciones
       _loadSettings();
     } else if (state == AppLifecycleState.paused) {
@@ -108,28 +115,33 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     try {
       // Esperar un poco para que el sistema restaure la conexión
       await Future.delayed(const Duration(seconds: 2));
-      
+
       // Verificar si hay conexión real
       final connectivityService = ConnectivityService();
       final hasConnection = await connectivityService.checkConnectivity();
-      
+
       // Verificar si el modo offline está activado
-      final isOfflineMode = await _userPreferencesService.isOfflineModeEnabled();
-      
+      final isOfflineMode =
+          await _userPreferencesService.isOfflineModeEnabled();
+
       if (hasConnection && isOfflineMode) {
-        print('🔄 Conexión detectada después de reanudar - Modo offline puede ser innecesario');
-        
+        print(
+          '🔄 Conexión detectada después de reanudar - Modo offline puede ser innecesario',
+        );
+
         // Mostrar notificación al usuario
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('📶 Conexión disponible - Puede desactivar modo offline'),
+              content: Text(
+                '📶 Conexión disponible - Puede desactivar modo offline',
+              ),
               backgroundColor: Colors.blue,
               duration: Duration(seconds: 3),
             ),
           );
         }
-        
+
         // Recargar configuraciones para reflejar el estado actual
         _loadSettings();
       } else if (hasConnection) {
@@ -142,7 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     }
   }
 
-    /// Navegar a detalles de suscripción
+  /// Navegar a detalles de suscripción
   void _navigateToSubscriptionDetail() {
     Navigator.pushNamed(context, '/subscription-detail');
   }
@@ -150,16 +162,18 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   /// Cargar versión de la app desde changelog.json
   Future<void> _loadAppVersion() async {
     try {
-      final String changelogString = await rootBundle.loadString('assets/changelog.json');
+      final String changelogString = await rootBundle.loadString(
+        'assets/changelog.json',
+      );
       final Map<String, dynamic> changelog = json.decode(changelogString);
       final String version = changelog['current_version'] ?? '1.0.0';
-      
+
       if (mounted) {
         setState(() {
           _appVersion = 'v$version';
         });
       }
-      
+
       print('✅ Versión de la app cargada: $_appVersion');
     } catch (e) {
       print('❌ Error cargando versión desde changelog.json: $e');
@@ -173,6 +187,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
 
   Future<void> _loadSettings() async {
     final printEnabled = await _userPreferencesService.isPrintEnabled();
+    final staticTextEnabled =
+        await _userPreferencesService.isStaticTextEnabled();
     final limitDataEnabled =
         await _userPreferencesService.isLimitDataUsageEnabled();
     final offlineModeEnabled =
@@ -186,6 +202,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     if (mounted) {
       setState(() {
         _isPrintEnabled = printEnabled;
+        _isStaticTextEnabled = staticTextEnabled;
         _isLimitDataUsageEnabled = limitDataEnabled;
         // _isFluidModeEnabled permanece false - deshabilitado
         _isOfflineModeEnabled = offlineModeEnabled;
@@ -375,6 +392,27 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     );
   }
 
+  Future<void> _onStaticTextSettingChanged(bool value) async {
+    setState(() {
+      _isStaticTextEnabled = value;
+    });
+
+    await _userPreferencesService.setStaticTextEnabled(value);
+
+    // Mostrar confirmación al usuario
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          value
+              ? '📝 Textos estáticos activados - Los nombres no se moverán'
+              : '🔄 Textos dinámicos activados - Los nombres se moverán si son largos',
+        ),
+        backgroundColor: value ? Colors.blue : Colors.green,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   Future<void> _onLimitDataUsageChanged(bool value) async {
     setState(() {
       _isLimitDataUsageEnabled = value;
@@ -395,7 +433,6 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       ),
     );
   }
-
 
   Future<void> _onOfflineModeChanged(bool value) async {
     try {
@@ -441,14 +478,13 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       );
     }
   }
+
   /// Construir sección de suscripción
   Widget _buildSubscriptionSection() {
     return Column(
       children: [
         _buildSectionHeader('Suscripción'),
-        _buildSettingsCard([
-          _buildSubscriptionTile(),
-        ]),
+        _buildSettingsCard([_buildSubscriptionTile()]),
         const SizedBox(height: 16),
       ],
     );
@@ -466,17 +502,20 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
 
     final subscription = _currentSubscription;
     final isActive = subscription?.isActive ?? false;
-    
+
     return _buildSettingsTile(
       icon: isActive ? Icons.verified : Icons.warning,
       title: isActive ? 'Suscripción Activa' : 'Suscripción Inactiva',
-      subtitle: subscription != null 
-        ? '${subscription.planDenominacion ?? 'Plan desconocido'} - ${subscription.estadoText}'
-        : 'No se encontró información de suscripción',
+      subtitle:
+          subscription != null
+              ? '${subscription.planDenominacion ?? 'Plan desconocido'} - ${subscription.estadoText}'
+              : 'No se encontró información de suscripción',
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (subscription != null && subscription.diasRestantes > 0 && subscription.diasRestantes <= 30)
+          if (subscription != null &&
+              subscription.diasRestantes > 0 &&
+              subscription.diasRestantes <= 30)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -500,6 +539,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       onTap: () => _navigateToSubscriptionDetail(),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -572,6 +612,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             ),
             _buildDivider(),
             _buildPrintSettingsTile(),
+            _buildDivider(),
+            _buildStaticTextSettingsTile(),
             _buildDivider(),
             _buildFluidModeSettingsTile(),
             _buildDivider(),
@@ -801,6 +843,43 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     );
   }
 
+  Widget _buildStaticTextSettingsTile() {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4A90E2).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.text_fields_outlined,
+          color: Color(0xFF4A90E2),
+          size: 20,
+        ),
+      ),
+      title: const Text(
+        'Mostrar Textos Estáticos',
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1F2937),
+        ),
+      ),
+      subtitle: Text(
+        _isStaticTextEnabled
+            ? 'Los nombres de productos no se moverán'
+            : 'Los nombres largos se moverán de izquierda a derecha',
+        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+      ),
+      trailing: Switch(
+        value: _isStaticTextEnabled,
+        onChanged: _onStaticTextSettingChanged,
+        activeColor: const Color(0xFF4A90E2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    );
+  }
+
   Widget _buildFluidModeSettingsTile() {
     return ListTile(
       leading: Container(
@@ -830,7 +909,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           Text(
             'Estará disponible en una próxima versión',
             style: TextStyle(
-              fontSize: 12, 
+              fontSize: 12,
               color: Colors.orange[700],
               fontStyle: FontStyle.italic,
             ),
@@ -1114,21 +1193,22 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Text('Verificando actualizaciones...'),
-          ],
-        ),
-      ),
+      builder:
+          (context) => const AlertDialog(
+            content: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Verificando actualizaciones...'),
+              ],
+            ),
+          ),
     );
 
     try {
       final updateInfo = await UpdateService.checkForUpdates();
-      
+
       // Cerrar diálogo de carga
       if (mounted) {
         Navigator.of(context).pop();
@@ -1146,7 +1226,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       if (mounted) {
         Navigator.of(context).pop();
       }
-      
+
       // Mostrar error
       _showUpdateErrorDialog(e.toString());
     }
@@ -1156,101 +1236,114 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
     final bool isObligatory = updateInfo['obligatoria'] ?? false;
     final String newVersion = updateInfo['version_disponible'] ?? 'Desconocida';
-    final String currentVersion = updateInfo['current_version'] ?? 'Desconocida';
-    
+    final String currentVersion =
+        updateInfo['current_version'] ?? 'Desconocida';
+
     showDialog(
       context: context,
       barrierDismissible: !isObligatory,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              isObligatory ? Icons.warning : Icons.system_update,
-              color: isObligatory ? Colors.orange : Colors.blue,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  isObligatory ? Icons.warning : Icons.system_update,
+                  color: isObligatory ? Colors.orange : Colors.blue,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isObligatory
+                        ? 'Actualización Obligatoria'
+                        : 'Actualización Disponible',
+                    style: const TextStyle(fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                isObligatory ? 'Actualización Obligatoria' : 'Actualización Disponible',
-                style: const TextStyle(fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Nueva versión disponible: $newVersion'),
+                Text('Versión actual: $currentVersion'),
+                const SizedBox(height: 16),
+                if (isObligatory)
+                  const Text(
+                    'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  )
+                else
+                  const Text(
+                    'Se recomienda actualizar para obtener las últimas mejoras y correcciones.',
+                  ),
+              ],
+            ),
+            actions: [
+              if (!isObligatory)
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Más tarde'),
+                ),
+              ElevatedButton(
+                onPressed: () => _downloadUpdate(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isObligatory ? Colors.orange : Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Descargar'),
               ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Nueva versión disponible: $newVersion'),
-            Text('Versión actual: $currentVersion'),
-            const SizedBox(height: 16),
-            if (isObligatory)
-              const Text(
-                'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
-                style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w500),
-              )
-            else
-              const Text('Se recomienda actualizar para obtener las últimas mejoras y correcciones.'),
-          ],
-        ),
-        actions: [
-          if (!isObligatory)
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Más tarde'),
-            ),
-          ElevatedButton(
-            onPressed: () => _downloadUpdate(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isObligatory ? Colors.orange : Colors.blue,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Descargar'),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   /// Mostrar diálogo cuando no hay actualizaciones
   void _showNoUpdateDialog(Map<String, dynamic> updateInfo) {
-    final String currentVersion = updateInfo['current_version'] ?? 'Desconocida';
-    
+    final String currentVersion =
+        updateInfo['current_version'] ?? 'Desconocida';
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Aplicación Actualizada',
-                style: TextStyle(fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Aplicación Actualizada',
+                    style: TextStyle(fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Versión actual: $currentVersion'),
-            const SizedBox(height: 8),
-            const Text('Tu aplicación está actualizada con la última versión disponible.'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Entendido'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Versión actual: $currentVersion'),
+                const SizedBox(height: 8),
+                const Text(
+                  'Tu aplicación está actualizada con la última versión disponible.',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Entendido'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -1258,37 +1351,43 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   void _showUpdateErrorDialog(String error) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.error, color: Colors.red),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Error de Verificación',
-                style: const TextStyle(fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Error de Verificación',
+                    style: const TextStyle(fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('No se pudo verificar si hay actualizaciones disponibles.'),
-            const SizedBox(height: 8),
-            Text('Error: $error', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'No se pudo verificar si hay actualizaciones disponibles.',
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Error: $error',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -1296,36 +1395,30 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   Future<void> _downloadUpdate() async {
     try {
       final Uri url = Uri.parse(UpdateService.downloadUrl);
-      
+
       print('🔗 Intentando abrir URL: ${url.toString()}');
-      
+
       // Intentar diferentes modos de lanzamiento
       bool launched = false;
-      
+
       // Método 1: Intentar con navegador web
       try {
-        launched = await launchUrl(
-          url,
-          mode: LaunchMode.externalApplication,
-        );
+        launched = await launchUrl(url, mode: LaunchMode.externalApplication);
         print('✅ Método 1 (externalApplication): $launched');
       } catch (e) {
         print('❌ Método 1 falló: $e');
       }
-      
+
       // Método 2: Si falla, intentar con navegador interno
       if (!launched) {
         try {
-          launched = await launchUrl(
-            url,
-            mode: LaunchMode.inAppWebView,
-          );
+          launched = await launchUrl(url, mode: LaunchMode.inAppWebView);
           print('✅ Método 2 (inAppWebView): $launched');
         } catch (e) {
           print('❌ Método 2 falló: $e');
         }
       }
-      
+
       // Método 3: Si falla, intentar modo plataforma
       if (!launched) {
         try {
@@ -1335,13 +1428,13 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           print('❌ Método 3 falló: $e');
         }
       }
-      
+
       if (launched) {
         // Cerrar diálogo
         if (mounted) {
           Navigator.of(context).pop();
         }
-        
+
         // Mostrar mensaje de confirmación
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1354,88 +1447,94 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
         // Si todos los métodos fallan, mostrar diálogo con URL para copiar
         _showManualDownloadDialog();
       }
-      
     } catch (e) {
       print('❌ Error general abriendo enlace de descarga: $e');
       _showManualDownloadDialog();
     }
   }
-  
+
   /// Mostrar diálogo para descarga manual
   void _showManualDownloadDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.download, color: Colors.blue),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Descarga Manual',
-                style: TextStyle(fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.download, color: Colors.blue),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Descarga Manual',
+                    style: TextStyle(fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('No se pudo abrir automáticamente el enlace de descarga.'),
-            const SizedBox(height: 16),
-            const Text('Copia este enlace y ábrelo en tu navegador:'),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: SelectableText(
-                UpdateService.downloadUrl,
-                style: const TextStyle(fontSize: 12),
-              ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'No se pudo abrir automáticamente el enlace de descarga.',
+                ),
+                const SizedBox(height: 16),
+                const Text('Copia este enlace y ábrelo en tu navegador:'),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: SelectableText(
+                    UpdateService.downloadUrl,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Cerrar diálogo manual
-              Navigator.of(context).pop(); // Cerrar diálogo de actualización
-            },
-            child: const Text('Cerrar'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Cerrar diálogo manual
+                  Navigator.of(
+                    context,
+                  ).pop(); // Cerrar diálogo de actualización
+                },
+                child: const Text('Cerrar'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  // Intentar copiar al portapapeles
+                  try {
+                    await Clipboard.setData(
+                      ClipboardData(text: UpdateService.downloadUrl),
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('📋 Enlace copiado al portapapeles'),
+                          backgroundColor: Colors.green,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    print('❌ Error copiando al portapapeles: $e');
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Copiar Enlace'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              // Intentar copiar al portapapeles
-              try {
-                await Clipboard.setData(ClipboardData(text: UpdateService.downloadUrl));
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('📋 Enlace copiado al portapapeles'),
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                }
-              } catch (e) {
-                print('❌ Error copiando al portapapeles: $e');
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Copiar Enlace'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1657,103 +1756,100 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   void _showFullScreenQR() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(
-                Icons.close,
-                color: Colors.white,
-                size: 28,
-              ),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            title: const Text(
-              'Código QR - Inventtia',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            centerTitle: true,
-          ),
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // QR a pantalla completa
-                Container(
-                  margin: const EdgeInsets.all(24),
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withOpacity(0.1),
-                        blurRadius: 20,
-                        spreadRadius: 5,
-                      ),
-                    ],
-                  ),
-                  child: Image.asset(
-                    'assets/Lk1KNR.png',
-                    width: MediaQuery.of(context).size.width * 0.8,
-                    height: MediaQuery.of(context).size.width * 0.8,
-                    fit: BoxFit.contain,
-                  ),
+        builder:
+            (context) => Scaffold(
+              backgroundColor: Colors.black,
+              appBar: AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                leading: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
-                const SizedBox(height: 24),
-                // Información
-                Text(
-                  'Escanea este código para descargar Inventtia',
+                title: const Text(
+                  'Código QR - Inventtia',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
-                    fontSize: 16,
+                    color: Colors.white,
+                    fontSize: 18,
                     fontWeight: FontWeight.w500,
                   ),
-                  textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Inventtia $_appVersion',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 14,
-                  ),
+                centerTitle: true,
+              ),
+              body: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // QR a pantalla completa
+                    Container(
+                      margin: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.white.withOpacity(0.1),
+                            blurRadius: 20,
+                            spreadRadius: 5,
+                          ),
+                        ],
+                      ),
+                      child: Image.asset(
+                        'assets/Lk1KNR.png',
+                        width: MediaQuery.of(context).size.width * 0.8,
+                        height: MediaQuery.of(context).size.width * 0.8,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // Información
+                    Text(
+                      'Escanea este código para descargar Inventtia',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Inventtia $_appVersion',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    // Botón para cerrar
+                    ElevatedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, size: 20),
+                      label: const Text(
+                        'Cerrar',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4A90E2),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        elevation: 5,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 32),
-                // Botón para cerrar
-                ElevatedButton.icon(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, size: 20),
-                  label: const Text(
-                    'Cerrar',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A90E2),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(25),
-                    ),
-                    elevation: 5,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
       ),
     );
   }
@@ -1799,10 +1895,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             children: [
               const Text(
                 'Escanea el código QR para descargar la aplicación Inventtia en tu dispositivo:',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF6B7280),
-                ),
+                style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
@@ -1814,10 +1907,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.grey[300]!,
-                      width: 1,
-                    ),
+                    border: Border.all(color: Colors.grey[300]!, width: 1),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.05),
@@ -1891,9 +1981,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               ),
               child: const Text(
                 'Cerrar',
-                style: TextStyle(
-                  fontWeight: FontWeight.w500,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w500),
               ),
             ),
           ],
@@ -2588,18 +2676,20 @@ class _SyncDialogState extends State<_SyncDialog> {
   Future<void> _syncStoreConfig() async {
     try {
       print('🔧 Sincronizando configuración de tienda...');
-      
+
       // Obtener ID de tienda
       final idTienda = await widget.userPreferencesService.getIdTienda();
-      
+
       if (idTienda == null) {
-        print('❌ No se pudo obtener ID de tienda para sincronizar configuración');
+        print(
+          '❌ No se pudo obtener ID de tienda para sincronizar configuración',
+        );
         return;
       }
-      
+
       // Sincronizar configuración usando StoreConfigService
       final success = await StoreConfigService.syncStoreConfig(idTienda);
-      
+
       if (success) {
         print('✅ Configuración de tienda sincronizada exitosamente');
       } else {
@@ -4036,9 +4126,7 @@ class _ManualSyncDialogState extends State<_ManualSyncDialog> {
         print('✅ Nuevas órdenes descargadas: ${response.length}');
 
         // Hacer merge de las nuevas órdenes con datos existentes
-        final newOrdersData = {
-          'orders': response.cast<Map<String, dynamic>>(),
-        };
+        final newOrdersData = {'orders': response.cast<Map<String, dynamic>>()};
 
         // Usar merge para preservar otros datos offline
         await widget.userPreferencesService.mergeOfflineData(newOrdersData);

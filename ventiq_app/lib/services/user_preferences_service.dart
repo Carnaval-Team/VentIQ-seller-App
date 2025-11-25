@@ -432,6 +432,9 @@ class UserPreferencesService {
   // Print settings keys
   static const String _printEnabledKey = 'print_enabled';
 
+  // Static text settings keys
+  static const String _staticTextEnabledKey = 'static_text_enabled';
+
   // Currency denominations keys
   static const String _monedasDenominacionKey = 'monedas_denominacion';
   static const String _cambioCupUsdKey = 'cambio_cup_usd';
@@ -474,6 +477,21 @@ class UserPreferencesService {
   Future<bool> isPrintEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_printEnabledKey) ?? true; // Por defecto habilitado
+  }
+
+  // Static text settings methods
+  Future<void> setStaticTextEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_staticTextEnabledKey, enabled);
+    print(
+      'UserPreferencesService: Configuración de textos estáticos actualizada: $enabled',
+    );
+  }
+
+  Future<bool> isStaticTextEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_staticTextEnabledKey) ??
+        false; // Por defecto deshabilitado (marquee activo)
   }
 
   // Data usage settings methods

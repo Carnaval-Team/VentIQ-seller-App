@@ -1,8 +1,30 @@
 {
-  "current_version": "1.7.0",
-  "build": 700,
+  "current_version": "1.7.1",
+  "build": 701,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.7.1",
+      "date": "2025-11-18",
+      "title": "⚡ Control de Textos y Optimización de Rendimiento",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Control de Textos Estáticos",
+          "description": "Nueva opción en configuración para mostrar textos estáticos. Desactiva el movimiento de nombres largos para dispositivos con menor rendimiento."
+        },
+        {
+          "type": "improvement",
+          "title": "Rendimiento Optimizado",
+          "description": "Mejoras específicas para dispositivos como Redmi Note 13: scroll más suave, animaciones optimizadas y menor uso de recursos."
+        },
+        {
+          "type": "improvement",
+          "title": "Animaciones Más Eficientes",
+          "description": "Reducida velocidad de scroll y aumentado tiempo de pausa para mejor rendimiento. Menos recálculos innecesarios."
+        }
+      ]
+    },
     {
       "version": "1.7.0",
       "date": "2025-11-14",
