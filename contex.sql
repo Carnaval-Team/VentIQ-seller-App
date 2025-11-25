@@ -1422,3 +1422,89 @@ CREATE TABLE public.app_dat_contrato_consignacion (
   CONSTRAINT app_dat_contrato_consignacion_porcentaje_check CHECK (porcentaje_comision IS NULL OR (porcentaje_comision >= 0 AND porcentaje_comision <= 100)),
   CONSTRAINT app_dat_contrato_consignacion_plazo_check CHECK (plazo_dias IS NULL OR plazo_dias > 0)
 );
+CREATE TABLE public.app_dat_producto_consignacion (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_contrato bigint NOT NULL,
+  id_producto bigint NOT NULL,
+  id_variante bigint,
+  id_presentacion bigint,
+  cantidad_enviada numeric NOT NULL DEFAULT 0,
+  cantidad_vendida numeric NOT NULL DEFAULT 0,
+  cantidad_devuelta numeric NOT NULL DEFAULT 0,
+  precio_venta_sugerido numeric,
+  estado smallint NOT NULL DEFAULT 1, -- 1=activo, 0=finalizado
+  estado_confirmacion smallint NOT NULL DEFAULT 0, -- 0=pendiente, 1=confirmado por consignataria, 2=rechazado
+  fecha_envio date NOT NULL DEFAULT CURRENT_DATE,
+  fecha_confirmacion date,
+  fecha_finalizacion date,
+  observaciones text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_producto_consignacion_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_producto_consignacion_contrato_fkey FOREIGN KEY (id_contrato) REFERENCES public.app_dat_contrato_consignacion(id) ON DELETE CASCADE,
+  CONSTRAINT app_dat_producto_consignacion_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT app_dat_producto_consignacion_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
+  CONSTRAINT app_dat_producto_consignacion_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id),
+  CONSTRAINT app_dat_producto_consignacion_cantidades_check CHECK (cantidad_enviada >= (cantidad_vendida + cantidad_devuelta))
+);
+CREATE TABLE public.app_dat_movimiento_consignacion (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_producto_consignacion bigint NOT NULL,
+  tipo_movimiento smallint NOT NULL, -- 1=envío, 2=venta, 3=devolución, 4=ajuste
+  cantidad numeric NOT NULL,
+  precio_unitario numeric,
+  total numeric,
+  id_operacion_venta bigint, -- Referencia a la operación de venta si es venta
+  id_usuario uuid,
+  observaciones text,
+  fecha_movimiento timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_movimiento_consignacion_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_movimiento_consignacion_producto_fkey FOREIGN KEY (id_producto_consignacion) REFERENCES public.app_dat_producto_consignacion(id) ON DELETE CASCADE,
+  CONSTRAINT app_dat_movimiento_consignacion_venta_fkey FOREIGN KEY (id_operacion_venta) REFERENCES public.app_dat_operacion_venta(id_operacion),
+  CONSTRAINT app_dat_movimiento_consignacion_usuario_fkey FOREIGN KEY (id_usuario) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_movimiento_consignacion_tipo_check CHECK (tipo_movimiento IN (1, 2, 3, 4))
+);
+CREATE TABLE public.app_dat_liquidacion_consignacion (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_contrato bigint NOT NULL,
+  fecha_inicio date NOT NULL,
+  fecha_fin date NOT NULL,
+  total_vendido numeric NOT NULL DEFAULT 0,
+  total_comision numeric NOT NULL DEFAULT 0,
+  total_a_pagar numeric NOT NULL DEFAULT 0,
+  estado smallint NOT NULL DEFAULT 1, -- 1=pendiente, 2=pagada, 3=cancelada
+  fecha_pago date,
+  metodo_pago character varying,
+  referencia_pago character varying,
+  observaciones text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_liquidacion_consignacion_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_liquidacion_consignacion_contrato_fkey FOREIGN KEY (id_contrato) REFERENCES public.app_dat_contrato_consignacion(id),
+  CONSTRAINT app_dat_liquidacion_consignacion_estado_check CHECK (estado IN (1, 2, 3))
+);
+CREATE TABLE public.app_dat_liquidacion_detalle (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_liquidacion bigint NOT NULL,
+  id_producto_consignacion bigint NOT NULL,
+  cantidad_vendida numeric NOT NULL,
+  precio_venta_promedio numeric NOT NULL,
+  subtotal numeric NOT NULL,
+  porcentaje_comision numeric NOT NULL,
+  comision numeric NOT NULL,
+  total_a_pagar numeric NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_liquidacion_detalle_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_liquidacion_detalle_liquidacion_fkey FOREIGN KEY (id_liquidacion) REFERENCES public.app_dat_liquidacion_consignacion(id) ON DELETE CASCADE,
+  CONSTRAINT app_dat_liquidacion_detalle_producto_fkey FOREIGN KEY (id_producto_consignacion) REFERENCES public.app_dat_producto_consignacion(id)
+);
+CREATE INDEX idx_producto_consignacion_contrato ON public.app_dat_producto_consignacion(id_contrato);
+CREATE INDEX idx_producto_consignacion_producto ON public.app_dat_producto_consignacion(id_producto);
+CREATE INDEX idx_producto_consignacion_estado ON public.app_dat_producto_consignacion(estado);
+CREATE INDEX idx_movimiento_consignacion_producto ON public.app_dat_movimiento_consignacion(id_producto_consignacion);
+CREATE INDEX idx_movimiento_consignacion_tipo ON public.app_dat_movimiento_consignacion(tipo_movimiento);
+CREATE INDEX idx_movimiento_consignacion_fecha ON public.app_dat_movimiento_consignacion(fecha_movimiento);
+CREATE INDEX idx_liquidacion_consignacion_contrato ON public.app_dat_liquidacion_consignacion(id_contrato);
+CREATE INDEX idx_liquidacion_consignacion_estado ON public.app_dat_liquidacion_consignacion(estado);
+CREATE INDEX idx_liquidacion_detalle_liquidacion ON public.app_dat_liquidacion_detalle(id_liquidacion);
