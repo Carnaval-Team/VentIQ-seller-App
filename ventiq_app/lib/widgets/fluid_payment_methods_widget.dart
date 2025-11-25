@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../models/order.dart';
 import '../models/payment_method.dart';
 import '../services/user_preferences_service.dart';
 import '../services/payment_method_service.dart';
 import '../utils/app_snackbar.dart';
-import '../services/user_preferences_service.dart';
 
 class FluidPaymentMethodsWidget extends StatefulWidget {
   final List<OrderItem> orderItems;

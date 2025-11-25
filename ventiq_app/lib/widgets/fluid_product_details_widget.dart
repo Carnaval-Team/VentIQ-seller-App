@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../widgets/notification_widget.dart';
 import '../utils/app_snackbar.dart';
 import '../models/order.dart';
+import '../models/product.dart';
 import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
 import '../services/user_preferences_service.dart';
