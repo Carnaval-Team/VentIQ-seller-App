@@ -7,6 +7,7 @@ import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/product_selector_widget.dart';
 import '../services/product_search_service.dart';
+import '../widgets/transfer_product_quantity_dialog.dart';
 
 class InventoryTransferScreen extends StatefulWidget {
   const InventoryTransferScreen({super.key});
@@ -31,6 +32,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   WarehouseZone? _selectedDestinationLocation;
   bool _isLoading = false;
   bool _isLoadingWarehouses = true;
+  
+  // Progress tracking
+  double _transferProgress = 0.0;
+  String _transferStatus = '';
+  int _currentStep = 0;
+  int _totalSteps = 0;
 
   @override
   void initState() {
@@ -92,7 +99,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     showDialog(
       context: context,
       builder:
-          (context) => _ProductQuantityDialog(
+          (context) => TransferProductQuantityDialog(
             product: product,
             sourceLayoutId: _getZoneIdFromLocation(_selectedSourceLocation!),
             onAdd: (productData) {
@@ -110,7 +117,6 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
               setState(() {
                 _selectedProducts.add(productData);
               });
-              Navigator.pop(context);
             },
           ),
     );
@@ -120,6 +126,63 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     setState(() {
       _selectedProducts.removeAt(index);
     });
+  }
+
+  void _showProgressDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false,
+        child: AlertDialog(
+          title: const Text('Procesando Transferencia'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: _transferProgress,
+                  minHeight: 8,
+                  backgroundColor: Colors.grey[300],
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    _transferProgress < 1.0 ? AppColors.primary : Colors.green,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '${(_transferProgress * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _transferStatus,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              if (_totalSteps > 0) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Paso $_currentStep de $_totalSteps',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _submitTransfer() async {
@@ -157,6 +220,12 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     }
 
     setState(() => _isLoading = true);
+    _showProgressDialog();
+    
+    // Initialize progress tracking
+    _totalSteps = 3; // Validación, Transferencia, Completar operaciones
+    _currentStep = 0;
+    _transferProgress = 0.0;
 
     try {
       print('🚀 === INICIO TRANSFERENCIA ===');
@@ -175,6 +244,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       if (idTienda == null || userUuid == null) {
         throw Exception('No se encontró información del usuario');
       }
+
+      // Update progress: Validación completada
+      setState(() {
+        _currentStep = 1;
+        _transferProgress = 0.2;
+        _transferStatus = 'Validando datos...';
+      });
 
       // ========== LOGGING DE DATOS DEL FORMULARIO ==========
       print('🔍 ===== DATOS DEL FORMULARIO DE TRANSFERENCIA =====');
@@ -259,6 +335,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       print('   - autorizadoPor: ${_autorizadoPorController.text}');
       print('   - observaciones: ${_observacionesController.text}');
 
+      // Update progress: Iniciando transferencia
+      setState(() {
+        _currentStep = 2;
+        _transferProgress = 0.4;
+        _transferStatus = 'Procesando transferencia...';
+      });
+
       // Use unified transfer function for all scenarios
       final result = await InventoryService.transferBetweenLayouts(
         idLayoutOrigen: sourceLayoutId,
@@ -288,6 +371,13 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
       }
 
       if (result['status'] == 'success') {
+        // Update progress: Completando operaciones
+        setState(() {
+          _currentStep = 3;
+          _transferProgress = 0.7;
+          _transferStatus = 'Completando operaciones...';
+        });
+
         // Complete both operations automatically if transfer was successful
         if (result['id_extraccion'] != null && result['id_recepcion'] != null) {
           try {
@@ -356,15 +446,28 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         // Save the values for future use before showing success message
         _savePersistedValues();
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              result['message'] ?? 'Transferencia registrada exitosamente',
+        // Update progress: Completado
+        setState(() {
+          _currentStep = 3;
+          _transferProgress = 1.0;
+          _transferStatus = '¡Transferencia completada!';
+        });
+
+        // Wait a moment to show the completed state
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (mounted) {
+          Navigator.pop(context); // Close progress dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                result['message'] ?? 'Transferencia registrada exitosamente',
+              ),
+              backgroundColor: AppColors.success,
             ),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        Navigator.pop(context);
+          );
+          Navigator.pop(context); // Close transfer screen
+        }
       } else {
         throw Exception(
           result['message'] ?? 'Error desconocido en la transferencia',
@@ -373,6 +476,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     } catch (e) {
       print('❌ Error en _submitTransfer: $e');
       if (mounted) {
+        Navigator.pop(context); // Close progress dialog
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al registrar transferencia: $e'),

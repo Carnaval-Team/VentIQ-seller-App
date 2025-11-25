@@ -1,4 +1,4 @@
-// Test básico para VentIQ Super Admin
+// Test básico para Inventtia Super Admin
 //
 // Este test verifica que la aplicación se inicializa correctamente
 // y muestra la pantalla de login cuando no hay usuario autenticado.
@@ -16,7 +16,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify that login screen is shown
-    expect(find.text('VentIQ Super Admin'), findsOneWidget);
+    expect(find.text('Inventtia Super Admin'), findsOneWidget);
     expect(find.text('Sistema de Administración Global'), findsOneWidget);
     expect(find.text('Correo Electrónico'), findsOneWidget);
     expect(find.text('Contraseña'), findsOneWidget);

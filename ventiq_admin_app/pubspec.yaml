@@ -54,6 +54,11 @@ dependencies:
   # URL launcher for updates
   url_launcher: ^6.2.4
 
+  # Bluetooth thermal printer
+  print_bluetooth_thermal: ^1.1.6
+  esc_pos_utils_plus: ^2.0.1
+  permission_handler: ^11.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

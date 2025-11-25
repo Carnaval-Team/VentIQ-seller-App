@@ -25,11 +25,13 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _needAllOrdersCompletedToContinue = false;
   bool _manejaInventario = false;
   bool _permiteVenderAunSinDisponibilidad = false;
+  bool _noSolicitarCliente = false;
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
   bool _showDescriptionInSelectors = false;
   int? _storeId;
+  String? _storeName;
   
   // Variables para suscripción
   Subscription? _activeSubscription;
@@ -53,7 +55,11 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         throw Exception('No se pudo obtener el ID de la tienda');
       }
 
-      print('🏪 Cargando configuración para tienda ID: $_storeId');
+      // Obtener información de la tienda actual
+      final storeInfo = await _userPreferencesService.getCurrentStoreInfo();
+      _storeName = storeInfo?['denominacion'] ?? 'Tienda Desconocida';
+
+      print('🏪 Cargando configuración para tienda ID: $_storeId - Nombre: $_storeName');
 
       // Obtener configuración de la tienda
       final config = await StoreConfigService.getStoreConfig(_storeId!);
@@ -69,6 +75,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _needAllOrdersCompletedToContinue = config['need_all_orders_completed_to_continue'] ?? false;
         _manejaInventario = config['maneja_inventario'] ?? false;
         _permiteVenderAunSinDisponibilidad = config['permite_vender_aun_sin_disponibilidad'] ?? false;
+        _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
         _showDescriptionInSelectors = showDescriptionInSelectors;
@@ -97,6 +104,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('  - Completar todas las órdenes: $_needAllOrdersCompletedToContinue');
       print('  - Maneja inventario: $_manejaInventario');
       print('  - Permite vender sin disponibilidad: $_permiteVenderAunSinDisponibilidad');
+      print('  - No solicitar cliente en venta: $_noSolicitarCliente');
       print('  - Tiene contraseña maestra: $_hasMasterPassword');
       print('  - Mostrar descripción en selectores: $_showDescriptionInSelectors');
       print('  - Suscripción actual: ${_activeSubscription?.planDenominacion ?? 'No encontrada'} (${_activeSubscription?.estadoText ?? 'N/A'})');
@@ -297,6 +305,51 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       // Revertir el cambio en caso de error
       setState(() {
         _permiteVenderAunSinDisponibilidad = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateNoSolicitarClienteSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print('🔧 Actualizando configuración de no solicitar cliente: $value');
+      
+      await StoreConfigService.updateNoSolicitarCliente(_storeId!, value);
+      
+      setState(() {
+        _noSolicitarCliente = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value 
+                ? 'No se solicitarán datos del comprador en ventas - Se usará "Cliente" automáticamente'
+                : 'Se solicitarán datos del comprador en ventas'
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Configuración de no solicitar cliente actualizada');
+    } catch (e) {
+      print('❌ Error al actualizar configuración de no solicitar cliente: $e');
+      
+      // Revertir el cambio en caso de error
+      setState(() {
+        _noSolicitarCliente = !value;
       });
 
       if (mounted) {
@@ -588,6 +641,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Detalles de la Tienda Activa
+          _buildStoreDetailsCard(),
+          const SizedBox(height: 24),
+
           // Sección de Suscripción
           if (_activeSubscription != null) ...[
             _buildSubscriptionCard(),
@@ -670,6 +727,20 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             onChanged: _updateShowDescriptionSetting,
           ),
 
+          const SizedBox(height: 16),
+
+          // Configuración de No Pedir Datos en Venta
+          _buildConfigCard(
+            icon: Icons.person_off_outlined,
+            iconColor: Colors.teal,
+            title: 'No Pedir Datos en Venta',
+            subtitle: _noSolicitarCliente
+                ? '✅ No se solicitan datos del comprador - Se usa "Cliente" automáticamente'
+                : '📋 Se solicitan datos del comprador (nombre, teléfono, contactos adicionales)',
+            value: _noSolicitarCliente,
+            onChanged: _updateNoSolicitarClienteSetting,
+          ),
+
           const SizedBox(height: 24),
 
           // Información adicional
@@ -711,6 +782,95 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                   style: TextStyle(
                     color: Colors.blue,
                     fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoreDetailsCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4A90E2).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF4A90E2).withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A90E2).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.store,
+                  color: Color(0xFF4A90E2),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Tienda Activa',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _storeName ?? 'Cargando...',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: Color(0xFF4A90E2),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'ID: $_storeId',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF4A90E2),
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ],

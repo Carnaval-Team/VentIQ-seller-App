@@ -40,6 +40,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _isLoadingProductsUsingIngredient = false;
   final PermissionsService _permissionsService = PermissionsService();
   bool _canEditProduct = false;
+  bool _isGerente = false;
+  bool _isInitializingPrices = false;
+  bool _isLoadingPricingData = true;
   // Pagination and filtering for reception operations
   // Pagination and filtering for reception operations
   int _currentPage = 1;
@@ -63,9 +66,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     print('🔐 Verificando permisos de edición de producto...');
     final canEdit = await _permissionsService.canPerformAction('product.edit');
     print('  • Editar producto: $canEdit');
+    
+    // Verificar si es gerente
+    final userRole = await _permissionsService.getUserRole();
+    final isGerente = userRole == UserRole.gerente;
+    print('  • Es Gerente: $isGerente');
+    
     print('✅ Puede editar productos: $canEdit');
     setState(() {
       _canEditProduct = canEdit;
+      _isGerente = isGerente;
     });
   }
 
@@ -75,6 +85,30 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     print('🔍 Producto nombre: ${_product.denominacion}');
     print('🔍 Es elaborado (desde modelo): ${_product.esElaborado}');
     print('🔍 Verificando si debe cargar ingredientes...');
+
+    // Establecer estado de carga
+    setState(() {
+      _isLoadingPricingData = true;
+    });
+
+    // Recargar el producto completo para obtener datos actualizados
+    try {
+      final productActualizado = await ProductService.getProductoCompletoById(
+        int.parse(_product.id),
+      );
+      if (productActualizado != null) {
+        setState(() {
+          _product = productActualizado;
+          _isLoadingPricingData = false;
+        });
+        print('✅ Producto recargado con datos actualizados');
+      }
+    } catch (e) {
+      print('⚠️ Error al recargar producto: $e');
+      setState(() {
+        _isLoadingPricingData = false;
+      });
+    }
 
     await Future.wait([
       _loadStockLocations(),
@@ -312,8 +346,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     _buildBasicInfo(),
                     const SizedBox(height: 20),
                     _buildPricingInfo(),
-                    const SizedBox(height: 20),
-                    _buildInventoryInfo(),
                     const SizedBox(height: 20),
                     _buildIngredientsSection(),
                     const SizedBox(height: 20),
@@ -1475,15 +1507,250 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _buildPricingInfo() {
+    // Mostrar skeleton loader mientras se cargan los datos
+    if (_isLoadingPricingData) {
+      return _buildInfoCard(
+        title: 'Información de Precios',
+        icon: Icons.attach_money,
+        children: [
+          // Skeleton loader para precio base
+          Container(
+            height: 20,
+            width: 150,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Skeleton loaders para presentaciones
+          ...List.generate(
+            3,
+            (index) => Column(
+              children: [
+                Container(
+                  height: 16,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 60,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                if (index < 2) const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Verificar si todos los precios promedio son 0
+    final allPricesZero = _product.presentaciones.isEmpty ||
+        _product.presentaciones.every((pres) =>
+            (pres['precio_promedio'] ?? 0.0) == 0.0);
+
     return _buildInfoCard(
       title: 'Información de Precios',
       icon: Icons.attach_money,
       children: [
-        _buildInfoRow(
-          'Precio Base',
-          '\$${NumberFormat('#,###.00').format(_product.basePrice)}',
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: _buildInfoRow(
+                'Precio Base',
+                '\$${NumberFormat('#,###.00').format(_product.basePrice)}',
+              ),
+            ),
+            if (_isGerente)
+              IconButton(
+                icon: const Icon(Icons.edit, size: 18),
+                onPressed: _editBasePriceDialog,
+                tooltip: 'Editar precio base',
+                constraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
+                padding: EdgeInsets.zero,
+              ),
+          ],
         ),
-        // TODO: Add more pricing information from variants
+        if (_product.presentaciones.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          // Sección de inicialización si todos los precios son 0
+          if (allPricesZero && _isGerente) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.orange[700],
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Precios de Costo no Configurados',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.orange[800],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Inicializa automáticamente desde operaciones de recepción',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isInitializingPrices
+                          ? null
+                          : _initializeAveragePrices,
+                      icon: _isInitializingPrices
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.orange[700]!,
+                                ),
+                              ),
+                            )
+                          : const Icon(Icons.calculate),
+                      label: Text(
+                        _isInitializingPrices
+                            ? 'Inicializando...'
+                            : 'Inicializar Precios Automáticamente',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange[600],
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          // Sección de precios de costo por presentación
+          Text(
+            'Precio Costo por Presentación',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._product.presentaciones.map(
+            (pres) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          pres['presentacion'] ?? 'Presentación',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Cantidad: ${pres['cantidad']?.toString() ?? '1'} unds',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '\$${NumberFormat('#,###.00').format(pres['precio_promedio'] ?? 0.0)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[800],
+                          ),
+                        ),
+                      ),
+                      if (_isGerente) ...[
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 18),
+                          onPressed: () => _editPresentationPrice(pres),
+                          tooltip: 'Editar precio',
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -2786,6 +3053,283 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  /// Abre un diálogo para editar el precio base del producto
+  void _editBasePriceDialog() {
+    final priceController = TextEditingController(
+      text: _product.basePrice.toString(),
+    );
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Editar Precio Base'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Producto: ${_product.denominacion}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: priceController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: false,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Nuevo Precio Base',
+                  prefixText: '\$ ',
+                  border: const OutlineInputBorder(),
+                  hintText: '0.00',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newPrice = double.tryParse(priceController.text);
+                if (newPrice == null || newPrice < 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Por favor ingresa un precio válido'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  return;
+                }
+
+                try {
+                  // Actualizar el precio base usando ProductService
+                  final success = await ProductService.updateBasePriceVenta(
+                    productId: int.parse(_product.id),
+                    newPrice: newPrice,
+                  );
+
+                  if (!mounted) return;
+
+                  if (success) {
+                    Navigator.pop(context);
+
+                    // Recargar los datos del producto
+                    await _loadAdditionalData();
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Precio base actualizado exitosamente'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Error al actualizar el precio'),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error al actualizar precio: $e'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Inicializa los precios promedio de las presentaciones
+  /// Busca operaciones de recepción y calcula el promedio
+  Future<void> _initializeAveragePrices() async {
+    if (!mounted) return;
+
+    setState(() => _isInitializingPrices = true);
+
+    try {
+      print('🔍 Iniciando inicialización de precios promedio...');
+
+      final result =
+          await ProductService.initializePresentationAveragePrices(
+        productId: _product.id,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final updated = result['updated'] as int? ?? 0;
+        print('✅ Precios inicializados: $updated presentaciones actualizadas');
+
+        // Recargar los datos del producto
+        await _loadAdditionalData();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$updated presentaciones actualizadas con precios promedio',
+            ),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        final error = result['error'] ?? 'Error desconocido';
+        print('❌ Error: $error');
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $error'),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error al inicializar precios: $e');
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al inicializar precios: $e'),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isInitializingPrices = false);
+      }
+    }
+  }
+
+  /// Abre un diálogo para editar el precio promedio de una presentación
+  void _editPresentationPrice(Map<String, dynamic> presentation) {
+    final priceController = TextEditingController(
+      text: (presentation['precio_promedio'] ?? 0.0).toString(),
+    );
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(
+            'Editar Precio de ${presentation['presentacion'] ?? 'Presentación'}',
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Cantidad: ${presentation['cantidad']?.toString() ?? '1'} unds',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: priceController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: false,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Nuevo Precio de Costo',
+                  prefixText: '\$ ',
+                  border: const OutlineInputBorder(),
+                  hintText: '0.00',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newPrice = double.tryParse(priceController.text);
+                if (newPrice == null || newPrice < 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Por favor ingresa un precio válido'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  return;
+                }
+
+                try {
+                  final success =
+                      await ProductService.updatePresentationAveragePrice(
+                    presentationId: presentation['id'].toString(),
+                    newPrice: newPrice,
+                  );
+
+                  if (!mounted) return;
+
+                  if (success) {
+                    Navigator.pop(context);
+
+                    // Recargar los datos del producto
+                    await _loadAdditionalData();
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Precio actualizado exitosamente'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Error al actualizar el precio'),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
+              child: const Text('Guardar'),
+            ),
+          ],
         );
       },
     );

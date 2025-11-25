@@ -61,7 +61,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         title: Text(
           isDesktop 
-              ? 'Dashboard Ejecutivo - VentIQ Super Admin'
+              ? 'Dashboard Ejecutivo - Inventtia Super Admin'
               : 'Dashboard Ejecutivo',
         ),
         actions: [

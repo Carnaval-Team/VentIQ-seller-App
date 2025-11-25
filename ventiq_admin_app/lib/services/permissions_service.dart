@@ -14,6 +14,9 @@ class PermissionsService {
   UserRole? _cachedRole;
   int? _cachedWarehouseId;
   String? _cachedUserId;
+  
+  // Cache de roles por tienda
+  Map<int, UserRole>? _cachedRolesByStore;
 
   // SOLO PARA DESARROLLO: Forzar un rol específico
   UserRole? _forcedRole;
@@ -33,6 +36,7 @@ class PermissionsService {
   }
 
   /// Obtener el rol del usuario actual
+  /// Primero intenta obtener del caché, luego de preferencias guardadas, y finalmente de la BD
   Future<UserRole> getUserRole() async {
     // Si hay un rol forzado (modo desarrollo), usarlo
     if (_forcedRole != null) {
@@ -46,6 +50,15 @@ class PermissionsService {
     }
 
     try {
+      // Intentar obtener el rol guardado en preferencias primero
+      final savedRole = await _userPrefs.getAdminRole();
+      if (savedRole != null && savedRole.isNotEmpty) {
+        print('💾 Usando rol guardado en preferencias: $savedRole');
+        final role = _convertStringToUserRole(savedRole);
+        _cachedRole = role;
+        return role;
+      }
+
       final user = _supabase.auth.currentUser;
       if (user == null) {
         print('❌ No hay usuario autenticado');
@@ -129,6 +142,122 @@ class PermissionsService {
     }
   }
 
+  /// Convertir string de rol a UserRole enum
+  UserRole _convertStringToUserRole(String roleName) {
+    switch (roleName.toLowerCase()) {
+      case 'gerente':
+        return UserRole.gerente;
+      case 'supervisor':
+        return UserRole.supervisor;
+      case 'almacenero':
+        return UserRole.almacenero;
+      case 'vendedor':
+        return UserRole.vendedor;
+      default:
+        return UserRole.none;
+    }
+  }
+
+  /// Obtener todos los roles del usuario para cada tienda
+  /// Retorna: Map<idTienda, UserRole>
+  Future<Map<int, UserRole>> getUserRolesByStore() async {
+    if (_cachedRolesByStore != null) {
+      print('💾 Usando roles por tienda en caché: $_cachedRolesByStore');
+      return _cachedRolesByStore!;
+    }
+
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        print('❌ No hay usuario autenticado');
+        return {};
+      }
+
+      _cachedUserId = user.id;
+      final rolesByStore = <int, UserRole>{};
+      print('🔍 Verificando roles por tienda para UUID: ${user.id}');
+
+      // 1. Gerentes - puede serlo en múltiples tiendas
+      final gerenteData = await _supabase
+          .from('app_dat_gerente')
+          .select('id_tienda')
+          .eq('uuid', user.id);
+
+      if (gerenteData is List && gerenteData.isNotEmpty) {
+        for (final record in gerenteData) {
+          final idTienda = record['id_tienda'] as int;
+          rolesByStore[idTienda] = UserRole.gerente;
+          print('  ✅ Gerente en tienda: $idTienda');
+        }
+      }
+
+      // 2. Supervisores - puede serlo en múltiples tiendas
+      final supervisorData = await _supabase
+          .from('app_dat_supervisor')
+          .select('id_tienda')
+          .eq('uuid', user.id);
+
+      if (supervisorData is List && supervisorData.isNotEmpty) {
+        for (final record in supervisorData) {
+          final idTienda = record['id_tienda'] as int;
+          // Si ya es gerente en esta tienda, mantener el rol más alto
+          if (!rolesByStore.containsKey(idTienda)) {
+            rolesByStore[idTienda] = UserRole.supervisor;
+            print('  ✅ Supervisor en tienda: $idTienda');
+          }
+        }
+      }
+
+      // 3. Almaceneros - puede serlo en múltiples almacenes (pero de una sola tienda)
+      final almaceneroData = await _supabase
+          .from('app_dat_almacenero')
+          .select('id_almacen, app_dat_almacen(id_tienda)')
+          .eq('uuid', user.id);
+
+      if (almaceneroData is List && almaceneroData.isNotEmpty) {
+        for (final record in almaceneroData) {
+          final idTienda = record['app_dat_almacen']['id_tienda'] as int;
+          // Si ya es gerente o supervisor en esta tienda, mantener el rol más alto
+          if (!rolesByStore.containsKey(idTienda)) {
+            rolesByStore[idTienda] = UserRole.almacenero;
+            print('  ✅ Almacenero en tienda: $idTienda');
+          }
+        }
+      }
+
+      // Nota: Los vendedores no se incluyen aquí porque no tienen acceso a la administración
+      // Solo se retornan roles de admin: gerente, supervisor, almacenero
+
+      _cachedRolesByStore = rolesByStore;
+      print('✅ Roles por tienda detectados: ${rolesByStore.length} tiendas');
+      return rolesByStore;
+    } catch (e) {
+      print('❌ Error al obtener roles por tienda: $e');
+      return {};
+    }
+  }
+
+  /// Obtener el rol del usuario para una tienda específica
+  /// Si la tienda está en el mapa, retorna ese rol
+  /// Si no está pero el usuario tiene un solo rol, retorna ese rol
+  /// Si no está y hay múltiples roles, retorna none
+  Future<UserRole> getUserRoleForStore(int storeId) async {
+    final rolesByStore = await getUserRolesByStore();
+    
+    // Si la tienda está en el mapa, retornar ese rol
+    if (rolesByStore.containsKey(storeId)) {
+      return rolesByStore[storeId]!;
+    }
+    
+    // Si hay un solo rol en el mapa, asumir que es para esta tienda también
+    if (rolesByStore.length == 1) {
+      return rolesByStore.values.first;
+    }
+    
+    // Si no hay roles o hay múltiples pero no coincide, retornar none
+    return UserRole.none;
+  }
+
   /// Obtener el almacén asignado al almacenero
   Future<int?> getAssignedWarehouse() async {
     if (_cachedWarehouseId != null) return _cachedWarehouseId;
@@ -161,11 +290,29 @@ class PermissionsService {
     _cachedRole = null;
     _cachedWarehouseId = null;
     _cachedUserId = null;
+    _cachedRolesByStore = null;
   }
 
   /// Verificar si el usuario puede acceder a una pantalla
+  /// Usa el rol de la tienda actualmente seleccionada
   Future<bool> canAccessScreen(String screenRoute) async {
-    final role = await getUserRole();
+    final currentStoreId = await _userPrefs.getIdTienda();
+    UserRole role;
+    
+    if (currentStoreId != null) {
+      // Obtener rol para la tienda actual
+      role = await getUserRoleForStore(currentStoreId);
+      
+      // Si no se encuentra el rol en la tienda, intentar con el rol principal
+      if (role == UserRole.none) {
+        print('⚠️ Rol no encontrado para tienda $currentStoreId, usando rol principal');
+        role = await getUserRole();
+      }
+    } else {
+      // Fallback al rol principal si no hay tienda seleccionada
+      role = await getUserRole();
+    }
+    
     final permissions = _screenPermissions[screenRoute];
 
     if (permissions == null) {
@@ -177,11 +324,29 @@ class PermissionsService {
   }
 
   /// Verificar si el usuario puede realizar una acción
+  /// Usa el rol de la tienda actualmente seleccionada
   Future<bool> canPerformAction(String action) async {
-    final role = await getUserRole();
+    final currentStoreId = await _userPrefs.getIdTienda();
+    UserRole role;
+    
+    if (currentStoreId != null) {
+      // Obtener rol para la tienda actual
+      role = await getUserRoleForStore(currentStoreId);
+      
+      // Si no se encuentra el rol en la tienda, intentar con el rol principal
+      if (role == UserRole.none) {
+        print('⚠️ Rol no encontrado para tienda $currentStoreId, usando rol principal');
+        role = await getUserRole();
+      }
+    } else {
+      // Fallback al rol principal si no hay tienda seleccionada
+      role = await getUserRole();
+    }
+    
     final permissions = _actionPermissions[action];
 
     print('🔍 canPerformAction("$action")');
+    print('  • Tienda actual: $currentStoreId');
     print('  • Rol detectado: ${getRoleName(role)}');
     print(
       '  • Permisos para esta acción: ${permissions?.map((r) => getRoleName(r)).join(", ") ?? "NO DEFINIDOS"}',
@@ -201,8 +366,25 @@ class PermissionsService {
   }
 
   /// Obtener lista de pantallas permitidas para el rol
+  /// Usa el rol de la tienda actualmente seleccionada
   Future<List<String>> getAllowedScreens() async {
-    final role = await getUserRole();
+    final currentStoreId = await _userPrefs.getIdTienda();
+    UserRole role;
+    
+    if (currentStoreId != null) {
+      // Obtener rol para la tienda actual
+      role = await getUserRoleForStore(currentStoreId);
+      
+      // Si no se encuentra el rol en la tienda, intentar con el rol principal
+      if (role == UserRole.none) {
+        print('⚠️ Rol no encontrado para tienda $currentStoreId, usando rol principal');
+        role = await getUserRole();
+      }
+    } else {
+      // Fallback al rol principal si no hay tienda seleccionada
+      role = await getUserRole();
+    }
+    
     final allowedScreens = <String>[];
 
     _screenPermissions.forEach((route, roles) {

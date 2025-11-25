@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/store_config_service.dart';
 import '../utils/price_utils.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
@@ -30,12 +31,58 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double _promoDiscount = 0.0;
   bool _promoApplied = false;
   bool _isProcessing = false;
+  late bool _noSolicitarCliente;
   
   // Discount percentages (you can make these configurable)
   static const double promoDiscountPercentage = 0.10; // 10% promo discount
   
   // Calculate and round promo discount
   double get roundedPromoDiscount => PriceUtils.roundDiscountPrice(_promoDiscount);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStoreConfig();
+  }
+
+  Future<void> _loadStoreConfig() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId != null) {
+        // Primero intentar obtener del cache (debe estar disponible desde login)
+        final config = await StoreConfigService.getStoreConfigFromCache();
+        
+        if (config != null) {
+          // Usar configuración del cache
+          _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
+          print('✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente');
+        } else {
+          // Fallback: cargar desde Supabase si no está en cache
+          print('⚠️ Configuración no encontrada en cache, cargando desde Supabase...');
+          final noSolicitar = await StoreConfigService.getNoSolicitarCliente(storeId);
+          _noSolicitarCliente = noSolicitar;
+          print('✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente');
+        }
+        
+        // Si no se solicita cliente, establecer nombre automáticamente
+        if (_noSolicitarCliente) {
+          _buyerNameController.text = 'Cliente';
+        }
+        
+        // Notificar al widget que se actualizó la configuración
+        if (mounted) {
+          setState(() {});
+        }
+      }
+    } catch (e) {
+      print('❌ Error cargando configuración: $e');
+      // Usar valor por defecto en caso de error
+      _noSolicitarCliente = false;
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -358,6 +405,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildBuyerInfoSection() {
+    // Si no se solicita cliente, ocultar esta sección
+    if (_noSolicitarCliente) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -415,6 +467,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildExtraContactsSection() {
+    // Si no se solicita cliente, ocultar esta sección también
+    if (_noSolicitarCliente) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

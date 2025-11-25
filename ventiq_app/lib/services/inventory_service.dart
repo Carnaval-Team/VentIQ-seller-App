@@ -39,7 +39,7 @@ class InventoryService {
       print('📄 Límite: $limite, Página: $pagina');
 
       final response = await _supabase.rpc(
-        'fn_listar_inventario_productos_paged',
+        'fn_listar_inventario_productos_paged2',
         params: {
           'p_id_tienda': idTienda,
           'p_id_almacen': idAlmacen,

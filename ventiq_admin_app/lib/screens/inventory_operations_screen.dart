@@ -1,7 +1,12 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
+import '../services/printer_manager.dart';
 
 class InventoryOperationsScreen extends StatefulWidget {
   const InventoryOperationsScreen({super.key});
@@ -105,7 +110,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       );
 
       final newOperations = result['operations'] ?? [];
-      final newTotalCount = result['totalCount'] ?? 0;
+      final newTotalCount = result['total_count'] ?? 0;
       
       print('📊 Resultado de _loadOperations:');
       print('  • isLoadMore: $isLoadMore');
@@ -126,12 +131,15 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           print('  • Lista reemplazada con ${newOperations.length} operaciones');
         }
         _totalCount = newTotalCount;
-        _hasNextPage = (_currentPage * _itemsPerPage) < _totalCount;
+        // Hay más páginas si el total de operaciones mostradas es menor que el total disponible
+        _hasNextPage = _operations.length < _totalCount;
         _isLoading = false;
         _isLoadingMore = false;
         
         print('  • _hasNextPage calculado: $_hasNextPage');
-        print('  • Cálculo: ($_currentPage * $_itemsPerPage) < $_totalCount = ${(_currentPage * _itemsPerPage)} < $_totalCount');
+        print('  • Cálculo: ${_operations.length} < $_totalCount = $_hasNextPage');
+        print('  • Operaciones cargadas hasta ahora: ${_operations.length}');
+        print('  • Total disponible en servidor: $_totalCount');
       });
     } catch (e) {
       setState(() {
@@ -690,25 +698,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
-  void _nextPage() {
-    if (_hasNextPage) {
-      setState(() => _currentPage++);
-      _loadOperations();
-    }
-  }
-
-  void _previousPage() {
-    if (_currentPage > 1) {
-      setState(() => _currentPage--);
-      _loadOperations();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Column(
-        children: [_buildFilters(), _buildOperationsList(), _buildPagination()],
+        children: [_buildFilters(), _buildOperationsList()],
       ),
     );
   }
@@ -866,21 +860,27 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                     ),
                   ],
                 )
-                : ListView.builder(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _operations.length + (_isLoadingMore ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index == _operations.length) {
-                      // Mostrar indicador de carga al final
-                      return _buildLoadingMoreIndicator();
-                    }
-                    final operation = _operations[index];
-                    return _buildOperationCard(operation);
-                  },
-                ),
+                : _buildOperationsListContent(),
       ),
+    );
+  }
+
+  /// Construye el contenido de la lista de operaciones
+  /// Usa infinite scroll en ambas plataformas (móvil y web)
+  Widget _buildOperationsListContent() {
+    return ListView.builder(
+      controller: _scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      itemCount: _operations.length + (_isLoadingMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == _operations.length) {
+          // Mostrar indicador de carga al final
+          return _buildLoadingMoreIndicator();
+        }
+        final operation = _operations[index];
+        return _buildOperationCard(operation);
+      },
     );
   }
 
@@ -1132,48 +1132,6 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     return Colors.blueGrey[600] ?? Colors.blueGrey;
   }
 
-  Widget _buildPagination() {
-    if (_totalCount <= _itemsPerPage) return const SizedBox.shrink();
-
-    final totalPages = (_totalCount / _itemsPerPage).ceil();
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'Página $_currentPage de $totalPages ($_totalCount total)',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-          Row(
-            children: [
-              IconButton(
-                onPressed: _currentPage > 1 ? _previousPage : null,
-                icon: const Icon(Icons.chevron_left),
-              ),
-              IconButton(
-                onPressed: _hasNextPage ? _nextPage : null,
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showOperationDetails(Map<String, dynamic> operation) {
     // Debug: Print all operation data
     print('🔍 Operation details:');
@@ -1305,6 +1263,10 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                               const SizedBox(height: 12),
                               _buildCancelButton(operation),
                             ],
+
+                            // Show print button for all operations
+                            const SizedBox(height: 24),
+                            _buildPrintButton(operation),
                           ],
                         ),
                       ),
@@ -2394,8 +2356,26 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
   Future<String> _getUserRole() async {
     try {
       final userPrefs = UserPreferencesService();
-      final adminProfile = await userPrefs.getAdminProfile();
-      return adminProfile['role'] ?? 'trabajador';
+      final permissionsService = PermissionsService();
+      
+      // Obtener tienda actual
+      final currentStoreId = await userPrefs.getIdTienda();
+      UserRole role;
+      
+      if (currentStoreId != null) {
+        // Obtener rol para la tienda actual
+        role = await permissionsService.getUserRoleForStore(currentStoreId);
+        
+        // Si no se encuentra el rol en la tienda, intentar con el rol principal
+        if (role == UserRole.none) {
+          role = await permissionsService.getUserRole();
+        }
+      } else {
+        // Fallback al rol principal si no hay tienda seleccionada
+        role = await permissionsService.getUserRole();
+      }
+      
+      return permissionsService.getRoleName(role).toLowerCase();
     } catch (e) {
       print('Error getting user role: $e');
       return 'trabajador'; // Default role
@@ -2449,6 +2429,293 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               ),
             ],
           ),
+    );
+  }
+
+  /// 🖨️ Construir botón de impresión
+  Widget _buildPrintButton(Map<String, dynamic> operation) {
+    // Obtener el estado de la operación
+    final estadoNombre = (operation['estado_nombre'] ?? '').toString().toLowerCase().trim();
+    
+    // Validar si la operación está completada
+    final isCompleted = estadoNombre.contains('completada') || 
+                        estadoNombre.contains('completed') ||
+                        estadoNombre.contains('finalizada');
+    
+    print('🖨️ Print Button - Estado: "$estadoNombre", ¿Completada?: $isCompleted');
+    
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: isCompleted ? () => _printOperation(operation) : null,
+        icon: const Icon(Icons.print),
+        label: Text(
+          isCompleted 
+              ? 'Imprimir Operación' 
+              : 'Solo se pueden imprimir operaciones completadas',
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isCompleted 
+              ? const Color(0xFF4A90E2)
+              : Colors.grey[400],
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 🖨️ Imprimir operación usando PrinterManager
+  Future<void> _printOperation(Map<String, dynamic> operation) async {
+    try {
+      print('🖨️ Iniciando impresión de operación...');
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado, cancelando impresión');
+        return;
+      }
+
+      // Crear instancia del PrinterManager
+      final printerManager = PrinterManager();
+
+      // Paso 1: Mostrar diálogo de confirmación
+      print('📋 Paso 1: Mostrar diálogo de confirmación');
+      bool shouldPrint = await printerManager.showPrintConfirmationDialog(context);
+      if (!shouldPrint) {
+        print('❌ Usuario canceló la impresión');
+        return;
+      }
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado después de confirmación');
+        return;
+      }
+
+      // Paso 2: Mostrar diálogo de selección de dispositivo
+      print('🔍 Paso 2: Seleccionar dispositivo Bluetooth');
+      final bluetoothService = printerManager.bluetoothService;
+      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(context);
+      if (selectedDevice == null) {
+        print('❌ No se seleccionó dispositivo');
+        return;
+      }
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado después de seleccionar dispositivo');
+        return;
+      }
+
+      // Paso 3: Mostrar diálogo de progreso - Conectando
+      print('🔌 Paso 3: Conectando a impresora');
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Conectando a impresora...'),
+            ],
+          ),
+        ),
+      );
+
+      // Conectar a la impresora
+      bool connected = await bluetoothService.connectToDevice(selectedDevice);
+      if (!connected) {
+        if (mounted) {
+          Navigator.pop(context);
+          _showPrintError('Conexión Fallida', 'No se pudo conectar a la impresora');
+        }
+        return;
+      }
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado después de conectar');
+        await bluetoothService.disconnect();
+        return;
+      }
+
+      // Paso 4: Actualizar diálogo - Imprimiendo
+      print('🖨️ Paso 4: Imprimiendo ticket');
+      Navigator.pop(context);
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Imprimiendo ticket...'),
+            ],
+          ),
+        ),
+      );
+
+      // Generar y enviar ticket
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(PaperSize.mm58, profile);
+      List<int> bytes = _generateOperationTicket(generator, operation);
+
+      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+
+      // Desconectar
+      await bluetoothService.disconnect();
+
+      // ✅ Verificar si el widget sigue montado antes de cerrar diálogo
+      if (!mounted) {
+        print('⚠️ Widget desmontado antes de mostrar resultado');
+        return;
+      }
+
+      // Paso 5: Cerrar diálogo y mostrar resultado
+      print('✅ Paso 5: Mostrar resultado');
+      Navigator.pop(context);
+
+      if (printed) {
+        if (mounted) {
+          _showPrintSuccess('¡Ticket Impreso!', 'La operación se imprimió correctamente');
+          // Cerrar la pantalla después de mostrar el éxito
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) {
+              Navigator.pop(context); // Cerrar diálogo de éxito
+              Navigator.pop(context); // Cerrar pantalla de operación
+            }
+          });
+        }
+        print('✅ Ticket impreso exitosamente');
+      } else {
+        if (mounted) {
+          _showPrintError('Error de Impresión', 'No se pudo imprimir el ticket');
+          // Cerrar la pantalla después de mostrar el error
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) {
+              Navigator.pop(context); // Cerrar diálogo de error
+              Navigator.pop(context); // Cerrar pantalla de operación
+            }
+          });
+        }
+        print('❌ Error al imprimir ticket');
+      }
+    } catch (e) {
+      if (mounted) {
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        _showPrintError('Error', 'Ocurrió un error al imprimir: $e');
+        // Cerrar la pantalla después de mostrar el error
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) {
+            Navigator.pop(context); // Cerrar diálogo de error
+            Navigator.pop(context); // Cerrar pantalla de operación
+          }
+        });
+      }
+      print('❌ Error en _printOperation: $e');
+    }
+  }
+
+  /// Generar contenido del ticket de operación
+  List<int> _generateOperationTicket(Generator generator, Map<String, dynamic> operation) {
+    List<int> bytes = [];
+
+    // Header
+    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('OPERACIÓN DE INVENTARIO', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+    // Información de la operación
+    bytes += generator.text('ID: ${operation['id']}', styles: PosStyles(align: PosAlign.left, bold: true));
+    bytes += generator.text('Tipo: ${operation['tipo_operacion_nombre'] ?? 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Estado: ${operation['estado_nombre'] ?? 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Fecha: ${_formatDateTime(DateTime.parse(operation['created_at']))}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+    // Detalles
+    final totalPrice = _calculateTotalPrice(operation);
+    final totalItems = _calculateTotalItems(operation);
+
+    bytes += generator.text('Total Items: $totalItems', styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Total: \$${totalPrice.toStringAsFixed(2)}', 
+                           styles: PosStyles(align: PosAlign.left, bold: true));
+
+    // Observaciones
+    if (operation['observaciones']?.isNotEmpty == true) {
+      bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+      bytes += generator.text('Obs: ${operation['observaciones']}', 
+                             styles: PosStyles(align: PosAlign.left));
+    }
+
+    // Footer
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text('Gracias', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.emptyLines(2);
+    bytes += generator.cut();
+
+    return bytes;
+  }
+
+  /// Mostrar error de impresión
+  void _showPrintError(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.error, color: Colors.red),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mostrar éxito de impresión
+  void _showPrintSuccess(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('¡Genial!'),
+          ),
+        ],
+      ),
     );
   }
 }

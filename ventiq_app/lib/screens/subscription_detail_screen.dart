@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/subscription.dart';
 import '../services/subscription_service.dart';
 import '../services/user_preferences_service.dart';
+import '../utils/app_snackbar.dart';
 import '../services/subscription_guard_service.dart';
 import '../services/auth_service.dart';
 
@@ -50,11 +51,10 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     } catch (e) {
       print('❌ Error cargando datos de suscripción: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error cargando datos de suscripción: $e'),
-            backgroundColor: Colors.red,
-          ),
+        AppSnackBar.showPersistent(
+          context,
+          message: 'Error cargando datos de suscripción: $e',
+          backgroundColor: Colors.red,
         );
       }
     } finally {

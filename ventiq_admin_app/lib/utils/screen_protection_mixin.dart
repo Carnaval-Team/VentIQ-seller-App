@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../services/permissions_service.dart';
+import '../services/user_preferences_service.dart';
 import 'navigation_guard.dart';
 
 /// Mixin para proteger pantallas según permisos del usuario
 mixin ScreenProtectionMixin<T extends StatefulWidget> on State<T> {
   final PermissionsService _permissionsService = PermissionsService();
+  final UserPreferencesService _userPrefs = UserPreferencesService();
   
   bool _isCheckingPermissions = true;
   bool _hasAccess = false;
@@ -23,7 +25,22 @@ mixin ScreenProtectionMixin<T extends StatefulWidget> on State<T> {
   /// Verificar si el usuario tiene acceso a esta pantalla
   Future<void> _checkScreenPermissions() async {
     try {
-      final role = await _permissionsService.getUserRole();
+      // Obtener tienda actual y rol para esa tienda
+      final currentStoreId = await _userPrefs.getIdTienda();
+      UserRole role;
+      
+      if (currentStoreId != null) {
+        role = await _permissionsService.getUserRoleForStore(currentStoreId);
+        
+        // Si no se encuentra el rol en la tienda, intentar con el rol principal
+        if (role == UserRole.none) {
+          print('⚠️ Rol no encontrado para tienda $currentStoreId, usando rol principal');
+          role = await _permissionsService.getUserRole();
+        }
+      } else {
+        role = await _permissionsService.getUserRole();
+      }
+      
       final canAccess = await _permissionsService.canAccessScreen(protectedRoute);
 
       if (mounted) {

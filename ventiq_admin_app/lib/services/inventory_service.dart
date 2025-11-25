@@ -316,7 +316,7 @@ class InventoryService {
 
       // Call the RPC function
       final response = await _supabase.rpc(
-        'fn_listar_inventario_productos_paged',
+        'fn_listar_inventario_productos_paged2',
         params: {
           'p_busqueda': busqueda,
           'p_clasificacion_abc': clasificacionAbc,
@@ -536,6 +536,58 @@ class InventoryService {
           'id_motivo_operacion':
               2, // ID correcto para entrada por transferencia
         });
+
+        final response = await _supabase.rpc(
+          'get_detalle_producto',
+          params: {
+            'id_producto_param': idProducto,
+          },
+        );
+
+        // Verificar si response es un Map (respuesta única) o List (múltiples resultados)
+        Map<String, dynamic>? productoData;
+        
+        if (response is Map<String, dynamic> && response.isNotEmpty) {
+          productoData = response;
+        } else if (response is List && response.isNotEmpty) {
+          productoData = response.first as Map<String, dynamic>;
+        }
+
+        if (productoData != null) {
+          receptionProducts.last.addAll({
+            'prod_id': productoData['prod_id'],
+            'prod_nombre': productoData['prod_nombre'],
+            'prod_sku': productoData['prod_sku'],
+            'prod_descripcion': productoData['prod_descripcion'],
+            'prod_nombre_comercial': productoData['prod_nombre_comercial'],
+            'prod_denominacion_corta': productoData['prod_denominacion_corta'],
+            'prod_descripcion_corta': productoData['prod_descripcion_corta'],
+            'prod_um': productoData['prod_um'],
+            'prod_es_refrigerado': productoData['prod_es_refrigerado'],
+            'prod_es_fragil': productoData['prod_es_fragil'],
+            'prod_es_peligroso': productoData['prod_es_peligroso'],
+            'prod_es_vendible': productoData['prod_es_vendible'],
+            'prod_es_comprable': productoData['prod_es_comprable'],
+            'prod_es_inventariable': productoData['prod_es_inventariable'],
+            'prod_es_por_lotes': productoData['prod_es_por_lotes'],
+            'prod_dias_alert_caducidad': productoData['prod_dias_alert_caducidad'],
+            'prod_codigo_barras': productoData['prod_codigo_barras'],
+            'prod_imagen': productoData['prod_imagen'],
+            'prod_es_elaborado': productoData['prod_es_elaborado'],
+            'prod_es_servicio': productoData['prod_es_servicio'],
+            'variante_id': productoData['variante_id'],
+            'variante_valor': productoData['variante_valor'],
+            'opcion_variante_id': productoData['opcion_variante_id'],
+            'opcion_variante_valor': productoData['opcion_variante_valor'],
+            'cant_unidades_base': productoData['cant_unidades_base'],
+            'cant_almacen_total': productoData['cant_almacen_total'],
+            'stock_disponible': productoData['stock_disponible'],
+            'stock_reservado': productoData['stock_reservado'],
+            'zonas_count': productoData['zonas_count'],
+            'presentaciones_count': productoData['presentaciones_count'],
+            'total_count': productoData['total_count'],
+          });
+        }
       }
 
       print('✅ Productos preparados para recepción con precios de compra');
@@ -916,7 +968,7 @@ class InventoryService {
 
         // Obtener inventario del producto en la zona específica
         final response = await _supabase.rpc(
-          'fn_listar_inventario_productos_paged',
+          'fn_listar_inventario_productos_paged2',
           params: {
             'p_id_tienda': storeId,
             'p_id_ubicacion': int.tryParse(zoneId) ?? 1,
@@ -1114,7 +1166,7 @@ class InventoryService {
       );
 
       final response = await _supabase.rpc(
-        'fn_listar_inventario_productos_paged',
+        'fn_listar_inventario_productos_paged2',
         params: {
           'p_id_producto': idProducto,
           'p_id_ubicacion':
@@ -1243,7 +1295,7 @@ class InventoryService {
 
       // Query to get all presentations configured for this product in this zone
       final response = await _supabase.rpc(
-        'fn_listar_inventario_productos_paged',
+        'fn_listar_inventario_productos_paged2',
         params: {
           'p_id_producto': idProducto,
           'p_id_ubicacion':
@@ -1783,7 +1835,7 @@ class InventoryService {
       print('🔍 InventoryService: Getting inventory summary by user...');
 
       final response = await _supabase.rpc(
-        'fn_inventario_resumen_por_usuario_almacen2',
+        'fn_inventario_resumen_por_usuario_almacen',
         params: {
           'p_id_tienda': idTienda,
           'p_id_almacen': idAlmacen,
@@ -1935,7 +1987,7 @@ class InventoryService {
       print('  - includeZero: $includeZero');
 
       final response = await _supabase.rpc(
-        'obtener_reporte_inventario_completo2',
+        'obtener_reporte_inventario_completo3',
         params: {
           'p_id_tienda': idTienda,
           'p_fecha_desde': fechaDesde?.toIso8601String().split('T')[0],
@@ -2190,6 +2242,107 @@ class InventoryService {
 
       print('✅ Operación $idOperacion completada exitosamente');
       print('📦 Respuesta RPC: $response');
+
+      // =====================================================
+      // ACTUALIZAR PRECIO PROMEDIO DE PRESENTACIONES RECIBIDAS
+      // =====================================================
+      print('\n📊 Iniciando actualización de precios promedio...');
+      
+      try {
+        // Obtener todos los productos recibidos en esta operación
+        final productosRecibidos = await _supabase
+            .from('app_dat_recepcion_productos')
+            .select('id_presentacion, precio_unitario, cantidad')
+            .eq('id_operacion', idOperacion);
+
+        print('📦 Productos recibidos encontrados: ${productosRecibidos.length}');
+
+        if (productosRecibidos.isNotEmpty) {
+          int productosActualizados = 0;
+
+          for (var producto in productosRecibidos) {
+            try {
+              final idPresentacion = producto['id_presentacion'];
+              final precioUnitario = (producto['precio_unitario'] as num).toDouble();
+              final cantidadRecibida = (producto['cantidad'] as num).toDouble();
+
+              print('\n📝 Procesando presentación ID: $idPresentacion');
+              print('   - Precio unitario recibido: \$${precioUnitario.toStringAsFixed(2)}');
+              print('   - Cantidad recibida: $cantidadRecibida');
+
+              // Obtener el precio promedio anterior de app_dat_producto_presentacion
+              final presentacionData = await _supabase
+                  .from('app_dat_producto_presentacion')
+                  .select('precio_promedio, id_producto')
+                  .eq('id', idPresentacion)
+                  .single();
+
+              final precioPromedioAnterior = 
+                  (presentacionData['precio_promedio'] as num?)?.toDouble() ?? 0.0;
+              final idProducto = presentacionData['id_producto'];
+
+              print('   - Precio promedio anterior: \$${precioPromedioAnterior.toStringAsFixed(2)}');
+              print('   - ID Producto: $idProducto');
+
+              // Obtener la cantidad real anterior del último registro en app_dat_inventario_productos
+              // Se usa cantidad_inicial porque es la cantidad que había ANTES de esta recepción
+              final ultimoInventario = await _supabase
+                  .from('app_dat_inventario_productos')
+                  .select('cantidad_inicial')
+                  .eq('id_presentacion', idPresentacion)
+                  .order('created_at', ascending: false)
+                  .limit(1);
+
+              double cantidadAnterior = 0.0;
+              if (ultimoInventario.isNotEmpty) {
+                final ultimoReg = ultimoInventario.first;
+                // Usar cantidad_inicial (cantidad que había antes de esta recepción)
+                cantidadAnterior = (ultimoReg['cantidad_inicial'] as num?)?.toDouble() ?? 0.0;
+              }
+
+              print('   - Cantidad real anterior (último inventario - cantidad_inicial): $cantidadAnterior');
+
+              // Calcular nuevo precio promedio
+              // Fórmula: (precio_anterior * cantidad_anterior + precio_nuevo * cantidad_nueva) / (cantidad_anterior + cantidad_nueva)
+              double nuevoPrecioPromedio = 0.0;
+              
+              if (cantidadAnterior + cantidadRecibida > 0) {
+                nuevoPrecioPromedio = 
+                    (precioPromedioAnterior * cantidadAnterior + precioUnitario * cantidadRecibida) / 
+                    (cantidadAnterior + cantidadRecibida);
+              } else {
+                nuevoPrecioPromedio = precioUnitario;
+              }
+
+              print('   - Nuevo precio promedio calculado: \$${nuevoPrecioPromedio.toStringAsFixed(2)}');
+              print('   - Fórmula: (\$${precioPromedioAnterior.toStringAsFixed(2)} × $cantidadAnterior + \$${precioUnitario.toStringAsFixed(2)} × $cantidadRecibida) / ${cantidadAnterior + cantidadRecibida}');
+
+              // Actualizar el precio promedio en app_dat_producto_presentacion
+              await _supabase
+                  .from('app_dat_producto_presentacion')
+                  .update({'precio_promedio': nuevoPrecioPromedio})
+                  .eq('id', idPresentacion);
+
+              print('   ✅ Precio promedio actualizado exitosamente');
+              productosActualizados++;
+
+            } catch (e) {
+              print('   ❌ Error procesando presentación: $e');
+            }
+          }
+
+          print('\n✅ Resumen de actualización:');
+          print('   - Productos procesados: ${productosRecibidos.length}');
+          print('   - Productos actualizados: $productosActualizados');
+          print('   - Tasa de éxito: ${(productosActualizados / productosRecibidos.length * 100).toStringAsFixed(1)}%');
+        } else {
+          print('⚠️ No se encontraron productos en la recepción');
+        }
+      } catch (e) {
+        print('⚠️ Error al actualizar precios promedio: $e');
+        print('   - Continuando sin interrumpir el flujo de completación');
+      }
+
       return {
         'success': true,
         'message': 'Operación completada exitosamente',
@@ -2450,30 +2603,9 @@ class InventoryService {
           .order('denominacion');
 
       print('✅ Medios de pago obtenidos: ${response.length}');
-      return List<Map<String, dynamic>>.from(response);
+      return response;
     } catch (e) {
-      print('❌ Error al obtener medios de pago: $e');
-      rethrow;
-    }
-  }
-
-  /// Obtener TPVs de una tienda
-  static Future<List<Map<String, dynamic>>> getTPVsByTienda(
-    int idTienda,
-  ) async {
-    try {
-      print('🔍 Obteniendo TPVs de la tienda $idTienda...');
-
-      final response = await _supabase
-          .from('app_dat_tpv')
-          .select('id, denominacion, id_tienda, id_almacen')
-          .eq('id_tienda', idTienda)
-          .order('denominacion');
-
-      print('✅ TPVs obtenidos: ${response.length}');
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      print('❌ Error al obtener TPVs: $e');
+      print('❌ Error obteniendo medios de pago: $e');
       rethrow;
     }
   }
@@ -2482,13 +2614,17 @@ class InventoryService {
   static Future<Map<String, dynamic>> createOperacionVenta({
     required int idOperacion,
     required int idTpv,
+    required int idTienda,
     required double importeTotal,
+    required int idMedioPago,
   }) async {
     try {
       print('💳 Creando operación de venta...');
       print('   - ID Operación: $idOperacion');
       print('   - ID TPV: $idTpv');
+      print('   - ID Tienda: $idTienda');
       print('   - Importe: $importeTotal');
+      print('   - ID Medio Pago: $idMedioPago');
 
       final response =
           await _supabase
@@ -2546,6 +2682,90 @@ class InventoryService {
     } catch (e) {
       print('❌ Error al registrar pago: $e');
       rethrow;
+    }
+  }
+
+  /// Actualiza el precio promedio de los productos presentación después de una recepción
+  /// Utiliza promedio ponderado basado en cantidad anterior y nueva
+  static Future<Map<String, dynamic>> updateAveragePriceAfterReception({
+    required int idOperacion,
+    required List<Map<String, dynamic>> productos,
+  }) async {
+    try {
+      print('📊 Actualizando precio promedio de productos...');
+      print('   - ID Operación: $idOperacion');
+      print('   - Productos a procesar: ${productos.length}');
+
+      // Convertir productos a formato JSON para enviar a la función
+      final productosJson = productos.map((p) {
+        return {
+          'id_presentacion': p['id_presentacion'],
+          'precio_unitario': p['precio_unitario'],
+          'cantidad': p['cantidad'],
+        };
+      }).toList();
+
+      print('📦 Productos JSON: $productosJson');
+
+      // Llamar a la función RPC en Supabase
+      final response = await _supabase.rpc(
+        'fn_actualizar_precio_promedio_recepcion_v2',
+        params: {
+          'p_id_operacion': idOperacion,
+          'p_productos': productosJson,
+        },
+      );
+
+      print('✅ Respuesta actualización de precios: $response');
+      print('📊 Tipo de respuesta: ${response.runtimeType}');
+
+      // La función RPC retorna una tabla (List), no un Map
+      // Supabase devuelve una lista con un solo elemento
+      if (response != null && response is List && response.isNotEmpty) {
+        // Obtener el primer (y único) elemento de la lista
+        final resultRow = response[0] as Map<String, dynamic>;
+        
+        final success = resultRow['success'] as bool? ?? false;
+        final message = resultRow['message'] as String? ?? 'Sin mensaje';
+        final productosActualizados = resultRow['productos_actualizados'] as int? ?? 0;
+        final tiempoMs = resultRow['tiempo_ejecucion_ms'] as int? ?? 0;
+
+        print('📊 Resultado de la función:');
+        print('   - Success: $success');
+        print('   - Message: $message');
+        print('   - Productos actualizados: $productosActualizados');
+        print('   - Tiempo: ${tiempoMs}ms');
+
+        if (success) {
+          print('✅ Precios promedio actualizados: $productosActualizados productos en ${tiempoMs}ms');
+          return {
+            'status': 'success',
+            'message': message,
+            'productos_actualizados': productosActualizados,
+            'tiempo_ejecucion_ms': tiempoMs,
+          };
+        } else {
+          print('⚠️ Error en actualización: $message');
+          return {
+            'status': 'error',
+            'message': message,
+            'productos_actualizados': 0,
+            'tiempo_ejecucion_ms': tiempoMs,
+          };
+        }
+      } else {
+        print('⚠️ Respuesta vacía o nula: $response');
+        throw Exception('Respuesta nula o vacía de la función RPC');
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error en updateAveragePriceAfterReception: $e');
+      print('📍 StackTrace: $stackTrace');
+      return {
+        'status': 'error',
+        'message': 'Error al actualizar precios: $e',
+        'productos_actualizados': 0,
+        'tiempo_ejecucion_ms': 0,
+      };
     }
   }
 }

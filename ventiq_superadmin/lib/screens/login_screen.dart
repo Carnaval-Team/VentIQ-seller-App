@@ -134,15 +134,16 @@ class _LoginScreenState extends State<LoginScreen> {
             color: AppColors.primary.withOpacity(0.1),
             shape: BoxShape.circle,
           ),
-          child: const Icon(
-            Icons.admin_panel_settings,
-            size: 40,
-            color: AppColors.primary,
+          child: Image.asset(
+            'assets/images/ic_superadmin.png',
+            width: 60,
+            height: 60,
+            fit: BoxFit.contain,
           ),
         ),
         const SizedBox(height: 24),
         Text(
-          'VentIQ Super Admin',
+          'Inventtia Super Admin',
           style: Theme.of(context).textTheme.displaySmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: AppColors.textPrimary,
@@ -301,7 +302,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          'VentIQ Super Admin v1.0.0',
+          'Inventtia Super Admin v1.0.0',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: AppColors.textHint,
           ),

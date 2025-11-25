@@ -1,16 +1,9 @@
--- Función actualizada para buscar en nombre, SKU, nombre_corto y nombre_comercial
--- Modificación de fn_listar_inventario_productos_paged para incluir búsqueda expandida
-
-CREATE OR REPLACE FUNCTION fn_listar_inventario_productos_paged(
-    p_busqueda TEXT DEFAULT NULL,
-    p_es_vendible BOOLEAN DEFAULT NULL,
+CREATE OR REPLACE FUNCTION public.fn_listar_inventario_productos_paged(
     p_pagina INTEGER DEFAULT 1,
-    p_limite INTEGER DEFAULT 20,
+    p_limite INTEGER DEFAULT 50,
     p_id_tienda BIGINT DEFAULT NULL,
-    p_mostrar_sin_stock BOOLEAN DEFAULT TRUE,
-    p_id_ubicacion BIGINT DEFAULT NULL,
-    p_clasificacion_abc SMALLINT DEFAULT NULL,
     p_id_almacen BIGINT DEFAULT NULL,
+    p_id_ubicacion BIGINT DEFAULT NULL,
     p_id_producto BIGINT DEFAULT NULL,
     p_id_variante BIGINT DEFAULT NULL,
     p_id_opcion_variante BIGINT DEFAULT NULL,
@@ -19,13 +12,22 @@ CREATE OR REPLACE FUNCTION fn_listar_inventario_productos_paged(
     p_id_subcategoria BIGINT DEFAULT NULL,
     p_id_proveedor BIGINT DEFAULT NULL,
     p_origen_cambio SMALLINT DEFAULT NULL,
+    p_es_vendible BOOLEAN DEFAULT NULL,
     p_es_inventariable BOOLEAN DEFAULT NULL,
-    p_con_stock_minimo BOOLEAN DEFAULT NULL
+    p_clasificacion_abc SMALLINT DEFAULT NULL,
+    p_mostrar_sin_stock BOOLEAN DEFAULT TRUE,
+    p_con_stock_minimo BOOLEAN DEFAULT NULL,
+    p_busqueda TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     id_producto BIGINT,
     sku_producto TEXT,
     nombre_producto TEXT,
+    nombre_comercial TEXT,
+    denominacion_corta TEXT,
+    descripcion TEXT,
+    descripcion_corta TEXT,
+    um TEXT,
     id_categoria BIGINT,
     categoria TEXT,
     id_subcategoria BIGINT,
@@ -48,20 +50,27 @@ RETURNS TABLE (
     stock_reservado NUMERIC,
     stock_disponible_ajustado NUMERIC,
     es_vendible BOOLEAN,
+    es_comprable BOOLEAN,
     es_inventariable BOOLEAN,
+    es_por_lotes BOOLEAN,
+    dias_alert_caducidad NUMERIC,
+    es_refrigerado BOOLEAN,
+    es_fragil BOOLEAN,
+    es_peligroso BOOLEAN,
+    es_elaborado BOOLEAN,
+    es_servicio BOOLEAN,
+    imagen TEXT,
+    codigo_barras TEXT,
     precio_venta NUMERIC,
     costo_promedio NUMERIC,
     margen_actual NUMERIC,
     clasificacion_abc SMALLINT,
     abc_descripcion TEXT,
     fecha_ultima_actualizacion TIMESTAMPTZ,
-    total_count BIGINT,
+    total_registros BIGINT,
     resumen_inventario JSONB,
     info_paginacion JSONB
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
+) AS $$
 DECLARE
     v_offset INTEGER := (p_pagina - 1) * p_limite;
     v_total_count BIGINT;
@@ -80,6 +89,7 @@ BEGIN
             RAISE EXCEPTION 'La tienda con ID % no existe', p_id_tienda;
         END IF;
     END IF;
+
 
     -- Contar total de resultados (para paginación)
     SELECT COUNT(*) INTO v_total_count
@@ -121,9 +131,9 @@ BEGIN
                 p_busqueda IS NULL OR
                 p.denominacion ILIKE '%' || p_busqueda || '%' OR
                 p.sku ILIKE '%' || p_busqueda || '%' OR
-                p.nombre_corto ILIKE '%' || p_busqueda || '%' OR
-                p.nombre_comercial ILIKE '%' || p_busqueda || '%' OR
                 p.codigo_barras ILIKE '%' || p_busqueda || '%' OR
+                p.nombre_comercial ILIKE '%' || p_busqueda || '%' OR
+                p.descripcion ILIKE '%' || p_busqueda || '%' OR
                 c.denominacion ILIKE '%' || p_busqueda || '%' OR
                 s.denominacion ILIKE '%' || p_busqueda || '%' OR
                 attr.denominacion ILIKE '%' || p_busqueda || '%' OR
@@ -141,6 +151,7 @@ BEGIN
                 )
             )
     ) AS conteo;
+
 
     -- Calcular totales para resumen de inventario
     SELECT 
@@ -180,9 +191,9 @@ BEGIN
             p_busqueda IS NULL OR
             p.denominacion ILIKE '%' || p_busqueda || '%' OR
             p.sku ILIKE '%' || p_busqueda || '%' OR
-            p.nombre_corto ILIKE '%' || p_busqueda || '%' OR
-            p.nombre_comercial ILIKE '%' || p_busqueda || '%' OR
             p.codigo_barras ILIKE '%' || p_busqueda || '%' OR
+            p.nombre_comercial ILIKE '%' || p_busqueda || '%' OR
+            p.descripcion ILIKE '%' || p_busqueda || '%' OR
             c.denominacion ILIKE '%' || p_busqueda || '%' OR
             s.denominacion ILIKE '%' || p_busqueda || '%' OR
             attr.denominacion ILIKE '%' || p_busqueda || '%' OR
@@ -200,9 +211,11 @@ BEGIN
             )
         );
 
+
     -- Calcular información de paginación
     v_total_paginas := CEIL(v_total_count::NUMERIC / p_limite);
     v_tiene_siguiente := p_pagina < v_total_paginas;
+
 
     -- Retornar inventario paginado
     RETURN QUERY
@@ -252,11 +265,26 @@ BEGIN
             p.id,
             p.sku AS sku_producto,
             p.denominacion AS nombre_producto,
+            p.nombre_comercial,
+            p.denominacion_corta,
+            p.descripcion,
+            p.descripcion_corta,
+            p.um,
             p.id_categoria,
             ps.id_sub_categoria AS id_subcategoria,
             p.id_tienda,
             p.es_vendible,
+            p.es_comprable,
             p.es_inventariable,
+            p.es_por_lotes,
+            p.dias_alert_caducidad,
+            p.es_refrigerado,
+            p.es_fragil,
+            p.es_peligroso,
+            p.es_elaborado,
+            p.es_servicio,
+            p.imagen,
+            p.codigo_barras,
             COALESCE(pv.precio_venta_cup, 0) as precio_venta,
             0::NUMERIC as costo_promedio
         FROM public.app_dat_producto p
@@ -330,6 +358,11 @@ BEGIN
         p.id::BIGINT,
         p.sku_producto::TEXT,
         p.nombre_producto::TEXT,
+        p.nombre_comercial::TEXT,
+        p.denominacion_corta::TEXT,
+        p.descripcion::TEXT,
+        p.descripcion_corta::TEXT,
+        p.um::TEXT,
         p.id_categoria::BIGINT,
         COALESCE(c.categoria, 'Sin categoría')::TEXT,
         p.id_subcategoria::BIGINT,
@@ -352,7 +385,17 @@ BEGIN
         COALESCE(sr.reservado, 0)::NUMERIC AS stock_reservado,
         GREATEST(inv_det.cantidad_final - COALESCE(sr.reservado, 0), 0)::NUMERIC AS stock_disponible_ajustado,
         p.es_vendible::BOOLEAN,
+        p.es_comprable::BOOLEAN,
         p.es_inventariable::BOOLEAN,
+        p.es_por_lotes::BOOLEAN,
+        p.dias_alert_caducidad::NUMERIC,
+        p.es_refrigerado::BOOLEAN,
+        p.es_fragil::BOOLEAN,
+        p.es_peligroso::BOOLEAN,
+        p.es_elaborado::BOOLEAN,
+        p.es_servicio::BOOLEAN,
+        p.imagen::TEXT,
+        p.codigo_barras::TEXT,
         p.precio_venta::NUMERIC,
         p.costo_promedio::NUMERIC,
         CASE
@@ -403,6 +446,8 @@ BEGIN
             p_busqueda IS NULL OR
             p.nombre_producto ILIKE '%' || p_busqueda || '%' OR
             p.sku_producto ILIKE '%' || p_busqueda || '%' OR
+            p.nombre_comercial ILIKE '%' || p_busqueda || '%' OR
+            p.descripcion ILIKE '%' || p_busqueda || '%' OR
             c.categoria ILIKE '%' || p_busqueda || '%' OR
             c.subcategoria ILIKE '%' || p_busqueda || '%' OR
             c.variante ILIKE '%' || p_busqueda || '%' OR
@@ -413,11 +458,4 @@ BEGIN
     LIMIT p_limite
     OFFSET v_offset;
 END;
-$$;
-
--- Comentarios sobre los cambios realizados:
--- 1. Se agregó búsqueda por p.nombre_corto en las condiciones WHERE de búsqueda
--- 2. Se agregó búsqueda por p.nombre_comercial en las condiciones WHERE de búsqueda
--- 3. Los cambios se aplicaron en ambas secciones: conteo de resultados y consulta final
--- 4. Se mantuvieron todas las demás funcionalidades existentes
--- 5. La búsqueda sigue siendo case-insensitive usando ILIKE
+$$ LANGUAGE plpgsql STABLE;

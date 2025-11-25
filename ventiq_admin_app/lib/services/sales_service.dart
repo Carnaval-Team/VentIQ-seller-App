@@ -196,12 +196,15 @@ class SalesService {
       }
 
       // Call the RPC function
+      // ✅ CAMBIO: Usar fn_reporte_ventas_gananciasv5_por_presentacion que agrupa por producto-presentación
+      // y usa precio_promedio de app_dat_producto_presentacion como costo real
       final response = await _supabase.rpc(
-        'fn_reporte_ventas_ganancias',
+        'fn_reporte_ventas_gananciasv5',
         params: params,
       );
 
-      print('Response received: ${response.length} products');
+      print('Response ventas received: ${response.length} products');
+      print('${response}');
 
       if (response == null) {
         print('No data received from RPC call');
@@ -417,7 +420,7 @@ class SalesService {
 
       // Call the RPC function
       final response = await _supabase.rpc(
-        'fn_vista_precios_productos2',
+        'fn_vista_precios_productos3',
         params: params,
       );
 

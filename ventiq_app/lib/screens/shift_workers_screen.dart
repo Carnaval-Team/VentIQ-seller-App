@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/shift_worker.dart';
 import '../services/shift_workers_service.dart';
 import '../services/turno_service.dart';
+import '../utils/app_snackbar.dart';
 
 class ShiftWorkersScreen extends StatefulWidget {
   const ShiftWorkersScreen({Key? key}) : super(key: key);
@@ -78,11 +79,10 @@ class _ShiftWorkersScreenState extends State<ShiftWorkersScreen> {
       });
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+        AppSnackBar.showPersistent(
+          context,
+          message: 'Error: $e',
+          backgroundColor: Colors.red,
         );
       }
     }

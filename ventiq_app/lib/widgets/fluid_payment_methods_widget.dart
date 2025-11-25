@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../models/order.dart';
+import 'package:flutter/material.dart';
 import '../models/payment_method.dart';
+import '../services/user_preferences_service.dart';
 import '../services/payment_method_service.dart';
+import '../utils/app_snackbar.dart';
 import '../services/user_preferences_service.dart';
 
 class FluidPaymentMethodsWidget extends StatefulWidget {
@@ -105,11 +106,10 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
 
   void _addPaymentMethod(PaymentMethod method) {
     if (_remainingAmount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('El total ya está cubierto'),
-          backgroundColor: Colors.orange,
-        ),
+      AppSnackBar.showPersistent(
+        context,
+        message: 'El total ya está cubierto',
+        backgroundColor: Colors.orange,
       );
       return;
     }
@@ -189,21 +189,19 @@ class _FluidPaymentMethodsWidgetState extends State<FluidPaymentMethodsWidget> {
 
   void _continueToContact() {
     if (_remainingAmount > 0.01) { // Tolerancia de 1 centavo
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Falta cubrir \$${_remainingAmount.toStringAsFixed(2)}'),
-          backgroundColor: Colors.orange,
-        ),
+      AppSnackBar.showPersistent(
+        context,
+        message: 'Falta cubrir \$${_remainingAmount.toStringAsFixed(2)}',
+        backgroundColor: Colors.orange,
       );
       return;
     }
 
     if (_selectedPaymentMethods.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debes seleccionar al menos un método de pago'),
-          backgroundColor: Colors.orange,
-        ),
+      AppSnackBar.showPersistent(
+        context,
+        message: 'Debes seleccionar al menos un método de pago',
+        backgroundColor: Colors.orange,
       );
       return;
     }

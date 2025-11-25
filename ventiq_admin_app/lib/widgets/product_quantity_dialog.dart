@@ -43,6 +43,8 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
   double? _lastPurchasePrice;
   String? _lastPurchaseDate;
   bool _isLoadingLastPrice = false;
+  double? _averagePrice;
+  bool _isLoadingAveragePrice = false;
 
   // Variables para conversión de moneda
   double? _finalPriceInInvoiceCurrency;
@@ -144,6 +146,7 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
             name.contains('individual');
       }, orElse: () => _availablePresentations.first);
       _selectedPresentation = basePresentation;
+      _loadAveragePriceForPresentation(basePresentation);
     }
   }
 
@@ -184,6 +187,35 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
       _setDefaultPrice();
     } finally {
       setState(() => _isLoadingLastPrice = false);
+    }
+  }
+
+  Future<void> _loadAveragePriceForPresentation(Map<String, dynamic> presentation) async {
+    if (presentation['id'] == null) return;
+    
+    setState(() => _isLoadingAveragePrice = true);
+    try {
+      final response = await Supabase.instance.client
+          .from('app_dat_producto_presentacion')
+          .select('precio_promedio')
+          .eq('id', presentation['id'])
+          .single();
+
+      if (response != null) {
+        final precioPromedio = response['precio_promedio'];
+        if (precioPromedio != null) {
+          setState(() {
+            _averagePrice = (precioPromedio as num).toDouble();
+          });
+        } else {
+          setState(() => _averagePrice = null);
+        }
+      }
+    } catch (e) {
+      print('Error loading average price: $e');
+      setState(() => _averagePrice = null);
+    } finally {
+      setState(() => _isLoadingAveragePrice = false);
     }
   }
 
@@ -497,8 +529,8 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                 Text(
                   'Stock actual: ${widget.product.stockDisponible}',
                   style: TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
+                    fontSize: 16,
+                    color: AppColors.primary,
                   ),
                 ),
               ],
@@ -552,7 +584,12 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                 );
               }).toList(),
             ],
-            onChanged: (value) => setState(() => _selectedPresentation = value),
+            onChanged: (value) {
+              setState(() => _selectedPresentation = value);
+              if (value != null) {
+                _loadAveragePriceForPresentation(value);
+              }
+            },
           ),
           SizedBox(height: 16),
         ],
@@ -687,6 +724,49 @@ class _ProductQuantityDialogState extends State<ProductQuantityDialog> {
                       style: TextStyle(
                         fontSize: 12,
                         color: AppColors.success,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (_isLoadingAveragePrice)
+              Padding(
+                padding: EdgeInsets.only(top: 8, left: 12),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      'Cargando precio promedio...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (_averagePrice != null && !_isLoadingAveragePrice)
+              Padding(
+                padding: EdgeInsets.only(top: 8, left: 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.trending_down, size: 16, color: Colors.orange),
+                    SizedBox(width: 4),
+                    Text(
+                      'Precio promedio: \$${_averagePrice!.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange,
                         fontWeight: FontWeight.w500,
                       ),
                     ),

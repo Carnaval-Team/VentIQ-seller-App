@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/product.dart';
+import '../widgets/notification_widget.dart';
+import '../utils/app_snackbar.dart';
 import '../models/order.dart';
 import '../services/product_detail_service.dart';
 import '../services/promotion_service.dart';
@@ -491,11 +492,10 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     final orderItems = _createOrderItems();
     
     if (orderItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debes seleccionar al menos un producto'),
-          backgroundColor: Colors.orange,
-        ),
+      AppSnackBar.showPersistent(
+        context,
+        message: 'Debes seleccionar al menos un producto',
+        backgroundColor: Colors.orange,
       );
       return;
     }

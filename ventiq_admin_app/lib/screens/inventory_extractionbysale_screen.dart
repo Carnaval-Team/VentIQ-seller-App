@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../config/app_colors.dart';
 import '../models/warehouse.dart';
 import '../models/inventory.dart';
@@ -8,6 +10,8 @@ import '../services/warehouse_service.dart';
 import '../services/inventory_service.dart';
 import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/tpv_service.dart';
+import '../services/printer_manager.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
 import '../widgets/location_selector_widget.dart';
@@ -178,7 +182,7 @@ class _InventoryExtractionBySaleScreenState
         throw Exception('No se encontró ID de tienda');
       }
 
-      final tpvs = await InventoryService.getTPVsByTienda(idTienda);
+      final tpvs = await TpvService.getTpvsByStore();
       _tpvOptions = tpvs;
 
       // Seleccionar el primero por defecto
@@ -231,6 +235,8 @@ class _InventoryExtractionBySaleScreenState
         product: product,
         sourceLocation: _selectedSourceLocation,
         onProductAdded: (productData) {
+          print('productData');
+          print(productData);
           setState(() {
             _selectedProducts.add(productData);
           });
@@ -509,11 +515,11 @@ class _InventoryExtractionBySaleScreenState
       // Preparar productos usando el mismo formato que order_service.dart
       final productos = _selectedProducts.map((product) {
         return {
-          'id_producto': product['id_producto'],
+          'id_producto': product['meta']['id_producto'],
           'id_variante': product['id_variante'],
           'id_opcion_variante': product['id_opcion_variante'],
           'id_ubicacion': product['id_ubicacion'],
-          'id_presentacion': product['id_presentacion'] ?? 1,
+          'id_presentacion': product['meta']['id_presentacion'] ?? 1,
           'cantidad': product['cantidad'],
           'precio_unitario': product['precio_unitario'],
           'sku_producto': product['sku_producto'] ?? product['id_producto'].toString(),
@@ -660,7 +666,10 @@ class _InventoryExtractionBySaleScreenState
               backgroundColor: AppColors.success,
             ),
           );
-          Navigator.pop(context);
+          
+          // ✅ Mostrar diálogo de impresión INMEDIATAMENTE (sin delay)
+          // El diálogo se mostrará antes de que se cierre la pantalla
+          _showPrintDialog();
         }
       } else {
         throw Exception(response?['message'] ?? 'Error en el registro de venta');
@@ -886,11 +895,12 @@ class _InventoryExtractionBySaleScreenState
                                       ),
                                     ),
                                   ],
-                                ),
+                                )
                               )
                             else
                               DropdownButtonFormField<Map<String, dynamic>>(
                                 value: _selectedMedioPago,
+                                isExpanded: true,
                                 decoration: const InputDecoration(
                                   labelText: 'Medio de Pago',
                                   border: OutlineInputBorder(),
@@ -912,9 +922,13 @@ class _InventoryExtractionBySaleScreenState
                                           color: Colors.grey[600],
                                         ),
                                         const SizedBox(width: 8),
-                                        Text(
-                                          medio['denominacion'] ?? 'Sin nombre',
-                                          style: const TextStyle(fontSize: 14),
+                                        Expanded(
+                                          child: Text(
+                                            medio['denominacion'] ?? 'Sin nombre',
+                                            style: const TextStyle(fontSize: 14),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -1219,6 +1233,322 @@ class _InventoryExtractionBySaleScreenState
     }
     
     return '';
+  }
+
+  /// 🖨️ Mostrar diálogo de impresión después de completar la extracción
+  void _showPrintDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Evitar cerrar tocando afuera
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.print, color: Color(0xFF4A90E2)),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('¿Deseas imprimir el ticket?'),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Se imprimirá un ticket con los detalles de la venta por acuerdo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Cerrar diálogo
+              Navigator.pop(context); // Cerrar pantalla
+            },
+            child: const Text('No'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context); // Cerrar diálogo
+              _printExtractionTicket(); // Iniciar impresión
+              // La pantalla se cerrará después de que termine la impresión
+            },
+            icon: const Icon(Icons.print),
+            label: const Text('Sí, Imprimir'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4A90E2),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 🖨️ Método para imprimir ticket de extracción usando PrinterManager
+  Future<void> _printExtractionTicket() async {
+    try {
+      print('🖨️ Iniciando impresión de ticket de extracción...');
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado, cancelando impresión');
+        return;
+      }
+
+      // Verificar si hay productos para imprimir
+      if (_selectedProducts.isEmpty) {
+        if (mounted) _showErrorDialog('Error', 'No hay productos para imprimir');
+        return;
+      }
+
+      // Crear instancia del PrinterManager
+      final printerManager = PrinterManager();
+
+      // Paso 1: Mostrar diálogo de confirmación
+      print('📋 Paso 1: Mostrar diálogo de confirmación');
+      bool shouldPrint = await printerManager.showPrintConfirmationDialog(context);
+      if (!shouldPrint) {
+        print('❌ Usuario canceló la impresión');
+        return;
+      }
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado después de confirmación');
+        return;
+      }
+
+      // Paso 2: Mostrar diálogo de selección de dispositivo
+      print('🔍 Paso 2: Seleccionar dispositivo Bluetooth');
+      final bluetoothService = printerManager.bluetoothService;
+      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(context);
+      if (selectedDevice == null) {
+        print('❌ No se seleccionó dispositivo');
+        return;
+      }
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado después de seleccionar dispositivo');
+        return;
+      }
+
+      // Paso 3: Mostrar diálogo de progreso - Conectando
+      print('🔌 Paso 3: Conectando a impresora');
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Conectando a impresora...'),
+            ],
+          ),
+        ),
+      );
+
+      // Conectar a la impresora
+      bool connected = await bluetoothService.connectToDevice(selectedDevice);
+      if (!connected) {
+        if (mounted) {
+          Navigator.pop(context);
+          _showErrorDialog('Conexión Fallida', 'No se pudo conectar a la impresora');
+        }
+        return;
+      }
+
+      // ✅ Verificar si el widget sigue montado
+      if (!mounted) {
+        print('⚠️ Widget desmontado después de conectar');
+        await bluetoothService.disconnect();
+        return;
+      }
+
+      // Paso 4: Actualizar diálogo - Imprimiendo
+      print('🖨️ Paso 4: Imprimiendo ticket');
+      Navigator.pop(context);
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Imprimiendo ticket...'),
+            ],
+          ),
+        ),
+      );
+
+      // Generar y enviar ticket
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(PaperSize.mm58, profile);
+      List<int> bytes = _generateExtractionTicket(generator);
+
+      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+
+      // Desconectar
+      await bluetoothService.disconnect();
+
+      // ✅ Verificar si el widget sigue montado antes de cerrar diálogo
+      if (!mounted) {
+        print('⚠️ Widget desmontado antes de mostrar resultado');
+        return;
+      }
+
+      // Paso 5: Cerrar diálogo y mostrar resultado
+      print(' Paso 5: Mostrar resultado');
+      Navigator.pop(context);
+
+      if (printed) {
+        if (mounted) {
+          _showSuccessDialog('¡Ticket Impreso!', 'El ticket se imprimió correctamente');
+          // Cerrar la pantalla después de mostrar el éxito
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) {
+              Navigator.pop(context); // Cerrar diálogo de éxito
+              Navigator.pop(context); // Cerrar pantalla de venta
+            }
+          });
+        }
+        print(' Ticket impreso exitosamente');
+      } else {
+        if (mounted) {
+          _showErrorDialog('Error de Impresión', 'No se pudo imprimir el ticket');
+          // Cerrar la pantalla después de mostrar el error
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) {
+              Navigator.pop(context); // Cerrar diálogo de error
+              Navigator.pop(context); // Cerrar pantalla de venta
+            }
+          });
+        }
+        print(' Error al imprimir ticket');
+      }
+    } catch (e) {
+      if (mounted) {
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        _showErrorDialog('Error', 'Ocurrió un error al imprimir: $e');
+        // Cerrar la pantalla después de mostrar el error
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) {
+            Navigator.pop(context); // Cerrar diálogo de error
+            Navigator.pop(context); // Cerrar pantalla de venta
+          }
+        });
+      }
+      print(' Error en _printExtractionTicket: $e');
+    }
+  }
+
+  /// Generar contenido del ticket de extracción
+  List<int> _generateExtractionTicket(Generator generator) {
+    List<int> bytes = [];
+
+    // Header
+    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('VENTA POR ACUERDO', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+    // Información de la venta
+    bytes += generator.text('Cliente: ${_clienteController.text.isNotEmpty ? _clienteController.text : 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Tipo: ${_selectedMotivoVenta?['denominacion'] ?? 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Pago: ${_selectedMedioPago?['denominacion'] ?? 'N/A'}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('Fecha: ${DateTime.now().toString().split('.')[0]}', 
+                           styles: PosStyles(align: PosAlign.left));
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+
+    // Productos
+    double total = 0;
+    for (var product in _selectedProducts) {
+      final cantidad = product['cantidad'] as double? ?? 0;
+      final precio = product['precio'] as double? ?? 0;
+      final subtotal = cantidad * precio;
+      total += subtotal;
+
+      String nombre = product['nombre'] ?? 'Producto';
+      if (nombre.length > 28) nombre = nombre.substring(0, 25) + '...';
+
+      bytes += generator.text('${cantidad.toStringAsFixed(1)}x $nombre', 
+                             styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text('  \$${precio.toStringAsFixed(0)} = \$${subtotal.toStringAsFixed(0)}', 
+                             styles: PosStyles(align: PosAlign.right));
+    }
+
+    // Total
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text('TOTAL: \$${total.toStringAsFixed(0)}', 
+                           styles: PosStyles(align: PosAlign.right, bold: true));
+
+    // Observaciones
+    if (_observacionesController.text.isNotEmpty) {
+      bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+      bytes += generator.text('Obs: ${_observacionesController.text}', 
+                             styles: PosStyles(align: PosAlign.left));
+    }
+
+    // Footer
+    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text('Gracias por su compra', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.emptyLines(2);
+    bytes += generator.cut();
+
+    return bytes;
+  }
+
+  /// Mostrar diálogo de error
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.error, color: Colors.red),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mostrar diálogo de éxito
+  void _showSuccessDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('¡Genial!'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

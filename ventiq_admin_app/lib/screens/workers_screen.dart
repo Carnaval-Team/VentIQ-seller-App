@@ -1656,28 +1656,65 @@ class _WorkersScreenState extends State<WorkersScreen>
 
     try {
       String? userUuid;
+      bool userAlreadyExisted = false;
 
       // CASO 1: Crear usuario
       if (crearUsuario) {
         print('🔐 Registrando usuario en Supabase Auth...');
         final supabase = Supabase.instance.client;
-        final authResponse = await supabase.auth.signUp(
-          email: email!,
-          password: password!,
-          data: {
-            'nombres': nombres,
-            'apellidos': apellidos,
-            'full_name': '$nombres $apellidos',
-          },
-          emailRedirectTo: null,
-        );
+        
+        try {
+          final authResponse = await supabase.auth.signUp(
+            email: email!,
+            password: password!,
+            data: {
+              'nombres': nombres,
+              'apellidos': apellidos,
+              'full_name': '$nombres $apellidos',
+            },
+            emailRedirectTo: null,
+          );
 
-        if (authResponse.user == null) {
-          throw Exception('Error al registrar usuario en Supabase Auth');
+          if (authResponse.user == null) {
+            throw Exception('Error al registrar usuario en Supabase Auth');
+          }
+
+          userUuid = authResponse.user!.id;
+          print('✅ Usuario registrado con UUID: $userUuid');
+        } catch (signUpError) {
+          // Verificar si el error es por usuario ya existente
+          if (signUpError.toString().contains('user_already_exists') || 
+              signUpError.toString().contains('User already registered')) {
+            print('⚠️ Usuario ya existe, intentando vincular con credenciales existentes...');
+            
+            try {
+              // Intentar autenticar con el usuario existente
+              final loginResponse = await supabase.auth.signInWithPassword(
+                email: email!,
+                password: password!,
+              );
+              
+              if (loginResponse.user != null) {
+                userUuid = loginResponse.user!.id;
+                userAlreadyExisted = true;
+                print('✅ Usuario existente autenticado exitosamente con UUID: $userUuid');
+              } else {
+                throw Exception('No se pudo obtener el UUID del usuario existente');
+              }
+            } catch (loginError) {
+              print('❌ Error al autenticar usuario existente: $loginError');
+              throw Exception(
+                'El email ya está registrado pero no se pudo autenticar. Verifica la contraseña.',
+              );
+            }
+          } else {
+            rethrow;
+          }
         }
 
-        userUuid = authResponse.user!.id;
-        print('✅ Usuario registrado con UUID: $userUuid');
+        if (userUuid == null) {
+          throw Exception('No se pudo obtener el UUID del usuario');
+        }
 
         // Si asigna rol específico
         if (asignarRolEspecifico && tipoRol != null) {
@@ -1740,9 +1777,14 @@ class _WorkersScreenState extends State<WorkersScreen>
             (context) => AlertDialog(
               title: Row(
                 children: [
-                  Icon(Icons.check_circle, color: Colors.green.shade600),
+                  Icon(
+                    Icons.check_circle,
+                    color: userAlreadyExisted ? Colors.orange : Colors.green.shade600,
+                  ),
                   const SizedBox(width: 12),
-                  const Text('Trabajador Creado'),
+                  Text(
+                    userAlreadyExisted ? 'Trabajador Vinculado' : 'Trabajador Creado',
+                  ),
                 ],
               ),
               content: Column(
@@ -1757,18 +1799,29 @@ class _WorkersScreenState extends State<WorkersScreen>
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.green.shade50,
+                        color: userAlreadyExisted
+                            ? Colors.orange.shade50
+                            : Colors.green.shade50,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '✅ Usuario creado',
-                            style: TextStyle(fontWeight: FontWeight.w600),
+                          Text(
+                            userAlreadyExisted
+                                ? '⚠️ Usuario Existente'
+                                : '✅ Usuario creado',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 4),
                           Text('Email: $email'),
+                          if (userAlreadyExisted) ...[
+                            const SizedBox(height: 8),
+                            const Text(
+                              'El usuario ya existía en el sistema y ha sido vinculado exitosamente al trabajador.',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -2584,23 +2637,62 @@ class _WorkersScreenState extends State<WorkersScreen>
       // Paso 1: Registrar usuario en Supabase Auth
       print('🔐 Registrando usuario en Supabase Auth...');
       final supabase = Supabase.instance.client;
-      final authResponse = await supabase.auth.signUp(
-        email: email,
-        password: password,
-        data: {
-          'nombres': worker.nombres,
-          'apellidos': worker.apellidos,
-          'full_name': worker.nombreCompleto,
-        },
-        emailRedirectTo: null,
-      );
+      
+      String? userUuid;
+      bool userAlreadyExisted = false;
+      
+      try {
+        final authResponse = await supabase.auth.signUp(
+          email: email,
+          password: password,
+          data: {
+            'nombres': worker.nombres,
+            'apellidos': worker.apellidos,
+            'full_name': worker.nombreCompleto,
+          },
+          emailRedirectTo: null,
+        );
 
-      if (authResponse.user == null) {
-        throw Exception('Error al registrar usuario en Supabase Auth');
+        if (authResponse.user == null) {
+          throw Exception('Error al registrar usuario en Supabase Auth');
+        }
+
+        userUuid = authResponse.user!.id;
+        print('✅ Usuario registrado con UUID: $userUuid');
+      } catch (signUpError) {
+        // Verificar si el error es por usuario ya existente
+        if (signUpError.toString().contains('user_already_exists') || 
+            signUpError.toString().contains('User already registered')) {
+          print('⚠️ Usuario ya existe, intentando vincular con credenciales existentes...');
+          
+          try {
+            // Intentar autenticar con el usuario existente
+            final loginResponse = await supabase.auth.signInWithPassword(
+              email: email,
+              password: password,
+            );
+            
+            if (loginResponse.user != null) {
+              userUuid = loginResponse.user!.id;
+              userAlreadyExisted = true;
+              print('✅ Usuario existente autenticado exitosamente con UUID: $userUuid');
+            } else {
+              throw Exception('No se pudo obtener el UUID del usuario existente');
+            }
+          } catch (loginError) {
+            print('❌ Error al autenticar usuario existente: $loginError');
+            throw Exception(
+              'El email ya está registrado pero no se pudo autenticar. Verifica la contraseña.',
+            );
+          }
+        } else {
+          rethrow;
+        }
       }
 
-      final userUuid = authResponse.user!.id;
-      print('✅ Usuario registrado con UUID: $userUuid');
+      if (userUuid == null) {
+        throw Exception('No se pudo obtener el UUID del usuario');
+      }
 
       // Paso 2: Actualizar trabajador con el UUID
       print('🔄 Actualizando trabajador con UUID...');
@@ -2623,9 +2715,14 @@ class _WorkersScreenState extends State<WorkersScreen>
             (context) => AlertDialog(
               title: Row(
                 children: [
-                  Icon(Icons.check_circle, color: Colors.green.shade600),
+                  Icon(
+                    Icons.check_circle,
+                    color: userAlreadyExisted ? Colors.orange : Colors.green.shade600,
+                  ),
                   const SizedBox(width: 12),
-                  const Text('Usuario Creado'),
+                  Text(
+                    userAlreadyExisted ? 'Usuario Vinculado' : 'Usuario Creado',
+                  ),
                 ],
               ),
               content: Column(
@@ -2633,24 +2730,37 @@ class _WorkersScreenState extends State<WorkersScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Usuario creado exitosamente para ${worker.nombreCompleto}',
+                    userAlreadyExisted
+                        ? 'El trabajador ${worker.nombreCompleto} ha sido vinculado a un usuario existente.'
+                        : 'Usuario creado exitosamente para ${worker.nombreCompleto}',
                   ),
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.green.shade50,
+                      color: userAlreadyExisted
+                          ? Colors.orange.shade50
+                          : Colors.green.shade50,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '✅ Credenciales',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                        Text(
+                          userAlreadyExisted
+                              ? '⚠️ Usuario Existente'
+                              : '✅ Credenciales',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 4),
                         Text('Email: $email'),
+                        if (userAlreadyExisted) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'El usuario ya existía en el sistema y ha sido vinculado exitosamente al trabajador.',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ],
                       ],
                     ),
                   ),

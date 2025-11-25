@@ -19,6 +19,10 @@ class TpvService {
           .from('app_dat_tpv')
           .select('''
       *,
+      almacen:app_dat_almacen(
+        id,
+        denominacion
+      ),
       vendedor:app_dat_vendedor(
         id,
         trabajador:app_dat_trabajadores(
@@ -41,10 +45,7 @@ class TpvService {
   /// Crea un nuevo TPV
   static Future<bool> createTpv({
     required String denominacion,
-    String? descripcion,
-    int? idVendedor,
-    String? ubicacion,
-    bool esActivo = true,
+    required int idAlmacen,
   }) async {
     try {
       final userPrefs = UserPreferencesService();
@@ -55,11 +56,8 @@ class TpvService {
 
       final tpvData = {
         'denominacion': denominacion,
-        'descripcion': descripcion,
-        'id_vendedor': idVendedor,
-        'ubicacion': ubicacion,
         'id_tienda': storeId,
-        'created_at': DateTime.now().toIso8601String(),
+        'id_almacen': idAlmacen,
       };
 
       await _supabase.from('app_dat_tpv').insert(tpvData);
@@ -337,6 +335,28 @@ class TpvService {
       return tpvsWithStats;
     } catch (e) {
       print('❌ Error obteniendo TPVs con estadísticas: $e');
+      return [];
+    }
+  }
+
+  /// Obtiene los almacenes disponibles de la tienda
+  static Future<List<Map<String, dynamic>>> getAlmacenesByStore() async {
+    try {
+      final userPrefs = UserPreferencesService();
+      final storeId = await userPrefs.getIdTienda();
+      if (storeId == null) {
+        throw Exception('No se pudo obtener el ID de la tienda del usuario');
+      }
+
+      final response = await _supabase
+          .from('app_dat_almacen')
+          .select('id, denominacion')
+          .eq('id_tienda', storeId)
+          .order('denominacion');
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error obteniendo almacenes: $e');
       return [];
     }
   }

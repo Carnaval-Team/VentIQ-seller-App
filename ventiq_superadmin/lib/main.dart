@@ -12,6 +12,8 @@ import 'screens/tpvs_screen.dart';
 import 'screens/trabajadores_screen.dart';
 import 'screens/licencias_screen.dart';
 import 'screens/renovaciones_screen.dart';
+import 'screens/configuracion_screen.dart';
+import 'screens/consignacion_screen.dart';
 import 'services/auth_service.dart';
 
 void main() async {
@@ -32,7 +34,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'VentIQ Super Admin',
+      title: 'Inventtia Super Admin',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
@@ -48,6 +50,8 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/trabajadores': (context) => const TrabajadoresScreen(),
         '/licencias': (context) => const LicenciasScreen(),
         '/renovaciones': (context) => const RenovacionesScreen(),
+        '/configuracion': (context) => const ConfiguracionScreen(),
+        '/consignacion': (context) => const ConsignacionScreen(),
       },
     );
   }

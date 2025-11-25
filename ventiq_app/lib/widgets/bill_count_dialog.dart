@@ -90,7 +90,7 @@ class _BillCountDialogState extends State<BillCountDialog> {
 
   Future<void> _loadDenominations(String currency) async {
     try {
-      final denominations = await widget.userPreferencesService
+      var denominations = await widget.userPreferencesService
           .getDenominacionesPorMoneda(currency);
 
       setState(() {
@@ -341,13 +341,12 @@ class _BillCountDialogState extends State<BillCountDialog> {
                   ),
                 ),
                 const Divider(height: 1),
-                // Content
-                Expanded(
-                  child: ListView(
-                    controller: scrollController,
-                    padding: const EdgeInsets.all(16),
+                
+                // Información de la orden (NO SCROLLABLE)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
                     children: [
-                      // Información de la orden
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -410,6 +409,97 @@ class _BillCountDialogState extends State<BillCountDialog> {
                         ),
                       ),
                       const SizedBox(height: 16),
+                      
+                      // Resumen de totales (NO SCROLLABLE)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color:
+                              _remainingAmount > 0
+                                  ? Colors.orange[50]
+                                  : _remainingAmount < 0
+                                  ? Colors.green[50]
+                                  : Colors.blue[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color:
+                                _remainingAmount > 0
+                                    ? Colors.orange[300]!
+                                    : _remainingAmount < 0
+                                    ? Colors.green[300]!
+                                    : Colors.blue[300]!,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Total contado:',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                Text(
+                                  '\$${_totalAmount.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  _remainingAmount > 0
+                                      ? 'Falta:'
+                                      : _remainingAmount < 0
+                                      ? 'Sobra:'
+                                      : 'Exacto:',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color:
+                                        _remainingAmount > 0
+                                            ? Colors.orange[700]
+                                            : _remainingAmount < 0
+                                            ? Colors.green[700]
+                                            : Colors.blue[700],
+                                  ),
+                                ),
+                                Text(
+                                  '\$${_remainingAmount.abs().toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color:
+                                        _remainingAmount > 0
+                                            ? Colors.orange[700]
+                                            : _remainingAmount < 0
+                                            ? Colors.green[700]
+                                            : Colors.blue[700],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Content (SCROLLABLE)
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(16),
+                    children: [
 
                       // Selector de moneda
                       if (_availableCurrencies.length > 1) ...[
@@ -612,89 +702,18 @@ class _BillCountDialogState extends State<BillCountDialog> {
                       }),
                       const SizedBox(height: 16),
 
-                      // Resumen de totales
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color:
-                              _remainingAmount > 0
-                                  ? Colors.orange[50]
-                                  : _remainingAmount < 0
-                                  ? Colors.green[50]
-                                  : Colors.blue[50],
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color:
-                                _remainingAmount > 0
-                                    ? Colors.orange[300]!
-                                    : _remainingAmount < 0
-                                    ? Colors.green[300]!
-                                    : Colors.blue[300]!,
+                      // Mostrar vuelto si sobra dinero
+                      if (changeBreakdown.isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.green[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.green[300]!),
                           ),
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'Total contado:',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                Text(
-                                  '\$${_totalAmount.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  _remainingAmount > 0
-                                      ? 'Falta:'
-                                      : _remainingAmount < 0
-                                      ? 'Sobra:'
-                                      : 'Exacto:',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color:
-                                        _remainingAmount > 0
-                                            ? Colors.orange[700]
-                                            : _remainingAmount < 0
-                                            ? Colors.green[700]
-                                            : Colors.blue[700],
-                                  ),
-                                ),
-                                Text(
-                                  '\$${_remainingAmount.abs().toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color:
-                                        _remainingAmount > 0
-                                            ? Colors.orange[700]
-                                            : _remainingAmount < 0
-                                            ? Colors.green[700]
-                                            : Colors.blue[700],
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            // Mostrar vuelto si sobra dinero
-                            if (changeBreakdown.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              const Divider(),
-                              const SizedBox(height: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               const Text(
                                 'Vuelto a devolver:',
                                 style: TextStyle(
@@ -745,11 +764,12 @@ class _BillCountDialogState extends State<BillCountDialog> {
                                 ),
                               ),
                             ],
-                          ],
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 16),
+                      ],
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 8),
 
                       // Botones
                       Row(

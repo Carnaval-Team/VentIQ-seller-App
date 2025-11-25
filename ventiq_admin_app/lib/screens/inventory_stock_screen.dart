@@ -799,17 +799,29 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Mostrar descripción si está habilitado y existe
-            if (_showDescriptionInSelectors && item.descripcionCorta != null && item.descripcionCorta!.isNotEmpty)
-              Text(
-                item.descripcionCorta!,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                  fontStyle: FontStyle.italic,
+            if (_showDescriptionInSelectors)
+              if (item.descripcion != null && item.descripcion!.isNotEmpty)
+                Text(
+                  item.descripcion!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                )
+              else if (item.descripcionCorta != null && item.descripcionCorta!.isNotEmpty)
+                Text(
+                  item.descripcionCorta!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
             Text('${item.variante} ${item.opcionVariante}'),
             Text('Almacén: ${item.almacen}'),
             if (item.ubicacion.isNotEmpty)
@@ -1026,6 +1038,30 @@ class _InventoryStockScreenState extends State<InventoryStockScreen> {
                                 color: AppColors.textPrimary,
                               ),
                             ),
+                            // Mostrar descripción si está habilitado y existe
+                            if (_showDescriptionInSelectors)
+                              if (item.descripcion != null && item.descripcion!.isNotEmpty)
+                                Text(
+                                  item.descripcion!,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              else if (item.descripcionCorta != null && item.descripcionCorta!.isNotEmpty)
+                                Text(
+                                  item.descripcionCorta!,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                             Text(
                               '${item.variante} ${item.opcionVariante}',
                               style: const TextStyle(

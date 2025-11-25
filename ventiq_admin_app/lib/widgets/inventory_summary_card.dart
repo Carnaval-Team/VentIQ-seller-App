@@ -64,6 +64,21 @@ class InventorySummaryCard extends StatelessWidget {
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
+                                      // Mostrar descripción si existe
+                                      if (summary.productoDescripcion != null && summary.productoDescripcion!.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 2),
+                                          child: Text(
+                                            summary.productoDescripcion!,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
                                       const SizedBox(height: 2),
                                       Text(
                                         'SKU: ${summary.productoSku}',

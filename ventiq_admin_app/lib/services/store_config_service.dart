@@ -52,6 +52,7 @@ class StoreConfigService {
     String? masterPassword,
     bool? manejaInventario,
     bool? permiteVenderAunSinDisponibilidad,
+    bool? noSolicitarCliente,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
@@ -84,6 +85,11 @@ class StoreConfigService {
       if (permiteVenderAunSinDisponibilidad != null) {
         updateData['permite_vender_aun_sin_disponibilidad'] = permiteVenderAunSinDisponibilidad;
         print('  - permite_vender_aun_sin_disponibilidad: $permiteVenderAunSinDisponibilidad');
+      }
+      
+      if (noSolicitarCliente != null) {
+        updateData['no_solicitar_cliente'] = noSolicitarCliente;
+        print('  - no_solicitar_cliente: $noSolicitarCliente');
       }
 
       if (updateData.isEmpty) {
@@ -194,5 +200,21 @@ class StoreConfigService {
   /// Actualiza solo permite_vender_aun_sin_disponibilidad
   static Future<void> updatePermiteVenderAunSinDisponibilidad(int storeId, bool value) async {
     await updateStoreConfig(storeId, permiteVenderAunSinDisponibilidad: value);
+  }
+
+  /// Obtiene solo el valor de no_solicitar_cliente
+  static Future<bool> getNoSolicitarCliente(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['no_solicitar_cliente'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener no_solicitar_cliente: $e');
+      return false; // Valor por defecto en caso de error
+    }
+  }
+
+  /// Actualiza solo no_solicitar_cliente
+  static Future<void> updateNoSolicitarCliente(int storeId, bool value) async {
+    await updateStoreConfig(storeId, noSolicitarCliente: value);
   }
 }

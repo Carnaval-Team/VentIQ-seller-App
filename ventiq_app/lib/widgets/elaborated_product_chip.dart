@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/product_detail_service.dart';
+import '../utils/app_snackbar.dart';
 
 class ElaboratedProductChip extends StatefulWidget {
   final int productId;
@@ -63,11 +64,10 @@ class _ElaboratedProductChipState extends State<ElaboratedProductChip> {
         widget.productName,
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se encontraron ingredientes para este producto'),
-          backgroundColor: Colors.orange,
-        ),
+      AppSnackBar.showPersistent(
+        context,
+        message: 'No se encontraron ingredientes para este producto',
+        backgroundColor: Colors.orange,
       );
     }
   }

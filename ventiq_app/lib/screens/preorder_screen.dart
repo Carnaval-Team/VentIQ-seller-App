@@ -12,6 +12,7 @@ import '../widgets/bottom_navigation.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/scrolling_text.dart';
 import '../widgets/notification_widget.dart';
+import '../utils/app_snackbar.dart';
 import 'checkout_screen.dart';
 
 class PreorderScreen extends StatefulWidget {
@@ -771,11 +772,10 @@ class _PreorderScreenState extends State<PreorderScreen> {
   void _finalizeOrder() async {
     final currentOrder = _orderService.currentOrder;
     if (currentOrder == null || currentOrder.items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No hay productos en la orden'),
-          backgroundColor: Colors.red,
-        ),
+      AppSnackBar.showPersistent(
+        context,
+        message: 'No hay productos en la orden',
+        backgroundColor: Colors.red,
       );
       return;
     }
@@ -1445,17 +1445,6 @@ class _PreorderScreenState extends State<PreorderScreen> {
         }
       }
     });
-
-    // Show confirmation
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Método "${paymentMethod.displayName}" aplicado a todos los productos',
-        ),
-        backgroundColor: const Color(0xFF4A90E2),
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   void _clearGlobalPaymentMethod() {
