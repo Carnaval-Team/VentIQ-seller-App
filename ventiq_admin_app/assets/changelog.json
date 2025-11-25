@@ -1,8 +1,40 @@
 {
-  "current_version": "1.3.1",
-  "build": 131,
+  "current_version": "1.3.2",
+  "build": 132,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.3.2",
+      "date": "2025-11-25",
+      "title": "💼 Precio Costo Promedio Ponderado y TPVs",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Gestión de Precio Costo Promedio Ponderado",
+          "description": "Sistema automático de cálculo de costo promedio ponderado para productos, actualizándose con cada entrada de inventario"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión Completa de TPVs",
+          "description": "Módulo para administrar Terminales Punto de Venta con configuración, estado, asignación a tiendas y seguimiento de operaciones"
+        },
+        {
+          "type": "feature",
+          "title": "Configuración Flexible de Datos de Cliente en Ventas",
+          "description": "Nueva opción de configuración para no solicitar datos de cliente en transacciones de venta, permitiendo ventas anónimas"
+        },
+        {
+          "type": "feature",
+          "title": "Inicializar Inventario Faltante de productos en Catálogo",
+          "description": "NUeva opción para inicializar en 0 el inventario de productos que no han tenido entradas en el sistema."
+        },
+        {
+          "type": "improvement",
+          "title": "Cambios Menores de Usabilidad",
+          "description": "Optimizaciones generales en navegación, validaciones mejoradas y mensajes de error más claros"
+        }
+      ]
+    },
     {
       "version": "1.3.1",
       "date": "2025-11-13",
