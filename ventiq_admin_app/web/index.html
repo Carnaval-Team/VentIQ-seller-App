@@ -8,6 +8,17 @@
     Base href configuration for Flutter web deployment
   -->
   <base href="$FLUTTER_BASE_HREF">
+  
+  <!-- Appwrite Web Configuration -->
+  <script>
+    // Configure base URL for Appwrite deployment
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      // Production deployment - use current domain
+      window.flutterConfiguration = {
+        canvasKitBaseUrl: "/canvaskit/"
+      };
+    }
+  </script>
 
   <!-- Essential Meta Tags -->
   <meta charset="UTF-8">
