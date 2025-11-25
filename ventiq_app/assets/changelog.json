@@ -1,8 +1,30 @@
 {
-  "current_version": "1.7.1",
-  "build": 701,
+  "current_version": "1.7.2",
+  "build": 702,
   "app_name":"ventiq_app",
   "changelogs": [
+    {
+      "version": "1.7.2",
+      "date": "2025-11-25",
+      "title": "🔧 Correcciones en Contador de Billetes y Checkout Opcional",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Mejoras en el Contador de Billetes",
+          "description": "Corregidos errores en el sistema de conteo de billetes para pagos en efectivo. Mejor precisión en cálculos y validaciones."
+        },
+        {
+          "type": "feature",
+          "title": "Datos de Cliente Opcionales en Checkout",
+          "description": "Ahora el administrador puede configurar si los datos del cliente son obligatorios u opcionales durante el proceso de checkout."
+        },
+        {
+          "type": "improvement",
+          "title": "Configuración Flexible de Checkout",
+          "description": "Nueva opción en configuración que permite al administrador decidir cuándo solicitar información del cliente en las ventas."
+        }
+      ]
+    },
     {
       "version": "1.7.1",
       "date": "2025-11-18",
