@@ -408,30 +408,30 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
-                // Consignaciones (solo con plan Avanzado)
-                FutureBuilder<bool>(
-                  future: _hasConsignacionFeature(),
-                  builder: (context, snapshot) {
-                    if (snapshot.data == true) {
-                      return Column(
-                        children: [
-                          _buildDrawerItem(
-                            context,
-                            icon: Icons.handshake,
-                            title: 'Consignaciones',
-                            subtitle: 'Gestión de consignaciones',
-                            onTap: () {
-                              Navigator.pop(context);
-                              Navigator.pushNamed(context, '/consignacion');
-                            },
-                          ),
-                          const Divider(height: 1),
-                        ],
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  },
-                ),
+                // // Consignaciones (solo con plan Avanzado)
+                // FutureBuilder<bool>(
+                //   future: _hasConsignacionFeature(),
+                //   builder: (context, snapshot) {
+                //     if (snapshot.data == true) {
+                //       return Column(
+                //         children: [
+                //           _buildDrawerItem(
+                //             context,
+                //             icon: Icons.handshake,
+                //             title: 'Consignaciones',
+                //             subtitle: 'Gestión de consignaciones',
+                //             onTap: () {
+                //               Navigator.pop(context);
+                //               Navigator.pushNamed(context, '/consignacion');
+                //             },
+                //           ),
+                //           const Divider(height: 1),
+                //         ],
+                //       );
+                //     }
+                //     return const SizedBox.shrink();
+                //   },
+                // ),
 
                 // Trabajadores (solo Gerente y Supervisor)
                 FutureBuilder<bool>(

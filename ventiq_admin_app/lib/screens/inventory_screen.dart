@@ -194,16 +194,16 @@ class _InventoryScreenState extends State<InventoryScreen>
                           },
                         ),
 
-                        _buildMenuOption(
-                          icon: Icons.handshake,
-                          title: 'Asignar Productos en Consignación',
-                          subtitle: 'Enviar productos a otra tienda en consignación',
-                          color: const Color(0xFF9333EA),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToConsignacion();
-                          },
-                        ),
+                        // _buildMenuOption(
+                        //   icon: Icons.handshake,
+                        //   title: 'Asignar Productos en Consignación',
+                        //   subtitle: 'Enviar productos a otra tienda en consignación',
+                        //   color: const Color(0xFF9333EA),
+                        //   onTap: () {
+                        //     Navigator.pop(context);
+                        //     _navigateToConsignacion();
+                        //   },
+                        // ),
 
                         _buildMenuOption(
                           icon: Icons.filter_list,
