@@ -468,7 +468,7 @@ function openWebApp(appType) {
         window.open('https://ventiq-seller.appwrite.network', '_blank');
     } else {
         showNotification('Abriendo aplicación...', 'Inventtia Admin se abrirá en una nueva pestaña.', 'info');
-        window.open('https://vendedor-admin.appwrite.network', '_blank');
+        window.open('https://inventtia-admin.appwrite.network', '_blank');
     }
     closeDownloadModal();
 }
