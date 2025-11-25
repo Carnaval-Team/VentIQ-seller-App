@@ -1,0 +1,23 @@
+{
+  "projectId": "ventiq-admin",
+  "projectName": "VentIQ Admin App",
+  "functions": [],
+  "databases": [],
+  "collections": [],
+  "buckets": [],
+  "settings": {
+    "services": {
+      "account": true,
+      "avatars": true,
+      "databases": true,
+      "locale": true,
+      "health": true,
+      "storage": true,
+      "teams": true,
+      "users": true,
+      "functions": true,
+      "graphql": true,
+      "messaging": true
+    }
+  }
+}

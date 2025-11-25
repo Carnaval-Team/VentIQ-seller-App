@@ -20,7 +20,6 @@ import 'screens/inventory_screen.dart';
 import 'screens/sales_screen.dart';
 import 'screens/tpv_prices_screen.dart';
 import 'screens/tpv_management_screen.dart';
-import 'screens/vendor_management_screen.dart';
 import 'screens/promotions_screen.dart';
 import 'screens/marketing_dashboard_screen.dart';
 import 'screens/analytics_screen.dart';
@@ -67,6 +66,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Inventtia Admin',
       debugShowCheckedModeBanner: false,
+      // Configuración específica para web deployment
+      // useInheritedMediaQuery: true,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primary),
         useMaterial3: true,
@@ -125,31 +126,32 @@ class MyApp extends StatelessWidget {
             final supplier = settings.arguments as Supplier?;
             if (supplier != null) {
               return MaterialPageRoute(
-                builder:
-                    (context) => AddEditSupplierScreen(
-                      supplier: supplier,
-                    ),
+                builder: (context) => AddEditSupplierScreen(supplier: supplier),
               );
             }
             return MaterialPageRoute(
-              builder:
-                  (context) => const AddEditSupplierScreen(),
+              builder: (context) => const AddEditSupplierScreen(),
             );
           case '/store-selection':
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null) {
               return MaterialPageRoute(
-                builder: (context) => StoreSelectionScreen(
-                  stores: args['stores'] as List<Map<String, dynamic>>,
-                  defaultStoreId: args['defaultStoreId'] as int,
-                ),
+                builder:
+                    (context) => StoreSelectionScreen(
+                      stores: args['stores'] as List<Map<String, dynamic>>,
+                      defaultStoreId: args['defaultStoreId'] as int,
+                    ),
               );
             }
             return MaterialPageRoute(
               builder: (context) => const SplashScreen(),
             );
           default:
-            return null;
+            // Manejo de rutas no encontradas - redirigir al splash
+            print('⚠️ Ruta no encontrada: ${settings.name}');
+            return MaterialPageRoute(
+              builder: (context) => const SplashScreen(),
+            );
         }
       },
       routes: {
@@ -176,12 +178,13 @@ class MyApp extends StatelessWidget {
         '/crm-analytics': (context) => const CRMAnalyticsScreen(),
         '/relationships': (context) => const CRMRelationshipsScreen(),
         '/suppliers': (context) => const SuppliersListScreen(),
-        '/supplier-alerts': (context) => const SupplierAlertsWidget(alerts: [], isLoading: false ),
+        '/supplier-alerts':
+            (context) =>
+                const SupplierAlertsWidget(alerts: [], isLoading: false),
         '/supplier-reports': (context) => const SupplierReportsScreen(),
         '/excel-import': (context) => const ExcelImportScreen(),
         '/add-supplier': (context) => const AddEditSupplierScreen(),
-        '/edit-supplier':
-            (context) => const AddEditSupplierScreen(),
+        '/edit-supplier': (context) => const AddEditSupplierScreen(),
         '/workers': (context) => const WorkersScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/warehouse': (context) => const WarehouseScreen(),
@@ -195,7 +198,8 @@ class MyApp extends StatelessWidget {
         '/loyalty': (context) => const LoyaltyScreen(),
         '/add-product': (context) => const AddProductScreen(),
         '/store-registration': (context) => const StoreRegistrationScreen(),
-        '/sale-by-agreement': (context) => const InventoryExtractionBySaleScreen(),
+        '/sale-by-agreement':
+            (context) => const InventoryExtractionBySaleScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),
       },
     );
