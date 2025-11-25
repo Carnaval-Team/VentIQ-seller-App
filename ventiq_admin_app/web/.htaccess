@@ -1,4 +1,16 @@
-RewriteEngine On
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^.*$ /index.html [L]
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  
+  # Redirigir todas las solicitudes a index.html si el archivo/directorio no existe
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.html [QSA,L]
+  
+  # Permitir acceso a archivos estáticos
+  RewriteCond %{REQUEST_FILENAME} -f
+  RewriteRule ^ - [QSA,L]
+  
+  # Permitir acceso a directorios
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [QSA,L]
+</IfModule>

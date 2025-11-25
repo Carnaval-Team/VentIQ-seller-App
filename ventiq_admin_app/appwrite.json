@@ -1,36 +1,20 @@
 {
-  "projectId": "ventiq-admin-app",
+  "projectId": "ventiq-admin",
   "projectName": "VentIQ Admin App",
-  "projectDescription": "Sistema de administración empresarial para gestión integral de tiendas",
   "functions": [],
-  "databases": [],
-  "collections": [],
-  "buckets": [],
-  "settings": {
-    "services": {
-      "account": true,
-      "avatars": true,
-      "databases": true,
-      "locale": true,
-      "health": true,
-      "storage": true,
-      "teams": true,
-      "users": true,
-      "functions": true,
-      "graphql": true,
-      "messaging": true
+  "deployments": [
+    {
+      "resourceType": "bucket",
+      "resourceId": "ventiq-admin-web",
+      "name": "VentIQ Admin Web",
+      "permission": "file",
+      "encrypt": false,
+      "antivirus": false,
+      "fileSecurity": false,
+      "enabled": true
     }
-  },
-  "hosting": {
-    "type": "static",
-    "buildCommand": "flutter build web --release --web-renderer html",
-    "buildDir": "build/web",
-    "rootDir": ".",
-    "ignorePatterns": [
-      "node_modules",
-      ".git",
-      "build",
-      ".dart_tool"
-    ]
+  ],
+  "variables": {
+    "FLUTTER_BASE_HREF": "/"
   }
 }
