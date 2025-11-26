@@ -1388,11 +1388,29 @@ class ProductService {
           .map<String>((item) => (item as Map<String, dynamic>)['etiqueta'] as String)
           .toList();
 
-      // Obtener subcategorías
+      // Obtener subcategorías asignadas al producto (no todas de la categoría)
       final subcategoriasResponse = await _supabase
-          .from('app_dat_subcategorias')
-          .select('id, denominacion, idcategoria')
-          .eq('idcategoria', productData['id_categoria']);
+          .from('app_dat_producto_subcategorias')
+          .select('''
+            id,
+            id_producto,
+            id_subcategoria,
+            app_dat_subcategorias!inner(id, denominacion, idcategoria)
+          ''')
+          .eq('id_producto', productId);
+      
+      // Mapear la respuesta para obtener solo los datos de subcategoría
+      final subcategoriasMapped = subcategoriasResponse
+          .map<Map<String, dynamic>>((item) {
+            final itemMap = item as Map<String, dynamic>;
+            final subcat = itemMap['app_dat_subcategorias'] as Map<String, dynamic>?;
+            return {
+              'id': subcat?['id'],
+              'denominacion': subcat?['denominacion'],
+              'idcategoria': subcat?['idcategoria'],
+            };
+          })
+          .toList();
 
       // Obtener precio de venta (tabla separada)
       double precioVenta = 0.0;
@@ -1447,7 +1465,7 @@ class ProductService {
         precioVenta: precioVenta, // Precio de venta obtenido de app_dat_precio_venta
         stockDisponible: 0, // Se carga en otra parte
         tieneStock: false,
-        subcategorias: subcategoriasResponse.cast<Map<String, dynamic>>(),
+        subcategorias: subcategoriasMapped,
         presentaciones: presentaciones,
         multimedias: multimediasResponse.cast<Map<String, dynamic>>(),
         etiquetas: etiquetas,
