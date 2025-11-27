@@ -298,7 +298,7 @@ class WebPrinterServiceImpl {
 </head>
 <body>
     <div class="header">
-        <div class="store-name">VENTIQ</div>
+        <div class="store-name">INVENTTIA</div>
         <div class="system-name">Sistema de Ventas</div>
         <div class="invoice-title">FACTURA DE VENTA</div>
         <div class="separator">================================</div>
@@ -325,7 +325,7 @@ class WebPrinterServiceImpl {
 
     <div class="footer">
         <div>¡Gracias por su compra!</div>
-        <div>VENTIQ - Sistema de Ventas</div>
+        <div>INVENTTIA - Sistema de Ventas</div>
     </div>
 
     ${order.notas != null && order.notas!.isNotEmpty ? '<div class="notes">Notas: ${order.notas}</div>' : ''}
@@ -477,7 +477,7 @@ class WebPrinterServiceImpl {
 </head>
 <body>
     <div class="header">
-        <div class="store-name">VENTIQ</div>
+        <div class="store-name">INVENTTIA</div>
         <div class="warehouse-title">COMPROBANTE DE ALMACEN</div>
         <div class="picking-title">GUIA DE PICKING</div>
         <div class="separator">================================</div>
@@ -504,7 +504,7 @@ class WebPrinterServiceImpl {
     </div>
 
     <div class="footer">
-        <div>VENTIQ - Sistema de Almacen</div>
+        <div>INVENTTIA - Sistema de Almacen</div>
     </div>
 
     <script>

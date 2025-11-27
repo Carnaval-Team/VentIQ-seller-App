@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import 'subscription_guard_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -63,7 +64,11 @@ class AuthService {
   Future<void> signOut() async {
     try {
       await client.auth.signOut();
+      // Limpiar caché de suscripción
+      await SubscriptionGuardService().clearCache();
+      print('👋 Usuario cerró sesión exitosamente');
     } catch (e) {
+      print('❌ Error al cerrar sesión: $e');
       rethrow;
     }
   }

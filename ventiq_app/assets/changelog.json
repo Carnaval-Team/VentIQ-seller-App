@@ -1,9 +1,40 @@
 {
-  "current_version": "1.7.2",
-  "build": 702,
+  "current_version": "1.7.3",
+  "build": 703,
   "app_name":"ventiq_app",
   "changelogs": [
-    {
+     {
+      "date": "2025-11-27",
+      "title": "🖨️ Impresión WiFi - Sin Cables, Más Libertad",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Impresión WiFi de Facturas",
+          "description": "Ahora puedes imprimir facturas usando impresoras térmicas WiFi (ESC/POS). Conecta tu impresora a la red WiFi y olvídate de los cables"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de Impresoras WiFi",
+          "description": "Guarda tus impresoras WiFi favoritas con nombre, IP y puerto. Selecciona rápidamente la impresora que quieres usar sin configurar cada vez"
+        },
+        {
+          "type": "improvement",
+          "title": "Impresión Más Rápida",
+          "description": "La impresión WiFi es más rápida que Bluetooth, especialmente útil en momentos de alta demanda de clientes"
+        },
+        {
+          "type": "improvement",
+          "title": "Mayor Alcance",
+          "description": "Con WiFi puedes imprimir desde cualquier lugar de tu local sin preocuparte por la distancia, a diferencia del Bluetooth limitado"
+        },
+        {
+          "type": "improvement",
+          "title": "Mensajes de Error Claros",
+          "description": "Si algo falla con la impresión WiFi, recibes mensajes específicos sobre qué salió mal y cómo solucionarlo"
+        }
+      ]
+    },
+    { 
       "version": "1.7.2",
       "date": "2025-11-25",
       "title": "🔧 Correcciones en Contador de Billetes y Checkout Opcional",

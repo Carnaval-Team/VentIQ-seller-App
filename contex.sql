@@ -1407,12 +1407,15 @@ CREATE TABLE public.app_dat_contrato_consignacion (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   id_tienda_consignadora bigint NOT NULL,
   id_tienda_consignataria bigint NOT NULL,
-  estado smallint NOT NULL DEFAULT 1,
+  estado smallint NOT NULL DEFAULT 1, -- 1=activo, 0=inactivo
+  estado_confirmacion smallint NOT NULL DEFAULT 0, -- 0=pendiente, 1=confirmado, 2=cancelado
   fecha_inicio date NOT NULL DEFAULT CURRENT_DATE,
   fecha_fin date,
+  fecha_confirmacion timestamp with time zone,
   porcentaje_comision numeric,
   plazo_dias integer,
   condiciones text,
+  motivo_cancelacion text,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_contrato_consignacion_pkey PRIMARY KEY (id),
@@ -1428,6 +1431,7 @@ CREATE TABLE public.app_dat_producto_consignacion (
   id_producto bigint NOT NULL,
   id_variante bigint,
   id_presentacion bigint,
+  id_ubicacion_origen bigint, -- Ubicación (zona) de donde se extrae el producto en almacén origen
   cantidad_enviada numeric NOT NULL DEFAULT 0,
   cantidad_vendida numeric NOT NULL DEFAULT 0,
   cantidad_devuelta numeric NOT NULL DEFAULT 0,
@@ -1438,6 +1442,7 @@ CREATE TABLE public.app_dat_producto_consignacion (
   fecha_confirmacion date,
   fecha_finalizacion date,
   observaciones text,
+  puede_modificar_precio boolean NOT NULL DEFAULT false,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT app_dat_producto_consignacion_pkey PRIMARY KEY (id),
@@ -1445,6 +1450,7 @@ CREATE TABLE public.app_dat_producto_consignacion (
   CONSTRAINT app_dat_producto_consignacion_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_producto_consignacion_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
   CONSTRAINT app_dat_producto_consignacion_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id),
+  CONSTRAINT app_dat_producto_consignacion_ubicacion_fkey FOREIGN KEY (id_ubicacion_origen) REFERENCES public.app_dat_layout_almacen(id),
   CONSTRAINT app_dat_producto_consignacion_cantidades_check CHECK (cantidad_enviada >= (cantidad_vendida + cantidad_devuelta))
 );
 CREATE TABLE public.app_dat_movimiento_consignacion (

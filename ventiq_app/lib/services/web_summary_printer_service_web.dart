@@ -203,7 +203,7 @@ class WebSummaryPrinterServiceImpl {
 </head>
 <body>
     <div class="header">
-        <div class="store-name">VENTIQ</div>
+        <div class="store-name">INVENTTIA</div>
         <div class="report-title">RESUMEN DE VENTAS</div>
         <div class="separator">================================</div>
     </div>
@@ -232,7 +232,7 @@ class WebSummaryPrinterServiceImpl {
     <div class="final-total">TOTAL GENERAL: \$${totalVentas.toStringAsFixed(0)}</div>
 
     <div class="footer">
-        <div>VENTIQ - Sistema de Ventas</div>
+        <div>INVENTTIA - Sistema de Ventas</div>
     </div>
 
     <script>

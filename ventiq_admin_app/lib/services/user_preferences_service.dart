@@ -116,10 +116,12 @@ class UserPreferencesService {
     return prefs.getInt(_idTiendaKey);
   }
 
-  // Guardar lista de tiendas del usuario
-  Future<void> saveUserStores(List<Map<String, dynamic>> stores) async {
+
+  // Actualizar tienda seleccionada
+  Future<void> updateSelectedStore(int idTienda) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_userStoresKey, jsonEncode(stores));
+    await prefs.setInt(_idTiendaKey, idTienda);
+    print('🏪 Updated selected store to: $idTienda');
   }
 
   // Obtener lista de tiendas del usuario
@@ -135,13 +137,6 @@ class UserPreferencesService {
       print('❌ Error parsing user stores: $e');
       return [];
     }
-  }
-
-  // Actualizar tienda seleccionada
-  Future<void> updateSelectedStore(int idTienda) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_idTiendaKey, idTienda);
-    print('🏪 Updated selected store to: $idTienda');
   }
 
   // Obtener información de la tienda actual

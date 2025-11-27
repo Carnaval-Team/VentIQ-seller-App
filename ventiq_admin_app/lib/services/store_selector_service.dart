@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -40,7 +41,6 @@ class Store {
 
 class StoreSelectorService extends ChangeNotifier {
   static const String _selectedStoreKey = 'selected_store_id';
-  static const String _userStoresKey = 'user_stores';
   
   final SupabaseClient _supabase = Supabase.instance.client;
   
@@ -95,23 +95,16 @@ class StoreSelectorService extends ChangeNotifier {
             .toList();
         
         print('🏪 Tiendas cargadas: ${_userStores.length}');
-        
-        // Guardar en cache local
-        await _saveStoresToCache();
       } else {
         print('⚠️ No se encontraron tiendas para el usuario');
         _userStores = [];
-        // Intentar cargar desde cache como fallback
-        await _loadStoresFromCache();
       }
     } catch (e) {
       print('❌ Error cargando tiendas: $e');
-      // Solo cargar desde cache, no usar mock automáticamente
       _userStores = [];
-      await _loadStoresFromCache();
       
-      // Si no hay datos en cache y estamos en modo debug, usar mock
-      if (_userStores.isEmpty && kDebugMode) {
+      // Si estamos en modo debug, usar mock como fallback
+      if (kDebugMode) {
         print('🔧 Modo debug: usando datos mock como fallback');
         _userStores = _getMockStores();
       }
@@ -180,31 +173,6 @@ class StoreSelectorService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Guardar tiendas en cache local
-  Future<void> _saveStoresToCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final storesJson = _userStores.map((store) => store.toJson()).toList();
-      await prefs.setString(_userStoresKey, storesJson.toString());
-    } catch (e) {
-      print('Error guardando tiendas en cache: $e');
-    }
-  }
-
-  /// Cargar tiendas desde cache local
-  Future<void> _loadStoresFromCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final storesString = prefs.getString(_userStoresKey);
-      if (storesString != null && storesString.isNotEmpty) {
-        print('📱 Cargando tiendas desde cache local');
-        // Por ahora, el cache no está implementado completamente
-        // Se puede implementar deserialización JSON aquí si es necesario
-      }
-    } catch (e) {
-      print('Error cargando tiendas desde cache: $e');
-    }
-  }
 
   /// Datos mock para desarrollo/fallback
   List<Store> _getMockStores() {
