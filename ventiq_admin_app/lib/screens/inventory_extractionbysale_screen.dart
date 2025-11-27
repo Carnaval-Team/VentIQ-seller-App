@@ -12,6 +12,7 @@ import '../services/product_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/tpv_service.dart';
 import '../services/printer_manager.dart';
+import '../services/wifi_printer_service.dart';
 import '../widgets/conversion_info_widget.dart';
 import '../widgets/product_selector_widget.dart';
 import '../widgets/location_selector_widget.dart';
@@ -1279,16 +1280,12 @@ class _InventoryExtractionBySaleScreenState
     );
   }
 
-  /// 🖨️ Método para imprimir ticket de extracción usando PrinterManager
+  /// 🖨️ Método para imprimir ticket de extracción - Seleccionar tipo de impresora
   Future<void> _printExtractionTicket() async {
     try {
       print('🖨️ Iniciando impresión de ticket de extracción...');
 
-      // ✅ Verificar si el widget sigue montado
-      if (!mounted) {
-        print('⚠️ Widget desmontado, cancelando impresión');
-        return;
-      }
+      if (!mounted) return;
 
       // Verificar si hay productos para imprimir
       if (_selectedProducts.isEmpty) {
@@ -1296,31 +1293,185 @@ class _InventoryExtractionBySaleScreenState
         return;
       }
 
-      // Crear instancia del PrinterManager
+      // Mostrar diálogo de selección de tipo de impresora
+      final printerType = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.print, color: Color(0xFF4A90E2)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: const Text(
+                  'Seleccionar Impresora',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('¿Cómo deseas imprimir el ticket?'),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.wifi, color: Color(0xFF10B981)),
+                title: const Text('Impresora WiFi'),
+                subtitle: const Text('Imprimir por red WiFi'),
+                onTap: () => Navigator.pop(context, 'wifi'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.bluetooth, color: Color(0xFF4A90E2)),
+                title: const Text('Impresora Bluetooth'),
+                subtitle: const Text('Imprimir por Bluetooth'),
+                onTap: () => Navigator.pop(context, 'bluetooth'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      );
+
+      if (printerType == null || !mounted) return;
+
+      if (printerType == 'wifi') {
+        await _printExtractionTicketWiFi();
+      } else {
+        await _printExtractionTicketBluetooth();
+      }
+    } catch (e) {
+      print('❌ Error en _printExtractionTicket: $e');
+      if (mounted) {
+        _showErrorDialog('Error', 'Ocurrió un error al imprimir: $e');
+      }
+    }
+  }
+
+  /// 🖨️ Imprimir ticket usando WiFi
+  Future<void> _printExtractionTicketWiFi() async {
+    try {
+      print('📶 Imprimiendo por WiFi...');
+      
+      if (!mounted) return;
+
+      final wifiService = WiFiPrinterService();
+
+      // Mostrar diálogo de selección de impresora WiFi
+      final selectedPrinter = await wifiService.showPrinterSelectionDialog(context);
+      if (selectedPrinter == null) {
+        print('❌ No se seleccionó impresora WiFi');
+        return;
+      }
+
+      if (!mounted) return;
+
+      // Mostrar diálogo de progreso
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF10B981)),
+              SizedBox(height: 16),
+              Text('Imprimiendo por WiFi...'),
+            ],
+          ),
+        ),
+      );
+
+      // Conectar e imprimir
+      bool connected = await wifiService.connectToPrinter(
+        selectedPrinter['ip'],
+        port: selectedPrinter['port'] ?? 9100,
+      );
+
+      if (!connected) {
+        if (mounted) {
+          Navigator.pop(context);
+          _showErrorDialog('Error de Conexión', 'No se pudo conectar a la impresora WiFi');
+        }
+        return;
+      }
+
+      // Generar ticket
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(PaperSize.mm58, profile);
+      
+      // ========== IMPRIMIR COPIA 1: COMPROBANTE PRINCIPAL ==========
+      print('📄 Imprimiendo copia 1: COMPROBANTE PRINCIPAL');
+      List<int> bytes1 = _generateExtractionTicket(generator, copyNumber: 1);
+      bool printed1 = await wifiService.sendRawBytes(bytes1);
+      
+      if (!printed1) {
+        await wifiService.disconnect();
+        if (!mounted) return;
+        Navigator.pop(context);
+        _showErrorDialog('Error', 'No se pudo imprimir la primera copia');
+        return;
+      }
+      
+      // Esperar entre impresiones
+      print('⏳ Esperando 3 segundos antes de segunda copia...');
+      await Future.delayed(const Duration(seconds: 3));
+      
+      // ========== IMPRIMIR COPIA 2: COMPROBANTE ALMACÉN ==========
+      print('🏭 Imprimiendo copia 2: COMPROBANTE ALMACÉN');
+      List<int> bytes2 = _generateExtractionTicket(generator, copyNumber: 2);
+      bool printed2 = await wifiService.sendRawBytes(bytes2);
+      
+      await wifiService.disconnect();
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      if (printed1 && printed2) {
+        print('✅ Ambas copias impresas exitosamente');
+        _showSuccessDialog('¡Impreso!', 'Ambas copias se imprimieron correctamente por WiFi');
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            Navigator.pop(context); // Cerrar diálogo
+            Navigator.pop(context); // Cerrar pantalla
+          }
+        });
+      } else {
+        print('⚠️ Solo se imprimió la primera copia');
+        _showErrorDialog('Advertencia', 'Solo se pudo imprimir la primera copia');
+      }
+    } catch (e) {
+      print('❌ Error imprimiendo por WiFi: $e');
+      if (mounted) {
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        _showErrorDialog('Error WiFi', 'Error al imprimir por WiFi: $e');
+      }
+    }
+  }
+
+  /// 🖨️ Imprimir ticket usando Bluetooth
+  Future<void> _printExtractionTicketBluetooth() async {
+    try {
+      print('📱 Imprimiendo por Bluetooth...');
+
+      if (!mounted) return;
+
       final printerManager = PrinterManager();
 
-      // Paso 1: Mostrar diálogo de confirmación
-      print('📋 Paso 1: Mostrar diálogo de confirmación');
+      // Mostrar diálogo de confirmación
       bool shouldPrint = await printerManager.showPrintConfirmationDialog(context);
-      if (!shouldPrint) {
-        print('❌ Usuario canceló la impresión');
-        return;
-      }
+      if (!shouldPrint || !mounted) return;
 
-      // ✅ Verificar si el widget sigue montado
-      if (!mounted) {
-        print('⚠️ Widget desmontado después de confirmación');
-        return;
-      }
-
-      // Paso 2: Mostrar diálogo de selección de dispositivo
-      print('🔍 Paso 2: Seleccionar dispositivo Bluetooth');
+      // Seleccionar dispositivo Bluetooth
       final bluetoothService = printerManager.bluetoothService;
       var selectedDevice = await bluetoothService.showDeviceSelectionDialog(context);
-      if (selectedDevice == null) {
-        print('❌ No se seleccionó dispositivo');
-        return;
-      }
+      if (selectedDevice == null || !mounted) return;
 
       // ✅ Verificar si el widget sigue montado
       if (!mounted) {
@@ -1380,12 +1531,31 @@ class _InventoryExtractionBySaleScreenState
         ),
       );
 
-      // Generar y enviar ticket
+      // Generar y enviar tickets (2 copias)
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
-      List<int> bytes = _generateExtractionTicket(generator);
-
-      bool printed = await PrintBluetoothThermal.writeBytes(bytes);
+      
+      // ========== IMPRIMIR COPIA 1: COMPROBANTE PRINCIPAL ==========
+      print('📄 Imprimiendo copia 1: COMPROBANTE PRINCIPAL');
+      List<int> bytes1 = _generateExtractionTicket(generator, copyNumber: 1);
+      bool printed1 = await PrintBluetoothThermal.writeBytes(bytes1);
+      
+      if (!printed1) {
+        await bluetoothService.disconnect();
+        if (!mounted) return;
+        Navigator.pop(context);
+        _showErrorDialog('Error', 'No se pudo imprimir la primera copia');
+        return;
+      }
+      
+      // Esperar entre impresiones
+      print('⏳ Esperando 3 segundos antes de segunda copia...');
+      await Future.delayed(const Duration(seconds: 3));
+      
+      // ========== IMPRIMIR COPIA 2: COMPROBANTE ALMACÉN ==========
+      print('🏭 Imprimiendo copia 2: COMPROBANTE ALMACÉN');
+      List<int> bytes2 = _generateExtractionTicket(generator, copyNumber: 2);
+      bool printed2 = await PrintBluetoothThermal.writeBytes(bytes2);
 
       // Desconectar
       await bluetoothService.disconnect();
@@ -1400,7 +1570,7 @@ class _InventoryExtractionBySaleScreenState
       print(' Paso 5: Mostrar resultado');
       Navigator.pop(context);
 
-      if (printed) {
+      if (printed1 && printed2) {
         if (mounted) {
           _showSuccessDialog('¡Ticket Impreso!', 'El ticket se imprimió correctamente');
           // Cerrar la pantalla después de mostrar el éxito
@@ -1444,12 +1614,16 @@ class _InventoryExtractionBySaleScreenState
   }
 
   /// Generar contenido del ticket de extracción
-  List<int> _generateExtractionTicket(Generator generator) {
+  List<int> _generateExtractionTicket(Generator generator, {int copyNumber = 1}) {
     List<int> bytes = [];
 
     // Header
     bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.text('VENTA POR ACUERDO', styles: PosStyles(align: PosAlign.center, bold: true));
+    
+    // Indicador de copia
+    String copyLabel = copyNumber == 1 ? 'COMPROBANTE PRINCIPAL' : 'COMPROBANTE ALMACÉN';
+    bytes += generator.text(copyLabel, styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
 
     // Información de la venta

@@ -1741,7 +1741,272 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   }
 
   void _onDeleteLayout(Warehouse w, String layoutId) {
-    _showSnack('Eliminar layout $layoutId (pendiente)');
+    _showDeleteLayoutDialog(w, layoutId);
+  }
+
+  /// Muestra diálogo de confirmación para eliminar zona
+  Future<void> _showDeleteLayoutDialog(Warehouse w, String layoutId) async {
+    // Obtener la zona a eliminar
+    final zone = w.zones.firstWhere(
+      (z) => z.id == layoutId,
+      orElse: () => WarehouseZone(
+        id: layoutId,
+        warehouseId: w.id,
+        name: 'Zona desconocida',
+        code: '',
+        type: '',
+        conditions: '',
+        capacity: 0,
+        currentOccupancy: 0,
+        locations: [],
+      ),
+    );
+
+    // Obtener productos en la zona
+    final products = _layoutProducts[layoutId] ?? [];
+
+    // Calcular stock total en la zona
+    int totalStock = 0;
+    for (final product in products) {
+      final stock = (product['stock_actual'] ?? 0) as int;
+      totalStock += stock;
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.delete_outline,
+                color: Colors.red,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Eliminar Zona',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Información de la zona
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.layers, size: 16, color: AppColors.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                zone.name,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                'Código: ${zone.code}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Información de stock
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: totalStock > 0 ? Colors.red.shade50 : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: totalStock > 0 ? Colors.red.shade200 : Colors.green.shade200,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          totalStock > 0 ? Icons.warning : Icons.check_circle,
+                          size: 16,
+                          color: totalStock > 0 ? Colors.red : Colors.green,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          totalStock > 0
+                              ? 'Stock disponible detectado'
+                              : 'Sin stock disponible',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: totalStock > 0 ? Colors.red : Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Productos en zona: ${products.length}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      'Stock total: $totalStock unidades',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Mensaje de validación
+              if (totalStock > 0) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 16,
+                        color: Colors.red.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'No se puede eliminar una zona con stock disponible. Transfiere o vende los productos primero.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 16,
+                        color: Colors.green.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'La zona puede ser eliminada. No contiene stock disponible.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          if (totalStock == 0)
+            ElevatedButton.icon(
+              onPressed: () => _executeDeleteLayout(w, layoutId),
+              icon: const Icon(Icons.delete),
+              label: const Text('Eliminar Zona'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+            )
+          else
+            ElevatedButton(
+              onPressed: null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade300,
+              ),
+              child: const Text('Eliminar Zona (Deshabilitado)'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Ejecuta la eliminación de la zona
+  Future<void> _executeDeleteLayout(Warehouse w, String layoutId) async {
+    Navigator.pop(context); // Cerrar diálogo
+    _showSnack('Eliminando zona...', isLoading: true);
+
+    try {
+      await _service.deleteLayout(w.id, layoutId);
+
+      if (!mounted) return;
+
+      _showSnack('✅ Zona eliminada exitosamente');
+
+      // Recargar datos del almacén
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('❌ Error al eliminar zona: $e');
+      print('❌ Error en _executeDeleteLayout: $e');
+    }
   }
 
   void _onEditStockLimits(Warehouse w) {

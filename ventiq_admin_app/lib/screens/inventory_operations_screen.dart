@@ -7,6 +7,7 @@ import '../services/inventory_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../services/printer_manager.dart';
+import '../services/wifi_printer_service.dart';
 
 class InventoryOperationsScreen extends StatefulWidget {
   const InventoryOperationsScreen({super.key});
@@ -2468,58 +2469,195 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
-  /// 🖨️ Imprimir operación usando PrinterManager
+  /// 🖨️ Imprimir operación - Seleccionar tipo de impresora
   Future<void> _printOperation(Map<String, dynamic> operation) async {
     try {
       print('🖨️ Iniciando impresión de operación...');
 
-      // ✅ Verificar si el widget sigue montado
-      if (!mounted) {
-        print('⚠️ Widget desmontado, cancelando impresión');
+      if (!mounted) return;
+
+      // Mostrar diálogo de selección de tipo de impresora
+      final printerType = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.print, color: Color(0xFF4A90E2)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: const Text(
+                  'Seleccionar Impresora',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('¿Cómo deseas imprimir la operación?'),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.wifi, color: Color(0xFF10B981)),
+                title: const Text('Impresora WiFi'),
+                subtitle: const Text('Imprimir por red WiFi'),
+                onTap: () => Navigator.pop(context, 'wifi'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.bluetooth, color: Color(0xFF4A90E2)),
+                title: const Text('Impresora Bluetooth'),
+                subtitle: const Text('Imprimir por Bluetooth'),
+                onTap: () => Navigator.pop(context, 'bluetooth'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      );
+
+      if (printerType == null || !mounted) return;
+
+      if (printerType == 'wifi') {
+        await _printOperationWiFi(operation);
+      } else {
+        await _printOperationBluetooth(operation);
+      }
+    } catch (e) {
+      print('❌ Error en _printOperation: $e');
+      if (mounted) {
+        _showPrintError('Error', 'Ocurrió un error al imprimir: $e');
+      }
+    }
+  }
+
+  /// 🖨️ Imprimir operación usando WiFi
+  Future<void> _printOperationWiFi(Map<String, dynamic> operation) async {
+    try {
+      print('📶 Imprimiendo por WiFi...');
+      
+      if (!mounted) return;
+
+      final wifiService = WiFiPrinterService();
+
+      // Obtener detalles de la operación desde los datos ya cargados en la vista
+      List<Map<String, dynamic>> details = [];
+      
+      if (operation['detalles'] != null && operation['detalles'] is Map) {
+        final detallesMap = operation['detalles'] as Map<String, dynamic>;
+        if (detallesMap['items'] != null && detallesMap['items'] is List) {
+          // Convertir los items del formato de la vista al formato esperado por el servicio
+          details = (detallesMap['items'] as List).map((item) {
+            return {
+              'cantidad': item['cantidad_contada'] ?? item['cantidad'] ?? 0,
+              'producto_nombre': item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto',
+              'producto': {
+                'denominacion': item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto',
+                'codigo_barras': item['codigo_barras'],
+              },
+              'presentacion': item['presentacion_nombre'] ?? item['presentacion'],
+              'ubicacion': item['ubicacion_nombre'] ?? item['ubicacion'],
+            };
+          }).toList();
+          print('📦 Detalles obtenidos de la vista: ${details.length} productos');
+        }
+      }
+      
+      if (!mounted) return;
+
+      // Mostrar diálogo de selección de impresora WiFi
+      final selectedPrinter = await wifiService.showPrinterSelectionDialog(context);
+      if (selectedPrinter == null) {
+        print('❌ No se seleccionó impresora WiFi');
         return;
       }
 
-      // Crear instancia del PrinterManager
-      final printerManager = PrinterManager();
+      if (!mounted) return;
 
-      // Paso 1: Mostrar diálogo de confirmación
-      print('📋 Paso 1: Mostrar diálogo de confirmación');
-      bool shouldPrint = await printerManager.showPrintConfirmationDialog(context);
-      if (!shouldPrint) {
-        print('❌ Usuario canceló la impresión');
-        return;
-      }
-
-      // ✅ Verificar si el widget sigue montado
-      if (!mounted) {
-        print('⚠️ Widget desmontado después de confirmación');
-        return;
-      }
-
-      // Paso 2: Mostrar diálogo de selección de dispositivo
-      print('🔍 Paso 2: Seleccionar dispositivo Bluetooth');
-      final bluetoothService = printerManager.bluetoothService;
-      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(context);
-      if (selectedDevice == null) {
-        print('❌ No se seleccionó dispositivo');
-        return;
-      }
-
-      // ✅ Verificar si el widget sigue montado
-      if (!mounted) {
-        print('⚠️ Widget desmontado después de seleccionar dispositivo');
-        return;
-      }
-
-      // Paso 3: Mostrar diálogo de progreso - Conectando
-      print('🔌 Paso 3: Conectando a impresora');
+      // Mostrar diálogo de progreso
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
+        builder: (context) => const AlertDialog(
           content: Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
+            children: [
+              CircularProgressIndicator(color: Color(0xFF10B981)),
+              SizedBox(height: 16),
+              Text('Imprimiendo por WiFi...'),
+            ],
+          ),
+        ),
+      );
+
+      // Conectar e imprimir
+      bool connected = await wifiService.connectToPrinter(
+        selectedPrinter['ip'],
+        port: selectedPrinter['port'] ?? 9100,
+      );
+
+      if (!connected) {
+        if (mounted) {
+          Navigator.pop(context);
+          _showPrintError('Error de Conexión', 'No se pudo conectar a la impresora WiFi');
+        }
+        return;
+      }
+
+      // Imprimir operación
+      bool printed = await wifiService.printInventoryOperation(operation, details);
+
+      await wifiService.disconnect();
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      if (printed) {
+        _showPrintSuccess('¡Impreso!', 'La operación se imprimió correctamente por WiFi');
+      } else {
+        _showPrintError('Error', 'No se pudo imprimir la operación');
+      }
+    } catch (e) {
+      print('❌ Error imprimiendo por WiFi: $e');
+      if (mounted) {
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        _showPrintError('Error WiFi', 'Error al imprimir por WiFi: $e');
+      }
+    }
+  }
+
+  /// 🖨️ Imprimir operación usando Bluetooth
+  Future<void> _printOperationBluetooth(Map<String, dynamic> operation) async {
+    try {
+      print('📱 Imprimiendo por Bluetooth...');
+
+      if (!mounted) return;
+
+      final printerManager = PrinterManager();
+
+      // Mostrar diálogo de confirmación
+      bool shouldPrint = await printerManager.showPrintConfirmationDialog(context);
+      if (!shouldPrint || !mounted) return;
+
+      // Seleccionar dispositivo Bluetooth
+      final bluetoothService = printerManager.bluetoothService;
+      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(context);
+      if (selectedDevice == null || !mounted) return;
+
+      // Mostrar diálogo de progreso - Conectando
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               CircularProgressIndicator(color: Color(0xFF4A90E2)),
               SizedBox(height: 16),
               Text('Conectando a impresora...'),
@@ -2528,7 +2666,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         ),
       );
 
-      // Conectar a la impresora
+      // Conectar
       bool connected = await bluetoothService.connectToDevice(selectedDevice);
       if (!connected) {
         if (mounted) {
@@ -2538,23 +2676,20 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         return;
       }
 
-      // ✅ Verificar si el widget sigue montado
       if (!mounted) {
-        print('⚠️ Widget desmontado después de conectar');
         await bluetoothService.disconnect();
         return;
       }
 
-      // Paso 4: Actualizar diálogo - Imprimiendo
-      print('🖨️ Paso 4: Imprimiendo ticket');
+      // Actualizar diálogo - Imprimiendo
       Navigator.pop(context);
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
+        builder: (context) => const AlertDialog(
           content: Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
+            children: [
               CircularProgressIndicator(color: Color(0xFF4A90E2)),
               SizedBox(height: 16),
               Text('Imprimiendo ticket...'),
@@ -2569,60 +2704,24 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       List<int> bytes = _generateOperationTicket(generator, operation);
 
       bool printed = await PrintBluetoothThermal.writeBytes(bytes);
-
-      // Desconectar
       await bluetoothService.disconnect();
 
-      // ✅ Verificar si el widget sigue montado antes de cerrar diálogo
-      if (!mounted) {
-        print('⚠️ Widget desmontado antes de mostrar resultado');
-        return;
-      }
-
-      // Paso 5: Cerrar diálogo y mostrar resultado
-      print('✅ Paso 5: Mostrar resultado');
+      if (!mounted) return;
       Navigator.pop(context);
 
       if (printed) {
-        if (mounted) {
-          _showPrintSuccess('¡Ticket Impreso!', 'La operación se imprimió correctamente');
-          // Cerrar la pantalla después de mostrar el éxito
-          Future.delayed(const Duration(seconds: 3), () {
-            if (mounted) {
-              Navigator.pop(context); // Cerrar diálogo de éxito
-              Navigator.pop(context); // Cerrar pantalla de operación
-            }
-          });
-        }
-        print('✅ Ticket impreso exitosamente');
+        _showPrintSuccess('¡Ticket Impreso!', 'La operación se imprimió correctamente');
       } else {
-        if (mounted) {
-          _showPrintError('Error de Impresión', 'No se pudo imprimir el ticket');
-          // Cerrar la pantalla después de mostrar el error
-          Future.delayed(const Duration(seconds: 3), () {
-            if (mounted) {
-              Navigator.pop(context); // Cerrar diálogo de error
-              Navigator.pop(context); // Cerrar pantalla de operación
-            }
-          });
-        }
-        print('❌ Error al imprimir ticket');
+        _showPrintError('Error de Impresión', 'No se pudo imprimir el ticket');
       }
     } catch (e) {
+      print('❌ Error imprimiendo por Bluetooth: $e');
       if (mounted) {
         try {
           Navigator.pop(context);
         } catch (_) {}
-        _showPrintError('Error', 'Ocurrió un error al imprimir: $e');
-        // Cerrar la pantalla después de mostrar el error
-        Future.delayed(const Duration(seconds: 3), () {
-          if (mounted) {
-            Navigator.pop(context); // Cerrar diálogo de error
-            Navigator.pop(context); // Cerrar pantalla de operación
-          }
-        });
+        _showPrintError('Error Bluetooth', 'Error al imprimir por Bluetooth: $e');
       }
-      print('❌ Error en _printOperation: $e');
     }
   }
 
@@ -2643,22 +2742,53 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                            styles: PosStyles(align: PosAlign.left));
     bytes += generator.text('Fecha: ${_formatDateTime(DateTime.parse(operation['created_at']))}', 
                            styles: PosStyles(align: PosAlign.left));
+    
+    // Observaciones
+    if (operation['observaciones']?.isNotEmpty == true) {
+      String obs = operation['observaciones'].toString();
+      if (obs.length > 28) obs = obs.substring(0, 25) + '...';
+      bytes += generator.text('Obs: $obs', styles: PosStyles(align: PosAlign.left));
+    }
+    
     bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
 
-    // Detalles
+    // Productos (si existen en los detalles)
+    if (operation['detalles'] != null && operation['detalles'] is Map) {
+      final detallesMap = operation['detalles'] as Map<String, dynamic>;
+      if (detallesMap['items'] != null && detallesMap['items'] is List) {
+        final items = detallesMap['items'] as List;
+        
+        bytes += generator.text('PRODUCTOS:', styles: PosStyles(align: PosAlign.left, bold: true));
+        
+        for (var item in items) {
+          final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
+          String productName = item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto';
+          
+          // Truncar nombre si es muy largo
+          if (productName.length > 24) {
+            productName = productName.substring(0, 21) + '...';
+          }
+          
+          bytes += generator.text('${cantidad}x $productName', styles: PosStyles(align: PosAlign.left));
+          
+          // Agregar ubicación si existe
+          final ubicacion = item['ubicacion_nombre'] ?? item['ubicacion'];
+          if (ubicacion != null && ubicacion.toString().isNotEmpty) {
+            bytes += generator.text('  Ubic: $ubicacion', styles: PosStyles(align: PosAlign.left));
+          }
+        }
+        
+        bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+      }
+    }
+
+    // Totales
     final totalPrice = _calculateTotalPrice(operation);
     final totalItems = _calculateTotalItems(operation);
 
     bytes += generator.text('Total Items: $totalItems', styles: PosStyles(align: PosAlign.left));
     bytes += generator.text('Total: \$${totalPrice.toStringAsFixed(2)}', 
                            styles: PosStyles(align: PosAlign.left, bold: true));
-
-    // Observaciones
-    if (operation['observaciones']?.isNotEmpty == true) {
-      bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
-      bytes += generator.text('Obs: ${operation['observaciones']}', 
-                             styles: PosStyles(align: PosAlign.left));
-    }
 
     // Footer
     bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));

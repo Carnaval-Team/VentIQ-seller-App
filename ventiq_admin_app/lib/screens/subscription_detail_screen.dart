@@ -44,8 +44,12 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         throw Exception('No se pudo obtener el ID de la tienda');
       }
 
-      // Cargar suscripción activa
-      _activeSubscription = await _subscriptionService.getActiveSubscription(_idTienda!);
+      // Forzar actualización del guard para refrescar el caché
+      print('🔄 Forzando actualización del guard...');
+      await _subscriptionGuard.forceCheck();
+      
+      // Cargar suscripción activa desde el guard (que ahora tiene datos frescos)
+      _activeSubscription = await _subscriptionGuard.getCurrentSubscription(forceRefresh: true);
       
       // Cargar historial de suscripciones
       _subscriptionHistory = await _subscriptionService.getSubscriptionHistory(_idTienda!);
@@ -54,6 +58,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       if (_activeSubscription != null) {
         _changeHistory = await _subscriptionService.getSubscriptionChangeHistory(_activeSubscription!.id);
       }
+      
+      print('✅ Datos de suscripción cargados - Estado: ${_activeSubscription?.isActive ?? false ? "ACTIVA" : "INACTIVA"}');
     } catch (e) {
       print('❌ Error cargando datos de suscripción: $e');
       if (mounted) {

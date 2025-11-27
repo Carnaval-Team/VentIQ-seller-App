@@ -278,6 +278,60 @@ class InventoryService {
     }
   }
 
+  /// Get operation details (products moved in the operation)
+  static Future<Map<String, dynamic>> getOperationDetails(int operationId) async {
+    try {
+      print('🔍 Obteniendo detalles de operación $operationId...');
+
+      final response = await _supabase
+          .from('app_operaciones_inventario_detalle')
+          .select('''
+            id,
+            cantidad,
+            id_producto,
+            id_presentacion,
+            id_ubicacion,
+            productos:id_producto (
+              denominacion,
+              codigo_barras
+            ),
+            presentaciones:id_presentacion (
+              denominacion
+            ),
+            ubicaciones:id_ubicacion (
+              denominacion
+            )
+          ''')
+          .eq('id_operacion_inventario', operationId);
+
+      print('✅ Detalles obtenidos: ${response.length} productos');
+
+      // Transformar los datos para el formato esperado
+      final details = (response as List).map((item) {
+        final producto = item['productos'];
+        final presentacion = item['presentaciones'];
+        final ubicacion = item['ubicaciones'];
+        
+        return {
+          'id': item['id'],
+          'cantidad': item['cantidad'],
+          'producto_nombre': producto?['denominacion'] ?? 'Producto',
+          'producto': {
+            'denominacion': producto?['denominacion'] ?? 'Producto',
+            'codigo_barras': producto?['codigo_barras'],
+          },
+          'presentacion': presentacion?['denominacion'],
+          'ubicacion': ubicacion?['denominacion'],
+        };
+      }).toList();
+
+      return {'details': details};
+    } catch (e) {
+      print('❌ Error al obtener detalles de operación: $e');
+      rethrow;
+    }
+  }
+
   /// Get inventory products using fn_listar_inventario_productos RPC with pagination
   static Future<InventoryResponse> getInventoryProducts({
     String? busqueda,

@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import 'permissions_service.dart';
+import 'subscription_guard_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -44,6 +45,8 @@ class AuthService {
       await _supabase.auth.signOut();
       // Limpiar caché de permisos
       PermissionsService().clearCache();
+      // Limpiar caché de suscripción
+      await SubscriptionGuardService().clearCache();
       print('👋 Admin signed out successfully');
     } catch (e) {
       print('❌ Admin sign out error: $e');

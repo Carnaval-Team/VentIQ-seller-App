@@ -122,23 +122,12 @@ class SubscriptionGuardService {
         // Esto evita que el mensaje persista cuando se recarga la pantalla
         if (currentRoute != '/subscription-detail') {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Tu suscripción no está activa. Contacta al administrador para activarla.',
+            const SnackBar(
+              content: Text(
+                'Tu suscripción no está activa. Redirigiendo...',
               ),
               backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 3),
-              action: SnackBarAction(
-                label: 'Ver Detalles',
-                textColor: Colors.white,
-                onPressed: () {
-                  Navigator.pushNamedAndRemoveUntil(
-                    context,
-                    '/subscription-detail',
-                    (route) => false,
-                  );
-                },
-              ),
+              duration: Duration(milliseconds: 1500),
             ),
           );
         }
