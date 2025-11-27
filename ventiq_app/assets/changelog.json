@@ -1,9 +1,10 @@
 {
   "current_version": "1.7.3",
   "build": 703,
-  "app_name":"ventiq_app",
+  "app_name": "ventiq_app",
   "changelogs": [
-     {
+    {
+      "version": "1.7.3",
       "date": "2025-11-27",
       "title": "🖨️ Impresión WiFi - Sin Cables, Más Libertad",
       "changes": [
@@ -34,7 +35,7 @@
         }
       ]
     },
-    { 
+    {
       "version": "1.7.2",
       "date": "2025-11-25",
       "title": "🔧 Correcciones en Contador de Billetes y Checkout Opcional",
@@ -140,7 +141,7 @@
       "date": "2025-11-13",
       "title": "Correcciones de errores y Ventas de Productos sin disponibilidad",
       "changes": [
-       {
+        {
           "type": "improvement",
           "title": "Venta de Productos elaborados sin ingredientes disponibles",
           "description": "Ahora puedes vender productos elaborados sin ingredientes disponibles, si el administrador de la tienda lo permite."
@@ -551,7 +552,7 @@
           "description": "Solucionado problema donde los datos de preórdenes se perdían al navegar desde Orders → Preorder debido a uso inconsistente de pushNamedAndRemoveUntil vs pushNamed"
         },
         {
-          "type": "improvement", 
+          "type": "improvement",
           "title": "Navegación Consistente",
           "description": "Estandarizada la navegación entre pantallas usando pushNamed para mantener el stack y preservar datos de órdenes activas"
         },
@@ -704,7 +705,7 @@
           "description": "Visualización de categorías de productos con integración a Supabase y colores dinámicos"
         },
         {
-          "type": "feature", 
+          "type": "feature",
           "title": "Gestión de Pedidos",
           "description": "Sistema completo de pedidos con estados: enviada, procesando, pago confirmado, completada"
         },
