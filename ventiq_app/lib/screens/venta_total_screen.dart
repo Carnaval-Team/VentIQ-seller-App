@@ -1584,7 +1584,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
 
       // Header
       bytes += generator.text(
-        'VENTIQ',
+        'INVENTTIA',
         styles: PosStyles(
           align: PosAlign.center,
           height: PosTextSize.size2,
@@ -1726,7 +1726,7 @@ class _VentaTotalScreenState extends State<VentaTotalScreen> {
       );
       bytes += generator.emptyLines(1);
       bytes += generator.text(
-        'VENTIQ - Sistema de Ventas',
+        'INVENTTIA - Sistema de Ventas',
         styles: PosStyles(align: PosAlign.center),
       );
       bytes += generator.emptyLines(3);

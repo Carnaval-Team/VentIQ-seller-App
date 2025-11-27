@@ -613,6 +613,13 @@ class _SettingsScreenState extends State<SettingsScreen>
             _buildDivider(),
             _buildPrintSettingsTile(),
             _buildDivider(),
+            _buildSettingsTile(
+              icon: Icons.wifi,
+              title: 'Impresoras WiFi',
+              subtitle: 'Gestionar impresoras de red',
+              onTap: () => Navigator.pushNamed(context, '/wifi-printers'),
+            ),
+            _buildDivider(),
             _buildStaticTextSettingsTile(),
             _buildDivider(),
             _buildFluidModeSettingsTile(),

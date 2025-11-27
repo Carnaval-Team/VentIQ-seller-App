@@ -13,6 +13,7 @@ import 'screens/venta_total_screen.dart';
 import 'screens/cierre_screen.dart';
 import 'screens/shift_workers_screen.dart';
 import 'screens/subscription_detail_screen.dart';
+import 'screens/wifi_printers_screen.dart';
 import 'services/auth_service.dart';
 import 'utils/platform_utils.dart';
 
@@ -56,6 +57,7 @@ class MyApp extends StatelessWidget {
         '/cierre': (context) => const CierreScreen(),
         '/shift-workers': (context) => const ShiftWorkersScreen(),
         '/subscription-detail': (context) => const SubscriptionDetailScreen(),
+        '/wifi-printers': (context) => const WiFiPrintersScreen(),
       },
     );
   }

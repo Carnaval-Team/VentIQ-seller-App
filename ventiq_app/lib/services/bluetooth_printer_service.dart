@@ -582,7 +582,7 @@ class BluetoothPrinterService {
     List<int> bytes = [];
 
     // Header compacto
-    bytes += generator.text('VENTIQ', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.text('FACTURA', styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
 
@@ -649,7 +649,7 @@ class BluetoothPrinterService {
     debugPrint('🏭 Creating warehouse picking slip for order ${order.id}');
     
     // Header compacto
-    bytes += generator.text('VENTIQ', styles: PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.text('GUIA ALMACEN', styles: PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
     
@@ -689,7 +689,7 @@ class BluetoothPrinterService {
     bytes += generator.text('TOT: ${order.totalItems} prod - \$${order.total.toStringAsFixed(0)}', styles: PosStyles(align: PosAlign.left, bold: true));
 
     // Footer compacto
-    bytes += generator.text('VENTIQ Almacen', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text('INVENTTIA Almacen', styles: PosStyles(align: PosAlign.center));
     
     debugPrint('🏭 Warehouse picking slip completed (${bytes.length} bytes)');
     return bytes;

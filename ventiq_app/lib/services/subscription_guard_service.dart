@@ -106,32 +106,42 @@ class SubscriptionGuardService {
       return true;
     }
 
+    // Verificar si hay usuario logueado (tiene ID de tienda)
+    final currentStoreId = await _userPreferencesService.getIdTienda();
+    if (currentStoreId == null) {
+      print('⚠️ No hay usuario logueado, permitiendo acceso a $currentRoute');
+      return true;
+    }
+
     final hasActive = await hasActiveSubscription();
     if (!hasActive) {
       print('🚫 Acceso denegado a $currentRoute - Redirigiendo a detalles de suscripción');
       
       if (context.mounted) {
-        // Mostrar mensaje informativo
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Tu suscripción no está activa. Contacta al administrador para activarla.',
+        // Solo mostrar SnackBar si NO estamos ya en la pantalla de subscription-detail
+        // Esto evita que el mensaje persista cuando se recarga la pantalla
+        if (currentRoute != '/subscription-detail') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Tu suscripción no está activa. Contacta al administrador para activarla.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+              action: SnackBarAction(
+                label: 'Ver Detalles',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/subscription-detail',
+                    (route) => false,
+                  );
+                },
+              ),
             ),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 4),
-            action: SnackBarAction(
-              label: 'Ver Detalles',
-              textColor: Colors.white,
-              onPressed: () {
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/subscription-detail',
-                  (route) => false,
-                );
-              },
-            ),
-          ),
-        );
+          );
+        }
 
         // Redirigir a detalles de suscripción
         Navigator.pushNamedAndRemoveUntil(
@@ -155,11 +165,12 @@ class SubscriptionGuardService {
     return await hasActiveSubscription();
   }
 
-  /// Limpia el caché de suscripción
-  void clearCache() {
+  /// Limpia el caché de suscripción y datos de preferencias
+  Future<void> clearCache() async {
     _cachedSubscription = null;
     _cachedStoreId = null;
     _lastCheck = null;
+    await _userPreferencesService.clearSubscriptionData();
     print('🧹 Caché de suscripción limpiado');
   }
 
