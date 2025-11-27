@@ -1,8 +1,45 @@
 {
-  "current_version": "1.3.2",
-  "build": 132,
+  "current_version": "1.4.0",
+  "build": 140,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.4.0",
+      "date": "2025-11-27",
+      "title": "🖨️ Impresión WiFi y Gestión de Consignaciones",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Módulo Completo de Consignaciones",
+          "description": "Nuevo sistema para gestionar ventas por consignación con seguimiento de productos entregados, vendidos y devoluciones"
+        },
+        {
+          "type": "feature",
+          "title": "Impresión WiFi de Tickets",
+          "description": "Soporte para impresoras térmicas WiFi (ESC/POS) con configuración de IP y puerto, permitiendo imprimir tickets sin cables"
+        },
+        {
+          "type": "feature",
+          "title": "Impresión de Operaciones de Inventario",
+          "description": "Imprime comprobantes detallados de todas las operaciones de inventario (entradas, salidas, ajustes) por WiFi o Bluetooth"
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de Impresoras WiFi",
+          "description": "Módulo para guardar, editar y seleccionar impresoras WiFi configuradas con validación de conexión en tiempo real"
+        },
+        {
+          "type": "improvement",
+          "title": "Manejo Robusto de Errores de Impresión",
+          "description": "Validaciones y mensajes claros cuando falla la conexión o impresión, con reintentos automáticos y advertencias específicas"
+        },
+        {
+          "type": "fix",
+          "title": "Corrección de SnackBar Persistente",
+          "description": "Solucionado error de contexto nulo en notificaciones de suscripción que causaba crashes al presionar acciones"
+        }
+      ]
+    },
     {
       "version": "1.3.2",
       "date": "2025-11-25",
