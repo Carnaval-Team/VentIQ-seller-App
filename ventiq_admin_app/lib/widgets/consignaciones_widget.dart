@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
 import '../screens/consignaciones_consignataria_screen.dart';
-import '../screens/confirmar_recepcion_consignacion_screen.dart';
+import '../screens/lista_productos_pendientes_consignacion_screen.dart';
 
 class ConsignacionesWidget extends StatefulWidget {
   final int idTienda;
@@ -152,12 +152,12 @@ class _ConsignacionesWidgetState extends State<ConsignacionesWidget> {
                           context,
                           MaterialPageRoute(
                             builder: (context) =>
-                                ConfirmarRecepcionConsignacionScreen(idTienda: widget.idTienda),
+                                ListaProductosPendientesConsignacionScreen(idTienda: widget.idTienda),
                           ),
                         );
                       },
                       icon: const Icon(Icons.check_circle),
-                      label: const Text('Confirmar Recepción'),
+                      label: const Text('Aceptar Envío'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,

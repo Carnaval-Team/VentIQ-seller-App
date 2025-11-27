@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/subscription_service.dart';
 
 class CrearContratoConsignacionScreen extends StatefulWidget {
   const CrearContratoConsignacionScreen({Key? key}) : super(key: key);
@@ -15,6 +16,7 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
   
   int? _idTiendaActual;
   int? _idTiendaConsignataria;
+  int? _idAlmacenDestino;
   double? _porcentajeComision;
   DateTime? _fechaInicio;
   DateTime? _fechaFin;
@@ -22,8 +24,11 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
   String? _condiciones;
   
   List<Map<String, dynamic>> _tiendasDisponibles = [];
+  List<Map<String, dynamic>> _almacenesDestino = [];
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _tienePlanAvanzado = false;
+  bool _cargandoAlmacenes = false;
 
   @override
   void initState() {
@@ -40,9 +45,14 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
       _idTiendaActual = storeData?['id_tienda'] as int?;
 
       if (_idTiendaActual != null) {
+        // Verificar si tiene plan Avanzado
+        final subscriptionService = SubscriptionService();
+        final tienePlan = await subscriptionService.hasFeatureEnabled(_idTiendaActual!, 'consignacion');
+        
         final tiendas = await ConsignacionService.getTiendasDisponibles(_idTiendaActual!);
         setState(() {
           _tiendasDisponibles = tiendas;
+          _tienePlanAvanzado = tienePlan;
           _isLoading = false;
         });
       } else {
@@ -65,6 +75,7 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
         idTiendaConsignadora: _idTiendaActual!,
         idTiendaConsignataria: _idTiendaConsignataria!,
         porcentajeComision: _porcentajeComision!,
+        idAlmacenDestino: null, // Se seleccionará al confirmar
         fechaInicio: _fechaInicio,
         fechaFin: _fechaFin,
         plazoDias: _plazoDias,
@@ -123,25 +134,62 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Información
-                    Card(
-                      color: Colors.blue.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Icon(Icons.info_outline, color: Colors.blue.shade700),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Crea un contrato para enviar productos en consignación a otra tienda',
-                                style: TextStyle(color: Colors.blue.shade700),
+                    // Validación de plan
+                    if (!_tienePlanAvanzado)
+                      Card(
+                        color: Colors.red.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Icon(Icons.lock_outline, color: Colors.red.shade700),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Plan Avanzado Requerido',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.red.shade700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Solo puedes crear contratos de consignación con el plan Avanzado. Contáctanos para actualizar tu plan.',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.red.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      // Información
+                      Card(
+                        color: Colors.blue.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.blue.shade700),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Crea un contrato para enviar productos en consignación a otra tienda',
+                                  style: TextStyle(color: Colors.blue.shade700),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
                     const SizedBox(height: 24),
 
                     // Tienda consignataria
@@ -153,43 +201,84 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                       ),
                     ),
                     const SizedBox(height: 8),
-                    DropdownButtonFormField<int>(
-                      value: _idTiendaConsignataria,
-                      decoration: const InputDecoration(
-                        labelText: 'Seleccionar tienda *',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.store),
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[400]!),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      items: _tiendasDisponibles.map((tienda) {
-                        return DropdownMenuItem<int>(
-                          value: tienda['id'],
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                tienda['denominacion'],
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                      child: DropdownButton<int>(
+                        value: _idTiendaConsignataria,
+                        isExpanded: true,
+                        underline: const SizedBox(),
+                        hint: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Text('Seleccionar tienda *'),
+                        ),
+                        items: _tiendasDisponibles.map((tienda) {
+                          return DropdownMenuItem<int>(
+                            value: tienda['id'],
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    tienda['denominacion'],
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (tienda['direccion'] != null)
+                                    Text(
+                                      tienda['direccion'],
+                                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
                               ),
-                              if (tienda['direccion'] != null)
-                                Text(
-                                  tienda['direccion'],
-                                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() => _idTiendaConsignataria = value);
-                      },
-                      validator: (value) {
-                        if (value == null) {
-                          return 'Debe seleccionar una tienda';
-                        }
-                        return null;
-                      },
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() => _idTiendaConsignataria = value);
+                        },
+                      ),
                     ),
+                    if (_idTiendaConsignataria == null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Debe seleccionar una tienda',
+                          style: TextStyle(color: Colors.red[700], fontSize: 12),
+                        ),
+                      ),
+                    const SizedBox(height: 24),
+
+                    // Nota: El almacén destino se seleccionará al confirmar la asignación de productos
+                    if (_idTiendaConsignataria != null)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          border: Border.all(color: Colors.blue.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.blue.shade700),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'El almacén destino será seleccionado por la tienda consignataria al confirmar la asignación de productos',
+                                style: TextStyle(
+                                  color: Colors.blue.shade700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     const SizedBox(height: 24),
 
                     // Porcentaje de comisión
@@ -358,7 +447,7 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton.icon(
-                        onPressed: _isSaving ? null : _crearContrato,
+                        onPressed: (!_tienePlanAvanzado || _isSaving) ? null : _crearContrato,
                         icon: _isSaving
                             ? const SizedBox(
                                 width: 20,
@@ -369,9 +458,15 @@ class _CrearContratoConsignacionScreenState extends State<CrearContratoConsignac
                                 ),
                               )
                             : const Icon(Icons.check),
-                        label: Text(_isSaving ? 'Creando...' : 'Crear Contrato'),
+                        label: Text(
+                          _isSaving
+                              ? 'Creando...'
+                              : _tienePlanAvanzado
+                                  ? 'Crear Contrato'
+                                  : 'Plan Avanzado Requerido',
+                        ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
+                          backgroundColor: _tienePlanAvanzado ? AppColors.primary : Colors.grey,
                           foregroundColor: Colors.white,
                         ),
                       ),

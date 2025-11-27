@@ -98,17 +98,14 @@ class _AdminDrawerState extends State<AdminDrawer> {
     }
   }
 
-  /// Verificar si la tienda tiene la función de consignación habilitada
+  /// Verificar si la tienda puede acceder a consignaciones
+  /// Todas las tiendas pueden ver consignaciones (para confirmar contratos)
+  /// Pero solo con plan Avanzado pueden crear contratos
   Future<bool> _hasConsignacionFeature() async {
     try {
-      final userPrefs = UserPreferencesService();
-      final storeData = await userPrefs.getCurrentStoreInfo();
-      final idTienda = storeData?['id_tienda'] as int?;
-      
-      if (idTienda == null) return false;
-      
-      final subscriptionService = SubscriptionService();
-      return await subscriptionService.hasFeatureEnabled(idTienda, 'consignacion');
+      // Todas las tiendas pueden acceder a consignaciones
+      // La restricción de crear contratos se valida en la pantalla
+      return true;
     } catch (e) {
       print('❌ Error verificando función de consignación: $e');
       return false;
@@ -408,30 +405,30 @@ class _AdminDrawerState extends State<AdminDrawer> {
                   },
                 ),
 
-                // // Consignaciones (solo con plan Avanzado)
-                // FutureBuilder<bool>(
-                //   future: _hasConsignacionFeature(),
-                //   builder: (context, snapshot) {
-                //     if (snapshot.data == true) {
-                //       return Column(
-                //         children: [
-                //           _buildDrawerItem(
-                //             context,
-                //             icon: Icons.handshake,
-                //             title: 'Consignaciones',
-                //             subtitle: 'Gestión de consignaciones',
-                //             onTap: () {
-                //               Navigator.pop(context);
-                //               Navigator.pushNamed(context, '/consignacion');
-                //             },
-                //           ),
-                //           const Divider(height: 1),
-                //         ],
-                //       );
-                //     }
-                //     return const SizedBox.shrink();
-                //   },
-                // ),
+                // Consignaciones (solo con plan Avanzado)
+                FutureBuilder<bool>(
+                  future: _hasConsignacionFeature(),
+                  builder: (context, snapshot) {
+                    if (snapshot.data == true) {
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            context,
+                            icon: Icons.handshake,
+                            title: 'Consignaciones',
+                            subtitle: 'Gestión de consignaciones',
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.pushNamed(context, '/consignacion');
+                            },
+                          ),
+                          const Divider(height: 1),
+                        ],
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
 
                 // Trabajadores (solo Gerente y Supervisor)
                 FutureBuilder<bool>(
@@ -500,47 +497,50 @@ class _AdminDrawerState extends State<AdminDrawer> {
           ),
 
           // Footer
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: Colors.grey[300]!)),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Inventtia® Admin $_appVersion',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: Colors.grey[300]!)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Inventtia® Admin $_appVersion',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton.icon(
-                    onPressed: _checkForUpdates,
-                    icon: Icon(Icons.system_update, size: 16, color: AppColors.primary),
-                    label: Text(
-                      'Ver Novedades',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w500,
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: _checkForUpdates,
+                      icon: Icon(Icons.system_update, size: 16, color: AppColors.primary),
+                      label: Text(
+                        'Ver Novedades',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
