@@ -29,6 +29,10 @@ class _AperturaScreenState extends State<AperturaScreen> {
   Map<int, TextEditingController> _inventoryControllers = {};
   bool _isLoadingInventory = false;
   bool _inventorySet = false;
+  
+  // New state variables for conditional inventory
+  bool _inventoryAlreadyDone = false;
+  bool _checkingInventoryStatus = true;
 
   // Previous shift data
   double _previousShiftSales = 0.0;
@@ -41,6 +45,89 @@ class _AperturaScreenState extends State<AperturaScreen> {
     super.initState();
     _checkExistingShift();
     _loadStoreConfig();
+  }
+
+  /// Check if inventory has already been done for the current warehouse in an active shift
+  Future<void> _checkWarehouseInventoryStatus() async {
+    try {
+      setState(() {
+        _checkingInventoryStatus = true;
+      });
+
+      final idAlmacen = await _userPrefs.getIdAlmacen();
+      if (idAlmacen == null) {
+        print('❌ No warehouse ID found');
+        setState(() {
+          _checkingInventoryStatus = false;
+        });
+        return;
+      }
+
+      final supabase = Supabase.instance.client;
+
+      // 1. Get all active shifts (estado = 1) for the same warehouse
+      // We need to join with app_dat_tpv to filter by id_almacen
+      final activeShiftsResponse = await supabase
+          .from('app_dat_caja_turno')
+          .select('id, id_operacion_apertura, app_dat_tpv!inner(id_almacen)')
+          .eq('estado', 1)
+          .eq('app_dat_tpv.id_almacen', idAlmacen);
+
+      final activeShifts = activeShiftsResponse as List<dynamic>;
+      
+      if (activeShifts.isEmpty) {
+        print('ℹ️ No active shifts found for warehouse $idAlmacen');
+        setState(() {
+          _inventoryAlreadyDone = false;
+          _checkingInventoryStatus = false;
+        });
+        return;
+      }
+
+      print('ℹ️ Found ${activeShifts.length} active shifts for warehouse $idAlmacen');
+
+      // 2. Check if any of these shifts has an associated inventory control record
+      bool inventoryFound = false;
+      
+      for (var shift in activeShifts) {
+        final operationId = shift['id_operacion_apertura'];
+        if (operationId != null) {
+          final controlResponse = await supabase
+              .from('app_dat_control_productos')
+              .select('id')
+              .eq('id_operacion', operationId)
+              .limit(1);
+          
+          if (controlResponse != null && controlResponse.isNotEmpty) {
+            inventoryFound = true;
+            print('✅ Inventory control found for operation $operationId');
+            break;
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _inventoryAlreadyDone = inventoryFound;
+          _checkingInventoryStatus = false;
+        });
+        
+        if (inventoryFound) {
+          print('✅ Inventory already done for this warehouse. Optional for this shift.');
+        } else {
+          print('⚠️ Inventory required for this shift.');
+        }
+      }
+    } catch (e) {
+      print('❌ Error checking warehouse inventory status: $e');
+      if (mounted) {
+        setState(() {
+          _checkingInventoryStatus = false;
+          // Default to false (required) on error to be safe
+          _inventoryAlreadyDone = false;
+        });
+      }
+    }
   }
 
   Future<void> _checkExistingShift() async {
@@ -203,15 +290,28 @@ class _AperturaScreenState extends State<AperturaScreen> {
           '🏪 Configuración de tienda cargada - Maneja inventario: $manejaInventario',
         );
 
-        setState(() {
-          _manejaInventario = manejaInventario;
-          _isLoadingStoreConfig = false;
-        });
+        if (mounted) {
+          setState(() {
+            _manejaInventario = manejaInventario;
+            _isLoadingStoreConfig = false;
+          });
+          
+          // If inventory is managed, load products immediately and check warehouse status
+          if (_manejaInventario) {
+            _loadInventoryProducts();
+            _checkWarehouseInventoryStatus();
+          } else {
+            setState(() {
+              _checkingInventoryStatus = false;
+            });
+          }
+        }
       } else {
         print('⚠️ No se encontró configuración de tienda');
         setState(() {
           _manejaInventario = false;
           _isLoadingStoreConfig = false;
+          _checkingInventoryStatus = false;
         });
       }
     } catch (e) {
@@ -219,11 +319,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
       setState(() {
         _manejaInventario = false;
         _isLoadingStoreConfig = false;
+        _checkingInventoryStatus = false;
       });
     }
   }
 
-  /// Cargar productos de inventario agrupados por producto con desglose de ubicaciones
   Future<void> _loadInventoryProducts() async {
     try {
       setState(() {
@@ -253,7 +353,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
           'p_limite': 9999,
           'p_mostrar_sin_stock': true,
           'p_pagina': 1,
-          'p_id_almacen': idAlmacen,
+          'p_id_almacen': idAlmacen
         },
       );
 
@@ -505,7 +605,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
                     // ],
                     //),
                     // const SizedBox(height: 16),
-                    if (_isLoadingStoreConfig)
+                    if (_isLoadingStoreConfig || _checkingInventoryStatus)
                       Container(
                         padding: const EdgeInsets.all(16),
                         child: const Center(
@@ -523,13 +623,17 @@ class _AperturaScreenState extends State<AperturaScreen> {
                           color:
                               _inventorySet
                                   ? Colors.green[50]
-                                  : Colors.orange[50],
+                                  : (_inventoryAlreadyDone
+                                      ? Colors.blue[50]
+                                      : Colors.orange[50]),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color:
                                 _inventorySet
                                     ? Colors.green[200]!
-                                    : Colors.orange[200]!,
+                                    : (_inventoryAlreadyDone
+                                        ? Colors.blue[200]!
+                                        : Colors.orange[200]!),
                           ),
                         ),
                         child: Column(
@@ -540,25 +644,33 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                 Icon(
                                   _inventorySet
                                       ? Icons.check_circle
-                                      : Icons.warning_amber,
+                                      : (_inventoryAlreadyDone
+                                          ? Icons.info_outline
+                                          : Icons.warning_amber),
                                   color:
                                       _inventorySet
                                           ? Colors.green[700]
-                                          : Colors.orange[700],
+                                          : (_inventoryAlreadyDone
+                                              ? Colors.blue[700]
+                                              : Colors.orange[700]),
                                   size: 18,
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
                                   _inventorySet
                                       ? 'Inventario Establecido'
-                                      : 'Inventario Requerido',
+                                      : (_inventoryAlreadyDone
+                                          ? 'Inventario Opcional'
+                                          : 'Inventario Requerido'),
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                     color:
                                         _inventorySet
                                             ? Colors.green[700]
-                                            : Colors.orange[700],
+                                            : (_inventoryAlreadyDone
+                                                ? Colors.blue[700]
+                                                : Colors.orange[700]),
                                   ),
                                 ),
                               ],
@@ -567,7 +679,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
                             Text(
                               _inventorySet
                                   ? 'Has establecido el inventario inicial del turno (${_inventoryProducts.where((p) => (_inventoryControllers[p.id]?.text ?? '').isNotEmpty).length} productos contados)'
-                                  : 'Debes establecer el inventario inicial del turno anterior antes de continuar',
+                                  : (_inventoryAlreadyDone
+                                      ? 'Ya se realizó un inventario en este almacén. Puedes realizar otro si lo deseas.'
+                                      : 'Debes establecer el inventario inicial del turno anterior antes de continuar'),
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey[700],
@@ -592,7 +706,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
                                   backgroundColor:
                                       _inventorySet
                                           ? Colors.green
-                                          : Colors.orange,
+                                          : (_inventoryAlreadyDone
+                                              ? Colors.blue
+                                              : Colors.orange),
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
@@ -867,8 +983,9 @@ class _AperturaScreenState extends State<AperturaScreen> {
       return;
     }
 
-    // Validar que si maneja inventario, se haya establecido
-    if (_manejaInventario && !_inventorySet) {
+    // Validar que si maneja inventario y NO se ha hecho ya, se haya establecido
+    // Si ya se hizo (_inventoryAlreadyDone), es opcional, así que permitimos continuar sin _inventorySet
+    if (_manejaInventario && !_inventoryAlreadyDone && !_inventorySet) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(

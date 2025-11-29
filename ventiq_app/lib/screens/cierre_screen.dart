@@ -33,6 +33,10 @@ class _CierreScreenState extends State<CierreScreen> {
   List<InventoryProduct> _inventoryProducts = [];
   Map<int, TextEditingController> _inventoryControllers = {};
   bool _inventorySet = false;
+  
+  // New state variables for conditional inventory
+  bool _isLastOpenShift = false;
+  bool _checkingShiftStatus = true;
 
   // Expenses data
   List<Expense> _expenses = [];
@@ -79,6 +83,60 @@ class _CierreScreenState extends State<CierreScreen> {
     _loadExpenses();
   }
 
+  /// Check if this is the last open shift in the warehouse
+  Future<void> _checkIfLastOpenShift() async {
+    try {
+      setState(() {
+        _checkingShiftStatus = true;
+      });
+
+      final idAlmacen = await _userPrefs.getIdAlmacen();
+      if (idAlmacen == null) {
+        print('❌ No warehouse ID found for shift check');
+        setState(() {
+          _checkingShiftStatus = false;
+        });
+        return;
+      }
+
+      final supabase = Supabase.instance.client;
+
+      // Get all active shifts (estado = 1) for the same warehouse
+      final activeShiftsResponse = await supabase
+          .from('app_dat_caja_turno')
+          .select('id, app_dat_tpv!inner(id_almacen)')
+          .eq('estado', 1)
+          .eq('app_dat_tpv.id_almacen', idAlmacen);
+
+      final activeShifts = activeShiftsResponse as List<dynamic>;
+      
+      // If only 1 shift is open, this is the last one
+      final isLastShift = activeShifts.length == 1;
+      
+      if (mounted) {
+        setState(() {
+          _isLastOpenShift = isLastShift;
+          _checkingShiftStatus = false;
+        });
+        
+        if (isLastShift) {
+          print('⚠️ This is the LAST open shift in warehouse $idAlmacen. Inventory is MANDATORY.');
+        } else {
+          print('ℹ️ There are ${activeShifts.length} open shifts in warehouse $idAlmacen. Inventory is OPTIONAL.');
+        }
+      }
+    } catch (e) {
+      print('❌ Error checking shift status: $e');
+      if (mounted) {
+        setState(() {
+          _checkingShiftStatus = false;
+          // Default to mandatory (safe)
+          _isLastOpenShift = true;
+        });
+      }
+    }
+  }
+
   Future<void> _loadStoreConfiguration() async {
     try {
       // Verificar si está en modo offline
@@ -109,6 +167,15 @@ class _CierreScreenState extends State<CierreScreen> {
               '✅ setState ejecutado - _manejaInventario ahora es: $_manejaInventario',
             );
           });
+          
+          // If inventory is managed, check if this is the last open shift
+          if (_manejaInventario) {
+            _checkIfLastOpenShift();
+          } else {
+            setState(() {
+              _checkingShiftStatus = false;
+            });
+          }
         } else {
           print('⚠️ Widget no montado, no se puede ejecutar setState');
         }
@@ -117,6 +184,7 @@ class _CierreScreenState extends State<CierreScreen> {
         if (mounted) {
           setState(() {
             _manejaInventario = false;
+            _checkingShiftStatus = false;
           });
         }
       }
@@ -125,6 +193,7 @@ class _CierreScreenState extends State<CierreScreen> {
       if (mounted) {
         setState(() {
           _manejaInventario = false;
+          _checkingShiftStatus = false;
         });
       }
     }
@@ -1443,11 +1512,14 @@ class _CierreScreenState extends State<CierreScreen> {
                     label: Text(
                       _inventorySet
                           ? 'Editar Inventario'
-                          : 'Controlar Inventario',
+                          : (_isLastOpenShift
+                              ? 'Controlar Inventario'
+                              : 'Controlar Inventario (OPCIONAL)'),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          _inventorySet ? Colors.green : Colors.orange,
+                      backgroundColor: _inventorySet
+                          ? Colors.green
+                          : (_isLastOpenShift ? Colors.orange : Colors.blue),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
@@ -1769,11 +1841,14 @@ class _CierreScreenState extends State<CierreScreen> {
     });
 
     try {
-      // Validar que si maneja inventario y está configurado, se haya establecido
-      if (_manejaInventario && !_inventorySet) {
+      // Validar que si maneja inventario y es el último turno, se haya establecido
+      // Si NO es el último turno, el inventario es opcional
+      if (_manejaInventario && _isLastOpenShift && !_inventorySet) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Debes controlar el inventario antes de continuar'),
+            content: Text(
+              'Debes controlar el inventario antes de cerrar el último turno',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
