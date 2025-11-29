@@ -1,8 +1,20 @@
 {
-  "current_version": "1.7.3",
-  "build": 703,
+  "current_version": "1.7.4",
+  "build": 704,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.7.4",
+      "date": "2025-11-29",
+      "title": "Correccion de errores en el control de inventario.",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Correccion de errores en el control de inventario.",
+          "description": "Correccion de errores en el control de inventario. Ahora los prodcutos se filtran y se eliminan los duplicados."
+        }
+      ]
+    },
     {
       "version": "1.7.3",
       "date": "2025-11-27",

@@ -150,7 +150,9 @@ class InventoryProduct {
     } else if (data is List<dynamic>) {
       return InventoryProduct.fromList(data);
     } else {
-      throw ArgumentError('Invalid data type for InventoryProduct.fromSupabaseRpc');
+      throw ArgumentError(
+        'Invalid data type for InventoryProduct.fromSupabaseRpc',
+      );
     }
   }
 
@@ -158,29 +160,33 @@ class InventoryProduct {
     // Parse JSON fields
     InventorySummary? summary;
     PaginationInfo? pagination;
-    
+
     if (map['resumen_inventario'] != null) {
       if (map['resumen_inventario'] is String) {
         // Parse JSON string
         final summaryJson = map['resumen_inventario'] as String;
         // Handle JSON parsing here if needed
       } else if (map['resumen_inventario'] is Map) {
-        summary = InventorySummary.fromJson(map['resumen_inventario'] as Map<String, dynamic>);
+        summary = InventorySummary.fromJson(
+          map['resumen_inventario'] as Map<String, dynamic>,
+        );
       }
     }
-    
+
     if (map['info_paginacion'] != null) {
       if (map['info_paginacion'] is String) {
         // Parse JSON string
         final paginationJson = map['info_paginacion'] as String;
         // Handle JSON parsing here if needed
       } else if (map['info_paginacion'] is Map) {
-        pagination = PaginationInfo.fromJson(map['info_paginacion'] as Map<String, dynamic>);
+        pagination = PaginationInfo.fromJson(
+          map['info_paginacion'] as Map<String, dynamic>,
+        );
       }
     }
 
     return InventoryProduct(
-      id: map['id'] ?? 0,
+      id: map['id_producto'] ?? map['id'] ?? 0,
       skuProducto: map['sku_producto'] ?? '',
       nombreProducto: map['nombre_producto'] ?? '',
       idCategoria: map['id_categoria'] ?? 0,
@@ -203,7 +209,8 @@ class InventoryProduct {
       cantidadFinal: (map['cantidad_final'] ?? 0).toDouble(),
       stockDisponible: (map['stock_disponible'] ?? 0).toDouble(),
       stockReservado: (map['stock_reservado'] ?? 0).toDouble(),
-      stockDisponibleAjustado: (map['stock_disponible_ajustado'] ?? 0).toDouble(),
+      stockDisponibleAjustado:
+          (map['stock_disponible_ajustado'] ?? 0).toDouble(),
       esVendible: map['es_vendible'] ?? false,
       esInventariable: map['es_inventariable'] ?? false,
       precioVenta: map['precio_venta']?.toDouble(),
@@ -211,9 +218,10 @@ class InventoryProduct {
       margenActual: map['margen_actual']?.toDouble(),
       clasificacionAbc: map['clasificacion_abc'] ?? 3,
       abcDescripcion: map['abc_descripcion'] ?? 'No clasificado',
-      fechaUltimaActualizacion: map['fecha_ultima_actualizacion'] != null 
-          ? DateTime.parse(map['fecha_ultima_actualizacion']) 
-          : DateTime.now(),
+      fechaUltimaActualizacion:
+          map['fecha_ultima_actualizacion'] != null
+              ? DateTime.parse(map['fecha_ultima_actualizacion'])
+              : DateTime.now(),
       totalCount: map['total_count'] ?? 0,
       resumenInventario: summary,
       infoPaginacion: pagination,
@@ -253,14 +261,18 @@ class InventoryProduct {
       margenActual: row[28]?.toDouble(),
       clasificacionAbc: row[29] ?? 3,
       abcDescripcion: row[30] ?? 'No clasificado',
-      fechaUltimaActualizacion: DateTime.parse(row[31] ?? DateTime.now().toIso8601String()),
+      fechaUltimaActualizacion: DateTime.parse(
+        row[31] ?? DateTime.now().toIso8601String(),
+      ),
       totalCount: row[32] ?? 0,
-      resumenInventario: row.length > 33 && row[33] != null 
-          ? InventorySummary.fromJson(Map<String, dynamic>.from(row[33]))
-          : null,
-      infoPaginacion: row.length > 34 && row[34] != null 
-          ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[34]))
-          : null,
+      resumenInventario:
+          row.length > 33 && row[33] != null
+              ? InventorySummary.fromJson(Map<String, dynamic>.from(row[33]))
+              : null,
+      infoPaginacion:
+          row.length > 34 && row[34] != null
+              ? PaginationInfo.fromJson(Map<String, dynamic>.from(row[34]))
+              : null,
     );
   }
 }
