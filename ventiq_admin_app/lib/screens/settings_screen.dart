@@ -117,10 +117,20 @@ class _SettingsScreenState extends State<SettingsScreen>
         currentRoute: '/settings',
         onTap: _onBottomNavTap,
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddDialog,
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: Colors.white),
+      floatingActionButton: AnimatedBuilder(
+        animation: _tabController,
+        builder: (context, child) {
+          // Ocultar FAB en la pestaña de Carnaval (índice 5)
+          // También se puede ocultar en Global (índice 0) si se desea
+          final isHidden = _tabController.index == 5;
+          return isHidden
+              ? const SizedBox.shrink()
+              : FloatingActionButton(
+                onPressed: _showAddDialog,
+                backgroundColor: AppColors.primary,
+                child: const Icon(Icons.add, color: Colors.white),
+              );
+        },
       ),
     );
   }

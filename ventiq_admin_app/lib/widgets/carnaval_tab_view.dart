@@ -3,7 +3,7 @@ import '../config/app_colors.dart';
 import '../services/carnaval_service.dart';
 import '../services/store_service.dart';
 import 'store_config_dialog.dart';
-import 'product_sync_dialog.dart';
+import 'product_sync_sheet.dart';
 
 class CarnavalTabView extends StatefulWidget {
   const CarnavalTabView({super.key});
@@ -599,10 +599,12 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
             ),
             IconButton(
               onPressed: () async {
-                final result = await showDialog<bool>(
+                final result = await showModalBottomSheet<bool>(
                   context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
                   builder:
-                      (context) => ProductSyncDialog(
+                      (context) => ProductSyncSheet(
                         storeId: _storeId!,
                         carnavalStoreId: _carnavalStoreId!,
                       ),

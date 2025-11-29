@@ -551,7 +551,7 @@ class CarnavalService {
         'name': productData['denominacion'],
         'description': productData['descripcion'] ?? '',
         'price': price,
-        'stock': stock,
+        'stock': stock.toInt(), // Convertir a int para evitar error de bigint
         'category_id': carnavalCategoryId,
         'image': productData['imagen'],
         'proveedor': carnavalStoreId,
