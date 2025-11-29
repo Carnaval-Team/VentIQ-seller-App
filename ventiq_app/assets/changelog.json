@@ -1,10 +1,10 @@
 {
-  "current_version": "1.7.5",
-  "build": 705,
+  "current_version": "1.7.6",
+  "build": 706,
   "app_name": "ventiq_app",
   "changelogs": [
     {
-      "version": "1.7.5",
+      "version": "1.7.6",
       "date": "2025-11-29",
       "title": "Mejoras menores en el cierre y apertura de turnos.",
       "changes": [
