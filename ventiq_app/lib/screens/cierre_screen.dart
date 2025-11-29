@@ -33,7 +33,7 @@ class _CierreScreenState extends State<CierreScreen> {
   List<InventoryProduct> _inventoryProducts = [];
   Map<int, TextEditingController> _inventoryControllers = {};
   bool _inventorySet = false;
-  
+
   // New state variables for conditional inventory
   bool _isLastOpenShift = false;
   bool _checkingShiftStatus = true;
@@ -109,20 +109,24 @@ class _CierreScreenState extends State<CierreScreen> {
           .eq('app_dat_tpv.id_almacen', idAlmacen);
 
       final activeShifts = activeShiftsResponse as List<dynamic>;
-      
+
       // If only 1 shift is open, this is the last one
       final isLastShift = activeShifts.length == 1;
-      
+
       if (mounted) {
         setState(() {
           _isLastOpenShift = isLastShift;
           _checkingShiftStatus = false;
         });
-        
+
         if (isLastShift) {
-          print('⚠️ This is the LAST open shift in warehouse $idAlmacen. Inventory is MANDATORY.');
+          print(
+            '⚠️ This is the LAST open shift in warehouse $idAlmacen. Inventory is MANDATORY.',
+          );
         } else {
-          print('ℹ️ There are ${activeShifts.length} open shifts in warehouse $idAlmacen. Inventory is OPTIONAL.');
+          print(
+            'ℹ️ There are ${activeShifts.length} open shifts in warehouse $idAlmacen. Inventory is OPTIONAL.',
+          );
         }
       }
     } catch (e) {
@@ -167,7 +171,7 @@ class _CierreScreenState extends State<CierreScreen> {
               '✅ setState ejecutado - _manejaInventario ahora es: $_manejaInventario',
             );
           });
-          
+
           // If inventory is managed, check if this is the last open shift
           if (_manejaInventario) {
             _checkIfLastOpenShift();
@@ -549,9 +553,7 @@ class _CierreScreenState extends State<CierreScreen> {
       }
       final idAlmacen = await _userPrefs.getIdAlmacen();
 
-      print(
-        '🔄 Llamando a fn_listar_inventario_productos_paged... idAlmacen',
-      );
+      print('🔄 Llamando a fn_listar_inventario_productos_paged... idAlmacen');
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged2',
         params: {
@@ -571,23 +573,23 @@ class _CierreScreenState extends State<CierreScreen> {
         for (var item in response) {
           // print(item);
           // if (!item['es_elaborado'] && !item['es_servicio']) {
-            try {
-              final product = InventoryProduct.fromSupabaseRpc(item);
+          try {
+            final product = InventoryProduct.fromSupabaseRpc(item);
 
-              // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
-              if (!productsByIdMap.containsKey(product.id)) {
-                productsByIdMap[product.id] = product;
-                print(
-                  '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
-                );
-              } else {
-                print(
-                  '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
-                );
-              }
-            } catch (e) {
-              print('❌ Error procesando producto: $e');
+            // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
+            if (!productsByIdMap.containsKey(product.id)) {
+              productsByIdMap[product.id] = product;
+              print(
+                '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
+              );
+            } else {
+              print(
+                '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
+              );
             }
+          } catch (e) {
+            print('❌ Error procesando producto: $e');
+          }
           // }
         }
 
@@ -730,87 +732,115 @@ class _CierreScreenState extends State<CierreScreen> {
                             final controller =
                                 _inventoryControllers[product.id]!;
 
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.grey[300]!),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.grey.withOpacity(0.1),
-                                    spreadRadius: 1,
-                                    blurRadius: 3,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  // Producto info - SIN mostrar cantidad del sistema
-                                  Expanded(
-                                    flex: 2,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          product.nombreProducto,
-                                          style: const TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'SKU: ${product.skuProducto}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                      ],
+                            return FutureBuilder<List<Map<String, dynamic>>>(
+                              future: _getProductLocations(product.id),
+                              builder: (context, snapshot) {
+                                final locations = snapshot.data ?? [];
+                                final totalQuantity = locations.fold<double>(
+                                  0.0,
+                                  (sum, loc) =>
+                                      sum + (loc['cantidad'] as double),
+                                );
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.grey[200]!,
                                     ),
                                   ),
-
-                                  const SizedBox(width: 12),
-
-                                  // Input de cantidad real
-                                  SizedBox(
-                                    width: 100,
-                                    child: TextField(
-                                      controller: controller,
-                                      keyboardType:
-                                          const TextInputType.numberWithOptions(
-                                            decimal: true,
-                                          ),
-                                      textAlign: TextAlign.center,
-                                      decoration: InputDecoration(
-                                        labelText: 'Real',
-                                        labelStyle: const TextStyle(
-                                          fontSize: 12,
-                                        ),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 12,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  product.nombreProducto,
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Color(0xFF1F2937),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                // Mostrar cantidad total del sistema
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue[50],
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: Colors.blue[200]!,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    'Sistema: ${totalQuantity.toStringAsFixed(2)} unidades',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Colors.blue[700],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          SizedBox(
+                                            width: 100,
+                                            child: TextFormField(
+                                              controller: controller,
+                                              keyboardType:
+                                                  const TextInputType.numberWithOptions(
+                                                    decimal: true,
+                                                  ),
+                                              inputFormatters: [
+                                                FilteringTextInputFormatter.allow(
+                                                  RegExp(r'^\d+\.?\d{0,2}'),
+                                                ),
+                                              ],
+                                              decoration: InputDecoration(
+                                                labelText: 'Real',
+                                                hintText: '0',
+                                                border: OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                contentPadding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8,
+                                                    ),
+                                                isDense: true,
+                                              ),
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(
-                                          RegExp(r'^\d+\.?\d{0,2}'),
-                                        ),
-                                      ],
-                                    ),
+                                    ],
                                   ),
-                                ],
-                              ),
+                                );
+                              },
                             );
                           },
                         ),
@@ -882,6 +912,66 @@ class _CierreScreenState extends State<CierreScreen> {
         );
       },
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _getProductLocations(int productId) async {
+    try {
+      final userData = await _userPrefs.getUserData();
+      final idAlmacen = await _userPrefs.getIdAlmacen();
+      final idTiendaRaw = userData['idTienda'];
+      final idTienda =
+          idTiendaRaw is int
+              ? idTiendaRaw
+              : (idTiendaRaw is String ? int.tryParse(idTiendaRaw) : null);
+
+      if (idTienda == null) return [];
+      print(
+        '📦 Obteniendo ubicaciones del producto $productId para tienda $idTienda... almacen: $idAlmacen',
+      );
+      final response = await Supabase.instance.client.rpc(
+        'fn_listar_inventario_productos_paged2',
+        params: {
+          'p_id_tienda': idTienda,
+          'p_id_producto': productId,
+          'p_limite': 9999,
+          'p_mostrar_sin_stock': true,
+          'p_pagina': 1,
+          'p_id_almacen': idAlmacen,
+        },
+      );
+
+      if (response != null && response is List) {
+        // Agrupar por ubicación única para evitar duplicados por presentaciones
+        final Map<String, Map<String, dynamic>> locationsMap = {};
+
+        for (var item in response) {
+          try {
+            final product = InventoryProduct.fromSupabaseRpc(item);
+
+            // Crear clave única por ubicación (almacén + ubicación)
+            final locationKey = '${product.idAlmacen}_${product.idUbicacion}';
+
+            // Solo agregar la primera vez que vemos esta ubicación
+            if (!locationsMap.containsKey(locationKey)) {
+              locationsMap[locationKey] = {
+                'ubicacion': product.ubicacion,
+                'almacen': product.almacen,
+                'cantidad': product.cantidadFinal,
+              };
+            }
+          } catch (e) {
+            print('❌ Error procesando ubicación: $e');
+          }
+        }
+
+        return locationsMap.values.toList();
+      }
+
+      return [];
+    } catch (e) {
+      print('❌ Error obteniendo ubicaciones del producto: $e');
+      return [];
+    }
   }
 
   Future<void> _loadExpenses() async {
@@ -1517,9 +1607,12 @@ class _CierreScreenState extends State<CierreScreen> {
                               : 'Controlar Inventario (OPCIONAL)'),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _inventorySet
-                          ? Colors.green
-                          : (_isLastOpenShift ? Colors.orange : Colors.blue),
+                      backgroundColor:
+                          _inventorySet
+                              ? Colors.green
+                              : (_isLastOpenShift
+                                  ? Colors.orange
+                                  : Colors.blue),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
