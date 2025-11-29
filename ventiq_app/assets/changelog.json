@@ -16,6 +16,18 @@
       ]
     },
     {
+      "version": "1.7.5",
+      "date": "2025-11-29",
+      "title": "Mejoras menores en el cierre y apertura de turnos.",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Mejoras menores.",
+          "description": "En la apertura y cierre de turno se modifica que es necesario un solo control de inventario por almacén en la apertura y cierre de turno."
+        }
+      ]
+    },
+    {
       "version": "1.7.4",
       "date": "2025-11-29",
       "title": "Correccion de errores en el control de inventario.",
