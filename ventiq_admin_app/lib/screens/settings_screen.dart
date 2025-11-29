@@ -7,6 +7,7 @@ import '../widgets/categories_tab_view.dart';
 import '../widgets/variants_tab_view.dart';
 import '../widgets/presentations_tab_view.dart';
 import '../widgets/units_tab_view.dart';
+import '../widgets/carnaval_tab_view.dart';
 import '../services/variant_service.dart';
 import '../utils/screen_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
@@ -33,11 +34,13 @@ class _SettingsScreenState extends State<SettingsScreen>
       GlobalKey<State<PresentationsTabView>>();
   final GlobalKey<State<UnitsTabView>> _unitsTabKey =
       GlobalKey<State<UnitsTabView>>();
+  final GlobalKey<State<CarnavalTabView>> _carnavalTabKey =
+      GlobalKey<State<CarnavalTabView>>();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -94,6 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
             Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
             Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
+            Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
           ],
         ),
       ),
@@ -105,6 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           VariantsTabView(key: _variantsTabKey),
           PresentationsTabView(key: _presentationsTabKey),
           UnitsTabView(key: _unitsTabKey),
+          CarnavalTabView(key: _carnavalTabKey),
         ],
       ),
       endDrawer: const AdminDrawer(),
@@ -146,6 +151,17 @@ class _SettingsScreenState extends State<SettingsScreen>
         break;
       case 4:
         (_unitsTabKey.currentState as dynamic)?.showAddDialog();
+        break;
+      case 5:
+        // Tab Carnaval - no tiene funcionalidad de agregar
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'La configuración de Carnaval no permite agregar elementos',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
         break;
     }
   }

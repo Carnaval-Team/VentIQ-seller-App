@@ -21,7 +21,7 @@ class PrinterManager {
   Future<bool> showPrintConfirmationDialog(BuildContext context, Order order) async {
     if (PlatformUtils.isWeb) {
       // En web, usar el diálogo específico para impresión web
-      return await showWebPrintDialog(context, order);
+      return await ñ(context, order);
     } else {
       // En móvil, usar el diálogo de Bluetooth existente
       return await _bluetoothService.showPrintConfirmationDialog(context, order);
