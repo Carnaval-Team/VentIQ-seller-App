@@ -1,8 +1,20 @@
 {
-  "current_version": "1.4.0",
-  "build": 140,
+  "current_version": "1.4.1",
+  "build": 141,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.4.1",
+      "date": "2025-11-30",
+      "title": "🔧 Corrección de problemas visuales",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Correcciones menores en detalle de producto e improtación de inventario desde excel",
+          "description": "Correcta visualización del detalle de los precios en el detalle de producto y manejo de importación desde excel"
+        }
+      ]
+    },
     {
       "version": "1.4.0",
       "date": "2025-11-27",
