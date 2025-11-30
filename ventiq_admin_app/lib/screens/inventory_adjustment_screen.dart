@@ -103,7 +103,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     setState(() => _isLoadingPresentations = true);
     try {
       // Obtener presentaciones del producto que están presentes en la zona seleccionada
-      final productId = int.tryParse(_selectedProduct!['id']?.toString() ?? '0');
+      final productId = int.tryParse((_selectedProduct!['id_producto'] ?? _selectedProduct!['id'])?.toString() ?? '0');
       final zoneId = _selectedZone!['id'] as int;
       
       // Primero obtener todas las presentaciones del producto (sin filtrar por zona)
@@ -220,7 +220,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     setState(() => _isLoadingStock = true);
     try {
       // Obtener stock específico usando el servicio de inventario real
-      final productId = int.tryParse(_selectedProduct!['id']?.toString() ?? '0');
+      final productId = int.tryParse((_selectedProduct!['id_producto'] ?? _selectedProduct!['id'])?.toString() ?? '0');
       final zoneId = _selectedZone!['id'] as int;
       final presentationId = _selectedPresentation!['id'] as int?;
       
@@ -475,7 +475,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
 
       // Preparar datos del ajuste
       final ajusteData = {
-        'idProducto': _selectedProduct!['id'],
+        'idProducto': _selectedProduct!['id_producto'] ?? _selectedProduct!['id'],
         'idUbicacion': _selectedZone!['id'],
         'idPresentacion': _selectedPresentation!['id'],
         'cantidadAnterior': _currentStock ?? 0.0,
@@ -487,7 +487,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       };
 
       print('📦 Datos del ajuste preparados:');
-      print('   - Producto: ${_selectedProduct!['denominacion']} (ID: ${_selectedProduct!['id']})');
+      print('   - Producto: ${_selectedProduct!['denominacion']} (ID: ${_selectedProduct!['id_producto'] ?? _selectedProduct!['id']})');
       print('   - Zona: ${_selectedZone!['denominacion']} (ID: ${_selectedZone!['id']})');
       print('   - Presentación: ${_selectedPresentation!['denominacion']} (ID: ${_selectedPresentation!['id']})');
       print('   - Stock actual: ${_currentStock ?? 0.0} → Nueva cantidad: $nuevaCantidad');
@@ -501,7 +501,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
       print('🔄 Llamando a InventoryService.insertInventoryAdjustment...');
       
       // Convert string IDs to integers
-      final productId = int.tryParse(_selectedProduct!['id']?.toString() ?? '0');
+      final productId = int.tryParse((_selectedProduct!['id_producto'] ?? _selectedProduct!['id'])?.toString() ?? '0');
       final zoneId = int.tryParse(_selectedZone!['id']?.toString() ?? '0');
       final presentationId = int.tryParse(_selectedPresentation!['id']?.toString() ?? '0');
       

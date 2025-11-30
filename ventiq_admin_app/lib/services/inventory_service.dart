@@ -396,12 +396,13 @@ class InventoryService {
 
       print('📦 RPC Response type: ${response.runtimeType}');
       print('📦 RPC Response length: ${response?.length ?? 0}');
-      print('📦 RPC Response first: ${response?[0]}');
 
       if (response == null || response.isEmpty) {
         print('⚠️ No data received from RPC');
         return InventoryResponse(products: []);
       }
+
+      print('📦 RPC Response first: ${response[0]}');
 
       // Handle nested response structure from fn_listar_inventario_productos_paged
       final data =
