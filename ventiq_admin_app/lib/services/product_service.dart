@@ -1390,11 +1390,11 @@ class ProductService {
 
       // Obtener subcategorías asignadas al producto (no todas de la categoría)
       final subcategoriasResponse = await _supabase
-          .from('app_dat_producto_subcategorias')
+          .from('app_dat_productos_subcategorias')
           .select('''
             id,
             id_producto,
-            id_subcategoria,
+            id_sub_categoria,
             app_dat_subcategorias!inner(id, denominacion, idcategoria)
           ''')
           .eq('id_producto', productId);
@@ -1404,6 +1404,7 @@ class ProductService {
           .map<Map<String, dynamic>>((item) {
             final itemMap = item as Map<String, dynamic>;
             final subcat = itemMap['app_dat_subcategorias'] as Map<String, dynamic>?;
+            print('📋 Subcategoría encontrada: ${subcat?['denominacion']}');
             return {
               'id': subcat?['id'],
               'denominacion': subcat?['denominacion'],
@@ -1411,6 +1412,8 @@ class ProductService {
             };
           })
           .toList();
+      
+      print('✅ Total subcategorías obtenidas: ${subcategoriasMapped.length}');
 
       // Obtener precio de venta (tabla separada)
       double precioVenta = 0.0;
