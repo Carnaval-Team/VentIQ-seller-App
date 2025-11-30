@@ -1568,7 +1568,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             Expanded(
               child: _buildInfoRow(
                 'Precio Base',
-                '\$${NumberFormat('#,###.00').format(_product.basePrice)}',
+                '\$${NumberFormat('#,###.00').format(_product.basePrice)} CUP',
               ),
             ),
             if (_isGerente)
@@ -1723,7 +1723,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '\$${NumberFormat('#,###.00').format(pres['precio_promedio'] ?? 0.0)}',
+                          '\$${NumberFormat('#,###.00').format(pres['precio_promedio'] ?? 0.0)} USD',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -3068,7 +3068,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Editar Precio Base'),
+          title: const Text('Editar Precio Base CUP'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -3088,7 +3088,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   signed: false,
                 ),
                 decoration: InputDecoration(
-                  labelText: 'Nuevo Precio Base',
+                  labelText: 'Nuevo Precio Base CUP',
                   prefixText: '\$ ',
                   border: const OutlineInputBorder(),
                   hintText: '0.00',
@@ -3238,7 +3238,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text(
-            'Editar Precio de ${presentation['presentacion'] ?? 'Presentación'}',
+            'Editar Precio de ${presentation['presentacion'] ?? 'Presentación'} USD',
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3259,7 +3259,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   signed: false,
                 ),
                 decoration: InputDecoration(
-                  labelText: 'Nuevo Precio de Costo',
+                  labelText: 'Nuevo Precio de Costo USD',
                   prefixText: '\$ ',
                   border: const OutlineInputBorder(),
                   hintText: '0.00',
