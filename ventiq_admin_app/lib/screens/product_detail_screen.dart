@@ -1578,7 +1578,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 tooltip: 'Editar precio base',
                 constraints: const BoxConstraints(
                   minWidth: 32,
-                  minHeight: 32,
+                minHeight: 32,
                 ),
                 padding: EdgeInsets.zero,
               ),

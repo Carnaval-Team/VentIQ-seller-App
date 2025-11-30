@@ -2285,6 +2285,79 @@ class InventoryService {
       print('   - p_comentario: $comentario');
       print('   - p_uuid: $uuid');
 
+      // =====================================================
+      // VALIDAR Y ASIGNAR PRESENTACIONES FALTANTES
+      // =====================================================
+      print('\n🔍 Validando presentaciones en productos de recepción...');
+      try {
+        final productosRecepcion = await _supabase
+            .from('app_dat_recepcion_productos')
+            .select('id, id_producto, id_presentacion')
+            .eq('id_operacion', idOperacion);
+
+        print('📦 Productos de recepción encontrados: ${productosRecepcion.length}');
+
+        for (var producto in productosRecepcion) {
+          final idPresentacion = producto['id_presentacion'];
+          final idProducto = producto['id_producto'];
+          final idRecepcion = producto['id'];
+
+          if (idPresentacion == null) {
+            print('⚠️ Producto $idProducto sin presentación asignada (ID recepción: $idRecepcion)');
+            
+            // Obtener la presentación base del producto
+            try {
+              final basePresentacion = await _supabase
+                  .from('app_dat_producto_presentacion')
+                  .select('id')
+                  .eq('id_producto', idProducto)
+                  .eq('es_base', true)
+                  .limit(1);
+
+              if (basePresentacion.isNotEmpty) {
+                final idPresentacionBase = basePresentacion.first['id'];
+                print('   ✅ Asignando presentación base: $idPresentacionBase');
+                
+                // Actualizar el registro de recepción con la presentación base
+                await _supabase
+                    .from('app_dat_recepcion_productos')
+                    .update({'id_presentacion': idPresentacionBase})
+                    .eq('id', idRecepcion);
+                    
+                print('   ✅ Presentación asignada exitosamente');
+              } else {
+                print('   ❌ No se encontró presentación base para producto $idProducto');
+                // Obtener cualquier presentación disponible como fallback
+                final cualquierPresentacion = await _supabase
+                    .from('app_dat_producto_presentacion')
+                    .select('id')
+                    .eq('id_producto', idProducto)
+                    .limit(1);
+
+                if (cualquierPresentacion.isNotEmpty) {
+                  final idPresentacionFallback = cualquierPresentacion.first['id'];
+                  print('   ✅ Asignando presentación fallback: $idPresentacionFallback');
+                  
+                  await _supabase
+                      .from('app_dat_recepcion_productos')
+                      .update({'id_presentacion': idPresentacionFallback})
+                      .eq('id', idRecepcion);
+                      
+                  print('   ✅ Presentación fallback asignada exitosamente');
+                } else {
+                  print('   ❌ No hay presentaciones disponibles para producto $idProducto');
+                }
+              }
+            } catch (e) {
+              print('   ❌ Error asignando presentación: $e');
+            }
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error validando presentaciones: $e');
+        print('   - Continuando con la completación de operación');
+      }
+
       final response = await _supabase.rpc(
         'fn_contabilizar_operacion',
         params: {
@@ -2317,8 +2390,15 @@ class InventoryService {
           for (var producto in productosRecibidos) {
             try {
               final idPresentacion = producto['id_presentacion'];
-              final precioUnitario = (producto['precio_unitario'] as num).toDouble();
-              final cantidadRecibida = (producto['cantidad'] as num).toDouble();
+              
+              // Validar que id_presentacion no sea null
+              if (idPresentacion == null) {
+                print('\n⚠️ Producto sin presentación asignada - saltando actualización de precio');
+                continue;
+              }
+              
+              final precioUnitario = (producto['precio_unitario'] as num?)?.toDouble() ?? 0.0;
+              final cantidadRecibida = (producto['cantidad'] as num?)?.toDouble() ?? 0.0;
 
               print('\n📝 Procesando presentación ID: $idPresentacion');
               print('   - Precio unitario recibido: \$${precioUnitario.toStringAsFixed(2)}');
