@@ -327,6 +327,8 @@ class ExcelImportService {
     Map<String, dynamic>? defaultValues,
     bool importWithStock = false,
     Map<String, dynamic>? stockConfig,
+    String priceCurrency = 'USD',
+    double? exchangeRate,
     Function(int, int)? onProgress,
   }) async {
     try {
@@ -403,6 +405,24 @@ class ExcelImportService {
               rowIndex: rowIndex,
               warnings: results.warnings,
             );
+
+            // ✅ NUEVO: Convertir precio si es necesario
+            double precioFinal = (productData['precio_venta'] as num?)?.toDouble() ?? 0.0;
+            
+            if (priceCurrency != 'USD' && exchangeRate != null && exchangeRate > 0) {
+              // Convertir de la moneda origen a USD
+              precioFinal = precioFinal / exchangeRate;
+              
+              print('💱 Conversión de precio:');
+              print('   - Precio original ($priceCurrency): $precioFinal');
+              print('   - Tasa de cambio: 1 $priceCurrency = $exchangeRate USD');
+              print('   - Precio en USD: ${(precioFinal / exchangeRate).toStringAsFixed(2)}');
+              
+              // Actualizar el precio en productData
+              productData['precio_venta'] = precioFinal;
+            } else if (priceCurrency == 'USD') {
+              print('💵 Precio ya está en USD: \$${precioFinal.toStringAsFixed(2)}');
+            }
 
             // Preparar datos de precios
             List<Map<String, dynamic>>? preciosData;
@@ -1065,7 +1085,8 @@ class ExcelImportService {
           cantidadRaw = cellValueStr;
           cantidad = _parseNumericValue(cantidadRaw);
           print('   📦 Cantidad: "$cantidadRaw" -> $cantidad');
-        } else if (columnMapping['precio_compra'] == header) {
+        } else if (columnMapping['precio_compra'] == header || columnMapping['precio_costo'] == header) {
+          // Aceptar tanto 'precio_compra' como 'precio_costo'
           precioRaw = cellValueStr;
           precioCompra = _parseNumericValue(precioRaw);
           print('   💵 Precio: "$precioRaw" -> $precioCompra');

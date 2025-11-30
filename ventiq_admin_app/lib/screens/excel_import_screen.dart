@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:ventiq_admin_app/services/product_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../services/excel_import_service.dart';
 import '../widgets/admin_drawer.dart';
@@ -33,6 +34,10 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
   
   // Category selection tracking
   int? _selectedMainCategoryId; // Guardar la categoría principal seleccionada
+  
+  // Price currency configuration
+  String _priceCurrency = 'USD'; // Moneda del precio_venta (USD o CUP)
+  double? _exchangeRate; // Tasa de cambio si el precio está en CUP
 
   final _categoryController = TextEditingController();
   final _unitController = TextEditingController();
@@ -1062,6 +1067,14 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
       }
     }
 
+    // ✅ NUEVO: Mostrar diálogo para seleccionar moneda del precio_venta
+    if (_finalColumnMapping.containsValue('precio_venta')) {
+      final currencySelected = await _showPriceCurrencyDialog();
+      if (currencySelected == null) {
+        return; // Usuario canceló
+      }
+    }
+
     setState(() {
       _isImporting = true;
       _importProgress = 0.0;
@@ -1072,6 +1085,8 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
       print('   📝 _defaultValues completo: $_defaultValues');
       print('   🔑 categoria_id en _defaultValues: ${_defaultValues['categoria_id']}');
       print('   📊 _selectedMainCategoryId: $_selectedMainCategoryId');
+      print('   💱 Moneda del precio: $_priceCurrency');
+      print('   📊 Tasa de cambio: $_exchangeRate');
       
       final result = await ExcelImportService.importProducts(
         _selectedFile!,
@@ -1082,6 +1097,8 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
           'locationId': _selectedLocationId!,
           'columnMapping': _stockColumnMapping,
         } : null,
+        priceCurrency: _priceCurrency,
+        exchangeRate: _exchangeRate,
         onProgress: (current, total) {
           setState(() => _importProgress = current / total);
         },
@@ -1092,6 +1109,194 @@ class _ExcelImportScreenState extends State<ExcelImportScreen> {
       _showError('Error durante la importación: $e');
     } finally {
       setState(() => _isImporting = false);
+    }
+  }
+
+  /// Mostrar diálogo para seleccionar la moneda del precio_venta con dropdown
+  Future<bool?> _showPriceCurrencyDialog() async {
+    String selectedCurrency = 'USD';
+    
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.currency_exchange, color: Colors.blue),
+                  SizedBox(width: 12),
+                  Text('Moneda del Precio de Venta'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '¿En qué moneda está el precio_venta en el archivo Excel?',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.05),
+                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      '⚠️ Importante: El sistema guarda los precios en USD. Si están en otra moneda, se convertirán automáticamente.',
+                      style: TextStyle(fontSize: 12, color: Colors.blue),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Dropdown para seleccionar moneda
+                  DropdownButtonFormField<String>(
+                    value: selectedCurrency,
+                    decoration: const InputDecoration(
+                      labelText: 'Seleccionar Moneda',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.money),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'USD',
+                        child: Text('USD - Dólar Estadounidense'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'CUP',
+                        child: Text('CUP - Peso Cubano'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'EUR',
+                        child: Text('EUR - Euro'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          selectedCurrency = value;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  // Mostrar información de la tasa
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withOpacity(0.1),
+                      border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _getTasaInfo(selectedCurrency),
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    // Actualizar la moneda seleccionada en el estado principal
+                    _priceCurrency = selectedCurrency;
+                    
+                    // Si seleccionó CUP o EUR, obtener tasa de cambio
+                    if (_priceCurrency != 'USD') {
+                      try {
+                        _exchangeRate = await _getExchangeRate(_priceCurrency);
+                        print('💱 Tasa de cambio obtenida: $_exchangeRate');
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error obteniendo tasa de cambio: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                        return;
+                      }
+                    }
+                    if (mounted) {
+                      Navigator.pop(context, true);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                  ),
+                  child: const Text('Continuar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Obtener información de la tasa para mostrar en el diálogo
+  String _getTasaInfo(String currency) {
+    switch (currency) {
+      case 'USD':
+        return '💵 USD: Sin conversión, los precios se guardan tal cual.';
+      case 'CUP':
+        return '💱 CUP: 1 USD = 435 CUP\nLos precios se convertirán dividiendo entre 435.';
+      case 'EUR':
+        return '💶 EUR: 1 EUR = 480 CUP\nLos precios se convertirán dividiendo entre 480.';
+      default:
+        return '';
+    }
+  }
+
+  /// Obtener tasa de cambio desde la BD (tabla tasas_conversion)
+  Future<double> _getExchangeRate(String fromCurrency) async {
+    try {
+      print('📊 Obteniendo tasa de cambio de $fromCurrency a USD desde BD...');
+      
+      // Obtener tasa de conversión desde la tabla tasas_conversion
+      // Busca la tasa de fromCurrency a USD
+      final response = await Supabase.instance.client
+          .from('tasas_conversion')
+          .select('tasa')
+          .eq('moneda_origen', fromCurrency)
+          .eq('moneda_destino', 'U') // USD
+          .limit(1);
+      
+      if (response.isEmpty) {
+        print('⚠️ No se encontró tasa de conversión en BD para $fromCurrency → USD');
+        print('   Usando tasa por defecto...');
+        
+        // Tasas por defecto si no están en BD
+        // Conversión a USD basada en CUP
+        final defaultRates = {
+          'CUP': 435.0, // 1 USD = 435 CUP
+          'EUR': 480.0, // 1 EUR = 480 CUP (convertir a USD: 480/435 = 1.10 USD)
+        };
+        
+        final rate = defaultRates[fromCurrency];
+        if (rate == null) {
+          throw Exception('Moneda no soportada: $fromCurrency');
+        }
+        
+        print('✅ Tasa de cambio (por defecto): 1 $fromCurrency = $rate CUP');
+        return rate;
+      }
+      
+      final rate = (response.first['tasa'] as num).toDouble();
+      print('✅ Tasa de cambio (desde BD): 1 $fromCurrency = $rate USD');
+      return rate;
+      
+    } catch (e) {
+      print('❌ Error obteniendo tasa de cambio: $e');
+      rethrow;
     }
   }
 
