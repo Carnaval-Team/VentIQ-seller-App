@@ -32,6 +32,7 @@ class _CierreScreenState extends State<CierreScreen> {
   // Inventory data
   List<InventoryProduct> _inventoryProducts = [];
   Map<int, TextEditingController> _inventoryControllers = {};
+  Map<int, Future<List<Map<String, dynamic>>>> _productLocationsFutures = {}; // Cache for futures
   bool _inventorySet = false;
 
   // New state variables for conditional inventory
@@ -553,7 +554,7 @@ class _CierreScreenState extends State<CierreScreen> {
       }
       final idAlmacen = await _userPrefs.getIdAlmacen();
 
-      print('🔄 Llamando a fn_listar_inventario_productos_paged... idAlmacen');
+      print('🔄 Llamando a fn_listar_inventario_productos_paged... ${idAlmacen}');
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged2',
         params: {
@@ -572,7 +573,7 @@ class _CierreScreenState extends State<CierreScreen> {
 
         for (var item in response) {
           // print(item);
-          // if (!item['es_elaborado'] && !item['es_servicio']) {
+          if (!item['es_elaborado'] && !item['es_servicio']) {
           try {
             final product = InventoryProduct.fromSupabaseRpc(item);
 
@@ -590,7 +591,7 @@ class _CierreScreenState extends State<CierreScreen> {
           } catch (e) {
             print('❌ Error procesando producto: $e');
           }
-          // }
+          }
         }
 
         // Crear lista consolidada y controllers
@@ -732,9 +733,52 @@ class _CierreScreenState extends State<CierreScreen> {
                             final controller =
                                 _inventoryControllers[product.id]!;
 
+                            // Use cached Future or create new one
+                            final locationsFuture = _productLocationsFutures.putIfAbsent(
+                              product.id,
+                              () => _getProductLocations(product.id),
+                            );
+
                             return FutureBuilder<List<Map<String, dynamic>>>(
-                              future: _getProductLocations(product.id),
+                              future: locationsFuture,
                               builder: (context, snapshot) {
+                                // Show loading state while fetching quantities
+                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[50],
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.grey[200]!,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            product.nombreProducto,
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                              color: Color(0xFF1F2937),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+
                                 final locations = snapshot.data ?? [];
                                 final totalQuantity = locations.fold<double>(
                                   0.0,

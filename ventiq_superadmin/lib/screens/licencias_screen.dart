@@ -956,9 +956,11 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
               .contains('pro') ??
           false;
 
-      // Nueva fecha de fin: hoy + 30 días
+      // Nueva fecha de fin: día 2 del mes siguiente
       final ahora = DateTime.now();
-      final nuevaFechaFin = ahora.add(const Duration(days: 30));
+      final mesSiguiente = ahora.month == 12 ? 1 : ahora.month + 1;
+      final anioSiguiente = ahora.month == 12 ? ahora.year + 1 : ahora.year;
+      final nuevaFechaFin = DateTime(anioSiguiente, mesSiguiente, 2);
 
       // Actualizar la suscripción actual
       await widget.supabase

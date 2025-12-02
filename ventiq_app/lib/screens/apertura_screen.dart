@@ -362,7 +362,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
         final Map<int, InventoryProduct> productsByIdMap = {};
 
         for (var item in response) {
-          // if (!item['es_elaborado'] && !item['es_servicio']) {
+          if (!item['es_elaborado'] && !item['es_servicio']) {
             try {
               final product = InventoryProduct.fromSupabaseRpc(item);
 
@@ -380,7 +380,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
             } catch (e) {
               print('❌ Error procesando producto: $e');
             }
-          // }
+          }
         }
 
         // Crear lista consolidada y controllers
