@@ -1025,7 +1025,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
               color: AppColors.primary
             ),
           ),
-          readOnly: !_skuManual && widget.product == null, // Solo readOnly si es creación y modo automático
+          readOnly: widget.product != null 
+              ? !_skuManual  // En modo edición: solo editable si _skuManual está activado
+              : !_skuManual, // En modo creación: solo editable si _skuManual está activado
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'El SKU es requerido';
@@ -2508,7 +2510,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
     // Preparar datos del producto para actualización
     final productoData = {
       'id_tienda': idTienda,
-      // SKU no se actualiza en modo edición
+      // ✅ SKU solo se actualiza si el switch "Editar SKU" está activado
+      if (_skuManual) 'sku': _skuController.text.trim(),
       'id_categoria': _selectedCategoryId,
       'denominacion': _denominacionController.text.trim(),
       'nombre_comercial': _nombreComercialController.text,
@@ -2542,7 +2545,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     // Debug: Verificar campos específicos antes de enviar
     print('📤 Campos específicos a actualizar:');
     print('  • ID Tienda: ${productoData['id_tienda']}');
-    print('  • SKU: NO SE ACTUALIZA (preservado)');
+    print('  • SKU: ${_skuManual ? "\"${productoData['sku']}\" (SE ACTUALIZARÁ)" : "NO SE ACTUALIZA (switch desactivado)"}');
     print('  • ID Categoría: ${productoData['id_categoria']}');
     print('  • Denominación: "${productoData['denominacion']}"');
     print('  • Nombre comercial: "${productoData['nombre_comercial']}"');
