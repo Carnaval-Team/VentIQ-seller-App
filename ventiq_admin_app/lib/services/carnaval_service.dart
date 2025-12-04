@@ -532,7 +532,13 @@ class CarnavalService {
               .limit(1)
               .maybeSingle();
 
-      final price = priceData?['precio_venta_cup'] ?? 0;
+      final basePrice = priceData?['precio_venta_cup'] ?? 0;
+
+      // Calcular precios con markup:
+      // precio_descuento = basePrice + 5.35% (redondeado a entero)
+      // price (oficial) = basePrice + 11%
+      final precioDescuento = (basePrice * 1.0535).round();
+      final precioOficial = basePrice * 1.11;
 
       // 3. Obtener stock actual (último registro de inventario)
       final stockData =
@@ -546,18 +552,40 @@ class CarnavalService {
 
       final stock = stockData?['cantidad_final'] ?? 0;
 
-      // 4. Insertar en Carnaval App
-      await _supabase.schema('carnavalapp').from('Productos').insert({
-        'name': productData['denominacion'],
-        'description': productData['descripcion'] ?? '',
-        'price': price,
-        'stock': stock.toInt(), // Convertir a int para evitar error de bigint
-        'category_id': carnavalCategoryId,
-        'image': productData['imagen'],
-        'proveedor': carnavalStoreId,
-        'status': true,
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      // 4. Insertar en Carnaval App y obtener el ID del producto insertado
+      final carnavalProductResponse =
+          await _supabase
+              .schema('carnavalapp')
+              .from('Productos')
+              .insert({
+                'name': productData['denominacion'],
+                'description': productData['descripcion'] ?? '',
+                'price': precioOficial,
+                'precio_descuento': precioDescuento,
+                'stock':
+                    stock
+                        .toInt(), // Convertir a int para evitar error de bigint
+                'category_id': carnavalCategoryId,
+                'image': productData['imagen'],
+                'proveedor': carnavalStoreId,
+                'status': true,
+                'created_at': DateTime.now().toIso8601String(),
+              })
+              .select('id')
+              .single();
+
+      final carnavalProductId = carnavalProductResponse['id'];
+      print('✅ Producto insertado en Carnaval con ID: $carnavalProductId');
+
+      // 5. Actualizar el producto local con el id_vendedor_app
+      await _supabase
+          .from('app_dat_producto')
+          .update({'id_vendedor_app': carnavalProductId})
+          .eq('id', localProductId);
+
+      print(
+        '✅ Producto local actualizado con id_vendedor_app: $carnavalProductId',
+      );
 
       return true;
     } catch (e) {
@@ -570,7 +598,7 @@ class CarnavalService {
   static Future<Map<String, List<Map<String, dynamic>>>>
   getSyncedProductsGrouped(int carnavalStoreId) async {
     try {
-      // Obtener productos con sus categorías
+      // Obtener productos con sus categorías (activos e inactivos)
       final response = await _supabase
           .schema('carnavalapp')
           .from('Productos')
@@ -594,6 +622,107 @@ class CarnavalService {
     } catch (e) {
       print('❌ Error al obtener productos sincronizados: $e');
       return {};
+    }
+  }
+
+  /// Obtiene estadísticas de ventas de un producto en Carnaval
+  /// Retorna el total de ventas completadas (completada=true, status='Completado')
+  static Future<double> getProductSalesStats(int carnavalProductId) async {
+    try {
+      print(
+        '🔍 Obteniendo estadísticas de ventas para producto ID: $carnavalProductId',
+      );
+
+      // Consultar OrderDetails con join a Orders
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('OrderDetails')
+          .select('price, quantity, Orders!inner(status)')
+          .eq('product_id', carnavalProductId)
+          .eq('completada', true)
+          .eq('Orders.status', 'Completado');
+
+      double totalSales = 0;
+      for (var detail in response) {
+        final price = (detail['price'] ?? 0).toDouble();
+        final quantity = (detail['quantity'] ?? 0).toInt();
+        totalSales += price * quantity;
+      }
+
+      print('✅ Total de ventas: \$${totalSales.toStringAsFixed(2)}');
+      return totalSales;
+    } catch (e) {
+      print('❌ Error al obtener estadísticas de ventas: $e');
+      return 0;
+    }
+  }
+
+  /// Obtiene estadísticas de pedidos cancelados de un producto
+  /// Retorna el total de pedidos cancelados (status='Cancelado')
+  static Future<double> getProductCancelledStats(int carnavalProductId) async {
+    try {
+      print(
+        '🔍 Obteniendo estadísticas de cancelaciones para producto ID: $carnavalProductId',
+      );
+
+      // Consultar OrderDetails con join a Orders
+      final response = await _supabase
+          .schema('carnavalapp')
+          .from('OrderDetails')
+          .select('price, quantity, Orders!inner(status)')
+          .eq('product_id', carnavalProductId)
+          .eq('Orders.status', 'Cancelado');
+
+      double totalCancelled = 0;
+      for (var detail in response) {
+        final price = (detail['price'] ?? 0).toDouble();
+        final quantity = (detail['quantity'] ?? 0).toInt();
+        totalCancelled += price * quantity;
+      }
+
+      print('✅ Total de cancelaciones: \$${totalCancelled.toStringAsFixed(2)}');
+      return totalCancelled;
+    } catch (e) {
+      print('❌ Error al obtener estadísticas de cancelaciones: $e');
+      return 0;
+    }
+  }
+
+  /// Oculta un producto de Carnaval App (establece status = false)
+  static Future<bool> hideProductFromCarnaval(int carnavalProductId) async {
+    try {
+      print('🔧 Ocultando producto ID: $carnavalProductId de Carnaval');
+
+      await _supabase
+          .schema('carnavalapp')
+          .from('Productos')
+          .update({'status': false})
+          .eq('id', carnavalProductId);
+
+      print('✅ Producto ocultado de Carnaval exitosamente');
+      return true;
+    } catch (e) {
+      print('❌ Error al ocultar producto: $e');
+      return false;
+    }
+  }
+
+  /// Muestra un producto en Carnaval App (establece status = true)
+  static Future<bool> showProductInCarnaval(int carnavalProductId) async {
+    try {
+      print('🔧 Mostrando producto ID: $carnavalProductId en Carnaval');
+
+      await _supabase
+          .schema('carnavalapp')
+          .from('Productos')
+          .update({'status': true})
+          .eq('id', carnavalProductId);
+
+      print('✅ Producto mostrado en Carnaval exitosamente');
+      return true;
+    } catch (e) {
+      print('❌ Error al mostrar producto: $e');
+      return false;
     }
   }
 }

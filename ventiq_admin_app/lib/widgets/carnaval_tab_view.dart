@@ -4,6 +4,7 @@ import '../services/carnaval_service.dart';
 import '../services/store_service.dart';
 import 'store_config_dialog.dart';
 import 'product_sync_sheet.dart';
+import 'product_sales_dialog.dart';
 
 class CarnavalTabView extends StatefulWidget {
   const CarnavalTabView({super.key});
@@ -672,29 +673,62 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                 ),
                 children:
                     entry.value.map((product) {
-                      return ListTile(
-                        leading: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            image:
-                                product['image'] != null
-                                    ? DecorationImage(
-                                      image: NetworkImage(product['image']),
-                                      fit: BoxFit.cover,
-                                    )
-                                    : null,
+                      final isActive = product['status'] == true;
+                      return Opacity(
+                        opacity: isActive ? 1.0 : 0.5,
+                        child: ListTile(
+                          onTap: () async {
+                            final result = await showDialog<bool>(
+                              context: context,
+                              builder:
+                                  (context) =>
+                                      ProductSalesDialog(product: product),
+                            );
+                            // Si el producto cambió de estado, recargar datos
+                            if (result == true) {
+                              _loadData();
+                            }
+                          },
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              image:
+                                  product['image'] != null
+                                      ? DecorationImage(
+                                        image: NetworkImage(product['image']),
+                                        fit: BoxFit.cover,
+                                        colorFilter:
+                                            isActive
+                                                ? null
+                                                : ColorFilter.mode(
+                                                  Colors.grey,
+                                                  BlendMode.saturation,
+                                                ),
+                                      )
+                                      : null,
+                            ),
                           ),
-                        ),
-                        title: Text(product['name']),
-                        subtitle: Text(
-                          'Precio: \$${product['price']} | Stock: ${product['stock']}',
-                        ),
-                        trailing: const Icon(
-                          Icons.check_circle,
-                          color: Colors.green,
-                          size: 16,
+                          title: Text(
+                            product['name'],
+                            style: TextStyle(
+                              color: isActive ? null : Colors.grey,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Precio: \$${product['price']} | Stock: ${product['stock']}',
+                            style: TextStyle(
+                              color: isActive ? null : Colors.grey,
+                            ),
+                          ),
+                          trailing: Icon(
+                            isActive
+                                ? Icons.check_circle
+                                : Icons.visibility_off,
+                            color: isActive ? Colors.green : Colors.grey,
+                            size: 16,
+                          ),
                         ),
                       );
                     }).toList(),
