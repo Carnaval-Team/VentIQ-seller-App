@@ -51,7 +51,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   BlendMode.srcIn,
                 ),
                 child: Image.asset(
-                  'assets/logo_app.png',
+                  'assets/logo_app_no_background.png',
                   width: 220,
                   height: 220,
                   fit: BoxFit.contain,

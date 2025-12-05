@@ -3,19 +3,19 @@ import 'package:flutter/material.dart';
 /// Tema y colores del marketplace inspirado en los mejores marketplaces
 class AppTheme {
   // Colores principales (basados en VentIQ app)
-  static const Color primaryColor = Color(0xFF4A90E2); // Azul VentIQ
-  static const Color secondaryColor = Color(0xFF009688); // Teal
+  static const Color primaryColor = Color(0xFF194B8C); // Azul VentIQ
+  static const Color secondaryColor = Color(0xFF6B7280); // Teal
   static const Color accentColor = Color(0xFF4CAF50); // Verde
   
   // Colores de fondo
-  static const Color backgroundColor = Color(0xFFF5F5F5);
+  static const Color backgroundColor = Color(0xFFF8F9FA);
   static const Color cardBackground = Colors.white;
   static const Color surfaceColor = Colors.white;
   
   // Colores de texto
-  static const Color textPrimary = Color(0xFF212121);
-  static const Color textSecondary = Color(0xFF757575);
-  static const Color textHint = Color(0xFFBDBDBD);
+  static const Color textPrimary = Color(0xFF1F2937);
+  static const Color textSecondary = Color(0xFF6B7280);
+  static const Color textHint = Color(0xFF9CA3AF);
   
   // Colores de estado
   static const Color errorColor = Color(0xFFD32F2F);

@@ -106,6 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const SizedBox(height: 8),
                   // Buscador con diseño mejorado
                   _buildSearchSection(),
 
@@ -172,18 +173,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: ColorFiltered(
-                          colorFilter: const ColorFilter.mode(
-                            Colors.white,
-                            BlendMode.srcIn,
-                          ),
-                          child: Image.asset(
-                            'assets/logo_app.png',
+                        child: Image.asset(
+                            'assets/logo_app_no_background.png',
                             width: 58,
                             height: 58,
                             fit: BoxFit.contain,
                           ),
-                        ),
                       ),
                       const SizedBox(width: 12),
                       const Expanded(
