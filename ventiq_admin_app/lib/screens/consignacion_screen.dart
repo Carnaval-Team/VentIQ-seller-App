@@ -7,6 +7,7 @@ import 'crear_contrato_consignacion_screen.dart';
 import 'asignar_productos_consignacion_screen.dart';
 import 'detalle_contrato_consignacion_screen.dart';
 import 'lista_productos_pendientes_consignacion_screen.dart';
+import 'confirmar_recepcion_consignacion_screen.dart';
 
 class ConsignacionScreen extends StatefulWidget {
   const ConsignacionScreen({Key? key}) : super(key: key);
@@ -86,21 +87,6 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
             },
             tooltip: 'Aceptar Envío',
           ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () async {
-              final result = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CrearContratoConsignacionScreen(),
-                ),
-              );
-              if (result != null) {
-                _loadData();
-              }
-            },
-            tooltip: 'Crear Contrato',
-          ),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -140,6 +126,7 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
         icon: const Icon(Icons.add),
         label: const Text('Nuevo Contrato'),
         backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
       ),
     );
   }
@@ -620,6 +607,25 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                         ),
                         const SizedBox(height: 8),
                       ],
+                      // Botón Ver envíos: solo si está confirmado
+                      if (estadoConfirmacion == 1)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () => _verEnviosConfirmados(contrato),
+                                icon: const Icon(Icons.local_shipping, size: 20),
+                                label: const Text('Ver Envíos', style: TextStyle(fontSize: 13)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blue,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      if (estadoConfirmacion == 1) const SizedBox(height: 8),
                       Row(
                         children: [
                           // Botón Rescindir para consignataria: siempre disponible si puede rescindirse
@@ -838,6 +844,54 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
             child: const Text('Cerrar'),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _verEnviosConfirmados(Map<String, dynamic> contrato) async {
+    // Obtener el id_almacen_origen desde el servicio
+    int idAlmacenOrigen = 0;
+    
+    try {
+      final almacenOrigen = await ConsignacionService.getAlmacenOrigenFromContrato(contrato['id']);
+      if (almacenOrigen != null) {
+        idAlmacenOrigen = almacenOrigen;
+      } else {
+        // Fallback: obtener el primer almacén de la tienda origen
+        final almacenesOrigen = await ConsignacionService.getAlmacenesPorTienda(
+          contrato['tienda_consignadora']['id']
+        );
+        if (almacenesOrigen.isNotEmpty) {
+          idAlmacenOrigen = almacenesOrigen[0]['id'] as int;
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error obteniendo almacén origen: $e');
+      // Intentar fallback
+      try {
+        final almacenesOrigen = await ConsignacionService.getAlmacenesPorTienda(
+          contrato['tienda_consignadora']['id']
+        );
+        if (almacenesOrigen.isNotEmpty) {
+          idAlmacenOrigen = almacenesOrigen[0]['id'] as int;
+        }
+      } catch (e2) {
+        debugPrint('⚠️ Error en fallback: $e2');
+      }
+    }
+    
+    if (!mounted) return;
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ConfirmarRecepcionConsignacionScreen(
+          idContrato: contrato['id'],
+          idTiendaOrigen: contrato['tienda_consignadora']['id'],
+          idTiendaDestino: contrato['tienda_consignataria']['id'],
+          idAlmacenOrigen: idAlmacenOrigen,
+          idAlmacenDestino: contrato['id_almacen_destino'] ?? 0,
+        ),
       ),
     );
   }

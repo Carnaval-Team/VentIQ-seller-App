@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
 import '../services/consignacion_movimientos_service.dart';
+import '../services/liquidacion_service.dart';
+import 'liquidaciones_list_screen.dart';
 
 class DetalleContratoConsignacionScreen extends StatefulWidget {
   final Map<String, dynamic> contrato;
@@ -20,9 +22,11 @@ class _DetalleContratoConsignacionScreenState
     extends State<DetalleContratoConsignacionScreen> {
   List<Map<String, dynamic>> _movimientos = [];
   Map<String, dynamic> _estadisticas = {};
+  Map<String, dynamic> _totalesContrato = {};
   bool _isLoading = true;
   bool _puedeRescindirse = false;
   bool _isLoadingMovimientos = false;
+  double _totalDineroEnviado = 0.0;
   
   // Filtros de fecha
   DateTime? _fechaDesde;
@@ -34,6 +38,8 @@ class _DetalleContratoConsignacionScreenState
     debugPrint('🔍 [INIT] Inicializando pantalla de detalle del contrato ID: ${widget.contrato['id']}');
     _loadMovimientosYEstadisticas();
     _verificarRescision();
+    _calcularTotalDineroEnviado();
+    _loadTotalesContrato();
   }
 
   Future<void> _verificarRescision() async {
@@ -54,6 +60,46 @@ class _DetalleContratoConsignacionScreenState
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _calcularTotalDineroEnviado() async {
+    try {
+      debugPrint('💰 [TOTAL] Obteniendo monto_total del contrato...');
+      
+      // Obtener el monto_total directamente del contrato
+      final montoTotal = (widget.contrato['monto_total'] as num?)?.toDouble() ?? 0.0;
+      
+      if (mounted) {
+        setState(() {
+          _totalDineroEnviado = montoTotal;
+        });
+        debugPrint('✅ [TOTAL] Monto total del contrato: $_totalDineroEnviado');
+      }
+    } catch (e) {
+      debugPrint('❌ [TOTAL] Error obteniendo monto total: $e');
+    }
+  }
+
+  Future<void> _loadTotalesContrato() async {
+    try {
+      debugPrint('💰 [LIQUIDACIONES] Cargando totales del contrato...');
+      
+      final totales = await LiquidacionService.obtenerTotalesContrato(
+        widget.contrato['id'],
+      );
+      
+      if (mounted) {
+        setState(() {
+          _totalesContrato = totales;
+        });
+        debugPrint('✅ [LIQUIDACIONES] Totales cargados:');
+        debugPrint('  💵 Monto Total: ${totales['monto_total']}');
+        debugPrint('  ✅ Total Liquidado: ${totales['total_liquidado']}');
+        debugPrint('  ⏳ Saldo Pendiente: ${totales['saldo_pendiente']}');
+      }
+    } catch (e) {
+      debugPrint('❌ [LIQUIDACIONES] Error cargando totales: $e');
     }
   }
 
@@ -212,14 +258,14 @@ class _DetalleContratoConsignacionScreenState
             ),
             const SizedBox(height: 12),
 
-            // Comisión y plazo
+            // Total de dinero enviado y plazo
             Row(
               children: [
                 Expanded(
                   child: _buildInfoBox(
-                    'Comisión',
-                    '${widget.contrato['porcentaje_comision']}%',
-                    Icons.percent,
+                    'Total Enviado',
+                    '\$${_totalDineroEnviado.toStringAsFixed(2)}',
+                    Icons.attach_money,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -230,6 +276,28 @@ class _DetalleContratoConsignacionScreenState
                         ? '${widget.contrato['plazo_dias']} días'
                         : 'Sin límite',
                     Icons.calendar_today,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Liquidaciones
+            Row(
+              children: [
+                Expanded(
+                  child: _buildInfoBox(
+                    'Liquidado',
+                    '\$${(_totalesContrato['total_liquidado'] ?? 0.0).toStringAsFixed(2)}',
+                    Icons.payments,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildInfoBox(
+                    'Pendiente',
+                    '\$${(_totalesContrato['saldo_pendiente'] ?? 0.0).toStringAsFixed(2)}',
+                    Icons.pending_actions,
                   ),
                 ),
               ],
@@ -255,6 +323,39 @@ class _DetalleContratoConsignacionScreenState
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 16),
+
+            // Botón para ver liquidaciones
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  // Determinar si es consignatario o consignador
+                  final esConsignatario = widget.contrato['id_tienda_consignataria'] == widget.contrato['id_tienda_actual'];
+                  final nombreTiendaOtra = esConsignatario
+                      ? widget.contrato['tienda_consignadora']['denominacion']
+                      : widget.contrato['tienda_consignataria']['denominacion'];
+                  
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => LiquidacionesListScreen(
+                        contratoId: widget.contrato['id'],
+                        esConsignatario: esConsignatario,
+                        nombreTiendaOtra: nombreTiendaOtra,
+                      ),
+                    ),
+                  ).then((_) => _loadTotalesContrato()); // Recargar totales al volver
+                },
+                icon: const Icon(Icons.account_balance_wallet, size: 20),
+                label: const Text('Gestionar Liquidaciones'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
             ),
 
             // Condiciones

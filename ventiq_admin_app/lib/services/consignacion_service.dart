@@ -390,6 +390,41 @@ class ConsignacionService {
     }
   }
 
+  /// Obtener el almacén origen desde el primer producto de consignación
+  static Future<int?> getAlmacenOrigenFromContrato(int idContrato) async {
+    try {
+      debugPrint('🏭 Obteniendo almacén origen para contrato: $idContrato');
+
+      // Obtener el primer producto de consignación
+      final productos = await getProductosConsignacion(idContrato);
+      if (productos.isEmpty) {
+        debugPrint('⚠️ No hay productos en el contrato');
+        return null;
+      }
+
+      final idUbicacionOrigen = productos[0]['id_ubicacion_origen'] as int?;
+      if (idUbicacionOrigen == null) {
+        debugPrint('⚠️ El producto no tiene id_ubicacion_origen');
+        return null;
+      }
+
+      // Buscar el almacén al que pertenece esta ubicación
+      final ubicacionResponse = await _supabase
+          .from('app_dat_layout_almacen')
+          .select('id_almacen')
+          .eq('id', idUbicacionOrigen)
+          .single();
+
+      final idAlmacenOrigen = ubicacionResponse['id_almacen'] as int;
+      debugPrint('✅ Almacén origen obtenido: $idAlmacenOrigen');
+      return idAlmacenOrigen;
+    } catch (e) {
+      debugPrint('❌ Error obteniendo almacén origen: $e');
+      return null;
+    }
+  }
+
+
   /// Crear un nuevo contrato de consignación
   static Future<Map<String, dynamic>?> crearContrato({
     required int idTiendaConsignadora,
@@ -498,7 +533,7 @@ class ConsignacionService {
           'id_presentacion': producto['id_presentacion'],
           'id_ubicacion_origen': producto['id_ubicacion'], // Guardar ubicación de origen
           'cantidad_enviada': producto['cantidad'],
-          'precio_venta_sugerido': producto['precio_venta_sugerido'],
+          'precio_venta_sugerido': producto['precio_costo_unitario'], // ✅ Precio de costo (informativo)
           'puede_modificar_precio': producto['puede_modificar_precio'] ?? false,
           'estado': 0, // PENDIENTE - Esperando confirmación del consignatario
         };
@@ -913,6 +948,89 @@ class ConsignacionService {
     }
   }
 
+  /// ✅ NUEVO: Validar orden de operaciones en consignación
+  /// Verifica que la operación de extracción esté completada antes de completar la recepción
+  /// Retorna: {valido: bool, mensaje: string, id_operacion_extraccion: int?, estado_extraccion: int?}
+  static Future<Map<String, dynamic>> validarOrdenOperacionesConsignacion(int idOperacionRecepcion) async {
+    try {
+      debugPrint('🔍 Validando orden de operaciones para recepción: $idOperacionRecepcion');
+
+      // Llamar a la función RPC de validación
+      final response = await _supabase.rpc(
+        'validar_orden_operaciones_consignacion',
+        params: {'p_id_operacion_recepcion': idOperacionRecepcion},
+      ) as List;
+
+      if (response.isNotEmpty) {
+        final result = response.first as Map<String, dynamic>;
+        final valido = result['valido'] as bool;
+        final mensaje = result['mensaje'] as String;
+        final idOperacionExtraccion = result['id_operacion_extraccion'] as int?;
+        final estadoExtraccion = result['estado_extraccion'] as int?;
+
+        if (valido) {
+          debugPrint('✅ Validación exitosa: $mensaje');
+        } else {
+          debugPrint('❌ Validación fallida: $mensaje');
+          debugPrint('   Operación de extracción: $idOperacionExtraccion');
+          debugPrint('   Estado: $estadoExtraccion (debe ser 3 = Completada)');
+        }
+
+        return {
+          'valido': valido,
+          'mensaje': mensaje,
+          'id_operacion_extraccion': idOperacionExtraccion,
+          'estado_extraccion': estadoExtraccion,
+        };
+      }
+
+      debugPrint('❌ Error: Respuesta vacía de validación');
+      return {
+        'valido': false,
+        'mensaje': 'Error en validación: respuesta vacía',
+        'id_operacion_extraccion': null,
+        'estado_extraccion': null,
+      };
+    } catch (e) {
+      debugPrint('❌ Error validando orden de operaciones: $e');
+      return {
+        'valido': false,
+        'mensaje': 'Error: $e',
+        'id_operacion_extraccion': null,
+        'estado_extraccion': null,
+      };
+    }
+  }
+
+  /// ✅ NUEVO: Obtener información de operaciones relacionadas en consignación
+  static Future<Map<String, dynamic>?> getOperacionesConsignacionRelacionadas(int idOperacionRecepcion) async {
+    try {
+      debugPrint('📊 Obteniendo operaciones relacionadas para recepción: $idOperacionRecepcion');
+
+      final response = await _supabase.rpc(
+        'get_operaciones_consignacion_relacionadas',
+        params: {'p_id_operacion_recepcion': idOperacionRecepcion},
+      ) as List;
+
+      if (response.isNotEmpty) {
+        final result = response.first as Map<String, dynamic>;
+        debugPrint('✅ Operaciones relacionadas obtenidas');
+        debugPrint('   Recepción: ${result['id_operacion_recepcion']}');
+        debugPrint('   Extracción: ${result['id_operacion_extraccion']}');
+        debugPrint('   Estado recepción: ${result['estado_recepcion']}');
+        debugPrint('   Estado extracción: ${result['estado_extraccion']}');
+        debugPrint('   Productos: ${result['productos_count']}');
+        return result;
+      }
+
+      debugPrint('⚠️ No se encontraron operaciones relacionadas');
+      return null;
+    } catch (e) {
+      debugPrint('❌ Error obteniendo operaciones relacionadas: $e');
+      return null;
+    }
+  }
+
   /// Obtener contratos pendientes de confirmación para una tienda consignataria (OPTIMIZADO)
   static Future<List<Map<String, dynamic>>> getContratosPendientesConfirmacion(int idTienda) async {
     try {
@@ -1128,10 +1246,10 @@ class ConsignacionService {
     try {
       debugPrint('✅ Confirmando recepción de productos en consignación...');
 
-      // Obtener datos de los productos en consignación (incluyendo ubicación de origen)
+      // Obtener datos de los productos en consignación (incluyendo precio del consignador)
       final productosConsignacion = await _supabase
           .from('app_dat_producto_consignacion')
-          .select('id, id_producto, id_presentacion, cantidad_enviada, id_ubicacion_origen')
+          .select('id, id_producto, id_presentacion, cantidad_enviada, id_ubicacion_origen, precio_venta_sugerido')
           .inFilter('id', idsProductosConsignacion);
 
       if ((productosConsignacion as List).isEmpty) {
@@ -1229,6 +1347,8 @@ class ConsignacionService {
         idZonaDestino: idZonaDestino,
         productos: productosConsignacion,
         mapeoProductos: mapeoProductos,
+        preciosVenta: preciosVenta,
+        idsProductosConsignacion: idsProductosConsignacion,
       );
 
       if (!operacionesCreadas) {
@@ -1316,6 +1436,7 @@ class ConsignacionService {
 
   /// Crear operaciones de auditoría (UNA extracción y UNA recepción para todos los productos)
   /// mapeoProductos: {id_producto_original: {id_original: int, id_duplicado: int}}
+  /// preciosVenta: {idProductoConsignacion: precioVenta}
   static Future<bool> crearOperacionesAuditoria({
     required int idTiendaOrigen,
     required int idTiendaDestino,
@@ -1324,6 +1445,8 @@ class ConsignacionService {
     required int idZonaDestino,
     required List<Map<String, dynamic>> productos,
     Map<int, Map<String, int>>? mapeoProductos,
+    Map<int, double>? preciosVenta,
+    List<int>? idsProductosConsignacion,
   }) async {
     try {
       debugPrint('📊 Creando operaciones de auditoría consolidadas...');
@@ -1388,11 +1511,14 @@ class ConsignacionService {
       // ===== REGISTRAR TODOS LOS PRODUCTOS EN LA EXTRACCIÓN =====
       // Usar la ubicación guardada en cada producto (id_ubicacion_origen)
       // Si no existe, usar la primera ubicación del almacén origen (fallback)
+      // ✅ NUEVO: Guardar ID de operación de extracción en cada producto
       
-      for (final producto in productos) {
+      for (int i = 0; i < productos.length; i++) {
+        final producto = productos[i];
         final cantidad = (producto['cantidad_enviada'] ?? producto['cantidad'] ?? 0).toDouble();
         // En EXTRACCIÓN usamos el producto ORIGINAL
         final idProductoOriginal = producto['id_producto'] as int;
+        final idProductoConsignacion = idsProductosConsignacion?[i] ?? 0;
         var idPresentacion = producto['id_presentacion'] as int?;
         var idUbicacionOrigen = producto['id_ubicacion_origen'] as int?;
 
@@ -1445,6 +1571,19 @@ class ConsignacionService {
                   'cantidad': cantidad,
                 });
             debugPrint('✅ Producto extraído registrado: $idProductoOriginal desde ubicación $idUbicacionOrigen');
+            
+            // ✅ NUEVO: Guardar ID de operación de extracción en producto_consignacion
+            if (idProductoConsignacion > 0) {
+              try {
+                await _supabase
+                    .from('app_dat_producto_consignacion')
+                    .update({'id_operacion_extraccion': idOperacionExtraccion})
+                    .eq('id', idProductoConsignacion);
+                debugPrint('✅ ID de operación de extracción guardado en producto_consignacion: $idProductoConsignacion');
+              } catch (e) {
+                debugPrint('⚠️ Error guardando ID de operación de extracción: $e');
+              }
+            }
           } catch (e) {
             debugPrint('❌ Error registrando producto extraído: $e');
           }
@@ -1518,38 +1657,59 @@ class ConsignacionService {
         }
       }
 
-      for (final producto in productos) {
+      // ✅ Calcular monto total de la operación
+      double montoTotalOperacion = 0.0;
+
+      for (int i = 0; i < productos.length; i++) {
+        final producto = productos[i];
         final cantidad = (producto['cantidad_enviada'] ?? producto['cantidad'] ?? 0).toDouble();
         final idProductoOriginal = producto['id_producto'] as int;
+        final idProductoConsignacion = idsProductosConsignacion?[i] ?? 0;
+        
+        // ✅ IMPORTANTE: Obtener el precio que envió el consignador (para precio promedio)
+        final precioConsignador = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
         
         // En RECEPCIÓN usamos el producto DUPLICADO/REUTILIZADO
-        final int idProductoDuplicado;
+        final int? idProductoDuplicado;
         if (mapeoProductos != null && mapeoProductos.containsKey(idProductoOriginal)) {
-          idProductoDuplicado = mapeoProductos[idProductoOriginal]!['id_duplicado'] ?? idProductoOriginal;
+          idProductoDuplicado = mapeoProductos[idProductoOriginal]!['id_duplicado'];
           debugPrint('📍 Usando mapeo: Producto original $idProductoOriginal → Producto recepción $idProductoDuplicado');
         } else {
-          idProductoDuplicado = idProductoOriginal; // Fallback al original si no hay mapeo
-          debugPrint('⚠️ Sin mapeo para producto $idProductoOriginal, usando original como fallback');
+          idProductoDuplicado = null;
+          debugPrint('❌ CRÍTICO: Sin mapeo para producto $idProductoOriginal - NO se registrará recepción');
         }
         
-        var idPresentacion = producto['id_presentacion'] as int?;
-
-        // Si no hay id_presentacion, obtenerlo del producto duplicado
-        if (idPresentacion == null) {
-          try {
-            final presentacionResponse = await _supabase
-                .from('app_dat_producto_presentacion')
-                .select('id')
-                .eq('id_producto', idProductoDuplicado)
-                .limit(1);
-            
-            if ((presentacionResponse as List).isNotEmpty) {
-              idPresentacion = presentacionResponse[0]['id'] as int;
-            }
-          } catch (e) {
-            debugPrint('⚠️ Error obteniendo presentación: $e');
-          }
+        // ✅ VALIDACIÓN CRÍTICA: Si no hay producto duplicado, saltar este producto
+        if (idProductoDuplicado == null) {
+          debugPrint('⚠️ Saltando producto $idProductoOriginal: no hay ID de destino disponible');
+          continue;
         }
+        
+        // ✅ IMPORTANTE: SIEMPRE obtener presentación del producto DUPLICADO (tienda destino)
+        // NO usar la presentación del producto original, aunque venga en los datos
+        int? idPresentacion;
+        try {
+          final presentacionResponse = await _supabase
+              .from('app_dat_producto_presentacion')
+              .select('id')
+              .eq('id_producto', idProductoDuplicado)
+              .limit(1);
+          
+          if ((presentacionResponse as List).isNotEmpty) {
+            idPresentacion = presentacionResponse[0]['id'] as int;
+            debugPrint('✅ Presentación obtenida del producto duplicado $idProductoDuplicado: $idPresentacion');
+          } else {
+            debugPrint('⚠️ No se encontró presentación para producto duplicado $idProductoDuplicado');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Error obteniendo presentación del producto duplicado: $e');
+        }
+
+        // Obtener el precio de venta configurado por el consignatario (para guardar en recepción)
+        final precioVentaConsignatario = preciosVenta?[idProductoConsignacion] ?? 0.0;
+
+        // ✅ Acumular monto total: precio de venta del consignatario × cantidad
+        montoTotalOperacion += precioVentaConsignatario * cantidad;
 
         // 8. Registrar producto recibido en app_dat_recepcion_productos (PRODUCTO DUPLICADO)
         try {
@@ -1561,18 +1721,97 @@ class ConsignacionService {
                 'id_ubicacion': idUbicacionDestino,
                 'id_presentacion': idPresentacion,
                 'cantidad': cantidad,
+                'precio_unitario': precioConsignador, // ✅ CORREGIDO: Usar precio del consignador (no del consignatario)
               });
+
             debugPrint('✅ Producto recibido registrado: $idProductoDuplicado (duplicado de $idProductoOriginal) en zona $idUbicacionDestino');
+            debugPrint('   Precio unitario (del consignador): \$$precioConsignador, Cantidad: $cantidad');
+            debugPrint('   Subtotal: \$${(precioConsignador * cantidad).toStringAsFixed(2)}');
+            debugPrint('   ℹ️ Precio de venta del consignatario: \$$precioVentaConsignatario (se usa para venta, no para precio promedio)');
+
+            // ℹ️ NO actualizar precio promedio en consignación
+            // El precio promedio se actualiza solo cuando se venden los productos
+            debugPrint('ℹ️ Precio promedio NO se actualiza en consignación (se actualiza al vender)');
+            
+            // ✅ NUEVO: Guardar ID de operación de recepción en producto_consignacion
+            if (idProductoConsignacion > 0) {
+              try {
+                await _supabase
+                    .from('app_dat_producto_consignacion')
+                    .update({'id_operacion_recepcion': idOperacionRecepcion})
+                    .eq('id', idProductoConsignacion);
+                debugPrint('✅ ID de operación de recepción guardado en producto_consignacion: $idProductoConsignacion');
+              } catch (e) {
+                debugPrint('⚠️ Error guardando ID de operación de recepción: $e');
+              }
+            }
           } catch (e) {
             debugPrint('❌ Error registrando producto recibido: $e');
           }
       }
 
+      // ℹ️ Nota: El monto total se calcula como suma de (precio_unitario × cantidad) para todos los productos
+      // pero no se guarda en app_dat_operaciones (columna no existe)
       debugPrint('✅ Operaciones de auditoría creadas exitosamente (1 extracción + 1 recepción)');
+      debugPrint('   Monto total calculado: \$${montoTotalOperacion.toStringAsFixed(2)}');
+      debugPrint('   Fórmula: Suma de (precio_unitario × cantidad) para todos los productos');
       return true;
     } catch (e) {
       debugPrint('❌ Error creando operaciones de auditoría: $e');
       return false;
     }
   }
+
+  /// ✅ NUEVO: Actualizar monto_total del contrato después de confirmar productos
+  /// Calcula: sum(precio_costo * cantidad_enviada) y lo SUMA al monto_total existente
+  static Future<void> actualizarMontoTotalContrato({
+    required int contratoId,
+    required List<Map<String, dynamic>> productosConfirmados,
+  }) async {
+    try {
+      debugPrint('💰 Actualizando monto_total del contrato $contratoId...');
+      
+      // Calculate total to add: sum(precio_costo * cantidad_enviada)
+      double montoAAgregar = 0.0;
+      for (final producto in productosConfirmados) {
+        // El precio_costo viene del consignador (precio_venta_sugerido en la UI)
+        final precioCosto = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
+        final cantidadEnviada = (producto['cantidad_enviada'] as num?)?.toDouble() ?? 0.0;
+        montoAAgregar += precioCosto * cantidadEnviada;
+        
+        debugPrint('   Producto: ${producto['producto']?['denominacion'] ?? 'N/A'}');
+        debugPrint('   Precio costo: \$${precioCosto.toStringAsFixed(2)} × Cantidad: $cantidadEnviada = \$${(precioCosto * cantidadEnviada).toStringAsFixed(2)}');
+      }
+      
+      debugPrint('💰 Monto a agregar al contrato: \$${montoAAgregar.toStringAsFixed(2)}');
+      
+      // Get current monto_total
+      final contratoData = await _supabase
+          .from('app_dat_contrato_consignacion')
+          .select('monto_total')
+          .eq('id', contratoId)
+          .single();
+      
+      final montoActual = (contratoData['monto_total'] as num?)?.toDouble() ?? 0.0;
+      final nuevoMonto = montoActual + montoAAgregar;
+      
+      debugPrint('📊 Monto actual del contrato: \$${montoActual.toStringAsFixed(2)}');
+      debugPrint('📊 Nuevo monto total: \$${nuevoMonto.toStringAsFixed(2)}');
+      
+      // Update contract monto_total (incremental sum)
+      await _supabase
+          .from('app_dat_contrato_consignacion')
+          .update({
+            'monto_total': nuevoMonto,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', contratoId);
+      
+      debugPrint('✅ Monto total del contrato actualizado exitosamente');
+    } catch (e) {
+      debugPrint('❌ Error actualizando monto total del contrato: $e');
+      rethrow;
+    }
+  }
+
 }

@@ -156,8 +156,10 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
             } else if (presentacion is Map) {
               precioCostoUSD = (presentacion['precio_promedio'] ?? 0).toDouble();
             }
-            // Guardar el precio en CUP
+            // Guardar el precio en CUP y USD
+            producto['precio_costo_usd'] = precioCostoUSD;
             producto['precio_costo_cup'] = precioCostoUSD * tasaCambio;
+            producto['tasa_cambio'] = tasaCambio;
           }
         } catch (e) {
           debugPrint('Error obteniendo precio de venta: $e');
@@ -233,6 +235,8 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
                 // Esperar un poco y cerrar pantalla de asignación
                 await Future.delayed(const Duration(milliseconds: 300));
                 if (mounted) {
+                  // Retornar a la vista de contratos (cerrar 2 pantallas)
+                  Navigator.pop(context);
                   Navigator.pop(context, true);
                 }
               } else {
@@ -602,30 +606,18 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
   }
 
   Widget _buildProductoTile(Map<String, dynamic> producto) {
-    final nombreProducto = producto['app_dat_producto']?['denominacion'] ?? 'Producto';
-    final sku = producto['app_dat_producto']?['sku'] ?? 'N/A';
+    // ✅ CORREGIDO: El RPC retorna campos planos, no anidados
+    final nombreProducto = producto['denominacion_producto'] as String? ?? 'Producto';
+    final sku = producto['sku_producto'] as String? ?? 'N/A';
     final stockDisponible = (producto['cantidad_final'] ?? 0).toDouble();
     final idInventario = producto['id'] as int;
     final isSelected = _productosSeleccionados[idInventario] ?? false;
     
-    // Obtener precio de costo (precio_promedio de presentación)
-    double precioCosto = 0.0;
-    try {
-      final presentacion = producto['app_dat_producto_presentacion'];
-      if (presentacion != null) {
-        if (presentacion is List && presentacion.isNotEmpty) {
-          precioCosto = (presentacion[0]['precio_promedio'] ?? 0).toDouble();
-        } else if (presentacion is Map) {
-          precioCosto = (presentacion['precio_promedio'] ?? 0).toDouble();
-        }
-      }
-    } catch (e) {
-      debugPrint('Error extrayendo precio de costo: $e');
-      precioCosto = 0.0;
-    }
+    // ✅ CORREGIDO: El RPC retorna precio_promedio directamente
+    double precioCosto = (producto['precio_promedio'] ?? 0).toDouble();
 
-    // Obtener precio de venta
-    double precioVenta = (producto['precio_venta'] ?? 0).toDouble();
+    // ✅ CORREGIDO: El RPC retorna precio_venta_cup directamente
+    double precioVenta = (producto['precio_venta_cup'] ?? 0).toDouble();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -708,77 +700,47 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     });
 
     try {
-      final response = await _supabase
-          .from('app_dat_inventario_productos')
-          .select('''
-            id,
-            cantidad_final,
-            id_producto,
-            id_presentacion,
-            app_dat_producto(
-              id,
-              denominacion,
-              sku
-            ),
-            app_dat_producto_presentacion(
-              precio_promedio
-            )
-          ''')
-          .eq('id_ubicacion', zonaId)
-          .gt('cantidad_final', 0)
-          .order('id', ascending: false); // Ordenar por ID descendente para obtener el más reciente
-
-      // Obtener precios de venta para cada producto
-      final productosConPrecios = [];
-      for (final item in response as List) {
-        final idProducto = item['id_producto'];
-        try {
-          final precioVentaResponse = await _supabase
-              .from('app_dat_precio_venta')
-              .select('precio_venta_cup')
-              .eq('id_producto', idProducto)
-              .limit(1);
-          
-          final precioVenta = (precioVentaResponse as List).isNotEmpty
-              ? (precioVentaResponse[0]['precio_venta_cup'] ?? 0).toDouble()
-              : 0.0;
-          
-          item['precio_venta'] = precioVenta;
-        } catch (e) {
-          debugPrint('Error obteniendo precio de venta: $e');
-          item['precio_venta'] = 0.0;
-        }
-        productosConPrecios.add(item);
-      }
-
-      // Agrupar por producto-presentación y obtener solo el último
-      final Map<String, Map<String, dynamic>> productosAgrupados = {};
+      // ✅ Convertir zonaId a int para asegurar el filtro correcto
+      final idUbicacion = int.tryParse(zonaId) ?? 0;
       
-      for (final item in productosConPrecios) {
-        final idProducto = item['id_producto'];
-        final idPresentacion = item['id_presentacion'] ?? 0;
-        final key = '${idProducto}_$idPresentacion';
-        
-        // Solo guardar si no existe (el primero es el más reciente por el order)
-        if (!productosAgrupados.containsKey(key)) {
-          productosAgrupados[key] = item as Map<String, dynamic>;
-        }
-      }
+      debugPrint('🔍 [INICIO] Cargando productos de zona: $zonaId (id_ubicacion: $idUbicacion)');
+      final stopwatch = Stopwatch()..start();
+      
+      // ✅ NUEVO: Usar RPC optimizada en lugar de queries múltiples
+      debugPrint('📡 [QUERY] Llamando RPC get_productos_zona_consignacion...');
+      final response = await _supabase.rpc(
+        'get_productos_zona_consignacion',
+        params: {'p_id_ubicacion': idUbicacion},
+      ) as List;
+      
+      stopwatch.stop();
+      debugPrint('✅ [RPC] Productos cargados en ${stopwatch.elapsedMilliseconds}ms: ${response.length} registros');
 
-      // Convertir a lista y ordenar por nombre de producto
-      final productosFiltrados = productosAgrupados.values.toList();
-      productosFiltrados.sort((a, b) {
-        final nombreA = a['app_dat_producto']?['denominacion'] ?? '';
-        final nombreB = b['app_dat_producto']?['denominacion'] ?? '';
-        return nombreA.compareTo(nombreB);
-      });
+      // ✅ VALIDACIÓN: Verificar que todos los productos pertenecen a la zona correcta
+      final productosValidados = response.where((item) {
+        final idUbicacionProducto = item['id_ubicacion'] as int?;
+        if (idUbicacionProducto != idUbicacion) {
+          debugPrint('⚠️ [VALIDACIÓN] Producto ${item['id']} tiene id_ubicacion=$idUbicacionProducto, esperaba $idUbicacion');
+          return false;
+        }
+        return true;
+      }).toList();
+      
+      debugPrint('✅ [VALIDACIÓN] Productos validados: ${productosValidados.length} de ${response.length}');
+
+      // ✅ OPTIMIZACIÓN: La RPC ya retorna un registro por producto-presentación
+      // No necesitamos agrupar ni ordenar (la RPC ya ordena por denominacion_producto)
+      debugPrint('📋 [PROCESAMIENTO] Convirtiendo respuesta a lista...');
+      final productosFiltrados = List<Map<String, dynamic>>.from(productosValidados);
+
+      debugPrint('✅ [FINAL] Zona $zonaId tiene ${productosFiltrados.length} productos únicos (tiempo total: ${stopwatch.elapsedMilliseconds}ms)');
 
       setState(() {
         _zonasInventario[zonaKey] = productosFiltrados;
         _loadingZonas[zonaKey] = false;
       });
     } catch (e) {
-      debugPrint('Error cargando productos de zona: $e');
+      debugPrint('❌ [ERROR] Error cargando productos de zona: $e');
       setState(() {
         _zonasInventario[zonaKey] = [];
         _loadingZonas[zonaKey] = false;
@@ -850,6 +812,7 @@ class _ConsignacionProductosConfigScreenState
   late Map<int, Map<String, dynamic>> _productosConfig; // id_inventario -> config
   List<Map<String, dynamic>> _almacenesDestino = [];
   bool _cargandoAlmacenes = true;
+  bool _guardando = false; // ✅ Estado de guardado
   final _supabase = Supabase.instance.client;
 
   @override
@@ -860,8 +823,7 @@ class _ConsignacionProductosConfigScreenState
     for (final producto in widget.productos) {
       _productosConfig[producto['id']] = {
         'cantidad': 0.0,
-        'precio_venta_sugerido': null,
-        'puede_modificar_precio': false,
+        'precio_venta': null, // ✅ Cambiado de precio_venta_sugerido a precio_venta (obligatorio)
       };
     }
     _loadAlmacenes();
@@ -893,43 +855,100 @@ class _ConsignacionProductosConfigScreenState
 
   void _confirmarConfiguracion() {
 
-    // Validar que todos los productos tengan cantidad > 0
+    // Validar que todos los productos tengan cantidad > 0 y precio de venta
     bool todosValidos = true;
+    String? mensajeError;
+    
     for (final config in _productosConfig.values) {
       if ((config['cantidad'] as double) <= 0) {
         todosValidos = false;
+        mensajeError = 'Todos los productos deben tener cantidad > 0';
+        break;
+      }
+      // ✅ NUEVO: Validar que el precio de venta sea obligatorio
+      if (config['precio_venta'] == null || (config['precio_venta'] as double) <= 0) {
+        todosValidos = false;
+        mensajeError = 'Todos los productos deben tener un precio de venta válido';
         break;
       }
     }
 
     if (!todosValidos) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Todos los productos deben tener cantidad > 0'),
+        SnackBar(
+          content: Text(mensajeError ?? 'Error de validación'),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
 
+    // Mostrar diálogo de carga
+    _mostrarDialogoGuardando();
+
     // Construir lista de productos configurados
     final productosConfigurados = <Map<String, dynamic>>[];
     for (final producto in widget.productos) {
       final idInventario = producto['id'] as int;
       final config = _productosConfig[idInventario]!;
+      final tasaCambio = (producto['tasa_cambio'] ?? 440.0).toDouble();
+      
+      // Convertir el precio de venta en CUP a USD para enviarlo como precio de costo al consignatario
+      final precioVentaUSD = (config['precio_venta'] ?? 0) / tasaCambio;
       
       productosConfigurados.add({
         'id_producto': producto['id_producto'],
+        'id_variante': producto['id_variante'],
         'id_ubicacion': producto['id_ubicacion'], // Guardar ubicación de origen
         'id_presentacion': producto['id_presentacion'],
         'cantidad': config['cantidad'],
-        'precio_venta_sugerido': config['precio_venta_sugerido'],
-        'puede_modificar_precio': config['puede_modificar_precio'],
+        'precio_costo_unitario': precioVentaUSD, // ✅ Precio en USD que será el costo para el consignatario
+        'puede_modificar_precio': false, // Por defecto no se puede modificar
         'nombre_producto': producto['app_dat_producto']?['denominacion'] ?? 'Producto',
       });
     }
 
     widget.onConfirm(productosConfigurados);
+  }
+
+  /// Mostrar diálogo de guardando
+  void _mostrarDialogoGuardando() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Guardando productos...',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Por favor espera mientras se guardan los datos',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -988,8 +1007,10 @@ class _ConsignacionProductosConfigScreenState
                 final sku = producto['app_dat_producto']?['sku'] ?? 'N/A';
                 final stockDisponible = (producto['cantidad_final'] ?? 0).toDouble();
 
-                // Extraer precio de costo (ya convertido a CUP en _procederConConfiguracion)
-                double precioCosto = (producto['precio_costo_cup'] ?? 0).toDouble();
+                // Extraer precios de costo
+                double precioCostoCUP = (producto['precio_costo_cup'] ?? 0).toDouble();
+                double precioCostoUSD = (producto['precio_costo_usd'] ?? 0).toDouble();
+                double tasaCambio = (producto['tasa_cambio'] ?? 440.0).toDouble();
 
                 // Extraer precio de venta
                 double precioVenta = (producto['precio_venta'] ?? 0).toDouble();
@@ -1043,19 +1064,19 @@ class _ConsignacionProductosConfigScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'Detalle de Precios',
+                                'Detalle de Precios en Tienda',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              // Precio de costo
+                              // Precio de costo en CUP
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    'Precio de Costo:',
+                                    'Precio Costo (CUP):',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Colors.grey[700],
@@ -1068,7 +1089,7 @@ class _ConsignacionProductosConfigScreenState
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
-                                      '\$${precioCosto.toStringAsFixed(2)}',
+                                      '\$${precioCostoCUP.toStringAsFixed(2)} CUP',
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         color: Colors.orange[700],
@@ -1079,41 +1100,12 @@ class _ConsignacionProductosConfigScreenState
                                 ],
                               ),
                               const SizedBox(height: 8),
-                              // Precio de venta
+                              // Precio de costo en USD
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    'Precio de Venta:',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[700],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.green.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      '\$${precioVenta.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.green[700],
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              // Margen
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Margen de Ganancia:',
+                                    'Precio Costo (USD):',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Colors.grey[700],
@@ -1126,7 +1118,7 @@ class _ConsignacionProductosConfigScreenState
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
-                                      '\$${(precioVenta - precioCosto).toStringAsFixed(2)}',
+                                      '\$${precioCostoUSD.toStringAsFixed(2)} USD',
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         color: Colors.blue[700],
@@ -1136,8 +1128,157 @@ class _ConsignacionProductosConfigScreenState
                                   ),
                                 ],
                               ),
+                              const SizedBox(height: 8),
+                              // Precio de venta en tienda (CUP)
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Precio Venta Tienda:',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '\$${precioVenta.toStringAsFixed(2)} CUP',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green[700],
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              // Precio de venta en tienda (CUP)
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Ganancia en Tienda:',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '\$${(precioVenta - precioCostoCUP).toStringAsFixed(2)} CUP',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green[700],
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
+                        ),
+                        const SizedBox(height: 12),
+                        // ✅ Precio de venta (ahora obligatorio) - Split row
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Left half: CUP price input
+                            Expanded(
+                              child: TextFormField(
+                                initialValue: config['precio_venta']?.toString() ?? '',
+                                decoration: InputDecoration(
+                                  labelText: 'Precio Venta (CUP) *',
+                                  hintText: 'Precio en CUP',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  prefixIcon: const Icon(Icons.attach_money),
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (value) {
+                                  setState(() {
+                                    config['precio_venta'] = value.isEmpty ? null : double.tryParse(value);
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Right half: USD conversion and profit margin
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.blue.shade200),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // USD conversion
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'En USD:',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                        Text(
+                                          '\$${((config['precio_venta'] ?? 0) / tasaCambio).toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue[700],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    const Divider(height: 1),
+                                    const SizedBox(height: 6),
+                                    // Profit margin vs USD cost
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Ganancia USD:',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                        Text(
+                                          '\$${(((config['precio_venta'] ?? 0) / tasaCambio) - precioCostoUSD).toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: ((config['precio_venta'] ?? 0) / tasaCambio) > precioCostoUSD 
+                                                ? Colors.green[700] 
+                                                : Colors.red[700],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 16),
 
@@ -1157,64 +1298,6 @@ class _ConsignacionProductosConfigScreenState
                               config['cantidad'] = double.tryParse(value) ?? 0.0;
                             });
                           },
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Precio sugerido
-                        TextFormField(
-                          initialValue: config['precio_venta_sugerido']?.toString() ?? '',
-                          decoration: InputDecoration(
-                            labelText: 'Precio sugerido (Opcional)',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            prefixIcon: const Icon(Icons.attach_money),
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          onChanged: (value) {
-                            setState(() {
-                              config['precio_venta_sugerido'] = value.isEmpty ? null : double.tryParse(value);
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Checkbox: Puede modificar precio
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blue.shade200),
-                          ),
-                          child: Row(
-                            children: [
-                              Checkbox(
-                                value: config['puede_modificar_precio'] as bool,
-                                onChanged: (value) {
-                                  setState(() {
-                                    config['puede_modificar_precio'] = value ?? false;
-                                  });
-                                },
-                                activeColor: AppColors.primary,
-                              ),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Consignatario puede modificar precio',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
-                                    ),
-                                    Text(
-                                      'Permitir cambiar el precio sugerido',
-                                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
                       ],
                     ),
