@@ -267,24 +267,35 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       // ✅ NUEVO: En modo edición, cargar categoría y subcategorías ANTES del setState
       List<Map<String, dynamic>> subcategoriasParaEdicion = [];
+      bool categoriaExisteEnTienda = true; // ✅ NUEVO: Flag para verificar si la categoría existe
       if (widget.product != null) {
         print('🏷️ Precargando categoría y subcategorías para edición...');
         final categoryId = int.tryParse(widget.product!.categoryId);
         if (categoryId != null) {
           // Asignar categorías temporalmente para poder buscar
           _categorias = futures[0];
-          subcategoriasParaEdicion = _loadSubcategoriasSyncDirect(categoryId);
-          print('✅ Subcategorías precargadas: ${subcategoriasParaEdicion.length}');
           
-          // ✅ NUEVO: Si no hay subcategorías en la categoría, cargar desde API
-          if (subcategoriasParaEdicion.isEmpty && widget.product!.subcategorias.isNotEmpty) {
-            print('⚠️ No hay subcategorías en categoría pero el producto tiene subcategorías asignadas');
-            print('🔄 Cargando subcategorías desde API...');
-            try {
-              subcategoriasParaEdicion = await ProductService.getSubcategorias(categoryId);
-              print('✅ Subcategorías cargadas desde API: ${subcategoriasParaEdicion.length}');
-            } catch (e) {
-              print('❌ Error cargando subcategorías desde API: $e');
+          // ✅ NUEVO: Verificar si la categoría existe en la tienda
+          final categoriaEncontrada = _categorias.any((cat) => cat['id'] == categoryId);
+          categoriaExisteEnTienda = categoriaEncontrada;
+          
+          if (!categoriaEncontrada) {
+            print('⚠️ La categoría ID $categoryId no existe en esta tienda');
+            print('ℹ️ El usuario deberá seleccionar manualmente la categoría');
+          } else {
+            subcategoriasParaEdicion = _loadSubcategoriasSyncDirect(categoryId);
+            print('✅ Subcategorías precargadas: ${subcategoriasParaEdicion.length}');
+            
+            // ✅ NUEVO: Si no hay subcategorías en la categoría, cargar desde API
+            if (subcategoriasParaEdicion.isEmpty && widget.product!.subcategorias.isNotEmpty) {
+              print('⚠️ No hay subcategorías en categoría pero el producto tiene subcategorías asignadas');
+              print('🔄 Cargando subcategorías desde API...');
+              try {
+                subcategoriasParaEdicion = await ProductService.getSubcategorias(categoryId);
+                print('✅ Subcategorías cargadas desde API: ${subcategoriasParaEdicion.length}');
+              } catch (e) {
+                print('❌ Error cargando subcategorías desde API: $e');
+              }
             }
           }
         }
@@ -442,6 +453,19 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('🔍 Parsed categoryId: $categoryId');
       
       if (categoryId != null) {
+        // ✅ NUEVO: Verificar si la categoría existe en la tienda
+        final categoriaExiste = _categorias.any((cat) => cat['id'] == categoryId);
+        
+        if (!categoriaExiste) {
+          print('⚠️ La categoría ID $categoryId no existe en esta tienda');
+          print('ℹ️ No se seleccionará automáticamente. Usuario debe elegir manualmente.');
+          // ✅ IMPORTANTE: Limpiar _selectedCategoryId y _selectedSubcategorias
+          _selectedCategoryId = null;
+          _selectedSubcategorias.clear();
+          print('🧹 _selectedCategoryId y _selectedSubcategorias limpiados');
+          return;
+        }
+        
         _selectedCategoryId = categoryId;
         print('✅ Categoría cargada: ID $categoryId');
 
@@ -468,7 +492,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
     } catch (e) {
       print('❌ Error cargando categoría y subcategorías: $e');
-      _showErrorSnackBar('Error al cargar categoría y subcategorías: $e');
+      // ✅ MODIFICADO: No mostrar error al usuario, solo log
+      print('ℹ️ El usuario deberá seleccionar la categoría manualmente');
+      // ✅ IMPORTANTE: Limpiar selecciones en caso de error
+      _selectedCategoryId = null;
+      _selectedSubcategorias.clear();
     }
   }
 
@@ -486,13 +514,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
           return catId == categoryId;
         },
         orElse: () {
-          print('⚠️ No se encontró categoría con ID $categoryId');
+          print('⚠️ No se encontró categoría con ID $categoryId en la tienda');
           return <String, dynamic>{};
         },
       );
 
       if (categoria.isEmpty) {
-        print('❌ Categoría no encontrada');
+        print('ℹ️ Categoría no encontrada en esta tienda');
+        print('ℹ️ El usuario deberá seleccionar la categoría manualmente');
         return [];
       }
 
