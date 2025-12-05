@@ -1,8 +1,40 @@
 {
-  "current_version": "1.4.1",
-  "build": 141,
+  "current_version": "1.5.0",
+  "build": 150,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.5.0",
+      "date": "2025-12-05",
+      "title": "💰 Sistema Completo de Liquidaciones de Consignación",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Módulo de Liquidaciones con Conversión CUP/USD",
+          "description": "Nuevo sistema completo para gestionar liquidaciones de contratos de consignación con conversión automática de CUP a USD usando tasas de cambio en tiempo real"
+        },
+        {
+          "type": "feature",
+          "title": "Pantalla de Gestión de Liquidaciones",
+          "description": "Nueva pantalla completa con listado de liquidaciones, filtros por estado (pendiente/confirmada/rechazada), totales y acciones según rol de usuario"
+        },
+        {
+          "type": "feature",
+          "title": "Estadísticas de Liquidaciones en Detalle de Contrato",
+          "description": "Visualización de monto total del contrato, total liquidado y saldo pendiente en USD y CUP directamente en el detalle del contrato"
+        },
+        {
+          "type": "feature",
+          "title": "Cálculo Automático de Monto Total de Contrato",
+          "description": "El sistema calcula y actualiza automáticamente el monto_total del contrato al confirmar productos enviados en consignación"
+        },
+        {
+          "type": "improvement",
+          "title": "Visualización Dual de Monedas",
+          "description": "Todos los montos se muestran tanto en USD como en CUP con diseño visual diferenciado y colores distintivos"
+        }
+      ]
+    },
     {
       "version": "1.4.1",
       "date": "2025-11-30",
@@ -10,7 +42,7 @@
       "changes": [
         {
           "type": "fix",
-          "title": "Correcciones menores en detalle de producto e improtación de inventario desde excel",
+          "title": "Correcciones menores en detalle de producto e importación de inventario desde excel",
           "description": "Correcta visualización del detalle de los precios en el detalle de producto y manejo de importación desde excel"
         }
       ]
@@ -244,7 +276,7 @@
         }
       ]
     },
-     {
+    {
       "version": "1.1.1",
       "date": "2025-10-25",
       "title": "🔧 Correcciones de Validación y Selección de Fechas",
