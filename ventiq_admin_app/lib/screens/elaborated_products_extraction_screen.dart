@@ -116,7 +116,7 @@ class _ElaboratedProductsExtractionScreenState
 
     try {
       // Load warehouses from Supabase database using pagination
-      final response = await _warehouseService.listWarehousesWithPagination(
+      final response = await _warehouseService.listWarehousesWithPaginationOK(
         pagina: 1,
         porPagina: 100, // Obtener todos los almacenes
       );

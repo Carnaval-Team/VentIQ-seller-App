@@ -57,7 +57,7 @@ class _InventoryAdjustmentScreenState extends State<InventoryAdjustmentScreen> {
     setState(() => _isLoadingZones = true);
     try {
       // Obtener todos los almacenes/zonas disponibles
-      final warehouses = await WarehouseService().listWarehouses();
+      final warehouses = await WarehouseService().listWarehousesOK();
       
       // Convertir almacenes a formato de zonas para el dropdown
       final warehousesWithZones = warehouses.map((warehouse) => {

@@ -95,11 +95,13 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
             final idSeller =
                 sellerData['id']
                     as int; // ID del vendedor desde app_dat_vendedor
+            final idAlmacen = sellerProfile['idAlmacen'];
 
             print('🔍 IDs extraídos por separado:');
             print('  - ID TPV (app_dat_vendedor): $idTpv');
             print('  - ID Tienda (app_dat_trabajadores): $idTienda');
             print('  - ID Seller (app_dat_vendedor): $idSeller');
+            print('  - ID Almacen (app_dat_tpv): $idAlmacen');
 
             // Guardar datos del vendedor
             await _userPreferencesService.saveSellerData(
@@ -109,6 +111,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
 
             // Guardar ID del vendedor
             await _userPreferencesService.saveIdSeller(idSeller);
+            await _userPreferencesService.saveIdAlmacen(idAlmacen);
 
             // Guardar perfil del trabajador
             await _userPreferencesService.saveWorkerProfile(
@@ -263,7 +266,7 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                           BlendMode.srcIn,
                         ),
                         child: Image.asset(
-                          'assets/ventas.png',
+                          'assets/inventia_logo.png',
                           width: 80,
                           height: 80,
                           fit: BoxFit.contain,
@@ -273,14 +276,14 @@ class _LoginWebScreenState extends State<LoginWebScreen> {
                     const SizedBox(height: 24),
 
                     // Título
-                    const Text(
+                    /* const Text(
                       'VentIQ POS',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF2D3748),
                       ),
-                    ),
+                    ), */
                     const SizedBox(height: 8),
 
                     // Subtítulo

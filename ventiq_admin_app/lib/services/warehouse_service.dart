@@ -87,6 +87,86 @@ class WarehouseService {
     }
   }
 
+   /// Lista almacenes con paginación usando Supabase RPC
+  Future<WarehousePaginationResponse> listWarehousesWithPaginationOK({
+    String? denominacionFilter,
+    String? direccionFilter,
+    int? tiendaFilter,
+    int pagina = 1,
+    int porPagina = 10,
+  }) async {
+    print('🚀 === INICIANDO listWarehousesWithPagination ===');
+    try {
+      // Obtener UUID del usuario para la consulta
+      print('🔑 Obteniendo UUID del usuario...');
+      final userId = await _prefsService.getUserId();
+      if (userId == null) {
+        print('❌ Usuario ID es null - no se puede continuar');
+        throw Exception('No se encontró el ID de usuario');
+      }
+      print('✅ Usuario ID obtenido: $userId');
+
+      print('🔍 Preparando llamada RPC fn_listar_almacenes_paginado:');
+      print('  - Usuario ID: $userId');
+      print('  - Denominación: $denominacionFilter');
+      print('  - Dirección: $direccionFilter');
+      print('  - Tienda: $tiendaFilter');
+      print('  - Página: $pagina');
+      print('  - Por página: $porPagina');
+
+      print('📡 Ejecutando RPC...');
+      final response = await _supabase.rpc(
+        'fn_listar_almacenes_paginado',
+        params: {
+          'p_uuid': userId,
+          'p_denominacion_filter': denominacionFilter,
+          'p_direccion_filter': direccionFilter,
+          'p_tienda_filter': tiendaFilter,
+          'p_pagina': pagina,
+          'p_por_pagina': porPagina,
+        },
+      );
+
+      print('✅ Respuesta de Supabase recibida!');
+      print('  - Tipo: ${response.runtimeType}');
+      print('  - Es null: ${response == null}');
+      print('  - Contenido: $response');
+
+      if (response == null) {
+        print('⚠️ Respuesta es null - usando datos mock');
+        throw Exception('Respuesta de Supabase es null');
+      }
+
+      print('🔄 Parseando respuesta...');
+
+      // Check if response has success structure
+      if (response['success'] == false) {
+        throw Exception(response['message'] ?? 'Error en la consulta RPC');
+      }
+
+      // Extract data from the response
+      final data = response['data'];
+      if (data == null) {
+        throw Exception('No se encontraron datos en la respuesta');
+      }
+
+      final parsedResponse = WarehousePaginationResponse.fromJson(data);
+      print('✅ Respuesta parseada exitosamente:');
+      print('  - Almacenes: ${parsedResponse.almacenes.length}');
+      print('  - Página actual: ${parsedResponse.paginacion.paginaActual}');
+      print('  - Total páginas: ${parsedResponse.paginacion.totalPaginas}');
+      print('  - Total almacenes: ${parsedResponse.paginacion.totalAlmacenes}');
+
+      return parsedResponse;
+    } catch (e, stackTrace) {
+      print('❌ ERROR en listWarehousesWithPaginationOK: $e');
+      print('📍 Stack trace: $stackTrace');
+      rethrow;
+    } finally {
+      print('🏁 === FIN listWarehousesWithPaginationOK ===');
+    }
+  }
+
   /// Método de compatibilidad para mantener la interfaz existente
   Future<List<Warehouse>> listWarehouses({
     String? storeId,
@@ -94,6 +174,25 @@ class WarehouseService {
   }) async {
     try {
       final response = await listWarehousesWithPagination(
+        denominacionFilter: search,
+        tiendaFilter:
+            storeId != null && storeId != 'all' ? int.tryParse(storeId) : null,
+        pagina: 1,
+        porPagina: 100, // Obtener muchos para compatibilidad
+      );
+      return response.almacenes;
+    } catch (e) {
+      print('❌ Error en listWarehouses: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Warehouse>> listWarehousesOK({
+    String? storeId,
+    String? search,
+  }) async {
+    try {
+      final response = await listWarehousesWithPaginationOK(
         denominacionFilter: search,
         tiendaFilter:
             storeId != null && storeId != 'all' ? int.tryParse(storeId) : null,

@@ -21,6 +21,7 @@ class LocationSelectorWidget extends StatefulWidget {
   final bool showLocationInfo;
   final bool isRequired;
   final String? validationMessage;
+  final bool includeConsignations;
 
   const LocationSelectorWidget({
     Key? key,
@@ -36,6 +37,7 @@ class LocationSelectorWidget extends StatefulWidget {
     this.showLocationInfo = true,
     this.isRequired = true,
     this.validationMessage,
+    this.includeConsignations = false,
   }) : super(key: key);
 
   @override
@@ -62,7 +64,12 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
       });
 
       final warehouseService = WarehouseService();
-      final warehouses = await warehouseService.listWarehouses();
+      List<Warehouse> warehouses = [];
+      if(widget.includeConsignations){
+        warehouses = await warehouseService.listWarehouses();
+      }else{
+        warehouses = await warehouseService.listWarehousesOK();
+      }
 
       print('🏢 === DEBUGGING LocationSelectorWidget ===');
       print('🏢 Almacenes recibidos: ${warehouses.length}');

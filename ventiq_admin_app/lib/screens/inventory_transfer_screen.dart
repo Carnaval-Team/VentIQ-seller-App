@@ -69,7 +69,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     try {
       setState(() => _isLoadingWarehouses = true);
       final warehouseService = WarehouseService();
-      final warehouses = await warehouseService.listWarehouses();
+      final warehouses = await warehouseService.listWarehousesOK();
 
       setState(() {
         _warehouses = warehouses;
