@@ -568,28 +568,40 @@ class OrderService {
       print('order.items.length: ${order.items.length}');
       // Agrupar pagos por método de pago
       Map<int, double> paymentsByMethod = {};
+      // Mapa para rastrear el tipo de pago (1 o 2) para cada método de pago
+      Map<int, int> paymentTypeByMethod = {};
 
       for (final item in order.items) {
-      int _tipo_pago_actual = 1;
         if (item.paymentMethod != null) {
           // Convertir método especial "Pago Regular (Efectivo)" (ID 999) a efectivo (ID 1)
           int actualMethodId = item.paymentMethod!.id;
+          int tipoPago = 1; // Por defecto tipo 1 (efectivo)
+
+          // Determinar el tipo de pago
           if (actualMethodId == 999) {
-            _tipo_pago_actual = 2;
+            // Método especial 999 -> convertir a efectivo (ID 1) con tipo 2
+            tipoPago = 2;
             actualMethodId = 1; // Convertir a efectivo normal
             print(
-              '🔄 Convirtiendo método especial "Pago Regular (Efectivo)" a método ID 1 (efectivo)',
+              '🔄 Convirtiendo método especial "Pago Regular (Efectivo)" (ID 999) a método ID 1 (efectivo) con tipo_pago 2',
             );
+          } else if (actualMethodId != 1) {
+            // Otros métodos de pago (no efectivo) -> tipo 2
+            tipoPago = 2;
           }
+          // Si actualMethodId == 1 (efectivo normal), tipoPago = 1 (por defecto)
 
           final itemTotal = item.subtotal;
 
           paymentsByMethod[actualMethodId] =
               (paymentsByMethod[actualMethodId] ?? 0.0) + itemTotal;
 
+          // Guardar el tipo de pago para este método
+          paymentTypeByMethod[actualMethodId] = tipoPago;
+
           print('Item: ${item.nombre}');
           print(
-            'Payment Method: ${item.paymentMethod!.denominacion} (Original ID: ${item.paymentMethod!.id}, Final ID: $actualMethodId)',
+            'Payment Method: ${item.paymentMethod!.denominacion} (Original ID: ${item.paymentMethod!.id}, Final ID: $actualMethodId, Tipo Pago: $tipoPago)',
           );
           print('Item Total: \$${itemTotal.toStringAsFixed(2)}');
         } else {
@@ -598,6 +610,7 @@ class OrderService {
       }
 
       print('Payments by method: $paymentsByMethod');
+      print('Payment types by method: $paymentTypeByMethod');
 
       if (paymentsByMethod.isEmpty) {
         return {
@@ -614,6 +627,7 @@ class OrderService {
         pagos.add({
           'id_medio_pago': entry.key,
           'monto': entry.value,
+          'tipo_pago': paymentTypeByMethod[entry.key] ?? 1, // Agregar tipo_pago
           'referencia_pago':
               'Pago App Vendedor - ${DateTime.now().millisecondsSinceEpoch}',
         });

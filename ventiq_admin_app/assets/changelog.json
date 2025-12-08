@@ -1,8 +1,40 @@
 {
-  "current_version": "1.5.0",
-  "build": 150,
+  "current_version": "1.5.1",
+  "build": 151,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.5.1",
+      "date": "2025-12-08",
+      "title": "💳 Desglose Mejorado de Métodos de Pago",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Separación de Pagos en Efectivo",
+          "description": "Ahora puedes ver claramente la diferencia entre pagos en efectivo con descuento (Oferta) y pagos en efectivo regulares en todos los reportes de ventas."
+        },
+        {
+          "type": "feature",
+          "title": "Totales Separados en Órdenes",
+          "description": "Al ver el detalle de órdenes de un vendedor, los totales ahora se muestran separados: Efectivo (Oferta), Efectivo (Regular) y Transferencias, cada uno con su propio color distintivo."
+        },
+        {
+          "type": "feature",
+          "title": "Totales en Órdenes Pendientes",
+          "description": "Las órdenes pendientes también muestran los totales separados por tipo de pago, ayudándote a tener un mejor control del dinero que esperas recibir."
+        },
+        {
+          "type": "improvement",
+          "title": "Identificación Visual Mejorada",
+          "description": "Cada tipo de pago tiene su propio color e ícono: verde oscuro con etiqueta de oferta para efectivo con descuento, verde claro para efectivo regular, y azul para transferencias."
+        },
+        {
+          "type": "improvement",
+          "title": "Reportes Más Precisos",
+          "description": "Con esta separación puedes analizar mejor qué porcentaje de tus ventas se hacen con descuento y tomar mejores decisiones comerciales."
+        }
+      ]
+    },
     {
       "version": "1.5.0",
       "date": "2025-12-05",

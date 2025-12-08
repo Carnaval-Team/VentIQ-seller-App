@@ -1409,6 +1409,35 @@ class _SalesScreenState extends State<SalesScreen>
 
       if (!mounted) return;
 
+      // Calcular totales separados por tipo de pago
+      double totalEfectivoOferta = 0.0; // tipo_pago = 1
+      double totalEfectivoRegular = 0.0; // tipo_pago = 2
+      double totalTransferencias = 0.0;
+
+      for (final order in orders) {
+        if (order.detalles['pagos'] != null) {
+          final pagos = order.detalles['pagos'] as List;
+          for (final pago in pagos) {
+            final metodoPago =
+                pago['medio_pago']?.toString().toLowerCase() ?? '';
+            final total = (pago['total'] ?? 0.0).toDouble();
+            final esEfectivo = pago['es_efectivo'] ?? false;
+            final tipoPago = pago['tipo_pago'] ?? 1;
+
+            if (esEfectivo && metodoPago.contains('efectivo')) {
+              // Separar efectivo por tipo_pago
+              if (tipoPago == 1) {
+                totalEfectivoOferta += total;
+              } else if (tipoPago == 2) {
+                totalEfectivoRegular += total;
+              }
+            } else if (metodoPago.contains('transferencia')) {
+              totalTransferencias += total;
+            }
+          }
+        }
+      }
+
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -1462,6 +1491,127 @@ class _SalesScreenState extends State<SalesScreen>
                                         fontSize: 14,
                                         color: Colors.grey[600],
                                       ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    // Totales separados por tipo de pago
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        // Efectivo Oferta (tipo_pago = 1)
+                                        if (totalEfectivoOferta > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.shade700
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: Colors.green.shade700
+                                                    .withOpacity(0.3),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.local_offer,
+                                                  size: 16,
+                                                  color: Colors.green.shade700,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Efectivo (Oferta): \$${totalEfectivoOferta.toStringAsFixed(2)}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color:
+                                                        Colors.green.shade700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        // Efectivo Regular (tipo_pago = 2)
+                                        if (totalEfectivoRegular > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.success
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: AppColors.success
+                                                    .withOpacity(0.3),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.attach_money,
+                                                  size: 16,
+                                                  color: AppColors.success,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Efectivo (Regular): \$${totalEfectivoRegular.toStringAsFixed(2)}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: AppColors.success,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        // Transferencias
+                                        if (totalTransferencias > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.info.withOpacity(
+                                                0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: AppColors.info
+                                                    .withOpacity(0.3),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.account_balance,
+                                                  size: 16,
+                                                  color: AppColors.info,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: AppColors.info,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -1749,38 +1899,58 @@ class _SalesScreenState extends State<SalesScreen>
                                                           null)
                                                         ...() {
                                                           // Obtener lista de items
-                                                          final items = order.detalles['items'] as List;
-                                                          
+                                                          final items =
+                                                              order.detalles['items']
+                                                                  as List;
+
                                                           // Filtrar productos con precio_unitario = 0.0 y eliminar duplicados
-                                                          final seenProductIds = <dynamic>{};
-                                                          final uniqueItems = items.where((item) {
-                                                            final precioUnitario = (item['precio_unitario'] ?? 0.0).toDouble();
-                                                            
-                                                            // Filtrar productos con precio 0
-                                                            if (precioUnitario == 0.0) {
-                                                              return false;
-                                                            }
-                                                            
-                                                            // Obtener ID del producto para verificar duplicados
-                                                            final productId = item['id_producto'] ?? item['producto_id'] ?? item['id'];
-                                                            
-                                                            // Si ya vimos este producto, no lo incluimos
-                                                            if (seenProductIds.contains(productId)) {
-                                                              return false;
-                                                            }
-                                                            
-                                                            // Agregar a la lista de vistos
-                                                            seenProductIds.add(productId);
-                                                            return true;
-                                                          }).toList();
-                                                          
+                                                          final seenProductIds =
+                                                              <dynamic>{};
+                                                          final uniqueItems =
+                                                              items.where((
+                                                                item,
+                                                              ) {
+                                                                final precioUnitario =
+                                                                    (item['precio_unitario'] ??
+                                                                            0.0)
+                                                                        .toDouble();
+
+                                                                // Filtrar productos con precio 0
+                                                                if (precioUnitario ==
+                                                                    0.0) {
+                                                                  return false;
+                                                                }
+
+                                                                // Obtener ID del producto para verificar duplicados
+                                                                final productId =
+                                                                    item['id_producto'] ??
+                                                                    item['producto_id'] ??
+                                                                    item['id'];
+
+                                                                // Si ya vimos este producto, no lo incluimos
+                                                                if (seenProductIds
+                                                                    .contains(
+                                                                      productId,
+                                                                    )) {
+                                                                  return false;
+                                                                }
+
+                                                                // Agregar a la lista de vistos
+                                                                seenProductIds
+                                                                    .add(
+                                                                      productId,
+                                                                    );
+                                                                return true;
+                                                              }).toList();
+
                                                           // Generar widgets para items únicos
-                                                          return uniqueItems.map((item) {
+                                                          return uniqueItems.map((
+                                                            item,
+                                                          ) {
                                                             return Container(
                                                               margin:
                                                                   const EdgeInsets.only(
-                                                                    bottom:
-                                                                        6,
+                                                                    bottom: 6,
                                                                   ),
                                                               padding:
                                                                   const EdgeInsets.all(
@@ -1821,7 +1991,8 @@ class _SalesScreenState extends State<SalesScreen>
                                                                     child: Text(
                                                                       'x${item['cantidad']}',
                                                                       textAlign:
-                                                                          TextAlign.center,
+                                                                          TextAlign
+                                                                              .center,
                                                                       style: TextStyle(
                                                                         fontSize:
                                                                             13,
@@ -1835,7 +2006,8 @@ class _SalesScreenState extends State<SalesScreen>
                                                                     child: Text(
                                                                       '\$${(item['importe'] ?? 0.0).toStringAsFixed(2)}',
                                                                       textAlign:
-                                                                          TextAlign.right,
+                                                                          TextAlign
+                                                                              .right,
                                                                       style: const TextStyle(
                                                                         fontWeight:
                                                                             FontWeight.w600,
@@ -1955,8 +2127,35 @@ class _SalesScreenState extends State<SalesScreen>
                                                                   ),
                                                                   Expanded(
                                                                     child: Text(
-                                                                      payment['medio_pago'] ??
-                                                                          'N/A',
+                                                                      () {
+                                                                        String
+                                                                        metodoPago =
+                                                                            payment['medio_pago'] ??
+                                                                            'N/A';
+                                                                        bool
+                                                                        esEfectivo =
+                                                                            payment['es_efectivo'] ??
+                                                                            false;
+                                                                        int
+                                                                        tipoPago =
+                                                                            payment['tipo_pago'] ??
+                                                                            1;
+
+                                                                        // Si es efectivo, diferenciar según tipo_pago
+                                                                        if (esEfectivo &&
+                                                                            metodoPago.toLowerCase().contains(
+                                                                              'efectivo',
+                                                                            )) {
+                                                                          if (tipoPago ==
+                                                                              1) {
+                                                                            return 'Pago Oferta (Efectivo)';
+                                                                          } else if (tipoPago ==
+                                                                              2) {
+                                                                            return 'Pago Regular (Efectivo)';
+                                                                          }
+                                                                        }
+                                                                        return metodoPago;
+                                                                      }(),
                                                                       style: TextStyle(
                                                                         fontSize:
                                                                             13,
@@ -2120,8 +2319,18 @@ class _SalesScreenState extends State<SalesScreen>
       double monto = (pago['total'] ?? 0.0).toDouble();
       bool esEfectivo = pago['es_efectivo'] ?? false;
       bool esDigital = pago['es_digital'] ?? false;
+      int tipoPago = pago['tipo_pago'] ?? 1; // Obtener tipo_pago, por defecto 1
 
-      String key = '$metodoPago-$esEfectivo-$esDigital';
+      // Si es efectivo, diferenciar según tipo_pago
+      if (esEfectivo && metodoPago.toLowerCase().contains('efectivo')) {
+        if (tipoPago == 1) {
+          metodoPago = 'Pago Oferta (Efectivo)';
+        } else if (tipoPago == 2) {
+          metodoPago = 'Pago Regular (Efectivo)';
+        }
+      }
+
+      String key = '$metodoPago-$esEfectivo-$esDigital-$tipoPago';
       if (paymentSummary.containsKey(key)) {
         paymentSummary[key]!['total'] += monto;
       } else {
@@ -2130,6 +2339,7 @@ class _SalesScreenState extends State<SalesScreen>
           'total': monto,
           'es_efectivo': esEfectivo,
           'es_digital': esDigital,
+          'tipo_pago': tipoPago,
         };
       }
     }
@@ -2285,8 +2495,9 @@ class _SalesScreenState extends State<SalesScreen>
         }
       }
 
-      // Calcular totales
-      double totalEfectivo = 0.0;
+      // Calcular totales separados por tipo de pago
+      double totalEfectivoOferta = 0.0; // tipo_pago = 1
+      double totalEfectivoRegular = 0.0; // tipo_pago = 2
       double totalTransferencias = 0.0;
 
       for (final order in pendingOrders) {
@@ -2296,9 +2507,16 @@ class _SalesScreenState extends State<SalesScreen>
             final metodoPago =
                 pago['medio_pago']?.toString().toLowerCase() ?? '';
             final total = (pago['total'] ?? 0.0).toDouble();
+            final esEfectivo = pago['es_efectivo'] ?? false;
+            final tipoPago = pago['tipo_pago'] ?? 1;
 
-            if (metodoPago.contains('efectivo')) {
-              totalEfectivo += total;
+            if (esEfectivo && metodoPago.contains('efectivo')) {
+              // Separar efectivo por tipo_pago
+              if (tipoPago == 1) {
+                totalEfectivoOferta += total;
+              } else if (tipoPago == 2) {
+                totalEfectivoRegular += total;
+              }
             } else if (metodoPago.contains('transferencia')) {
               totalTransferencias += total;
             }
@@ -2361,84 +2579,124 @@ class _SalesScreenState extends State<SalesScreen>
                                       ),
                                     ),
                                     const SizedBox(height: 8),
-                                    // Totales
-                                    Row(
+                                    // Totales separados por tipo de pago
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
                                       children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.success
-                                                .withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
+                                        // Efectivo Oferta (tipo_pago = 1)
+                                        if (totalEfectivoOferta > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
                                             ),
-                                            border: Border.all(
-                                              color: AppColors.success
-                                                  .withOpacity(0.3),
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.attach_money,
-                                                size: 16,
-                                                color: AppColors.success,
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.shade700
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: Colors.green.shade700
+                                                    .withOpacity(0.3),
                                               ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                'Efectivo: \$${totalEfectivo.toStringAsFixed(2)}',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.local_offer,
+                                                  size: 16,
+                                                  color: Colors.green.shade700,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Efectivo (Oferta): \$${totalEfectivoOferta.toStringAsFixed(2)}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color:
+                                                        Colors.green.shade700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        // Efectivo Regular (tipo_pago = 2)
+                                        if (totalEfectivoRegular > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.success
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: AppColors.success
+                                                    .withOpacity(0.3),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.attach_money,
+                                                  size: 16,
                                                   color: AppColors.success,
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 6,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.info.withOpacity(
-                                              0.1,
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Efectivo (Regular): \$${totalEfectivoRegular.toStringAsFixed(2)}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: AppColors.success,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
+                                          ),
+                                        // Transferencias
+                                        if (totalTransferencias > 0)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
                                             ),
-                                            border: Border.all(
+                                            decoration: BoxDecoration(
                                               color: AppColors.info.withOpacity(
-                                                0.3,
+                                                0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: AppColors.info
+                                                    .withOpacity(0.3),
                                               ),
                                             ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.account_balance,
-                                                size: 16,
-                                                color: AppColors.info,
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.account_balance,
+                                                  size: 16,
                                                   color: AppColors.info,
                                                 ),
-                                              ),
-                                            ],
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'Transfer: \$${totalTransferencias.toStringAsFixed(2)}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: AppColors.info,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                        ),
                                       ],
                                     ),
                                   ],
@@ -2844,7 +3102,6 @@ class _SalesScreenState extends State<SalesScreen>
     final pagos = order.detalles['pagos'] as List<dynamic>? ?? [];
     final cliente = order.detalles['cliente'] as Map<String, dynamic>? ?? {};
 
-    
     if (items.isEmpty) {
       return const Center(
         child: Column(

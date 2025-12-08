@@ -1,8 +1,30 @@
 {
-  "current_version": "1.7.7",
-  "build": 707,
+  "current_version": "1.7.8",
+  "build": 708,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.7.8",
+      "date": "2025-12-08",
+      "title": "💳 Mejoras en el Registro de Pagos",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Mejor Clasificación de Pagos",
+          "description": "Ahora la app distingue automáticamente entre pagos en efectivo regulares y pagos especiales para un mejor control de tus ventas."
+        },
+        {
+          "type": "improvement",
+          "title": "Registro Más Detallado",
+          "description": "Cada pago se clasifica automáticamente según su tipo, permitiéndote tener reportes más precisos de cómo tus clientes están pagando."
+        },
+        {
+          "type": "improvement",
+          "title": "Mejor Control Financiero",
+          "description": "Con esta mejora puedes identificar fácilmente qué ventas fueron con efectivo normal y cuáles con otros métodos de pago especiales."
+        }
+      ]
+    },
     {
       "version": "1.7.7",
       "date": "2025-12-01",
