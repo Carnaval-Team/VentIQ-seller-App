@@ -1140,25 +1140,9 @@ class ConsignacionService {
       // Nombre de la zona: "Consignaciones - NombreTiendaConsignadora"
       final nombreZona = 'Consignaciones - $nombreTiendaConsignadora';
 
-      // Obtener un tipo de layout válido (usar el primero disponible)
-      int? idTipoLayout;
-      try {
-        final tiposLayout = await _supabase
-            .from('app_nom_tipo_layout_almacen')
-            .select('id')
-            .limit(1);
-        
-        if ((tiposLayout as List).isNotEmpty) {
-          idTipoLayout = tiposLayout[0]['id'] as int;
-        }
-      } catch (e) {
-        debugPrint('⚠️ Error obteniendo tipo de layout: $e');
-      }
-
-      if (idTipoLayout == null) {
-        debugPrint('❌ Error: No hay tipos de layout disponibles');
-        return null;
-      }
+      // Usar id_tipo_layout = 16 para zonas de consignación
+      const int idTipoLayout = 16;
+      debugPrint('📋 Usando id_tipo_layout = 16 para zona de consignación');
 
       // Buscar o crear zona en almacén DESTINO
       debugPrint('📦 Buscando zona de recepción en almacén destino: $idAlmacenDestino');
@@ -1176,7 +1160,7 @@ class ConsignacionService {
         debugPrint('✅ Zona de recepción existente encontrada: ${zonasDestinoExistentes[0]['id']}');
         zonaDestino = zonasDestinoExistentes[0] as Map<String, dynamic>;
       } else {
-        debugPrint('📝 Creando nueva zona de recepción: $nombreZona');
+        debugPrint('📝 Creando nueva zona de recepción: $nombreZona con id_tipo_layout = 16');
         
         final nuevaZonaDestino = await _supabase
             .from('app_dat_layout_almacen')
@@ -1188,7 +1172,7 @@ class ConsignacionService {
             .select()
             .single();
 
-        debugPrint('✅ Zona de recepción creada: ${nuevaZonaDestino['id']}');
+        debugPrint('✅ Zona de recepción creada: ${nuevaZonaDestino['id']} con tipo layout 16');
         zonaDestino = nuevaZonaDestino as Map<String, dynamic>;
       }
 

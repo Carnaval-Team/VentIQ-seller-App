@@ -713,6 +713,7 @@ class _InventoryExtractionBySaleScreenState
                         child: LocationSelectorWidget(
                           type: LocationSelectorType.single,
                           title: 'Zona de Origen',
+                          includeConsignations: true,
                           subtitle: 'Seleccione la zona desde donde se venderán los productos',
                           selectedLocation: _selectedSourceLocation,
                           onLocationChanged: (location) {
