@@ -8,6 +8,7 @@ import 'product_service.dart';
 import 'financial_service.dart';
 import 'restaurant_service.dart'; // Agregar import para conversión de unidades
 import 'permissions_service.dart';
+import 'consignacion_service.dart'; // Import para validación de operaciones de consignación
 
 class InventoryService {
   static final InventoryService _instance = InventoryService._internal();
@@ -2359,6 +2360,48 @@ class InventoryService {
         print('   - Continuando con la completación de operación');
       }
 
+      // =====================================================
+      // VALIDAR OPERACIONES DE CONSIGNACIÓN
+      // =====================================================
+      print('\n🔍 Verificando si es operación de consignación...');
+      try {
+        // Verificar si esta operación de recepción está vinculada a productos de consignación
+        final productosConsignacion = await _supabase
+            .from('app_dat_producto_consignacion')
+            .select('id, id_operacion_extraccion, id_operacion_recepcion')
+            .eq('id_operacion_recepcion', idOperacion);
+
+        if (productosConsignacion.isNotEmpty) {
+          print('📦 Esta es una operación de recepción de consignación');
+          print('   - Productos de consignación encontrados: ${productosConsignacion.length}');
+          
+          // Validar que la operación de extracción esté completada
+          final validacion = await ConsignacionService.validarOrdenOperacionesConsignacion(idOperacion);
+          
+          if (validacion['valido'] != true) {
+            final mensaje = validacion['mensaje'] ?? 'La operación de extracción debe completarse primero';
+            print('❌ Validación de consignación fallida: $mensaje');
+            print('   - ID Operación Extracción: ${validacion['id_operacion_extraccion']}');
+            print('   - Estado Extracción: ${validacion['estado_extraccion']} (debe ser 3 = Completada)');
+            
+            return {
+              'success': false,
+              'message': mensaje,
+              'error': 'CONSIGNMENT_VALIDATION_FAILED',
+              'id_operacion_extraccion': validacion['id_operacion_extraccion'],
+              'estado_extraccion': validacion['estado_extraccion'],
+            };
+          }
+          
+          print('✅ Validación de consignación exitosa: ${validacion['mensaje']}');
+        } else {
+          print('ℹ️ No es una operación de consignación, continuando normalmente');
+        }
+      } catch (e) {
+        print('⚠️ Error validando operación de consignación: $e');
+        print('   - Continuando con la completación de operación');
+      }
+
       final response = await _supabase.rpc(
         'fn_contabilizar_operacion',
         params: {
@@ -2535,6 +2578,67 @@ class InventoryService {
 
       print('✅ Operación $idOperacion cancelada exitosamente');
       print('📦 Respuesta insert: $response');
+
+      // =====================================================
+      // CANCELAR OPERACIÓN DE RECEPCIÓN VINCULADA (CONSIGNACIÓN)
+      // =====================================================
+      print('\n🔍 Verificando si hay operaciones de recepción vinculadas...');
+      try {
+        // Verificar si esta operación de extracción está vinculada a productos de consignación
+        final productosConsignacion = await _supabase
+            .from('app_dat_producto_consignacion')
+            .select('id, id_operacion_extraccion, id_operacion_recepcion')
+            .eq('id_operacion_extraccion', idOperacion);
+
+        if (productosConsignacion.isNotEmpty) {
+          print('📦 Esta es una operación de extracción de consignación');
+          print('   - Productos de consignación encontrados: ${productosConsignacion.length}');
+          
+          // Obtener el ID de la operación de recepción vinculada
+          final idOperacionRecepcion = productosConsignacion.first['id_operacion_recepcion'] as int?;
+          
+          if (idOperacionRecepcion != null) {
+            print('🔗 Operación de recepción vinculada encontrada: $idOperacionRecepcion');
+            
+            // Verificar si la operación de recepción ya está cancelada
+            final estadoRecepcion = await _supabase
+                .from('app_dat_estado_operacion')
+                .select('estado')
+                .eq('id_operacion', idOperacionRecepcion)
+                .order('created_at', ascending: false)
+                .limit(1);
+            
+            final yaEstaCancelada = estadoRecepcion.isNotEmpty && 
+                                   estadoRecepcion.first['estado'] == 3;
+            
+            if (!yaEstaCancelada) {
+              print('🚫 Cancelando automáticamente la operación de recepción $idOperacionRecepcion...');
+              
+              // Cancelar la operación de recepción vinculada
+              final resultadoCancelacion = await cancelOperation(
+                idOperacion: idOperacionRecepcion,
+                comentario: 'Cancelada automáticamente porque la operación de extracción $idOperacion fue cancelada',
+                uuid: uuid,
+              );
+              
+              if (resultadoCancelacion['status'] == 'success') {
+                print('✅ Operación de recepción $idOperacionRecepcion cancelada automáticamente');
+              } else {
+                print('⚠️ Error cancelando operación de recepción: ${resultadoCancelacion['message']}');
+              }
+            } else {
+              print('ℹ️ La operación de recepción ya estaba cancelada');
+            }
+          } else {
+            print('ℹ️ No hay operación de recepción vinculada');
+          }
+        } else {
+          print('ℹ️ No es una operación de extracción de consignación');
+        }
+      } catch (e) {
+        print('⚠️ Error verificando/cancelando operación de recepción vinculada: $e');
+        print('   - La operación de extracción fue cancelada exitosamente');
+      }
 
       return {
         'status': 'success',
