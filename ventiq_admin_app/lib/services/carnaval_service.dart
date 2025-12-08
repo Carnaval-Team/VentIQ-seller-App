@@ -201,7 +201,8 @@ class CarnavalService {
       // 3. Obtener email del usuario desde preferencias
       String email = '';
       try {
-        email = await UserPreferencesService().getUserEmail() ?? '';
+        final data = await UserPreferencesService().getUserData();
+        email = data['email'] ?? '';
       } catch (e) {
         print('⚠️ No se pudo obtener email del usuario: $e');
         // Continuar sin email
@@ -231,7 +232,7 @@ class CarnavalService {
         'name':
             '${trabajadorData['nombres'] ?? ''} ${trabajadorData['apellidos'] ?? ''}'
                 .trim(),
-        'rol': 'Proveedor', // Rol para administradores de tienda
+        'rol': 'Admin', // Rol para administradores de tienda
         'email_confirmacion': true,
         // tienda se asignará después cuando se cree el proveedor
       };

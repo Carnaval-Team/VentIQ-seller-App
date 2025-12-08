@@ -14,17 +14,18 @@ import 'screens/licencias_screen.dart';
 import 'screens/renovaciones_screen.dart';
 import 'screens/configuracion_screen.dart';
 import 'screens/consignacion_screen.dart';
+import 'screens/carnaval_store_mapping_screen.dart';
 import 'services/auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Inicializar Supabase
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
-  
+
   runApp(const VentIQSuperAdminApp());
 }
 
@@ -52,6 +53,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/renovaciones': (context) => const RenovacionesScreen(),
         '/configuracion': (context) => const ConfiguracionScreen(),
         '/consignacion': (context) => const ConsignacionScreen(),
+        '/carnaval-tiendas': (context) => const CarnavalStoreMappingScreen(),
       },
     );
   }

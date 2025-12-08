@@ -55,6 +55,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Trabajadores',
                       route: '/trabajadores',
                     ),
+                    _DrawerItem(
+                      icon: Icons.sync,
+                      title: 'Carnaval App Tiendas',
+                      route: '/carnaval-tiendas',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -142,9 +147,7 @@ class AppDrawer extends StatelessWidget {
 
   Widget _buildHeader(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: AppColors.primaryGradient,
-      ),
+      decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
@@ -177,10 +180,7 @@ class AppDrawer extends StatelessWidget {
               ),
               const Text(
                 'Sistema de Administración Global',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: Colors.white70, fontSize: 11),
               ),
               const SizedBox(height: 6),
               Container(
@@ -252,15 +252,13 @@ class AppDrawer extends StatelessWidget {
         ),
         selected: isSelected,
         selectedTileColor: AppColors.primary.withOpacity(0.1),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         onTap: () {
           Navigator.of(context).pop(); // Cerrar drawer
           if (currentRoute != item.route) {
             // Rutas implementadas
-            if (item.route == '/dashboard' || 
-                item.route == '/tiendas' || 
+            if (item.route == '/dashboard' ||
+                item.route == '/tiendas' ||
                 item.route == '/usuarios' ||
                 item.route == '/administradores' ||
                 item.route == '/almacenes' ||
@@ -269,7 +267,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/licencias' ||
                 item.route == '/renovaciones' ||
                 item.route == '/configuracion' ||
-                item.route == '/consignacion') {
+                item.route == '/consignacion' ||
+                item.route == '/carnaval-tiendas') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas
@@ -285,20 +284,12 @@ class AppDrawer extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: AppColors.divider,
-            width: 1,
-          ),
-        ),
+        border: Border(top: BorderSide(color: AppColors.divider, width: 1)),
       ),
       child: Column(
         children: [
           ListTile(
-            leading: const Icon(
-              Icons.logout,
-              color: AppColors.error,
-            ),
+            leading: const Icon(Icons.logout, color: AppColors.error),
             title: const Text(
               'Cerrar Sesión',
               style: TextStyle(
@@ -311,9 +302,9 @@ class AppDrawer extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Inventtia Super Admin v1.0.0',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppColors.textHint,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.textHint),
           ),
         ],
       ),
@@ -336,10 +327,10 @@ class AppDrawer extends StatelessWidget {
               onPressed: () async {
                 Navigator.of(context).pop(); // Cerrar diálogo
                 Navigator.of(context).pop(); // Cerrar drawer
-                
+
                 final authService = AuthService();
                 await authService.logout();
-                
+
                 if (context.mounted) {
                   Navigator.of(context).pushReplacementNamed('/login');
                 }
@@ -362,7 +353,9 @@ class AppDrawer extends StatelessWidget {
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Próximamente'),
-          content: Text('La funcionalidad "$feature" estará disponible pronto.'),
+          content: Text(
+            'La funcionalidad "$feature" estará disponible pronto.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -380,9 +373,5 @@ class _DrawerItem {
   final String title;
   final String route;
 
-  _DrawerItem({
-    required this.icon,
-    required this.title,
-    required this.route,
-  });
+  _DrawerItem({required this.icon, required this.title, required this.route});
 }

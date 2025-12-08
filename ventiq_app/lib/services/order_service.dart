@@ -81,7 +81,7 @@ class OrderService {
 
     // Actualizar total de la orden
     _updateOrderTotal(order);
-    
+
     // Guardar automáticamente en persistencia
     _savePersistentPreorder();
   }
@@ -101,7 +101,7 @@ class OrderService {
             .copyWith(cantidad: newQuantity);
       }
       _updateOrderTotal(_currentOrder!);
-      
+
       // Guardar automáticamente en persistencia
       _savePersistentPreorder();
     }
@@ -120,7 +120,7 @@ class OrderService {
 
       // Recalcular total ya que el precio puede cambiar según el método de pago
       _updateOrderTotal(_currentOrder!);
-      
+
       // Guardar automáticamente en persistencia
       _savePersistentPreorder();
     }
@@ -132,7 +132,7 @@ class OrderService {
 
     _currentOrder!.items.removeWhere((item) => item.id == itemId);
     _updateOrderTotal(_currentOrder!);
-    
+
     // Guardar automáticamente en persistencia
     _savePersistentPreorder();
   }
@@ -154,7 +154,7 @@ class OrderService {
 
     _orders.add(finalizedOrder);
     _currentOrder = null; // Limpiar orden actual
-    
+
     // Limpiar persistencia cuando se finaliza la orden
     clearPersistentPreorder();
   }
@@ -184,7 +184,7 @@ class OrderService {
 
         _orders.add(finalizedOrder);
         _currentOrder = null; // Limpiar orden actual
-        
+
         // Limpiar persistencia cuando se finaliza la orden
         clearPersistentPreorder();
 
@@ -211,7 +211,7 @@ class OrderService {
   // Cancelar orden actual
   void cancelCurrentOrder() {
     _currentOrder = null;
-    
+
     // Limpiar persistencia cuando se cancela la orden
     clearPersistentPreorder();
   }
@@ -566,15 +566,16 @@ class OrderService {
       print('=== DEBUG REGISTRO DE PAGOS ===');
       print('operationId: $operationId');
       print('order.items.length: ${order.items.length}');
-
       // Agrupar pagos por método de pago
       Map<int, double> paymentsByMethod = {};
 
       for (final item in order.items) {
+      int _tipo_pago_actual = 1;
         if (item.paymentMethod != null) {
           // Convertir método especial "Pago Regular (Efectivo)" (ID 999) a efectivo (ID 1)
           int actualMethodId = item.paymentMethod!.id;
           if (actualMethodId == 999) {
+            _tipo_pago_actual = 2;
             actualMethodId = 1; // Convertir a efectivo normal
             print(
               '🔄 Convirtiendo método especial "Pago Regular (Efectivo)" a método ID 1 (efectivo)',
@@ -813,7 +814,9 @@ class OrderService {
               esComprable: true,
               esInventariable: true,
               esPorLotes: false,
-              esElaborado: item['es_elaborado'] ?? false, // Default value for order items
+              esElaborado:
+                  item['es_elaborado'] ??
+                  false, // Default value for order items
               esServicio: false, // Default value for order items
               categoria: 'General',
               descripcion: item['presentacion'] ?? '',
@@ -1141,7 +1144,7 @@ class OrderService {
   Future<void> loadPersistentPreorder() async {
     try {
       final orderData = await UserPreferencesService().getPersistentPreorder();
-      
+
       if (orderData != null) {
         _currentOrder = Order.fromJson(orderData);
         print('📱 Preorden cargada desde persistencia');
