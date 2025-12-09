@@ -1815,9 +1815,11 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       );
 
       Navigator.pop(context); // Close loading dialog
-      // print('result: ${result['data']}');
-      final response = result['data'];
-      if (response['status'] == 'success') {
+      
+      // La respuesta viene directamente en result
+      final response = result;
+      
+      if (response['success'] == true || response['status'] == 'success') {
         // Close the detail modal
         await Future.delayed(const Duration(milliseconds: 200));
 
@@ -1838,14 +1840,27 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
       } else {
         await Future.delayed(const Duration(milliseconds: 200));
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              response['message'] ?? 'Error al completar la operación',
+        
+        // Verificar si es un error de consignación
+        final errorCode = response['error'] ?? '';
+        if (errorCode == 'CONSIGNMENT_EXTRACTION_NOT_COMPLETED') {
+          // Mostrar diálogo informativo para error de consignación
+          _showConsignmentErrorDialog(
+            response['message'] ?? 'Error en consignación',
+            response['id_operacion_extraccion'],
+          );
+        } else {
+          // Mostrar SnackBar para otros errores
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                response['message'] ?? 'Error al completar la operación',
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
             ),
-            backgroundColor: Colors.red,
-          ),
-        );
+          );
+        }
       }
     } catch (e) {
       Navigator.pop(context); // Close loading dialog if still open
@@ -2843,6 +2858,153 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
               foregroundColor: Colors.white,
             ),
             child: const Text('¡Genial!'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mostrar diálogo informativo para error de consignación
+  void _showConsignmentErrorDialog(String message, dynamic idOperacionExtraccion) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.local_shipping_outlined, color: Colors.deepOrange, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Recepción de Consignación',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Mensaje principal
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  border: Border.all(color: Colors.orange.shade300, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '⚠️ Mercancía no recibida',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.deepOrange,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'No puedes completar la recepción hasta que la mercancía esté físicamente en tu negocio.',
+                      style: TextStyle(fontSize: 13, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Instrucciones
+              const Text(
+                '📋 Pasos a seguir:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              _buildInstructionStep(
+                '1',
+                'Verifica que la mercancía haya llegado a tu almacén',
+              ),
+              _buildInstructionStep(
+                '2',
+                'Inspecciona la mercancía (cantidad, estado, etc.)',
+              ),
+              _buildInstructionStep(
+                '4',
+                'Luego podrás completar la recepción aquí',
+              ),
+              const SizedBox(height: 16),
+              
+              // Información técnica
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '🔍 Información técnica:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Operación Extracción: #$idOperacionExtraccion',
+                      style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.deepOrange,
+            ),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Widget para mostrar un paso de instrucción
+  Widget _buildInstructionStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.blue.shade100,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12, height: 1.4),
+            ),
           ),
         ],
       ),

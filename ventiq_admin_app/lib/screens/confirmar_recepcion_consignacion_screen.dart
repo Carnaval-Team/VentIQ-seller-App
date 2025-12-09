@@ -257,11 +257,12 @@ class _ConfirmarRecepcionConsignacionScreenState
           // Precio de venta en CUP configurado por el consignatario
           final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioSugerido;
           
-          // Si no puede modificar, establecer automáticamente el precio sugerido
+          // Si no puede modificar, establecer automáticamente el precio sugerido convertido a CUP
           if (!puedeModificarPrecio && !_preciosVentaConfigurables.containsKey(idProductoConsignacion)) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               setState(() {
-                _preciosVentaConfigurables[idProductoConsignacion] = precioSugerido;
+                // ✅ Convertir el precio sugerido de USD a CUP
+                _preciosVentaConfigurables[idProductoConsignacion] = precioSugerido * _tasaCambio;
               });
             });
           }
