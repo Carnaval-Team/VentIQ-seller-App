@@ -1,8 +1,40 @@
 {
-  "current_version": "1.7.8",
-  "build": 708,
+  "current_version": "1.7.9",
+  "build": 709,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.7.9",
+      "date": "2025-12-09",
+      "title": "🎁 Promociones Inteligentes por Método de Pago",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Promociones Específicas por Método de Pago",
+          "description": "Ahora puedes crear promociones que solo aplican cuando el cliente paga con un método específico. Por ejemplo: 5% de descuento solo para pagos en efectivo, o un recargo para transferencias."
+        },
+        {
+          "type": "feature",
+          "title": "Descuentos y Recargos Automáticos",
+          "description": "La app aplica automáticamente el descuento o recargo correcto según el método de pago que seleccione el cliente. Sin cálculos manuales, todo es automático."
+        },
+        {
+          "type": "improvement",
+          "title": "Cálculo Inteligente en el Checkout",
+          "description": "Al finalizar la compra, la app calcula automáticamente qué promociones aplicar según los métodos de pago seleccionados para cada producto. Todo transparente para ti y tu cliente."
+        },
+        {
+          "type": "improvement",
+          "title": "Información Detallada de Precios",
+          "description": "En los detalles del producto puedes ver si hay promociones disponibles y cómo afectan el precio según el método de pago que uses."
+        },
+        {
+          "type": "improvement",
+          "title": "Sistema Optimizado y Más Rápido",
+          "description": "Las promociones se cargan una sola vez al ver el producto y se guardan localmente para que el checkout sea más rápido. Menos esperas, mejor experiencia."
+        }
+      ]
+    },
     {
       "version": "1.7.8",
       "date": "2025-12-08",
