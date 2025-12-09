@@ -82,6 +82,11 @@ class CarnavalMappingService {
   }) async {
     final updates = <String, dynamic>{'id_vendedor_app': carnavalProductId};
 
+    await supabase
+        .from('app_dat_producto')
+        .update(<String, dynamic>{'id_vendedor_app': null})
+        .eq('id_vendedor_app', carnavalProductId);
+
     if (updateName && newName != null) {
       updates['denominacion'] = newName;
     }
