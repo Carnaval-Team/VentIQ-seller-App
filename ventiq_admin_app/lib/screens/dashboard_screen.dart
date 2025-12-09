@@ -540,7 +540,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
           _buildTimeFilterSection(),
           const SizedBox(height: 24),
 
-          // Widget de consignaciones (si hay)
+          /* // Widget de consignaciones (si hay)
           FutureBuilder<int?>(
             future: _userPreferencesService.getIdTienda(),
             builder: (context, snapshot) {
@@ -554,7 +554,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
               }
               return const SizedBox.shrink();
             },
-          ),
+          ), */
 
           // KPIs principales
           _buildKPISection(),

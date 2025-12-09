@@ -2380,16 +2380,28 @@ class InventoryService {
           
           if (validacion['valido'] != true) {
             final mensaje = validacion['mensaje'] ?? 'La operación de extracción debe completarse primero';
+            final idOperacionExtraccion = validacion['id_operacion_extraccion'];
+            final estadoExtraccion = validacion['estado_extraccion'];
+            
             print('❌ Validación de consignación fallida: $mensaje');
-            print('   - ID Operación Extracción: ${validacion['id_operacion_extraccion']}');
-            print('   - Estado Extracción: ${validacion['estado_extraccion']} (debe ser 3 = Completada)');
+            print('   - ID Operación Extracción: $idOperacionExtraccion');
+            print('   - Estado Extracción: $estadoExtraccion (debe ser 3 = Completada)');
+            
+            // Mensaje claro para el usuario
+            String mensajeUsuario = '⚠️ No se puede completar la recepción\n\n';
+            mensajeUsuario += 'Primero debes completar la operación de extracción en el almacén de origen.\n\n';
+            mensajeUsuario += 'Pasos:\n';
+            mensajeUsuario += '1. Ve al almacén de origen\n';
+            mensajeUsuario += '2. Abre la operación de extracción #$idOperacionExtraccion\n';
+            mensajeUsuario += '3. Haz clic en "Completar operación"\n';
+            mensajeUsuario += '4. Luego podrás completar la recepción aquí';
             
             return {
               'success': false,
-              'message': mensaje,
-              'error': 'CONSIGNMENT_VALIDATION_FAILED',
-              'id_operacion_extraccion': validacion['id_operacion_extraccion'],
-              'estado_extraccion': validacion['estado_extraccion'],
+              'message': mensajeUsuario,
+              'error': 'CONSIGNMENT_EXTRACTION_NOT_COMPLETED',
+              'id_operacion_extraccion': idOperacionExtraccion,
+              'estado_extraccion': estadoExtraccion,
             };
           }
           

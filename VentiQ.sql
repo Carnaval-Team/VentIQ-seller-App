@@ -575,35 +575,38 @@ CREATE TABLE public.app_dat_layout_condiciones (
 CREATE TABLE public.app_dat_liquidacion_consignacion (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   id_contrato bigint NOT NULL,
-  fecha_inicio date NOT NULL,
-  fecha_fin date NOT NULL,
-  total_vendido numeric NOT NULL DEFAULT 0,
-  total_comision numeric NOT NULL DEFAULT 0,
-  total_a_pagar numeric NOT NULL DEFAULT 0,
-  estado smallint NOT NULL DEFAULT 1 CHECK (estado = ANY (ARRAY[1, 2, 3])),
+  monto_cup numeric NOT NULL CHECK (monto_cup > 0::numeric),
+  monto_usd numeric NOT NULL CHECK (monto_usd > 0::numeric),
+  tasa_cambio numeric NOT NULL CHECK (tasa_cambio > 0::numeric),
+  estado smallint NOT NULL DEFAULT 0 CHECK (estado = ANY (ARRAY[0, 1, 2])),
+  observaciones text,
+  motivo_rechazo text,
+  created_by uuid NOT NULL,
+  confirmed_by uuid,
+  fecha_liquidacion timestamp with time zone NOT NULL DEFAULT now(),
+  fecha_confirmacion timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT app_dat_liquidacion_consignacion_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_liquidacion_consignacion_contrato_fkey FOREIGN KEY (id_contrato) REFERENCES public.app_dat_contrato_consignacion(id),
+  CONSTRAINT app_dat_liquidacion_consignacion_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_liquidacion_consignacion_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES auth.users(id)
+);
+CREATE TABLE public.app_dat_liquidacion_consignacion_backup (
+  id bigint,
+  id_contrato bigint,
+  fecha_inicio date,
+  fecha_fin date,
+  total_vendido numeric,
+  total_comision numeric,
+  total_a_pagar numeric,
+  estado smallint,
   fecha_pago date,
   metodo_pago character varying,
   referencia_pago character varying,
   observaciones text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT app_dat_liquidacion_consignacion_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_liquidacion_consignacion_contrato_fkey FOREIGN KEY (id_contrato) REFERENCES public.app_dat_contrato_consignacion(id)
-);
-CREATE TABLE public.app_dat_liquidacion_detalle (
-  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  id_liquidacion bigint NOT NULL,
-  id_producto_consignacion bigint NOT NULL,
-  cantidad_vendida numeric NOT NULL,
-  precio_venta_promedio numeric NOT NULL,
-  subtotal numeric NOT NULL,
-  porcentaje_comision numeric NOT NULL,
-  comision numeric NOT NULL,
-  total_a_pagar numeric NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT app_dat_liquidacion_detalle_pkey PRIMARY KEY (id),
-  CONSTRAINT app_dat_liquidacion_detalle_liquidacion_fkey FOREIGN KEY (id_liquidacion) REFERENCES public.app_dat_liquidacion_consignacion(id),
-  CONSTRAINT app_dat_liquidacion_detalle_producto_fkey FOREIGN KEY (id_producto_consignacion) REFERENCES public.app_dat_producto_consignacion(id)
+  created_at timestamp with time zone,
+  updated_at timestamp with time zone
 );
 CREATE TABLE public.app_dat_movimiento_consignacion (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -721,6 +724,7 @@ CREATE TABLE public.app_dat_pago_venta (
   id_institucion_financiera bigint,
   fecha_pago timestamp with time zone NOT NULL DEFAULT now(),
   creado_por uuid NOT NULL,
+  tipo_pago bigint,
   CONSTRAINT app_dat_pago_venta_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_pago_venta_id_operacion_venta_fkey FOREIGN KEY (id_operacion_venta) REFERENCES public.app_dat_operacion_venta(id_operacion),
   CONSTRAINT app_dat_pago_venta_id_medio_pago_fkey FOREIGN KEY (id_medio_pago) REFERENCES public.app_nom_medio_pago(id),
@@ -857,12 +861,16 @@ CREATE TABLE public.app_dat_producto_consignacion (
   puede_modificar_precio boolean NOT NULL DEFAULT false,
   id_ubicacion_origen bigint,
   precio_venta numeric NOT NULL DEFAULT '0'::numeric,
+  id_operacion_extraccion bigint,
+  id_operacion_recepcion bigint,
   CONSTRAINT app_dat_producto_consignacion_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_producto_consignacion_contrato_fkey FOREIGN KEY (id_contrato) REFERENCES public.app_dat_contrato_consignacion(id),
   CONSTRAINT app_dat_producto_consignacion_producto_fkey FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_producto_consignacion_variante_fkey FOREIGN KEY (id_variante) REFERENCES public.app_dat_variantes(id),
   CONSTRAINT app_dat_producto_consignacion_presentacion_fkey FOREIGN KEY (id_presentacion) REFERENCES public.app_dat_producto_presentacion(id),
-  CONSTRAINT app_dat_producto_consignacion_ubicacion_fkey FOREIGN KEY (id_ubicacion_origen) REFERENCES public.app_dat_layout_almacen(id)
+  CONSTRAINT app_dat_producto_consignacion_ubicacion_fkey FOREIGN KEY (id_ubicacion_origen) REFERENCES public.app_dat_layout_almacen(id),
+  CONSTRAINT app_dat_producto_consignacion_operacion_extraccion_fkey FOREIGN KEY (id_operacion_extraccion) REFERENCES public.app_dat_operaciones(id),
+  CONSTRAINT app_dat_producto_consignacion_operacion_recepcion_fkey FOREIGN KEY (id_operacion_recepcion) REFERENCES public.app_dat_operaciones(id)
 );
 CREATE TABLE public.app_dat_producto_consignacion_duplicado (
   id integer NOT NULL DEFAULT nextval('app_dat_producto_consignacion_duplicado_id_seq'::regclass),
@@ -1456,6 +1464,7 @@ CREATE TABLE public.app_suscripciones (
   observaciones text,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  gestionado_por text,
   CONSTRAINT app_suscripciones_pkey PRIMARY KEY (id),
   CONSTRAINT app_suscripciones_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_suscripciones_id_plan_fkey FOREIGN KEY (id_plan) REFERENCES public.app_suscripciones_plan(id),
