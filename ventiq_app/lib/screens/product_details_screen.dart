@@ -39,7 +39,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   bool _isLoadingDetails = false;
   String? _errorMessage;
   Map<String, dynamic>? _globalPromotionData;
-  Map<String, dynamic>? _productPromotionData;
+  List<Map<String, dynamic>>?
+  _productPromotionData; // Changed to List for multiple promotions
   bool _isLimitDataUsageEnabled = false; // Para el modo de ahorro de datos
   bool _isConnectionError = false; // Para detectar errores de conexión
   bool _showRetryWidget = false; // Para mostrar el widget de reconexión
@@ -70,7 +71,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     _loadProductPresentations();
     _loadDataUsageSettings();
   }
-  
+
   Future<void> _loadDataUsageSettings() async {
     final isEnabled = await _userPreferencesService.isLimitDataUsageEnabled();
     if (mounted) {
@@ -89,19 +90,22 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
     try {
       // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-      
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+
       Product detailedProduct;
-      
+
       if (isOfflineModeEnabled) {
-        print('🔌 Modo offline - Cargando detalles del producto desde cache...');
-        
+        print(
+          '🔌 Modo offline - Cargando detalles del producto desde cache...',
+        );
+
         // Cargar datos offline
         final offlineData = await _userPreferencesService.getOfflineData();
-        
+
         if (offlineData != null && offlineData['products'] != null) {
           final productsData = offlineData['products'] as Map<String, dynamic>;
-          
+
           // Buscar el producto en todas las categorías
           Product? foundProduct;
           for (var categoryProducts in productsData.values) {
@@ -110,35 +114,42 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               (p) => p['id'] == widget.product.id,
               orElse: () => null,
             );
-            
-            if (productData != null && productData['detalles_completos'] != null) {
+
+            if (productData != null &&
+                productData['detalles_completos'] != null) {
               // Construir Product desde detalles completos
               final detalles = productData['detalles_completos'];
               final productoInfo = detalles['producto'];
-              final inventarioList = detalles['inventario'] as List<dynamic>? ?? [];
-              
+              final inventarioList =
+                  detalles['inventario'] as List<dynamic>? ?? [];
+
               // Crear variantes desde el inventario (igual que en modo normal)
               final variantes = <ProductVariant>[];
-              
+
               for (int i = 0; i < inventarioList.length; i++) {
                 final item = inventarioList[i];
-                
+
                 // Validar que el item no sea null
                 if (item == null) continue;
-                
+
                 final varianteData = item['variante'] as Map<String, dynamic>?;
-                final presentacionData = item['presentacion'] as Map<String, dynamic>?;
-                final ubicacionData = item['ubicacion'] as Map<String, dynamic>?;
-                final cantidadDisponible = (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
-                
+                final presentacionData =
+                    item['presentacion'] as Map<String, dynamic>?;
+                final ubicacionData =
+                    item['ubicacion'] as Map<String, dynamic>?;
+                final cantidadDisponible =
+                    (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
+
                 // Construir nombre de variante (igual que en ProductDetailService)
                 String variantName = 'Variante ${i + 1}';
                 String variantDescription = '';
-                
+
                 if (varianteData != null) {
-                  final opcion = varianteData['opcion'] as Map<String, dynamic>?;
-                  final atributo = varianteData['atributo'] as Map<String, dynamic>?;
-                  
+                  final opcion =
+                      varianteData['opcion'] as Map<String, dynamic>?;
+                  final atributo =
+                      varianteData['atributo'] as Map<String, dynamic>?;
+
                   if (opcion != null && atributo != null) {
                     final valor = opcion['valor'] as String? ?? '';
                     final label = atributo['label'] as String? ?? '';
@@ -146,31 +157,38 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                     variantDescription = 'Variante de $label con valor $valor';
                   }
                 }
-                
+
                 // Agregar presentación al nombre (igual que en modo normal)
                 if (presentacionData != null) {
-                  final presentacionNombre = presentacionData['denominacion'] as String? ?? '';
-                  final cantidad = (presentacionData['cantidad'] as num?)?.toInt() ?? 1;
+                  final presentacionNombre =
+                      presentacionData['denominacion'] as String? ?? '';
+                  final cantidad =
+                      (presentacionData['cantidad'] as num?)?.toInt() ?? 1;
                   if (presentacionNombre.isNotEmpty) {
                     variantName += ' - $presentacionNombre';
                     if (cantidad > 1) {
-                      variantDescription += ' (Presentación: $cantidad unidades)';
+                      variantDescription +=
+                          ' (Presentación: $cantidad unidades)';
                     }
                   }
                 }
-                
+
                 // Extraer precio
-                double precio = (productoInfo['precio_actual'] as num?)?.toDouble() ?? 0.0;
+                double precio =
+                    (productoInfo['precio_actual'] as num?)?.toDouble() ?? 0.0;
                 if (item['precio'] != null) {
                   precio = (item['precio'] as num).toDouble();
-                } else if (varianteData != null && varianteData['precio'] != null) {
+                } else if (varianteData != null &&
+                    varianteData['precio'] != null) {
                   precio = (varianteData['precio'] as num).toDouble();
-                } else if (presentacionData != null && presentacionData['precio'] != null) {
+                } else if (presentacionData != null &&
+                    presentacionData['precio'] != null) {
                   precio = (presentacionData['precio'] as num).toDouble();
                 }
-                
+
                 // Extraer metadata de inventario (igual que en modo normal)
-                final almacenData = ubicacionData?['almacen'] as Map<String, dynamic>?;
+                final almacenData =
+                    ubicacionData?['almacen'] as Map<String, dynamic>?;
                 final inventoryMetadata = {
                   'id_inventario': item['id_inventario'],
                   'id_variante': varianteData?['id'],
@@ -183,26 +201,32 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   'ubicacion_nombre': ubicacionData?['denominacion'],
                   'almacen_nombre': almacenData?['denominacion'],
                 };
-                
+
                 variantes.add(
                   ProductVariant(
                     id: i + 1, // ID secuencial
                     nombre: variantName,
                     precio: precio,
                     cantidad: cantidadDisponible,
-                    descripcion: variantDescription.isNotEmpty ? variantDescription : null,
+                    descripcion:
+                        variantDescription.isNotEmpty
+                            ? variantDescription
+                            : null,
                     inventoryMetadata: inventoryMetadata,
                   ),
                 );
               }
-              
+
               foundProduct = Product(
                 id: productoInfo['id'] as int,
                 denominacion: productoInfo['denominacion'] as String,
                 descripcion: productoInfo['descripcion'] as String?,
                 foto: productoInfo['foto'] as String?,
                 precio: (productoInfo['precio_actual'] as num).toDouble(),
-                cantidad: inventarioList.fold(0, (sum, inv) => sum + (inv['cantidad_disponible'] as num)),
+                cantidad: inventarioList.fold(
+                  0,
+                  (sum, inv) => sum + (inv['cantidad_disponible'] as num),
+                ),
                 categoria: productoInfo['categoria']['denominacion'] as String,
                 esRefrigerado: productoInfo['es_refrigerado'] as bool? ?? false,
                 esFragil: productoInfo['es_fragil'] as bool? ?? false,
@@ -215,21 +239,25 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 esServicio: productoInfo['es_servicio'] as bool? ?? false,
                 variantes: variantes,
               );
-              
+
               print('✅ Detalles del producto cargados desde cache offline');
               print('  - Producto: ${foundProduct.denominacion}');
               print('  - Variantes: ${foundProduct.variantes.length}');
               break;
             }
           }
-          
+
           if (foundProduct == null) {
-            throw Exception('No se encontraron detalles del producto en cache offline');
+            throw Exception(
+              'No se encontraron detalles del producto en cache offline',
+            );
           }
-          
+
           detailedProduct = foundProduct;
         } else {
-          throw Exception('No hay datos de productos sincronizados en modo offline');
+          throw Exception(
+            'No hay datos de productos sincronizados en modo offline',
+          );
         }
       } else {
         print('🌐 Modo online - Cargando detalles desde Supabase...');
@@ -256,18 +284,19 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       });
     } catch (e, stackTrace) {
       print('❌ Error cargando detalles del producto: $e $stackTrace');
-      
+
       final isConnectionError = ConnectionErrorHandler.isConnectionError(e);
-      
+
       setState(() {
         _isConnectionError = isConnectionError;
-        _errorMessage = isConnectionError 
-            ? ConnectionErrorHandler.getConnectionErrorMessage()
-            : ConnectionErrorHandler.getGenericErrorMessage(e);
+        _errorMessage =
+            isConnectionError
+                ? ConnectionErrorHandler.getConnectionErrorMessage()
+                : ConnectionErrorHandler.getGenericErrorMessage(e);
         _isLoadingDetails = false;
         _showRetryWidget = isConnectionError;
       });
-      
+
       debugPrint('🔍 Es error de conexión: $isConnectionError');
     }
   }
@@ -286,15 +315,23 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         idTienda,
       );
 
-      // Cargar promoción específica del producto
-      final productPromotion = await _promotionService.getProductPromotion(
-        idTienda,
-        currentProduct.denominacion,
+      // Cargar promociones específicas del producto usando el nuevo método
+      final productPromotions = await _promotionService.getProductPromotions(
+        currentProduct.id,
       );
+
+      // Guardar promociones del producto en preferencias para acceso en checkout
+      if (productPromotions.isNotEmpty) {
+        await _userPreferencesService.saveProductPromotions(
+          currentProduct.id,
+          productPromotions,
+        );
+      }
 
       setState(() {
         _globalPromotionData = globalPromotion;
-        _productPromotionData = productPromotion;
+        _productPromotionData =
+            productPromotions.isNotEmpty ? productPromotions : null;
       });
 
       print('🎯 Promociones cargadas:');
@@ -302,7 +339,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         '  - Global: ${globalPromotion != null ? globalPromotion['codigo_promocion'] : 'No'}',
       );
       print(
-        '  - Producto: ${productPromotion != null ? productPromotion['codigo_promocion'] : 'No'}',
+        '  - Producto: ${productPromotions.isNotEmpty ? '${productPromotions.length} promociones' : 'No'}',
       );
     } catch (e) {
       print('❌ Error cargando promociones: $e');
@@ -387,9 +424,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 
   /// Calcula el precio con descuento, priorizando promoción de producto sobre global
+  /// Para display purposes, usa la primera promoción de la lista (aplicación real en checkout)
   Map<String, double> _calculatePromotionPrices(double originalPrice) {
     // Priorizar promoción específica del producto sobre promoción global
-    final activePromotion = _productPromotionData ?? _globalPromotionData;
+    final activePromotion =
+        (_productPromotionData != null && _productPromotionData!.isNotEmpty)
+            ? _productPromotionData!.first
+            : _globalPromotionData;
 
     if (activePromotion == null) {
       return {'precio_venta': originalPrice, 'precio_oferta': originalPrice};
@@ -418,8 +459,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 
   /// Obtiene información de la promoción activa
+  /// Para display purposes, retorna primera promoción (aplicación real en checkout)
   Map<String, dynamic>? _getActivePromotion() {
-    return _productPromotionData ?? _globalPromotionData;
+    if (_productPromotionData != null && _productPromotionData!.isNotEmpty) {
+      return _productPromotionData!.first;
+    }
+    return _globalPromotionData;
   }
 
   Widget _buildPriceSection(double originalPrice) {
@@ -575,7 +620,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       // Producto sin variantes - usar precio con presentación
       final prices = _calculatePromotionPrices(currentProduct.precio);
       final finalPrice = prices['precio_oferta']!;
-      total = _calculateTotalPriceWithPresentation(finalPrice, selectedQuantity, currentProduct);
+      total = _calculateTotalPriceWithPresentation(
+        finalPrice,
+        selectedQuantity,
+        currentProduct,
+      );
     } else {
       // Producto con variantes - usar precio con presentación
       for (var entry in variantQuantities.entries) {
@@ -583,11 +632,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         final quantity = entry.value;
         final prices = _calculatePromotionPrices(variant.precio);
         final finalPrice = prices['precio_oferta']!;
-        total += _calculateTotalPriceWithPresentation(finalPrice, quantity, currentProduct);
+        total += _calculateTotalPriceWithPresentation(
+          finalPrice,
+          quantity,
+          currentProduct,
+        );
       }
     }
 
-    debugPrint('💰 Total price calculado con presentaciones: \$${total.toStringAsFixed(2)}');
+    debugPrint(
+      '💰 Total price calculado con presentaciones: \$${total.toStringAsFixed(2)}',
+    );
     return total;
   }
 
@@ -647,7 +702,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos'),
+                    content: Text(
+                      '📱 Modo ahorro de datos activado - Las imágenes no se cargan para ahorrar datos',
+                    ),
                     backgroundColor: Colors.orange,
                     duration: Duration(seconds: 2),
                   ),
@@ -681,41 +738,48 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               : _errorMessage != null
               ? _showRetryWidget
                   ? ConnectionRetryWidget(
-                      message: _errorMessage!,
-                      onRetry: _loadProductDetails,
-                    )
+                    message: _errorMessage!,
+                    onRetry: _loadProductDetails,
+                  )
                   : Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Error al cargar detalles',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[800],
-                            ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: Colors.red[300],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Error al cargar detalles',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _errorMessage!,
-                            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                            textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
                           ),
-                          const SizedBox(height: 24),
-                          ElevatedButton(
-                            onPressed: _loadProductDetails,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF4A90E2),
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text('Reintentar'),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: _loadProductDetails,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4A90E2),
+                            foregroundColor: Colors.white,
                           ),
-                  ],
-                ),
-              )
+                          child: const Text('Reintentar'),
+                        ),
+                      ],
+                    ),
+                  )
               : SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -738,35 +802,41 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(11),
-                            child: _isLimitDataUsageEnabled
-                                ? Image.asset(
-                                    'assets/no_image.png',
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        color: Colors.grey[100],
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            const Icon(
-                                              Icons.inventory_2,
-                                              color: Colors.grey,
-                                              size: 32,
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              'Sin imagen',
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: Colors.grey[600],
+                            child:
+                                _isLimitDataUsageEnabled
+                                    ? Image.asset(
+                                      'assets/no_image.png',
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (
+                                        context,
+                                        error,
+                                        stackTrace,
+                                      ) {
+                                        return Container(
+                                          color: Colors.grey[100],
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              const Icon(
+                                                Icons.inventory_2,
+                                                color: Colors.grey,
+                                                size: 32,
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  )
-                                : currentProduct.foto != null
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Sin imagen',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    )
+                                    : currentProduct.foto != null
                                     ? Image.network(
                                       _compressImageUrl(currentProduct.foto!),
                                       fit: BoxFit.cover,
@@ -1108,7 +1178,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               children:
                   variants.map((variant) {
                     final isSelected = variantQuantities[variant]! > 0;
-                    return _buildLocationVariantCard(variant, isSelected, locationColor);
+                    return _buildLocationVariantCard(
+                      variant,
+                      isSelected,
+                      locationColor,
+                    );
                   }).toList(),
             ),
           ),
@@ -1118,7 +1192,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 
   // Método para construir card de variante dentro de una ubicación
-  Widget _buildLocationVariantCard(ProductVariant variant, bool isSelected, Color locationColor) {
+  Widget _buildLocationVariantCard(
+    ProductVariant variant,
+    bool isSelected,
+    Color locationColor,
+  ) {
     int currentQuantity = variantQuantities[variant] ?? 0;
 
     return Container(
@@ -1137,9 +1215,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color:
-                isSelected
-                    ? locationColor.withOpacity(0.1)
-                    : Colors.grey[50],
+                isSelected ? locationColor.withOpacity(0.1) : Colors.grey[50],
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
               color: isSelected ? locationColor : Colors.grey[300]!,
@@ -1154,10 +1230,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 height: 32,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(4),
-                  color: isSelected ? locationColor.withOpacity(0.1) : Colors.grey[100],
+                  color:
+                      isSelected
+                          ? locationColor.withOpacity(0.1)
+                          : Colors.grey[100],
                   border: Border.all(
-                    color: isSelected ? locationColor.withOpacity(0.3) : Colors.grey[300]!, 
-                    width: 1
+                    color:
+                        isSelected
+                            ? locationColor.withOpacity(0.3)
+                            : Colors.grey[300]!,
+                    width: 1,
                   ),
                 ),
                 child: Icon(
@@ -1196,13 +1278,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           width: 3,
                           height: 3,
                           decoration: BoxDecoration(
-                            color: isSelected ? locationColor.withOpacity(0.6) : Colors.grey[400],
+                            color:
+                                isSelected
+                                    ? locationColor.withOpacity(0.6)
+                                    : Colors.grey[400],
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 6),
                         // Solo mostrar stock si NO es un producto elaborado ni servicio
-                        if (!currentProduct.esElaborado && !currentProduct.esServicio)
+                        if (!currentProduct.esElaborado &&
+                            !currentProduct.esServicio)
                           Text(
                             'Stock: ${variant.cantidad}',
                             style: TextStyle(
@@ -1309,11 +1395,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           // Fila media: Ubicación y precio unitario
           Row(
             children: [
-              Icon(
-                Icons.location_on,
-                size: 16,
-                color: locationColor,
-              ),
+              Icon(Icons.location_on, size: 16, color: locationColor),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
@@ -1468,14 +1550,19 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                         setState(() {
                           if (currentProduct.variantes.isEmpty) {
                             // Si es elaborado o servicio, no limitar cantidad; si no, usar límite de stock
-                            if (currentProduct.esElaborado || currentProduct.esServicio || selectedQuantity < maxQuantityForProduct)
+                            if (currentProduct.esElaborado ||
+                                currentProduct.esServicio ||
+                                selectedQuantity < maxQuantityForProduct)
                               selectedQuantity++;
                           } else {
                             // Buscar la variante correspondiente
                             for (var variant in currentProduct.variantes) {
                               if (name.contains(variant.nombre)) {
                                 // Si es elaborado o servicio, no limitar cantidad; si no, usar límite de stock
-                                if (currentProduct.esElaborado || currentProduct.esServicio || variantQuantities[variant]! < variant.cantidad) {
+                                if (currentProduct.esElaborado ||
+                                    currentProduct.esServicio ||
+                                    variantQuantities[variant]! <
+                                        variant.cantidad) {
                                   variantQuantities[variant] =
                                       variantQuantities[variant]! + 1;
                                 }
@@ -1696,13 +1783,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       // Producto con variantes
       for (var entry in variantQuantities.entries) {
         final quantity = entry.value;
-        
+
         // Buscar el producto correspondiente a esta variante para obtener su factor de conversión
-        final conversionFactor = _getPresentationConversionFactor(currentProduct);
+        final conversionFactor = _getPresentationConversionFactor(
+          currentProduct,
+        );
         total += (quantity * conversionFactor).round();
       }
     }
-    
+
     debugPrint('📊 Total unidades equivalentes calculado: $total');
     return total;
   }
@@ -1825,13 +1914,15 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       final singleLocationEntry = locationGroups.entries.first;
       final locationKey = singleLocationEntry.key;
       final variants = singleLocationEntry.value;
-      
+
       if (variants.isNotEmpty) {
         final firstVariant = variants.first;
-        
+
         print('🎯 Solo una ubicación disponible: $locationKey');
-        print('🎯 Seleccionando automáticamente variante: ${firstVariant.nombre}');
-        
+        print(
+          '🎯 Seleccionando automáticamente variante: ${firstVariant.nombre}',
+        );
+
         // Seleccionar la primera variante automáticamente
         // Usar addPostFrameCallback para asegurar que el setState se ejecute correctamente
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1839,15 +1930,23 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             selectedVariant = firstVariant;
             // Establecer cantidad inicial de 1 para la variante seleccionada
             variantQuantities[firstVariant] = 1;
-            print('🔄 setState ejecutado - selectedVariant: ${selectedVariant?.nombre}');
-            print('🔄 variantQuantities actualizado: ${variantQuantities.entries.where((e) => e.value > 0).map((e) => '${e.key.nombre}: ${e.value}').toList()}');
+            print(
+              '🔄 setState ejecutado - selectedVariant: ${selectedVariant?.nombre}',
+            );
+            print(
+              '🔄 variantQuantities actualizado: ${variantQuantities.entries.where((e) => e.value > 0).map((e) => '${e.key.nombre}: ${e.value}').toList()}',
+            );
           });
         });
-        
-        print('🎯 Variante seleccionada automáticamente: ${firstVariant.nombre} con cantidad 1');
+
+        print(
+          '🎯 Variante seleccionada automáticamente: ${firstVariant.nombre} con cantidad 1',
+        );
       }
     } else {
-      print('🏪 Múltiples ubicaciones disponibles (${locationGroups.length}), mostrando opciones al usuario');
+      print(
+        '🏪 Múltiples ubicaciones disponibles (${locationGroups.length}), mostrando opciones al usuario',
+      );
     }
   }
 
@@ -1855,21 +1954,20 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   Color _getLocationColor(String locationName) {
     // Crear un hash simple del nombre de la ubicación
     int hash = locationName.hashCode;
-    
+
     // Obtener los componentes RGB del color de la categoría
     int red = widget.categoryColor.red;
     int green = widget.categoryColor.green;
     int blue = widget.categoryColor.blue;
-    
+
     // Generar variaciones del color base usando el hash
     // Usar diferentes operaciones para cada componente RGB
     int newRed = ((red + (hash % 60) - 30).clamp(50, 255)).toInt();
     int newGreen = ((green + ((hash >> 8) % 60) - 30).clamp(50, 255)).toInt();
     int newBlue = ((blue + ((hash >> 16) % 60) - 30).clamp(50, 255)).toInt();
-    
+
     return Color.fromARGB(255, newRed, newGreen, newBlue);
   }
-
 
   /// Get location key from variant's inventory metadata
   String _getLocationKey(ProductVariant variant) {
@@ -1993,14 +2091,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
   void _addToCart() async {
     final orderService = OrderService();
-    
+
     // Verificar configuración de tienda antes de agregar productos
     try {
       final storeConfig = await _userPreferencesService.getStoreConfig();
-      if (storeConfig != null && storeConfig['need_all_orders_completed_to_continue'] == true) {
+      if (storeConfig != null &&
+          storeConfig['need_all_orders_completed_to_continue'] == true) {
         // Verificar si hay órdenes pendientes
-        final hasPendingOrders = orderService.orders.any((order) => order.status.index == 1); // estado: 1 = Pendiente
-        
+        final hasPendingOrders = orderService.orders.any(
+          (order) => order.status.index == 1,
+        ); // estado: 1 = Pendiente
+
         if (hasPendingOrders) {
           _showPendingOrdersDialog();
           return;
@@ -2206,47 +2307,48 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   void _showPendingOrdersDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              color: Colors.orange,
-              size: 28,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.orange,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Órdenes Pendientes',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            const Text(
-              'Órdenes Pendientes',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+            content: const Text(
+              'Debes completar todas las órdenes pendientes antes de agregar una nueva orden.',
+              style: TextStyle(fontSize: 16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Entendido'),
               ),
-            ),
-          ],
-        ),
-        content: const Text(
-          'Debes completar todas las órdenes pendientes antes de agregar una nueva orden.',
-          style: TextStyle(fontSize: 16),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Entendido'),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context); // Cerrar diálogo
+                  Navigator.popUntil(
+                    context,
+                    (route) => route.isFirst,
+                  ); // Ir a home
+                  Navigator.pushNamed(context, '/orders'); // Ir a órdenes
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.categoryColor,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Ver Órdenes'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context); // Cerrar diálogo
-              Navigator.popUntil(context, (route) => route.isFirst); // Ir a home
-              Navigator.pushNamed(context, '/orders'); // Ir a órdenes
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: widget.categoryColor,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Ver Órdenes'),
-          ),
-        ],
-      ),
     );
   }
 }

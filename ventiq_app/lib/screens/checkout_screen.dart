@@ -3,6 +3,7 @@ import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/store_config_service.dart';
+import '../services/promotion_service.dart';
 import '../utils/price_utils.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
@@ -18,31 +19,37 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   final OrderService _orderService = OrderService();
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
+  final PromotionService _promotionService = PromotionService();
   final _formKey = GlobalKey<FormState>();
-  
+
   // Controllers for form fields
   final _promoCodeController = TextEditingController();
   final _buyerNameController = TextEditingController();
   final _buyerPhoneController = TextEditingController();
   final _extraContactsController = TextEditingController();
-  
+
   // State variables
   double _promoDiscount = 0.0;
   bool _promoApplied = false;
   bool _isProcessing = false;
   late bool _noSolicitarCliente;
-  
+  Map<int, List<Map<String, dynamic>>> _productPromotions =
+      {}; // productId -> promotions
+
   // Discount percentages (you can make these configurable)
   static const double promoDiscountPercentage = 0.10; // 10% promo discount
-  
+
   // Calculate and round promo discount
-  double get roundedPromoDiscount => PriceUtils.roundDiscountPrice(_promoDiscount);
+  double get roundedPromoDiscount =>
+      PriceUtils.roundDiscountPrice(_promoDiscount);
 
   @override
   void initState() {
     super.initState();
     _loadStoreConfig();
+    _loadProductPromotions();
   }
 
   Future<void> _loadStoreConfig() async {
@@ -51,24 +58,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (storeId != null) {
         // Primero intentar obtener del cache (debe estar disponible desde login)
         final config = await StoreConfigService.getStoreConfigFromCache();
-        
+
         if (config != null) {
           // Usar configuración del cache
           _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
-          print('✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente');
+          print(
+            '✅ Configuración cargada desde cache - No solicitar cliente: $_noSolicitarCliente',
+          );
         } else {
           // Fallback: cargar desde Supabase si no está en cache
-          print('⚠️ Configuración no encontrada en cache, cargando desde Supabase...');
-          final noSolicitar = await StoreConfigService.getNoSolicitarCliente(storeId);
+          print(
+            '⚠️ Configuración no encontrada en cache, cargando desde Supabase...',
+          );
+          final noSolicitar = await StoreConfigService.getNoSolicitarCliente(
+            storeId,
+          );
           _noSolicitarCliente = noSolicitar;
-          print('✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente');
+          print(
+            '✅ Configuración cargada desde Supabase - No solicitar cliente: $_noSolicitarCliente',
+          );
         }
-        
+
         // Si no se solicita cliente, establecer nombre automáticamente
         if (_noSolicitarCliente) {
           _buyerNameController.text = 'Cliente';
         }
-        
+
         // Notificar al widget que se actualizó la configuración
         if (mounted) {
           setState(() {});
@@ -84,6 +99,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  /// Cargar promociones de productos desde preferencias
+  Future<void> _loadProductPromotions() async {
+    try {
+      // Obtener IDs únicos de los productos en la orden
+      final productIds =
+          widget.order.items.map((item) => item.producto.id).toSet();
+
+      print('🎯 Cargando promociones para ${productIds.length} productos');
+
+      for (final productId in productIds) {
+        final promotions = await _userPreferencesService.getProductPromotions(
+          productId,
+        );
+
+        if (promotions != null && promotions.isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              _productPromotions[productId] = promotions;
+            });
+          }
+          print(
+            '  ✅ Producto $productId: ${promotions.length} promocion(es) cargada(s)',
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Error cargando promociones de productos: $e');
+    }
+  }
+
   @override
   void dispose() {
     _promoCodeController.dispose();
@@ -93,16 +138,83 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.dispose();
   }
 
-  double get subtotal => widget.order.total;
-  
+  /// Calcula el subtotal de la orden aplicando promociones según método de pago
+  /// Las promociones se aplican solo si coincide el método de pago requerido
+  double get subtotal {
+    double total = 0.0;
+
+    for (final item in widget.order.items) {
+      total += _calculateItemPrice(item);
+    }
+
+    return total;
+  }
+
+  ///Calcula el precio de un item aplicando promoción si corresponde según método de pago
+  double _calculateItemPrice(OrderItem item) {
+    final productId = item.producto.id;
+    final paymentMethodId = item.paymentMethod?.id;
+
+    // Si no hay promociones para este producto, usar precio sin descuento
+    final productPromotions = _productPromotions[productId];
+    if (productPromotions == null || productPromotions.isEmpty) {
+      return item.subtotal; // Precio original ya calculado
+    }
+
+    // Buscar promoción aplicable según método de pago
+    Map<String, dynamic>? applicablePromotion;
+
+    for (final promo in productPromotions) {
+      if (_promotionService.shouldApplyPromotion(promo, paymentMethodId)) {
+        applicablePromotion = promo;
+        break; // Tomar primera promoción aplicable
+      }
+    }
+
+    // Si no hay promoción aplicable, usar precio original
+    if (applicablePromotion == null) {
+      print(
+        '  ⚠️ ${item.producto.denominacion}: Sin promoción aplicable (método pago: $paymentMethodId)',
+      );
+      return item.subtotal;
+    }
+
+    // Aplicar promoción
+    final precioBase =
+        applicablePromotion['precio_base'] as double? ?? item.precioUnitario;
+    final valorDescuento =
+        applicablePromotion['valor_descuento'] as double? ?? 0.0;
+    final esRecargo = applicablePromotion['es_recargo'] as bool? ?? false;
+    final tipoDescuento = applicablePromotion['tipo_descuento'] as int? ?? 1;
+
+    final prices = PriceUtils.calculatePromotionPrices(
+      precioBase,
+      valorDescuento,
+      tipoDescuento,
+    );
+
+    final precioFinal = prices['precio_oferta']!;
+    final itemTotal = precioFinal * item.cantidad;
+
+    print('  💰 ${item.producto.denominacion}:');
+    print('     - Precio base: \$${precioBase.toStringAsFixed(2)}');
+    print(
+      '     - Precio final: \$${precioFinal.toStringAsFixed(2)} ${esRecargo ? "(recargo)" : "(descuento)"}',
+    );
+    print('     - Cantidad: ${item.cantidad}');
+    print('     - Total item: \$${itemTotal.toStringAsFixed(2)}');
+
+    return itemTotal;
+  }
+
   double get totalAfterPromo => subtotal - _promoDiscount;
-  
+
   double get finalTotal => totalAfterPromo;
 
   // Calculate payment breakdown from individual product payment methods
   Map<String, double> get paymentBreakdown {
     Map<String, double> breakdown = {};
-    
+
     for (final item in widget.order.items) {
       if (item.paymentMethod != null) {
         final methodName = item.paymentMethod!.denominacion;
@@ -110,7 +222,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         breakdown[methodName] = (breakdown[methodName] ?? 0.0) + itemTotal;
       }
     }
-    
+
     return breakdown;
   }
 
@@ -187,10 +299,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             children: [
               Text(
                 '${widget.order.totalItems} producto${widget.order.totalItems == 1 ? '' : 's'}',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               Text(
                 '\$${subtotal.toStringAsFixed(2)}',
@@ -238,7 +347,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ),
@@ -246,9 +358,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ElevatedButton(
                 onPressed: _promoApplied ? _removePromo : _applyPromo,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _promoApplied ? Colors.red : const Color(0xFF4A90E2),
+                  backgroundColor:
+                      _promoApplied ? Colors.red : const Color(0xFF4A90E2),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                 ),
                 child: Text(_promoApplied ? 'Quitar' : 'Aplicar'),
               ),
@@ -285,7 +401,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   Widget _buildPaymentBreakdownSection() {
     final breakdown = paymentBreakdown;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -335,7 +451,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               final methodName = entry.key;
               final amount = entry.value;
               final icon = _getPaymentMethodIcon(methodName);
-              
+
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
@@ -398,9 +514,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   String _getPaymentMethodIcon(String methodName) {
     final lowerName = methodName.toLowerCase();
-    if (lowerName.contains('efectivo') || lowerName.contains('cash')) return '💵';
-    if (lowerName.contains('digital') || lowerName.contains('tarjeta') || lowerName.contains('card')) return '💳';
-    if (lowerName.contains('transferencia') || lowerName.contains('transfer')) return '🏦';
+    if (lowerName.contains('efectivo') || lowerName.contains('cash'))
+      return '💵';
+    if (lowerName.contains('digital') ||
+        lowerName.contains('tarjeta') ||
+        lowerName.contains('card'))
+      return '💳';
+    if (lowerName.contains('transferencia') || lowerName.contains('transfer'))
+      return '🏦';
     return '💰';
   }
 
@@ -436,7 +557,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -454,7 +578,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
             ),
             validator: (value) {
               // Phone is now optional, no validation required
@@ -493,10 +620,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           const SizedBox(height: 8),
           Text(
             'Opcional - Contactos extras del cliente',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
-            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
           ),
           const SizedBox(height: 12),
           TextFormField(
@@ -507,7 +631,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
             ),
           ),
         ],
@@ -528,10 +655,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Subtotal:',
-                style: TextStyle(fontSize: 14),
-              ),
+              const Text('Subtotal:', style: TextStyle(fontSize: 14)),
               Text(
                 '\$${subtotal.toStringAsFixed(2)}',
                 style: const TextStyle(fontSize: 14),
@@ -590,26 +714,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           backgroundColor: const Color(0xFF4A90E2),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
-        child: _isProcessing
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        child:
+            _isProcessing
+                ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+                : const Text(
+                  'Crear Orden',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
-              )
-            : const Text(
-                'Crear Orden',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
       ),
     );
   }
@@ -622,9 +742,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     // Simple promo validation (you can make this more sophisticated)
-    if (promoCode.toUpperCase() == 'DESCUENTO10' || promoCode.toUpperCase() == 'PROMO10') {
+    if (promoCode.toUpperCase() == 'DESCUENTO10' ||
+        promoCode.toUpperCase() == 'PROMO10') {
       setState(() {
-        _promoDiscount = PriceUtils.roundDiscountPrice(totalAfterPromo * promoDiscountPercentage);
+        _promoDiscount = PriceUtils.roundDiscountPrice(
+          totalAfterPromo * promoDiscountPercentage,
+        );
         _promoApplied = true;
       });
       _showSuccessMessage('¡Código promocional aplicado!');
@@ -646,28 +769,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // Crear hash MD5 del nombre
     final bytes = utf8.encode(buyerName.toLowerCase().trim());
     final digest = md5.convert(bytes);
-    
+
     // Tomar los primeros 12 caracteres del hash para mantener el código bajo 20 caracteres
     final clientCode = 'CLI${digest.toString().substring(0, 12).toUpperCase()}';
-    
-    print('🔐 Código generado para "$buyerName": $clientCode (${clientCode.length} caracteres)');
+
+    print(
+      '🔐 Código generado para "$buyerName": $clientCode (${clientCode.length} caracteres)',
+    );
     return clientCode;
   }
 
   // Registrar cliente en Supabase y retornar el ID del cliente
-  Future<int?> _registerClientInSupabase(String buyerName, String buyerPhone) async {
+  Future<int?> _registerClientInSupabase(
+    String buyerName,
+    String buyerPhone,
+  ) async {
     try {
       print('🔄 Registrando cliente en Supabase...');
       print('  - Nombre: $buyerName');
-      print('  - Teléfono: ${buyerPhone.isNotEmpty ? buyerPhone : "No proporcionado"}');
-      
+      print(
+        '  - Teléfono: ${buyerPhone.isNotEmpty ? buyerPhone : "No proporcionado"}',
+      );
+
       // Generar código de cliente encriptado
       final clientCode = _generateClientCode(buyerName);
-      
+
       final response = await Supabase.instance.client.rpc(
         'fn_insertar_cliente_con_contactos',
         params: {
-          'p_codigo_cliente': clientCode, // Código generado desde nombre encriptado
+          'p_codigo_cliente':
+              clientCode, // Código generado desde nombre encriptado
           'p_contactos': null, // Sin contactos adicionales por ahora
           'p_direccion': null, // No tenemos dirección
           'p_documento_identidad': null, // No tenemos documento
@@ -680,19 +811,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'p_tipo_cliente': 1, // Tipo cliente por defecto
         },
       );
-      
+
       print('✅ Respuesta fn_insertar_cliente_con_contactos:');
       print('$response');
-      
+
       if (response != null && response['status'] == 'success') {
         final idCliente = response['id_cliente'] as int;
         print('✅ Cliente registrado exitosamente - ID: $idCliente');
         return idCliente; // Retornar el ID del cliente
       } else {
-        print('⚠️ Advertencia al registrar cliente: ${response?['message'] ?? "Respuesta vacía"}');
+        print(
+          '⚠️ Advertencia al registrar cliente: ${response?['message'] ?? "Respuesta vacía"}',
+        );
         return null;
       }
-      
     } catch (e) {
       print('❌ Error al registrar cliente en Supabase: $e');
       // No lanzamos excepción para no interrumpir el flujo de la venta
@@ -708,7 +840,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // Validate that all products have payment methods assigned
     final breakdown = paymentBreakdown;
     if (breakdown.isEmpty) {
-      _showErrorMessage('Todos los productos deben tener un método de pago asignado');
+      _showErrorMessage(
+        'Todos los productos deben tener un método de pago asignado',
+      );
       return;
     }
 
@@ -719,16 +853,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final buyerName = _buyerNameController.text.trim();
       final buyerPhone = _buyerPhoneController.text.trim();
-      
+
       // Detectar si es una orden offline
       if (widget.order.isOfflineOrder) {
-        print('🔌 Procesando orden offline - Capturando datos del cliente y creando orden offline');
+        print(
+          '🔌 Procesando orden offline - Capturando datos del cliente y creando orden offline',
+        );
         await _processOfflineOrder(buyerName, buyerPhone, breakdown);
       } else {
         print('🌐 Procesando orden online - Flujo normal');
         await _processOnlineOrder(buyerName, buyerPhone, breakdown);
       }
-
     } catch (e) {
       _showErrorMessage('Error al crear la orden: $e');
     } finally {
@@ -739,36 +874,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   /// Procesar orden en modo offline
-  Future<void> _processOfflineOrder(String buyerName, String buyerPhone, Map<String, double> breakdown) async {
+  Future<void> _processOfflineOrder(
+    String buyerName,
+    String buyerPhone,
+    Map<String, double> breakdown,
+  ) async {
     try {
       // Obtener datos del usuario
       final userData = await _userPreferencesService.getUserData();
       final idTienda = await _userPreferencesService.getIdTienda();
       final idTpv = await _userPreferencesService.getIdTpv();
       final idSeller = await _userPreferencesService.getIdSeller();
-      
+
       // Generar ID único para la orden offline
       final offlineOrderId = '${DateTime.now().millisecondsSinceEpoch}';
-      
+
       // Calcular totales
       double subtotal = 0.0;
       double totalDescuentos = _promoDiscount;
-      
+
       // Preparar desglose de pagos por método
       Map<String, Map<String, dynamic>> paymentBreakdown = {};
-      
+
       for (final item in widget.order.items) {
         // ✅ CORREGIDO: Usar item.subtotal que ya tiene el precio correcto según método de pago
         final itemTotal = item.subtotal;
         subtotal += itemTotal;
-        
+
         print('🔌 OFFLINE - Producto: ${item.producto.denominacion}');
         print('  - Precio unitario base: \$${item.precioUnitario}');
         print('  - Subtotal con método de pago: \$${item.subtotal}');
-        print('  - Método de pago: ${item.paymentMethod?.denominacion ?? "Sin método"}');
-        
+        print(
+          '  - Método de pago: ${item.paymentMethod?.denominacion ?? "Sin método"}',
+        );
+
         // Agrupar por método de pago
-        final paymentMethodId = item.paymentMethod?.id.toString() ?? 'sin_metodo';
+        final paymentMethodId =
+            item.paymentMethod?.id.toString() ?? 'sin_metodo';
         if (!paymentBreakdown.containsKey(paymentMethodId)) {
           paymentBreakdown[paymentMethodId] = {
             'id_medio_pago': item.paymentMethod?.id,
@@ -778,12 +920,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'es_efectivo': item.paymentMethod?.esEfectivo ?? false,
           };
         }
-        paymentBreakdown[paymentMethodId]!['monto'] = 
-          (paymentBreakdown[paymentMethodId]!['monto'] as double) + itemTotal;
+        paymentBreakdown[paymentMethodId]!['monto'] =
+            (paymentBreakdown[paymentMethodId]!['monto'] as double) + itemTotal;
       }
-      
+
       final total = subtotal - totalDescuentos;
-      
+
       // Crear estructura de orden virtual con datos del cliente
       final orderData = {
         'id': offlineOrderId,
@@ -804,37 +946,49 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'extra_contacts': _extraContactsController.text.trim(),
         'promo_code': _promoApplied ? _promoCodeController.text.trim() : null,
         'promo_discount': _promoDiscount,
-        'items': widget.order.items.map((item) {
-          // ✅ CORREGIDO: Usar el precio unitario correcto calculado desde el subtotal
-          final precioUnitarioCorrect = item.cantidad > 0 ? (item.subtotal / item.cantidad) : item.precioUnitario;
-          
-          print('💾 GUARDANDO OFFLINE - Producto: ${item.producto.denominacion}');
-          print('  - Precio unitario base: \$${item.precioUnitario}');
-          print('  - Subtotal con método de pago: \$${item.subtotal}');
-          print('  - Precio unitario correcto guardado: \$${precioUnitarioCorrect}');
-          print('  - Método de pago: ${item.paymentMethod?.denominacion ?? "Sin método"}');
-          
-          return {
-            'id_producto': item.producto.id,
-            'denominacion': item.producto.denominacion,
-            'cantidad': item.cantidad,
-            'precio_unitario': precioUnitarioCorrect, // ✅ Precio correcto según método de pago
-            'subtotal': item.subtotal, // ✅ Subtotal con precio correcto
-            'id_medio_pago': item.paymentMethod?.id,
-            'metodo_pago': item.paymentMethod?.denominacion,
-            'inventory_metadata': item.inventoryData,
-          };
-        }).toList(),
+        'items':
+            widget.order.items.map((item) {
+              // ✅ CORREGIDO: Usar el precio unitario correcto calculado desde el subtotal
+              final precioUnitarioCorrect =
+                  item.cantidad > 0
+                      ? (item.subtotal / item.cantidad)
+                      : item.precioUnitario;
+
+              print(
+                '💾 GUARDANDO OFFLINE - Producto: ${item.producto.denominacion}',
+              );
+              print('  - Precio unitario base: \$${item.precioUnitario}');
+              print('  - Subtotal con método de pago: \$${item.subtotal}');
+              print(
+                '  - Precio unitario correcto guardado: \$${precioUnitarioCorrect}',
+              );
+              print(
+                '  - Método de pago: ${item.paymentMethod?.denominacion ?? "Sin método"}',
+              );
+
+              return {
+                'id_producto': item.producto.id,
+                'denominacion': item.producto.denominacion,
+                'cantidad': item.cantidad,
+                'precio_unitario':
+                    precioUnitarioCorrect, // ✅ Precio correcto según método de pago
+                'subtotal': item.subtotal, // ✅ Subtotal con precio correcto
+                'id_medio_pago': item.paymentMethod?.id,
+                'metodo_pago': item.paymentMethod?.denominacion,
+                'inventory_metadata': item.inventoryData,
+              };
+            }).toList(),
         'desglose_pagos': paymentBreakdown.values.toList(),
       };
-      
+
       // Guardar orden pendiente
       await _userPreferencesService.savePendingOrder(orderData);
-      
+
       // Actualizar inventario en cache
       for (final item in widget.order.items) {
         final inventoryMetadata = item.inventoryData;
-        if (inventoryMetadata != null && inventoryMetadata['id_variante'] != null) {
+        if (inventoryMetadata != null &&
+            inventoryMetadata['id_variante'] != null) {
           await _userPreferencesService.updateProductInventoryInCache(
             item.producto.id,
             inventoryMetadata['id_variante'] as int,
@@ -842,28 +996,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           );
         }
       }
-      
+
       // Limpiar orden actual
       _orderService.cancelCurrentOrder();
-      
+
       // Mostrar mensaje de éxito
-      _showSuccessMessage('¡Orden offline creada exitosamente!\nSe sincronizará cuando tengas conexión.');
-      
+      _showSuccessMessage(
+        '¡Orden offline creada exitosamente!\nSe sincronizará cuando tengas conexión.',
+      );
+
       print('✅ Orden offline creada con datos del cliente: $offlineOrderId');
-      print('👤 Cliente: $buyerName${buyerPhone.isNotEmpty ? " - $buyerPhone" : ""}');
+      print(
+        '👤 Cliente: $buyerName${buyerPhone.isNotEmpty ? " - $buyerPhone" : ""}',
+      );
       print('💰 Resumen de orden offline:');
       print('  - Subtotal: \$${subtotal.toStringAsFixed(2)}');
       print('  - Descuentos: \$${totalDescuentos.toStringAsFixed(2)}');
       print('  - Total final: \$${total.toStringAsFixed(2)}');
       print('💳 Desglose de pagos offline:');
       paymentBreakdown.forEach((key, value) {
-        print('  - ${value['denominacion']}: \$${value['monto'].toStringAsFixed(2)}');
+        print(
+          '  - ${value['denominacion']}: \$${value['monto'].toStringAsFixed(2)}',
+        );
       });
       print('📦 Inventario actualizado en cache');
-      
+
       // Navegar a órdenes
       Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
-      
     } catch (e) {
       print('❌ Error creando orden offline: $e');
       _showErrorMessage('Error al crear la orden offline: $e');
@@ -871,22 +1030,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   /// Procesar orden en modo online (flujo original)
-  Future<void> _processOnlineOrder(String buyerName, String buyerPhone, Map<String, double> breakdown) async {
+  Future<void> _processOnlineOrder(
+    String buyerName,
+    String buyerPhone,
+    Map<String, double> breakdown,
+  ) async {
     try {
       // 1. Primero registrar el cliente en Supabase si tenemos datos
       int? idCliente;
-      
+
       if (buyerName.isNotEmpty) {
         idCliente = await _registerClientInSupabase(buyerName, buyerPhone);
         print('📝 ID Cliente capturado: $idCliente');
       }
-      
+
       // 2. Create order with all the collected information
       final orderData = {
         'buyerName': buyerName,
         'buyerPhone': buyerPhone,
         'extraContacts': _extraContactsController.text.trim(),
-        'paymentMethod': 'Múltiples métodos', // Since we have individual payment methods per product
+        'paymentMethod':
+            'Múltiples métodos', // Since we have individual payment methods per product
         'promoCode': _promoApplied ? _promoCodeController.text.trim() : null,
         'promoDiscount': _promoDiscount,
         'finalTotal': finalTotal,
@@ -901,27 +1065,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         notas: _buildOrderNotes(orderData),
         buyerName: _buyerNameController.text.trim(),
         buyerPhone: _buyerPhoneController.text.trim(),
-        extraContacts: _extraContactsController.text.trim().isNotEmpty ? _extraContactsController.text.trim() : null,
+        extraContacts:
+            _extraContactsController.text.trim().isNotEmpty
+                ? _extraContactsController.text.trim()
+                : null,
         paymentMethod: 'Múltiples métodos',
       );
 
       // Finalize the order
-      final result = await _orderService.finalizeOrderWithDetails(updatedOrder, orderData);
+      final result = await _orderService.finalizeOrderWithDetails(
+        updatedOrder,
+        orderData,
+      );
 
       if (result['success'] == true) {
         // Show success and navigate back
         if (result['paymentWarning'] != null) {
-          _showErrorMessage('Orden creada con advertencia: ${result['paymentWarning']}');
+          _showErrorMessage(
+            'Orden creada con advertencia: ${result['paymentWarning']}',
+          );
         } else {
           _showSuccessMessage('¡Orden registrada exitosamente!');
         }
-        
+
         // Navigate back to orders screen or home
         Navigator.pushNamedAndRemoveUntil(context, '/orders', (route) => false);
       } else {
         _showErrorMessage('Error al registrar la venta: ${result['error']}');
       }
-      
     } catch (e) {
       print('❌ Error procesando orden online: $e');
       _showErrorMessage('Error al procesar la orden: $e');
@@ -930,23 +1101,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   String _buildOrderNotes(Map<String, dynamic> orderData) {
     final notes = <String>[];
-    
+
     if (orderData['buyerName']?.isNotEmpty == true) {
       notes.add('Cliente: ${orderData['buyerName']}');
     }
-    
+
     if (orderData['buyerPhone']?.isNotEmpty == true) {
       notes.add('Teléfono: ${orderData['buyerPhone']}');
     }
-    
+
     if (orderData['extraContacts']?.isNotEmpty == true) {
       notes.add('Contactos adicionales: ${orderData['extraContacts']}');
     }
-    
+
     if (orderData['paymentMethod'] != null) {
       notes.add('Método de pago: ${orderData['paymentMethod']}');
     }
-    
+
     // Add payment breakdown details
     if (orderData['paymentBreakdown'] != null) {
       final breakdown = orderData['paymentBreakdown'] as Map<String, double>;
@@ -955,32 +1126,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         notes.add('  - $method: \$${amount.toStringAsFixed(2)}');
       });
     }
-    
+
     if (orderData['promoCode']?.isNotEmpty == true) {
-      notes.add('Código promocional: ${orderData['promoCode']} (Descuento: \$${orderData['promoDiscount']?.toStringAsFixed(2) ?? '0.00'})');
+      notes.add(
+        'Código promocional: ${orderData['promoCode']} (Descuento: \$${orderData['promoDiscount']?.toStringAsFixed(2) ?? '0.00'})',
+      );
     }
-    
-    notes.add('Total original: \$${orderData['originalTotal']?.toStringAsFixed(2) ?? '0.00'}');
-    notes.add('Total final: \$${orderData['finalTotal']?.toStringAsFixed(2) ?? '0.00'}');
-    
+
+    notes.add(
+      'Total original: \$${orderData['originalTotal']?.toStringAsFixed(2) ?? '0.00'}',
+    );
+    notes.add(
+      'Total final: \$${orderData['finalTotal']?.toStringAsFixed(2) ?? '0.00'}',
+    );
+
     return notes.join('\n');
   }
 
   void _showSuccessMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
   }
 
   void _showErrorMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 }

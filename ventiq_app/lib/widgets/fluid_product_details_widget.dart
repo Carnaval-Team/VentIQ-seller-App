@@ -19,13 +19,15 @@ class FluidProductDetailsWidget extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<FluidProductDetailsWidget> createState() => _FluidProductDetailsWidgetState();
+  State<FluidProductDetailsWidget> createState() =>
+      _FluidProductDetailsWidgetState();
 }
 
 class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
   final ProductDetailService _productDetailService = ProductDetailService();
   final PromotionService _promotionService = PromotionService();
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
 
   // Estados de carga
   bool _isLoadingDetails = true;
@@ -61,21 +63,23 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
 
     try {
       print('🔍 Cargando detalles del producto: ${widget.product.id}');
-      
+
       // Cargar detalles completos del producto
-      final productDetails = await _productDetailService.getProductDetail(widget.product.id);
-      
+      final productDetails = await _productDetailService.getProductDetail(
+        widget.product.id,
+      );
+
       if (productDetails != null) {
         setState(() {
           _currentProduct = productDetails;
         });
-        
+
         // Agrupar variantes por ubicación
         _groupVariantsByLocation();
-        
+
         // Cargar presentaciones
         await _loadProductPresentations();
-        
+
         // Cargar datos de promociones
         await _loadPromotionData();
       } else {
@@ -100,19 +104,19 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     if (_currentProduct?.variantes.isEmpty ?? true) return;
 
     _locationGroups.clear();
-    
+
     for (final variant in _currentProduct!.variantes) {
       final locationKey = variant.descripcion ?? 'Ubicación desconocida';
-      
+
       if (!_locationGroups.containsKey(locationKey)) {
         _locationGroups[locationKey] = [];
       }
-      
+
       _locationGroups[locationKey]!.add(variant);
     }
 
     print('🏪 Grupos de ubicación creados: ${_locationGroups.keys.toList()}');
-    
+
     // Selección automática si solo hay una ubicación
     if (_locationGroups.length == 1) {
       _autoSelectSingleLocation();
@@ -123,13 +127,15 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     final firstLocationEntry = _locationGroups.entries.first;
     final locationKey = firstLocationEntry.key;
     final variants = firstLocationEntry.value;
-    
+
     if (variants.isNotEmpty) {
       final firstVariant = variants.first;
-      
+
       print('🎯 Solo una ubicación disponible: $locationKey');
-      print('🎯 Seleccionando automáticamente variante: ${firstVariant.nombre}');
-      
+      print(
+        '🎯 Seleccionando automáticamente variante: ${firstVariant.nombre}',
+      );
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         setState(() {
           _selectedVariant = firstVariant;
@@ -145,32 +151,40 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
     });
 
     try {
-      final presentations = await _productDetailService.getProductPresentations(widget.product.id);
-      
+      final presentations = await _productDetailService.getProductPresentations(
+        widget.product.id,
+      );
+
       setState(() {
         _productPresentations = presentations;
-        
+
         // Seleccionar presentación base por defecto
         _selectedPresentation = presentations.firstWhere(
           (p) => p.esBase,
-          orElse: () => presentations.isNotEmpty ? presentations.first : ProductPresentation(
-            id: 0,
-            idProducto: widget.product.id,
-            idPresentacion: 0,
-            cantidad: 1.0,
-            esBase: true,
-            presentacion: Presentation(
-              id: 0,
-              denominacion: 'Unidad',
-              descripcion: 'Presentación por defecto',
-              skuCodigo: 'DEFAULT',
-            ),
-          ),
+          orElse:
+              () =>
+                  presentations.isNotEmpty
+                      ? presentations.first
+                      : ProductPresentation(
+                        id: 0,
+                        idProducto: widget.product.id,
+                        idPresentacion: 0,
+                        cantidad: 1.0,
+                        esBase: true,
+                        presentacion: Presentation(
+                          id: 0,
+                          denominacion: 'Unidad',
+                          descripcion: 'Presentación por defecto',
+                          skuCodigo: 'DEFAULT',
+                        ),
+                      ),
         );
       });
-      
+
       print('📦 Presentaciones cargadas: ${presentations.length}');
-      print('📦 Presentación seleccionada: ${_selectedPresentation?.presentacion.denominacion}');
+      print(
+        '📦 Presentación seleccionada: ${_selectedPresentation?.presentacion.denominacion}',
+      );
     } catch (e) {
       print('❌ Error cargando presentaciones: $e');
       // Crear presentación por defecto
@@ -200,31 +214,47 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
   Future<void> _loadPromotionData() async {
     try {
       // Obtener ID de tienda
-      final idTienda = await _userPreferencesService.getIdTienda();
+      final userData = await _userPreferencesService.getUserData();
+      final idTienda = userData['idTienda'] as int?;
+
       if (idTienda == null) {
-        print('❌ No se pudo obtener ID de tienda para promociones');
+        print('❌ No se pudo obtener ID de tienda');
         return;
       }
 
       // Cargar promoción global
-      final globalPromotion = await _promotionService.getGlobalPromotion(idTienda);
-
-      // Cargar promoción específica del producto
-      final productPromotion = await _promotionService.getProductPromotion(
+      final globalPromotion = await _promotionService.getGlobalPromotion(
         idTienda,
-        _currentProduct?.denominacion ?? widget.product.denominacion,
       );
 
-      setState(() {
-        _globalPromotionData = globalPromotion;
-        _productPromotionData = productPromotion;
-      });
+      // Cargar promociones específicas del producto usando el nuevo método
+      final productPromotions = await _promotionService.getProductPromotions(
+        widget.product.id,
+      );
+
+      if (mounted) {
+        setState(() {
+          _globalPromotionData = globalPromotion;
+          _productPromotionData =
+              productPromotions.isNotEmpty ? productPromotions.first : null;
+        });
+      }
 
       print('🎯 Promociones cargadas en FluidMode:');
-      print('  - Global: ${globalPromotion != null ? globalPromotion['codigo_promocion'] : 'No'}');
-      print('  - Producto: ${productPromotion != null ? productPromotion['codigo_promocion'] : 'No'}');
+      print(
+        '  - Global: ${globalPromotion != null ? globalPromotion['codigo_promocion'] : 'No'}',
+      );
+      print(
+        '  - Producto: ${_productPromotionData != null ? _productPromotionData!['codigo_promocion'] : 'No'}',
+      );
     } catch (e) {
-      print('❌ Error cargando promociones en FluidMode: $e');
+      print('❌ Error cargando promociones: $e');
+      if (mounted) {
+        setState(() {
+          _globalPromotionData = null;
+          _productPromotionData = null;
+        });
+      }
     }
   }
 
@@ -275,9 +305,10 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               margin: const EdgeInsets.only(bottom: 4),
               decoration: BoxDecoration(
-                color: isRecargo
-                    ? Colors.orange.withOpacity(0.1)
-                    : Colors.green.withOpacity(0.1),
+                color:
+                    isRecargo
+                        ? Colors.orange.withOpacity(0.1)
+                        : Colors.green.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(
                   color: isRecargo ? Colors.orange : Colors.green,
@@ -447,21 +478,24 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
           final quantity = entry.value;
           final conversionFactor = _selectedPresentation?.cantidad ?? 1.0;
           final finalQuantity = quantity * conversionFactor;
-          
+
           // Calcular precios con promociones
           final prices = _calculatePromotionPrices(variant.precio);
           final activePromotion = _getActivePromotion();
-          
-          items.add(OrderItem(
-            id: 'item_${DateTime.now().millisecondsSinceEpoch}',
-            producto: _currentProduct!,
-            cantidad: finalQuantity.toInt(),
-            precioUnitario: prices['precio_oferta']!, // Usar precio con descuento
-            precioBase: prices['precio_venta'], // Precio base para cálculos
-            ubicacionAlmacen: variant.descripcion ?? 'Almacén',
-            variante: variant,
-            promotionData: activePromotion, // Incluir datos de promoción
-          ));
+
+          items.add(
+            OrderItem(
+              id: 'item_${DateTime.now().millisecondsSinceEpoch}',
+              producto: _currentProduct!,
+              cantidad: finalQuantity.toInt(),
+              precioUnitario:
+                  prices['precio_oferta']!, // Usar precio con descuento
+              precioBase: prices['precio_venta'], // Precio base para cálculos
+              ubicacionAlmacen: variant.descripcion ?? 'Almacén',
+              variante: variant,
+              promotionData: activePromotion, // Incluir datos de promoción
+            ),
+          );
         }
       }
     } else {
@@ -469,20 +503,23 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
       if (_selectedQuantity > 0) {
         final conversionFactor = _selectedPresentation?.cantidad ?? 1.0;
         final finalQuantity = _selectedQuantity * conversionFactor;
-        
+
         // Calcular precios con promociones
         final prices = _calculatePromotionPrices(_currentProduct!.precio);
         final activePromotion = _getActivePromotion();
-        
-        items.add(OrderItem(
-          id: 'item_${DateTime.now().millisecondsSinceEpoch}',
-          producto: _currentProduct!,
-          cantidad: finalQuantity.toInt(),
-          precioUnitario: prices['precio_oferta']!, // Usar precio con descuento
-          precioBase: prices['precio_venta'], // Precio base para cálculos
-          ubicacionAlmacen: 'Almacén Principal',
-          promotionData: activePromotion, // Incluir datos de promoción
-        ));
+
+        items.add(
+          OrderItem(
+            id: 'item_${DateTime.now().millisecondsSinceEpoch}',
+            producto: _currentProduct!,
+            cantidad: finalQuantity.toInt(),
+            precioUnitario:
+                prices['precio_oferta']!, // Usar precio con descuento
+            precioBase: prices['precio_venta'], // Precio base para cálculos
+            ubicacionAlmacen: 'Almacén Principal',
+            promotionData: activePromotion, // Incluir datos de promoción
+          ),
+        );
       }
     }
 
@@ -491,7 +528,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
 
   void _continueToPayment() {
     final orderItems = _createOrderItems();
-    
+
     if (orderItems.isEmpty) {
       AppSnackBar.showPersistent(
         context,
@@ -556,28 +593,30 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                 borderRadius: BorderRadius.circular(8),
                 color: Colors.grey.shade200,
               ),
-              child: _currentProduct?.foto != null && _currentProduct!.foto!.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        _currentProduct!.foto!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Icon(
-                            Icons.image_not_supported,
-                            color: Colors.grey.shade400,
-                          );
-                        },
+              child:
+                  _currentProduct?.foto != null &&
+                          _currentProduct!.foto!.isNotEmpty
+                      ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          _currentProduct!.foto!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(
+                              Icons.image_not_supported,
+                              color: Colors.grey.shade400,
+                            );
+                          },
+                        ),
+                      )
+                      : Icon(
+                        Icons.inventory,
+                        color: Colors.grey.shade400,
+                        size: 40,
                       ),
-                    )
-                  : Icon(
-                      Icons.inventory,
-                      color: Colors.grey.shade400,
-                      size: 40,
-                    ),
             ),
             const SizedBox(width: 16),
-            
+
             // Información del producto
             Expanded(
               child: Column(
@@ -593,12 +632,10 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                   const SizedBox(height: 4),
                   Text(
                     _currentProduct?.categoria ?? '',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
-                  if (_currentProduct?.descripcion != null && _currentProduct!.descripcion!.isNotEmpty) ...[
+                  if (_currentProduct?.descripcion != null &&
+                      _currentProduct!.descripcion!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
                       _currentProduct!.descripcion!,
@@ -651,15 +688,12 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                 const SizedBox(width: 8),
                 const Text(
                   'Presentación',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            
+
             if (_productPresentations.isEmpty)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -682,35 +716,51 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                 ),
-                items: _productPresentations.map((presentation) {
-                  return DropdownMenuItem(
-                    value: presentation,
-                    child: Row(
-                      children: [
-                        if (presentation.esBase)
-                          const Icon(Icons.star, color: Colors.orange, size: 16),
-                        if (presentation.esBase) const SizedBox(width: 4),
-                        Text('${presentation.presentacion.denominacion} (${presentation.cantidad})'),
-                        if (presentation.esBase) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(4),
+                items:
+                    _productPresentations.map((presentation) {
+                      return DropdownMenuItem(
+                        value: presentation,
+                        child: Row(
+                          children: [
+                            if (presentation.esBase)
+                              const Icon(
+                                Icons.star,
+                                color: Colors.orange,
+                                size: 16,
+                              ),
+                            if (presentation.esBase) const SizedBox(width: 4),
+                            Text(
+                              '${presentation.presentacion.denominacion} (${presentation.cantidad})',
                             ),
-                            child: const Text(
-                              'BASE',
-                              style: TextStyle(fontSize: 10, color: Colors.orange),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
-                }).toList(),
+                            if (presentation.esBase) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'BASE',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.orange,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    }).toList(),
                 onChanged: _onPresentationChanged,
               ),
           ],
@@ -738,19 +788,16 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                 const SizedBox(width: 8),
                 const Text(
                   'Ubicaciones Disponibles',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            
+
             ..._locationGroups.entries.map((entry) {
               final locationKey = entry.key;
               final variants = entry.value;
-              
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -777,7 +824,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
   Widget _buildVariantTile(ProductVariant variant) {
     final isSelected = _selectedVariant == variant;
     final quantity = _variantQuantities[variant] ?? 0;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -797,25 +844,37 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
             Text(' | Stock: ${variant.cantidad}'),
           ],
         ),
-        trailing: isSelected
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    onPressed: quantity > 0 ? () => _updateVariantQuantity(variant, quantity - 1) : null,
-                    icon: const Icon(Icons.remove),
-                  ),
-                  Text(
-                    quantity.toString(),
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    onPressed: quantity < variant.cantidad ? () => _updateVariantQuantity(variant, quantity + 1) : null,
-                    icon: const Icon(Icons.add),
-                  ),
-                ],
-              )
-            : null,
+        trailing:
+            isSelected
+                ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed:
+                          quantity > 0
+                              ? () =>
+                                  _updateVariantQuantity(variant, quantity - 1)
+                              : null,
+                      icon: const Icon(Icons.remove),
+                    ),
+                    Text(
+                      quantity.toString(),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed:
+                          quantity < variant.cantidad
+                              ? () =>
+                                  _updateVariantQuantity(variant, quantity + 1)
+                              : null,
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
+                )
+                : null,
         onTap: () => _onVariantSelected(variant),
       ),
     );
@@ -840,20 +899,20 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                 const SizedBox(width: 8),
                 const Text(
                   'Cantidad',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            
+
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
-                  onPressed: _selectedQuantity > 1 ? () => _updateQuantity(_selectedQuantity - 1) : null,
+                  onPressed:
+                      _selectedQuantity > 1
+                          ? () => _updateQuantity(_selectedQuantity - 1)
+                          : null,
                   icon: const Icon(Icons.remove),
                   style: IconButton.styleFrom(
                     backgroundColor: Colors.grey.shade200,
@@ -885,7 +944,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
 
   Widget _buildSelectedItems() {
     final orderItems = _createOrderItems();
-    
+
     if (orderItems.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -904,76 +963,78 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
                 const SizedBox(width: 8),
                 const Text(
                   'Productos Seleccionados',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            
-            ...orderItems.map((item) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+
+            ...orderItems.map(
+              (item) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.producto.denominacion,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          if (item.variante != null)
+                            Text(
+                              item.variante!.nombre,
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          if (item.inventoryData?['presentacion'] != null)
+                            Text(
+                              'Presentación: ${item.inventoryData!['presentacion']}',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          item.producto.denominacion,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          'Cantidad: ${item.cantidad.toStringAsFixed(0)}',
+                          style: const TextStyle(fontWeight: FontWeight.w500),
                         ),
-                        if (item.variante != null)
-                          Text(
-                            item.variante!.nombre,
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                        Text(
+                          'Total: \$${item.subtotal.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
                           ),
-                        if (item.inventoryData?['presentacion'] != null)
-                          Text(
-                            'Presentación: ${item.inventoryData!['presentacion']}',
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                          ),
+                        ),
                       ],
                     ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        'Cantidad: ${item.cantidad.toStringAsFixed(0)}',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      Text(
-                        'Total: \$${item.subtotal.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
-            )),
-            
+            ),
+
             const Divider(),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
                   'Total General:',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Text(
                   '\$${orderItems.fold(0.0, (sum, item) => sum + item.subtotal).toStringAsFixed(2)}',
@@ -994,7 +1055,7 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
   Widget _buildContinueButton() {
     final orderItems = _createOrderItems();
     final canContinue = orderItems.isNotEmpty;
-    
+
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
@@ -1009,13 +1070,10 @@ class _FluidProductDetailsWidgetState extends State<FluidProductDetailsWidget> {
           disabledBackgroundColor: Colors.grey.shade300,
         ),
         child: Text(
-          canContinue 
+          canContinue
               ? 'Continuar a Métodos de Pago (${orderItems.length} producto${orderItems.length != 1 ? 's' : ''})'
               : 'Selecciona productos para continuar',
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
     );

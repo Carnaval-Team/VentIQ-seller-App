@@ -115,78 +115,96 @@ class PromotionService {
     }
   }
 
-  /// Obtiene promociones específicas para un producto
-  Future<Map<String, dynamic>?> getProductPromotion(
-    int idTienda,
-    String productName,
-  ) async {
+  /// Obtiene promociones específicas para un producto usando la nueva función
+  /// Retorna una lista de promociones con información de medio de pago requerido
+  Future<List<Map<String, dynamic>>> getProductPromotions(int productId) async {
     try {
       print(
-        '🎯 PromotionService: Buscando promoción para producto "$productName"',
+        '🎯 PromotionService: Buscando promociones para producto ID: $productId',
       );
 
       final rpcResponse = await _supabase.rpc(
-        'fn_listar_promociones',
-        params: {'p_id_tienda': idTienda},
+        'fn_listar_promociones_producto_nueva',
+        params: {'p_id_producto': productId},
       );
 
       if (rpcResponse != null &&
           rpcResponse is List &&
           rpcResponse.isNotEmpty) {
-        print("promos_: $rpcResponse");
-        // Buscar promociones específicas de producto (aplica_todo = false y nombre contiene " - ")
-        final productPromotions =
-            rpcResponse
-                .where(
-                  (promo) =>
-                      promo['aplica_todo'] == false &&
-                      promo['nombre'] != null &&
-                      promo['nombre'].toString().contains(' - '),
-                )
-                .toList();
+        print('✅ Promociones encontradas: ${rpcResponse.length}');
 
-        for (final promo in productPromotions) {
-          // Extraer nombre del producto de la promoción (después del " - ")
-          final promoName = promo['nombre'].toString();
-          final dashIndex = promoName.indexOf(' - ');
-          if (dashIndex != -1 && dashIndex < promoName.length - 3) {
-            final promoProductName = promoName.substring(dashIndex + 3).trim();
+        // Convertir respuesta a lista de promociones
+        final promotions = <Map<String, dynamic>>[];
 
-            // Comparar nombres (insensible a mayúsculas/minúsculas)
-            if (promoProductName.toLowerCase() == productName.toLowerCase()) {
-              print('✅ Promoción específica encontrada para producto:');
-              print('  - ID: ${promo['id']}');
-              print('  - Código: ${promo['codigo_promocion']}');
-              print('  - Nombre: ${promo['nombre']}');
-              print('  - Valor Descuento: ${promo['valor_descuento']}');
-              print('  - Tipo Promoción: ${promo['tipo_promocion']}');
+        for (final promo in rpcResponse) {
+          final promotion = {
+            'id_promocion': promo['id'] as int,
+            'codigo_promocion': promo['codigo_promocion'] as String?,
+            'nombre': promo['nombre'] as String?,
+            'descripcion': promo['descripcion'] as String?,
+            'valor_descuento':
+                double.tryParse(promo['valor_descuento'].toString()) ?? 0.0,
+            'tipo_promocion_nombre': promo['tipo_promocion'] as String?,
+            'tipo_descuento': _getTipoDescuentoFromNombre(
+              promo['tipo_promocion'] as String?,
+            ),
+            'precio_base':
+                double.tryParse(promo['precio_base'].toString()) ?? 0.0,
+            'es_recargo': promo['es_recargo'] as bool? ?? false,
+            'requiere_medio_pago':
+                promo['requiere_medio_pago'] as bool? ?? false,
+            'id_medio_pago_requerido': promo['id_medio_pago_requerido'] as int?,
+          };
 
-              return {
-                'id_promocion': promo['id'],
-                'codigo_promocion': promo['codigo_promocion'],
-                'nombre': promo['nombre'],
-                'descripcion': promo['descripcion'],
-                'valor_descuento':
-                    double.tryParse(promo['valor_descuento'].toString()) ?? 0.0,
-                'tipo_descuento': _getTipoDescuentoFromNombre(
-                  promo['tipo_promocion'],
-                ),
-                'tipo_promocion_nombre': promo['tipo_promocion'],
-                'producto_nombre': promoProductName,
-              };
-            }
-          }
+          promotions.add(promotion);
+
+          print('  📌 Promoción: ${promotion['nombre']}');
+          print('     - Valor: ${promotion['valor_descuento']}');
+          print('     - Es recargo: ${promotion['es_recargo']}');
+          print(
+            '     - Requiere medio pago: ${promotion['requiere_medio_pago']}',
+          );
+          print(
+            '     - ID medio pago: ${promotion['id_medio_pago_requerido']}',
+          );
         }
+
+        return promotions;
       }
 
-      print(
-        'ℹ️ No se encontró promoción específica para el producto "$productName"',
-      );
-      return null;
+      print('ℹ️ No se encontraron promociones para el producto ID: $productId');
+      return [];
     } catch (e) {
-      print('❌ Error obteniendo promoción de producto: $e');
-      return null;
+      print('❌ Error obteniendo promociones de producto: $e');
+      return [];
     }
+  }
+
+  /// Verifica si una promoción aplica según el método de pago
+  /// Maneja el caso especial donde ID 999 cuenta como ID 4
+  bool shouldApplyPromotion(
+    Map<String, dynamic> promotion,
+    int? paymentMethodId,
+  ) {
+    // Si la promoción no requiere medio de pago, siempre aplica
+    if (promotion['requiere_medio_pago'] != true) {
+      return true;
+    }
+
+    // Si requiere medio de pago pero no hay método seleccionado, no aplica
+    if (paymentMethodId == null) {
+      return false;
+    }
+
+    final requiredPaymentId = promotion['id_medio_pago_requerido'] as int?;
+    if (requiredPaymentId == null) {
+      return false;
+    }
+
+    // Caso especial: ID 999 cuenta como ID 4
+    final normalizedPaymentId = paymentMethodId == 999 ? 4 : paymentMethodId;
+
+    return normalizedPaymentId == requiredPaymentId;
   }
 
   /// Convierte el nombre del tipo de promoción a ID numérico para compatibilidad

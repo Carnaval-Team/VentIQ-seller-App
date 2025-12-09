@@ -35,6 +35,7 @@ class UserPreferencesService {
   static const String _promotionCodeKey = 'promotion_code';
   static const String _promotionValueKey = 'promotion_value';
   static const String _promotionTypeKey = 'promotion_type';
+  static const String _productPromotionsKey = 'product_promotions';
 
   // Data usage keys
   static const String _limitDataUsageKey = 'limit_data_usage';
@@ -423,6 +424,71 @@ class UserPreferencesService {
     await prefs.remove(_promotionCodeKey);
     await prefs.remove(_promotionValueKey);
     await prefs.remove(_promotionTypeKey);
+  }
+
+  /// Guardar promociones de un producto específico
+  Future<void> saveProductPromotions(
+    int productId,
+    List<Map<String, dynamic>> promotions,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Obtener mapa actual de promociones
+      final promotionsJson = prefs.getString(_productPromotionsKey);
+      Map<String, dynamic> allPromotions = {};
+
+      if (promotionsJson != null) {
+        allPromotions = jsonDecode(promotionsJson) as Map<String, dynamic>;
+      }
+
+      // Guardar promociones del producto
+      allPromotions[productId.toString()] = promotions;
+
+      // Guardar mapa actualizado
+      await prefs.setString(_productPromotionsKey, jsonEncode(allPromotions));
+      print(
+        '✅ Promociones guardadas para producto ID: $productId (${promotions.length} promociones)',
+      );
+    } catch (e) {
+      print('❌ Error guardando promociones de producto: $e');
+    }
+  }
+
+  /// Obtener promociones de un producto específico
+  Future<List<Map<String, dynamic>>?> getProductPromotions(
+    int productId,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final promotionsJson = prefs.getString(_productPromotionsKey);
+
+      if (promotionsJson == null) {
+        return null;
+      }
+
+      final allPromotions = jsonDecode(promotionsJson) as Map<String, dynamic>;
+      final productPromotions = allPromotions[productId.toString()];
+
+      if (productPromotions == null) {
+        return null;
+      }
+
+      // Convertir a lista de mapas
+      return (productPromotions as List<dynamic>)
+          .map((item) => item as Map<String, dynamic>)
+          .toList();
+    } catch (e) {
+      print('❌ Error obteniendo promociones de producto: $e');
+      return null;
+    }
+  }
+
+  /// Limpiar todas las promociones de productos almacenadas
+  Future<void> clearProductPromotions() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_productPromotionsKey);
+    print('✅ Promociones de productos limpiadas');
   }
 
   // Turno data keys
