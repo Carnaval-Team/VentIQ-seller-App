@@ -54,7 +54,9 @@ class PromotionService {
             'descripcion': response['descripcion'],
             'valor_descuento': response['valor_descuento']?.toDouble(),
             'tipo_descuento': response['id_tipo_promocion'],
-            'tipo_promocion_nombre': _getTipoPromocionNombre(response['id_tipo_promocion']),
+            'tipo_promocion_nombre': _getTipoPromocionNombre(
+              response['id_tipo_promocion'],
+            ),
           };
         }
       } catch (e) {
@@ -65,14 +67,14 @@ class PromotionService {
       print('🔄 Usando fn_listar_promociones para buscar promociones...');
       final rpcResponse = await _supabase.rpc(
         'fn_listar_promociones',
-        params: {
-          'p_id_tienda': idTienda,
-        },
+        params: {'p_id_tienda': idTienda},
       );
 
-      if (rpcResponse != null && rpcResponse is List && rpcResponse.isNotEmpty) {
+      if (rpcResponse != null &&
+          rpcResponse is List &&
+          rpcResponse.isNotEmpty) {
         print('📋 Promociones encontradas via RPC: ${rpcResponse.length}');
-        
+
         // Buscar promoción global (aplica_todo = true)
         final globalPromotion = rpcResponse.firstWhere(
           (promo) => promo['aplica_todo'] == true,
@@ -92,8 +94,14 @@ class PromotionService {
             'codigo_promocion': globalPromotion['codigo_promocion'],
             'nombre': globalPromotion['nombre'],
             'descripcion': globalPromotion['descripcion'],
-            'valor_descuento': double.tryParse(globalPromotion['valor_descuento'].toString()) ?? 0.0,
-            'tipo_descuento': _getTipoDescuentoFromNombre(globalPromotion['tipo_promocion']),
+            'valor_descuento':
+                double.tryParse(
+                  globalPromotion['valor_descuento'].toString(),
+                ) ??
+                0.0,
+            'tipo_descuento': _getTipoDescuentoFromNombre(
+              globalPromotion['tipo_promocion'],
+            ),
             'tipo_promocion_nombre': globalPromotion['tipo_promocion'],
           };
         }
@@ -108,24 +116,34 @@ class PromotionService {
   }
 
   /// Obtiene promociones específicas para un producto
-  Future<Map<String, dynamic>?> getProductPromotion(int idTienda, String productName) async {
+  Future<Map<String, dynamic>?> getProductPromotion(
+    int idTienda,
+    String productName,
+  ) async {
     try {
-      print('🎯 PromotionService: Buscando promoción para producto "$productName"');
+      print(
+        '🎯 PromotionService: Buscando promoción para producto "$productName"',
+      );
 
       final rpcResponse = await _supabase.rpc(
         'fn_listar_promociones',
-        params: {
-          'p_id_tienda': idTienda,
-        },
+        params: {'p_id_tienda': idTienda},
       );
 
-      if (rpcResponse != null && rpcResponse is List && rpcResponse.isNotEmpty) {
+      if (rpcResponse != null &&
+          rpcResponse is List &&
+          rpcResponse.isNotEmpty) {
+        print("promos_: $rpcResponse");
         // Buscar promociones específicas de producto (aplica_todo = false y nombre contiene " - ")
-        final productPromotions = rpcResponse.where((promo) => 
-          promo['aplica_todo'] == false && 
-          promo['nombre'] != null && 
-          promo['nombre'].toString().contains(' - ')
-        ).toList();
+        final productPromotions =
+            rpcResponse
+                .where(
+                  (promo) =>
+                      promo['aplica_todo'] == false &&
+                      promo['nombre'] != null &&
+                      promo['nombre'].toString().contains(' - '),
+                )
+                .toList();
 
         for (final promo in productPromotions) {
           // Extraer nombre del producto de la promoción (después del " - ")
@@ -133,7 +151,7 @@ class PromotionService {
           final dashIndex = promoName.indexOf(' - ');
           if (dashIndex != -1 && dashIndex < promoName.length - 3) {
             final promoProductName = promoName.substring(dashIndex + 3).trim();
-            
+
             // Comparar nombres (insensible a mayúsculas/minúsculas)
             if (promoProductName.toLowerCase() == productName.toLowerCase()) {
               print('✅ Promoción específica encontrada para producto:');
@@ -148,8 +166,11 @@ class PromotionService {
                 'codigo_promocion': promo['codigo_promocion'],
                 'nombre': promo['nombre'],
                 'descripcion': promo['descripcion'],
-                'valor_descuento': double.tryParse(promo['valor_descuento'].toString()) ?? 0.0,
-                'tipo_descuento': _getTipoDescuentoFromNombre(promo['tipo_promocion']),
+                'valor_descuento':
+                    double.tryParse(promo['valor_descuento'].toString()) ?? 0.0,
+                'tipo_descuento': _getTipoDescuentoFromNombre(
+                  promo['tipo_promocion'],
+                ),
                 'tipo_promocion_nombre': promo['tipo_promocion'],
                 'producto_nombre': promoProductName,
               };
@@ -158,7 +179,9 @@ class PromotionService {
         }
       }
 
-      print('ℹ️ No se encontró promoción específica para el producto "$productName"');
+      print(
+        'ℹ️ No se encontró promoción específica para el producto "$productName"',
+      );
       return null;
     } catch (e) {
       print('❌ Error obteniendo promoción de producto: $e');
