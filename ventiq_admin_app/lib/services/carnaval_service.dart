@@ -512,13 +512,14 @@ class CarnavalService {
     required int localProductId,
     required int carnavalCategoryId,
     required int carnavalStoreId,
+    required int idUbicacion,
   }) async {
     try {
       // 1. Obtener datos del producto local
       final productData =
           await _supabase
               .from('app_dat_producto')
-              .select('denominacion, descripcion, imagen')
+              .select('denominacion, descripcion, imagen, id_tienda')
               .eq('id', localProductId)
               .single();
 
@@ -541,12 +542,13 @@ class CarnavalService {
       final precioDescuento = (basePrice * 1.0535).round();
       final precioOficial = basePrice * 1.11;
 
-      // 3. Obtener stock actual (último registro de inventario)
+      // 3. Obtener stock actual de la ubicación específica
       final stockData =
           await _supabase
               .from('app_dat_inventario_productos')
               .select('cantidad_final')
               .eq('id_producto', localProductId)
+              .eq('id_ubicacion', idUbicacion)
               .order('created_at', ascending: false)
               .limit(1)
               .maybeSingle();
@@ -588,6 +590,18 @@ class CarnavalService {
         '✅ Producto local actualizado con id_vendedor_app: $carnavalProductId',
       );
 
+      // 6. Insertar en relation_products_carnaval para trackear la ubicación
+      await _supabase.from('relation_products_carnaval').insert({
+        'id_producto': localProductId,
+        'id_producto_carnaval': carnavalProductId,
+        'id_ubicacion': idUbicacion,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      print(
+        '✅ Relación guardada en relation_products_carnaval con ubicación ID: $idUbicacion',
+      );
+
       return true;
     } catch (e) {
       print('❌ Error al sincronizar producto: $e');
@@ -608,6 +622,24 @@ class CarnavalService {
           .order('name');
 
       final products = List<Map<String, dynamic>>.from(response);
+
+      // Obtener relaciones de productos para tener id_producto (local)
+      final relationResponse = await _supabase
+          .from('relation_products_carnaval')
+          .select('id_producto_carnaval, id_producto')
+          .inFilter(
+            'id_producto_carnaval',
+            products.map((p) => p['id']).toList(),
+          );
+
+      final relations = List<Map<String, dynamic>>.from(relationResponse ?? []);
+
+      // Crear mapa de relaciones para búsqueda rápida
+      final relationMap = <int, int>{};
+      for (var relation in relations) {
+        relationMap[relation['id_producto_carnaval']] = relation['id_producto'];
+      }
+
       final grouped = <String, List<Map<String, dynamic>>>{};
 
       for (var product in products) {
@@ -616,6 +648,10 @@ class CarnavalService {
         if (!grouped.containsKey(categoryName)) {
           grouped[categoryName] = [];
         }
+
+        // Agregar id_producto del producto local si existe
+        product['id_producto'] = relationMap[product['id']];
+
         grouped[categoryName]!.add(product);
       }
 
@@ -723,6 +759,137 @@ class CarnavalService {
       return true;
     } catch (e) {
       print('❌ Error al mostrar producto: $e');
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PRODUCT LOCATION MANAGEMENT
+  // ---------------------------------------------------------------------------
+
+  /// Obtiene las ubicaciones disponibles para un producto usando fn_obtener_ubicaciones_prodcuto
+  static Future<List<Map<String, dynamic>>> getProductLocations(
+    int storeId,
+    int productId,
+  ) async {
+    try {
+      print(
+        '🔍 Obteniendo ubicaciones para producto ID: $productId en tienda ID: $storeId',
+      );
+
+      final response = await _supabase.rpc(
+        'fn_obtener_ubicaciones_prodcuto',
+        params: {'p_id_tienda': storeId, 'p_id_producto': productId},
+      );
+
+      final locations = List<Map<String, dynamic>>.from(response ?? []);
+      print('✅ Ubicaciones obtenidas: ${locations.length}');
+      return locations;
+    } catch (e) {
+      print('❌ Error al obtener ubicaciones del producto: $e');
+      return [];
+    }
+  }
+
+  /// Obtiene productos sincronizados con información de ubicación (evita N+1)
+  /// Retorna productos agrupados por categoría incluyendo almacén y ubicación
+  static Future<Map<String, List<Map<String, dynamic>>>>
+  getSyncedProductsWithLocation(int carnavalStoreId) async {
+    try {
+      print(
+        '🔍 Obteniendo productos sincronizados con ubicación para proveedor ID: $carnavalStoreId',
+      );
+
+      // Query único con JOINs para incluir ubicación y almacén
+      final response = await _supabase.rpc(
+        'get_synced_products_with_location_v2',
+        params: {'p_carnaval_store_id': carnavalStoreId},
+      );
+
+      final products = List<Map<String, dynamic>>.from(response ?? []);
+      final grouped = <String, List<Map<String, dynamic>>>{};
+
+      for (var product in products) {
+        final categoryName =
+            product['category_name']?.toString() ?? 'Sin Categoría';
+        if (!grouped.containsKey(categoryName)) {
+          grouped[categoryName] = [];
+        }
+        grouped[categoryName]!.add(product);
+      }
+
+      print('✅ Productos con ubicación obtenidos: ${products.length}');
+      return grouped;
+    } catch (e) {
+      print('❌ Error al obtener productos con ubicación (usando fallback): $e');
+      // Fallback: usar el método anterior si la función no existe
+      return await getSyncedProductsGrouped(carnavalStoreId);
+    }
+  }
+
+  /// Actualiza la ubicación de un producto y recalcula el stock
+  static Future<bool> updateProductLocation({
+    required int carnavalProductId,
+    required int newLocationId,
+    required int localProductId,
+  }) async {
+    try {
+      print(
+        '🔧 Actualizando ubicación del producto Carnaval ID: $carnavalProductId a ubicación ID: $newLocationId',
+      );
+
+      // 1. Obtener nuevo stock de la ubicación
+      final stockData =
+          await _supabase
+              .from('app_dat_inventario_productos')
+              .select('cantidad_final')
+              .eq('id_producto', localProductId)
+              .eq('id_ubicacion', newLocationId)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+
+      final newStock = stockData?['cantidad_final'] ?? 0;
+      print('📦 Nuevo stock calculado: $newStock');
+
+      // 2. Actualizar stock en carnavalapp.Productos
+      await _supabase
+          .schema('carnavalapp')
+          .from('Productos')
+          .update({'stock': newStock.toInt()})
+          .eq('id', carnavalProductId);
+
+      print('✅ Stock actualizado en Carnaval');
+
+      // 3. Verificar si existe relación en relation_products_carnaval
+      final existingRelation =
+          await _supabase
+              .from('relation_products_carnaval')
+              .select('id')
+              .eq('id_producto_carnaval', carnavalProductId)
+              .maybeSingle();
+
+      if (existingRelation != null) {
+        // 3a. Si existe, hacer UPDATE
+        print('🔄 Actualizando ubicación existente...');
+        await _supabase
+            .from('relation_products_carnaval')
+            .update({'id_ubicacion': newLocationId})
+            .eq('id_producto_carnaval', carnavalProductId);
+        print('✅ Ubicación actualizada en relation_products_carnaval');
+      } else {
+        // 3b. Si NO existe, hacer INSERT
+        print('➕ Creando nueva relación con ubicación...');
+        await _supabase.from('relation_products_carnaval').insert({
+          'id_producto': localProductId,
+          'id_producto_carnaval': carnavalProductId,
+          'id_ubicacion': newLocationId,
+        });
+        print('✅ Relación creada en relation_products_carnaval');
+      }
+      return true;
+    } catch (e) {
+      print('❌ Error al actualizar ubicación del producto: $e');
       return false;
     }
   }

@@ -89,11 +89,11 @@ echo ""
 log_info "PASO 3/5: Subiendo APK a Supabase bucket 'apk'..."
 
 # Verificar que Supabase CLI esté instalado
-if ! command -v supabase &> /dev/null; then
-    log_error "Supabase CLI no está instalado"
-    log_info "Instala con: npm install -g supabase"
-    exit 1
-fi
+# if ! command -v supabase &> /dev/null; then
+#     log_error "Supabase CLI no está instalado"
+#     log_info "Instala con: npm install -g supabase"
+#     exit 1
+# fi
 
 # Obtener tamaño del archivo para progreso
 FILE_SIZE=$(stat -f%z "$APK_TEMP" 2>/dev/null || stat -c%s "$APK_TEMP" 2>/dev/null)
@@ -105,13 +105,13 @@ TEMP_NAME="${APK_NAME} (1).apk"
 log_info "Subiendo como: $TEMP_NAME"
 
 # Mostrar progreso (Supabase CLI muestra su propio progreso)
-if supabase storage upload apk "$APK_TEMP" --bucket-id apk --upsert; then
-    log_success "APK subido exitosamente"
-else
-    log_error "Falló la subida del APK"
-    exit 1
-fi
-echo ""
+# if supabase storage upload apk "$APK_TEMP" --bucket-id apk --upsert; then
+#     log_success "APK subido exitosamente"
+# else
+#     log_error "Falló la subida del APK"
+#     exit 1
+# fi
+# echo ""
 
 # ============================================
 # PASO 4: Gestionar archivos en bucket
@@ -129,18 +129,18 @@ echo ""
 
 # Alternativa: Si tienes las credenciales de Supabase configuradas
 # Descomentar y configurar estas líneas:
-# SUPABASE_URL="tu-proyecto.supabase.co"
-# SUPABASE_KEY="tu-service-role-key"
-# 
-# # Eliminar archivo antiguo
-# curl -X DELETE "${SUPABASE_URL}/storage/v1/object/apk/${APK_NAME}.apk" \
-#   -H "Authorization: Bearer ${SUPABASE_KEY}"
-#
-# # Renombrar archivo nuevo
-# curl -X POST "${SUPABASE_URL}/storage/v1/object/move" \
-#   -H "Authorization: Bearer ${SUPABASE_KEY}" \
-#   -H "Content-Type: application/json" \
-#   -d "{\"bucketId\":\"apk\",\"sourceKey\":\"${TEMP_NAME}\",\"destinationKey\":\"${APK_NAME}.apk\"}"
+SUPABASE_URL="https://vsieeihstajlrdvpuooh.supabase.co"
+SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzaWVlaWhzdGFqbHJkdnB1b29oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDUzMjIwNiwiZXhwIjoyMDcwMTA4MjA2fQ.d9fKCcunP_J0tdlZF8eg0vAD-bsK3XfemavnZWT3Ro8"
+
+# Eliminar archivo antiguo
+curl -X DELETE "${SUPABASE_URL}/storage/v1/object/apk/${APK_NAME}.apk" \
+  -H "Authorization: Bearer ${SUPABASE_KEY}"
+
+# Renombrar archivo nuevo
+curl -X POST "${SUPABASE_URL}/storage/v1/object/move" \
+  -H "Authorization: Bearer ${SUPABASE_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{\"bucketId\":\"apk\",\"sourceKey\":\"${TEMP_NAME}\",\"destinationKey\":\"${APK_NAME}.apk\"}"
 
 log_info "Nota: Puedes automatizar esto configurando las variables SUPABASE_URL y SUPABASE_KEY"
 echo ""

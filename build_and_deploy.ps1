@@ -20,7 +20,7 @@ function Write-Success {
     Write-Host "✅ $Message" -ForegroundColor Green
 }
 
-function Write-Warning {
+function Write-Warning-Custom {
     param([string]$Message)
     Write-Host "⚠️  $Message" -ForegroundColor Yellow
 }
@@ -87,34 +87,30 @@ Write-Info "PASO 3/5: Leyendo configuración de Supabase..."
 $SupabaseConfigPath = Join-Path $AppPath "lib\config\supabase_config.dart"
 
 if (-not (Test-Path $SupabaseConfigPath)) {
-    Write-Warning "No se encontró supabase_config.dart, usando variables de entorno"
+    Write-Warning-Custom "No se encontró supabase_config.dart, usando variables de entorno"
     $SupabaseUrl = $env:SUPABASE_URL
     $SupabaseKey = $env:SUPABASE_ANON_KEY
 } else {
     # Leer archivo Dart y extraer configuración
     $ConfigContent = Get-Content $SupabaseConfigPath -Raw
     
-    # Extraer URL (buscar patrón: supabaseUrl = 'https://...')
-    if ($ConfigContent -match "supabaseUrl\s*=\s*'([^']+)'") {
-        $SupabaseUrl = $matches[1]
-        Write-Success "URL de Supabase encontrada"
-    } elseif ($ConfigContent -match 'supabaseUrl\s*=\s*"([^"]+)"') {
+    # Extraer URL usando regex - busca: supabaseUrl = 'url'
+    $UrlPattern = "supabaseUrl\s*=\s*['\`"]([^'\`"]+)['\`"]"
+    if ($ConfigContent -match $UrlPattern) {
         $SupabaseUrl = $matches[1]
         Write-Success "URL de Supabase encontrada"
     } else {
-        Write-Warning "No se pudo extraer URL de Supabase del archivo de configuración"
+        Write-Warning-Custom "No se pudo extraer URL de Supabase del archivo"
         $SupabaseUrl = $env:SUPABASE_URL
     }
     
-    # Extraer Key (buscar patrón: supabaseAnonKey = '...')
-    if ($ConfigContent -match "supabaseAnonKey\s*=\s*'([^']+)'") {
-        $SupabaseKey = $matches[1]
-        Write-Success "Anon Key de Supabase encontrada"
-    } elseif ($ConfigContent -match 'supabaseAnonKey\s*=\s*"([^"]+)"') {
+    # Extraer Key usando regex - busca: supabaseAnonKey = 'key' o supabaseKey = 'key'
+    $KeyPattern = "supabase(?:Anon)?Key\s*=\s*['\`"]([^'\`"]+)['\`"]"
+    if ($ConfigContent -match $KeyPattern) {
         $SupabaseKey = $matches[1]
         Write-Success "Anon Key de Supabase encontrada"
     } else {
-        Write-Warning "No se pudo extraer Anon Key de Supabase del archivo de configuración"
+        Write-Warning-Custom "No se pudo extraer Anon Key de Supabase del archivo"
         $SupabaseKey = $env:SUPABASE_ANON_KEY
     }
 }
@@ -184,7 +180,7 @@ try {
     Invoke-RestMethod -Uri $DeleteUrl -Method Delete -Headers $Headers -ErrorAction SilentlyContinue
     Write-Success "Archivo antiguo eliminado"
 } catch {
-    Write-Warning "No se encontró archivo antiguo o ya fue eliminado"
+    Write-Warning-Custom "No se encontró archivo antiguo o ya fue eliminado"
 }
 
 # Renombrar archivo nuevo
@@ -204,8 +200,8 @@ try {
     Write-Success "Archivo renombrado correctamente"
 } catch {
     Write-Error-Custom "Error al renombrar archivo: $_"
-    Write-Warning "Es posible que necesites renombrar manualmente en Supabase Dashboard"
-    Write-Info "Renombrar: '$TempName' → '$ApkName.apk'"
+    Write-Warning-Custom "Es posible que necesites renombrar manualmente en Supabase Dashboard"
+    Write-Info "Renombrar: '$TempName' a '$ApkName.apk'"
 }
 
 Write-Host ""
@@ -244,7 +240,8 @@ Write-Host "╚═════════════════════�
 Write-Host ""
 
 Write-Success "Proceso completado exitosamente!"
-Write-Info "APK disponible en Supabase Storage: apk/$ApkName.apk"
+$ApkPathString = "apk/$ApkName.apk"
+Write-Info "APK disponible en Supabase Storage: $ApkPathString"
 Write-Host ""
 
 exit 0

@@ -23,7 +23,7 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
   List<Map<String, dynamic>> _categories = [];
 
   // Lista de productos pendientes por sincronizar
-  // Cada item es un mapa: {'product': Map, 'category': Map}
+  // Cada item es un mapa: {'product': Map, 'category': Map, 'location': Map}
   final List<Map<String, dynamic>> _pendingProducts = [];
 
   Map<String, dynamic>? _selectedProduct;
@@ -63,13 +63,26 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
     }
   }
 
-  void _addToPending() {
+  Future<void> _addToPending() async {
     if (_selectedProduct == null || _selectedCategory == null) return;
+
+    // Mostrar diálogo de selección de ubicación
+    final location = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder:
+          (context) => _LocationSelectionDialog(
+            storeId: widget.storeId,
+            productId: _selectedProduct!['id'],
+          ),
+    );
+
+    if (location == null) return; // Usuario canceló
 
     setState(() {
       _pendingProducts.add({
         'product': _selectedProduct,
         'category': _selectedCategory,
+        'location': location,
       });
 
       // Remover de disponibles para evitar duplicados en la selección
@@ -104,6 +117,7 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
           localProductId: item['product']['id'],
           carnavalCategoryId: item['category']['id'],
           carnavalStoreId: widget.carnavalStoreId,
+          idUbicacion: item['location']['id_ubicacion'],
         );
 
         if (success) {
@@ -353,6 +367,7 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                           final product = item['product'];
                           final category = item['category'];
 
+                          final location = item['location'];
                           return Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
@@ -375,7 +390,34 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
                                       )
                                       : const Icon(Icons.image_not_supported),
                               title: Text(product['denominacion']),
-                              subtitle: Text(category['name']),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(category['name']),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.location_on,
+                                        size: 14,
+                                        color: Colors.grey,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          '${location['almacen']} - ${location['ubicacion']}',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                               trailing: IconButton(
                                 icon: const Icon(
                                   Icons.delete_outline,
@@ -440,6 +482,136 @@ class _ProductSyncSheetState extends State<ProductSyncSheet> {
             ),
         ],
       ),
+    );
+  }
+}
+
+// Dialog for selecting product location
+class _LocationSelectionDialog extends StatefulWidget {
+  final int storeId;
+  final int productId;
+
+  const _LocationSelectionDialog({
+    required this.storeId,
+    required this.productId,
+  });
+
+  @override
+  State<_LocationSelectionDialog> createState() =>
+      __LocationSelectionDialogState();
+}
+
+class __LocationSelectionDialogState extends State<_LocationSelectionDialog> {
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _locations = [];
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocations();
+  }
+
+  Future<void> _loadLocations() async {
+    try {
+      final locations = await CarnavalService.getProductLocations(
+        widget.storeId,
+        widget.productId,
+      );
+
+      if (mounted) {
+        setState(() {
+          _locations = locations;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Error al cargar ubicaciones: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Seleccionar Ubicación'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child:
+            _isLoading
+                ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+                : _errorMessage != null
+                ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Colors.red),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+                : _locations.isEmpty
+                ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                      'No se encontraron ubicaciones para este producto',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+                : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _locations.length,
+                  itemBuilder: (context, index) {
+                    final location = _locations[index];
+                    final stock = location['cantidad_existente'] ?? 0;
+
+                    return ListTile(
+                      leading: const Icon(
+                        Icons.location_on,
+                        color: AppColors.primary,
+                      ),
+                      title: Text(
+                        location['almacen'] ?? 'Sin almacén',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(location['ubicacion'] ?? 'Sin ubicación'),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Stock: $stock',
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      onTap: () => Navigator.of(context).pop(location),
+                    );
+                  },
+                ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+      ],
     );
   }
 }

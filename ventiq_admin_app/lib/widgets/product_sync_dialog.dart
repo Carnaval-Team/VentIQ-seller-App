@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/app_colors.dart';
 import '../services/carnaval_service.dart';
 
 class ProductSyncDialog extends StatefulWidget {
@@ -58,12 +59,25 @@ class _ProductSyncDialogState extends State<ProductSyncDialog> {
   Future<void> _syncProduct() async {
     if (_selectedProduct == null || _selectedCategory == null) return;
 
+    // Mostrar diálogo de selección de ubicación
+    final location = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder:
+          (context) => _LocationSelectionDialog(
+            storeId: widget.storeId,
+            productId: _selectedProduct!['id'],
+          ),
+    );
+
+    if (location == null) return; // Usuario canceló
+
     setState(() => _isSyncing = true);
     try {
       final success = await CarnavalService.syncProductToCarnaval(
         localProductId: _selectedProduct!['id'],
         carnavalCategoryId: _selectedCategory!['id'],
         carnavalStoreId: widget.carnavalStoreId,
+        idUbicacion: location['id_ubicacion'],
       );
 
       if (mounted) {
@@ -225,6 +239,136 @@ class _ProductSyncDialogState extends State<ProductSyncDialog> {
                     )
                     : const Text('Sincronizar'),
           ),
+      ],
+    );
+  }
+}
+
+// Dialog for selecting product location
+class _LocationSelectionDialog extends StatefulWidget {
+  final int storeId;
+  final int productId;
+
+  const _LocationSelectionDialog({
+    required this.storeId,
+    required this.productId,
+  });
+
+  @override
+  State<_LocationSelectionDialog> createState() =>
+      __LocationSelectionDialogState();
+}
+
+class __LocationSelectionDialogState extends State<_LocationSelectionDialog> {
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _locations = [];
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocations();
+  }
+
+  Future<void> _loadLocations() async {
+    try {
+      final locations = await CarnavalService.getProductLocations(
+        widget.storeId,
+        widget.productId,
+      );
+
+      if (mounted) {
+        setState(() {
+          _locations = locations;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Error al cargar ubicaciones: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Seleccionar Ubicación'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child:
+            _isLoading
+                ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+                : _errorMessage != null
+                ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Colors.red),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+                : _locations.isEmpty
+                ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                      'No se encontraron ubicaciones para este producto',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+                : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _locations.length,
+                  itemBuilder: (context, index) {
+                    final location = _locations[index];
+                    final stock = location['cantidad_existente'] ?? 0;
+
+                    return ListTile(
+                      leading: const Icon(
+                        Icons.location_on,
+                        color: AppColors.primary,
+                      ),
+                      title: Text(
+                        location['almacen'] ?? 'Sin almacén',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(location['ubicacion'] ?? 'Sin ubicación'),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Stock: $stock',
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      onTap: () => Navigator.of(context).pop(location),
+                    );
+                  },
+                ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
       ],
     );
   }

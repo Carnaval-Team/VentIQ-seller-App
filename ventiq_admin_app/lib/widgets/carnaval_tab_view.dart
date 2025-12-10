@@ -63,8 +63,8 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
             _carnavalStoreId!,
           );
 
-          // Obtener productos sincronizados agrupados
-          _syncedProducts = await CarnavalService.getSyncedProductsGrouped(
+          // Obtener productos sincronizados agrupados con ubicación
+          _syncedProducts = await CarnavalService.getSyncedProductsWithLocation(
             _carnavalStoreId!,
           );
         }
@@ -678,11 +678,23 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                         opacity: isActive ? 1.0 : 0.5,
                         child: ListTile(
                           onTap: () async {
+                            // Debug: verificar datos antes de abrir el diálogo
+                            print('🔍 Abriendo ProductSalesDialog:');
+                            print('  - storeId: $_storeId');
+                            print('  - product id: ${product['id']}');
+                            print(
+                              '  - localProductId (id_producto): ${product['id_producto']}',
+                            );
+                            print('  - product keys: ${product.keys.toList()}');
+
                             final result = await showDialog<bool>(
                               context: context,
                               builder:
-                                  (context) =>
-                                      ProductSalesDialog(product: product),
+                                  (context) => ProductSalesDialog(
+                                    product: product,
+                                    storeId: _storeId,
+                                    localProductId: product['id_producto'],
+                                  ),
                             );
                             // Si el producto cambió de estado, recargar datos
                             if (result == true) {
@@ -716,11 +728,47 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
                               color: isActive ? null : Colors.grey,
                             ),
                           ),
-                          subtitle: Text(
-                            'Precio: \$${product['price']} | Stock: ${product['stock']}',
-                            style: TextStyle(
-                              color: isActive ? null : Colors.grey,
-                            ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Precio: \$${product['price']} | Stock: ${product['stock']}',
+                                style: TextStyle(
+                                  color: isActive ? null : Colors.grey,
+                                ),
+                              ),
+                              if (product['almacen'] != null &&
+                                  product['ubicacion'] != null) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.location_on,
+                                      size: 12,
+                                      color:
+                                          isActive
+                                              ? Colors.grey.shade600
+                                              : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        '${product['almacen']} - ${product['ubicacion']}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color:
+                                              isActive
+                                                  ? Colors.grey.shade600
+                                                  : Colors.grey,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
                           ),
                           trailing: Icon(
                             isActive
