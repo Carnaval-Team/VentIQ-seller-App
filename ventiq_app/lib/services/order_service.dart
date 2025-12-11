@@ -744,6 +744,29 @@ class OrderService {
     }
   }
 
+  // Obtener estado de orden de Carnaval
+  Future<String?> getCarnavalOrderStatus(String carnavalOrderId) async {
+    try {
+      print('🔍 Buscando estado de orden Carnaval ID: $carnavalOrderId');
+      final response =
+          await Supabase.instance.client
+              .schema('carnavalapp')
+              .from('Orders')
+              .select('status')
+              .eq('id', carnavalOrderId)
+              .maybeSingle();
+
+      if (response != null && response['status'] != null) {
+        print('✅ Estado encontrado: ${response['status']}');
+        return response['status'] as String;
+      }
+      return null;
+    } catch (e) {
+      print('❌ Error al obtener estado de orden Carnaval: $e');
+      return null;
+    }
+  }
+
   // Transformar datos de Supabase al modelo Order existente
   void _transformSupabaseToOrders(List<dynamic> supabaseOrders) {
     try {

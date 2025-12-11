@@ -529,15 +529,45 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
-                      order.id,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1F2937),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            order.id,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1F2937),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (_getCarnavalOrderId(order.notas) != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: Colors.purple.withOpacity(0.3),
+                              ),
+                            ),
+                            child: const Text(
+                              'Carnaval',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   Container(
@@ -686,6 +716,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  String? _getCarnavalOrderId(String? notas) {
+    if (notas == null) return null;
+    final regex = RegExp(r'Venta desde orden (\d+)');
+    final match = regex.firstMatch(notas);
+    return match?.group(1);
+  }
+
   String _formatDate(DateTime date) {
     // Convert to local time if it's not already
     final localDate = date.toLocal();
@@ -785,6 +822,63 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             if (order.operationId != null) ...[
                               const SizedBox(height: 16),
                               _buildPaymentBreakdown(order.operationId!),
+                            ],
+
+                            // Estado Carnaval (si aplica)
+                            if (_getCarnavalOrderId(order.notas) != null) ...[
+                              const SizedBox(height: 16),
+                              FutureBuilder<String?>(
+                                future: _orderService.getCarnavalOrderStatus(
+                                  _getCarnavalOrderId(order.notas)!,
+                                ),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return _buildDetailRow(
+                                      'Estado Carnaval:',
+                                      'Cargando...',
+                                    );
+                                  }
+                                  if (snapshot.hasData) {
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 8,
+                                        horizontal: 12,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.purple.withOpacity(0.05),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.purple.withOpacity(0.2),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text(
+                                            'Estado en Carnaval:',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.purple,
+                                            ),
+                                          ),
+                                          Text(
+                                            snapshot.data!,
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.purple,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
                             ],
 
                             // Datos del cliente
