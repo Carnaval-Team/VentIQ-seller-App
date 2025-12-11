@@ -6,6 +6,7 @@ import '../widgets/admin_bottom_navigation.dart';
 import '../services/dashboard_service.dart';
 import '../services/currency_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/permissions_service.dart';
 
 class DashboardWebScreen extends StatefulWidget {
   const DashboardWebScreen({super.key});
@@ -21,6 +22,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
   final DashboardService _dashboardService = DashboardService();
   final UserPreferencesService _userPreferencesService =
       UserPreferencesService();
+  final PermissionsService _permissionsService = PermissionsService();
 
   String _currentStoreName = 'Cargando...';
   List<Map<String, dynamic>> _userStores = [];
@@ -167,6 +169,225 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     });
   }
 
+  Future<void> _showStoreSelectionDialog() async {
+    if (_userStores.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay tiendas disponibles'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final selectedStore = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.store, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('Seleccionar Tienda'),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: FutureBuilder<Map<int, UserRole>>(
+              future: _permissionsService.getUserRolesByStore(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final rolesByStore = snapshot.data ?? {};
+
+                return ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _userStores.length,
+                  itemBuilder: (context, index) {
+                    final store = _userStores[index];
+                    final storeId = store['id_tienda'] as int;
+                    final isCurrentStore =
+                        store['denominacion'] == _currentStoreName;
+                    final userRole = rolesByStore[storeId] ?? UserRole.none;
+                    final roleName = _permissionsService.getRoleName(userRole);
+
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor:
+                            isCurrentStore
+                                ? AppColors.primary
+                                : AppColors.primary.withOpacity(0.1),
+                        child: Icon(
+                          Icons.store,
+                          color:
+                              isCurrentStore ? Colors.white : AppColors.primary,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(
+                        store['denominacion'] ?? 'Tienda ${store['id_tienda']}',
+                        style: TextStyle(
+                          fontWeight:
+                              isCurrentStore
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                          color: isCurrentStore ? AppColors.primary : null,
+                        ),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('ID: ${store['id_tienda']}'),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getRoleColor(userRole).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'Rol: $roleName',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: _getRoleColor(userRole),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      trailing:
+                          isCurrentStore
+                              ? const Icon(
+                                Icons.check_circle,
+                                color: AppColors.primary,
+                              )
+                              : null,
+                      onTap: () {
+                        Navigator.of(context).pop(store);
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selectedStore != null &&
+        selectedStore['denominacion'] != _currentStoreName) {
+      await _switchStore(selectedStore);
+    }
+  }
+
+  /// Obtener color según el rol
+  Color _getRoleColor(UserRole role) {
+    switch (role) {
+      case UserRole.gerente:
+        return Colors.green;
+      case UserRole.supervisor:
+        return Colors.blue;
+      case UserRole.almacenero:
+        return Colors.orange;
+      case UserRole.vendedor:
+        return Colors.purple;
+      case UserRole.none:
+        return Colors.grey;
+    }
+  }
+
+  Future<void> _switchStore(Map<String, dynamic> store) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => const AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 16),
+                  Text('Cambiando tienda...'),
+                ],
+              ),
+            ),
+      );
+
+      final storeId = store['id_tienda'] as int;
+
+      // Limpiar caché de roles para forzar recarga
+      _permissionsService.clearCache();
+      print('🧹 Caché de roles limpiado');
+
+      // Update selected store in preferences
+      await _userPreferencesService.updateSelectedStore(storeId);
+
+      // Obtener el rol para esta tienda y guardarlo
+      final userRole = await _permissionsService.getUserRoleForStore(storeId);
+      print(
+        '🔄 Rol obtenido para tienda $storeId: ${_permissionsService.getRoleName(userRole)}',
+      );
+
+      // Guardar el rol en preferencias para esta tienda
+      final rolesByStore = await _userPreferencesService.getUserRolesByStore();
+      rolesByStore[storeId] =
+          _permissionsService.getRoleName(userRole).toLowerCase();
+      await _userPreferencesService.saveUserRolesByStore(rolesByStore);
+      print('💾 Rol guardado para tienda $storeId: ${rolesByStore[storeId]}');
+
+      // Update current store name
+      setState(() {
+        _currentStoreName =
+            store['denominacion'] ?? 'Tienda ${store['id_tienda']}';
+      });
+
+      // Reload dashboard data for new store
+      _loadDashboardData();
+
+      // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cambiado a: ${store['denominacion']}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Error switching store: $e');
+
+      // Close loading dialog if still open
+      if (mounted) {
+        Navigator.of(context).pop();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al cambiar tienda'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -194,7 +415,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
           if (_userStores.length > 1)
             IconButton(
               icon: const Icon(Icons.store, color: Colors.white),
-              onPressed: () {}, // TODO: Implement store selection
+              onPressed: _showStoreSelectionDialog,
               tooltip: 'Seleccionar Tienda: $_currentStoreName',
             ),
           Builder(
@@ -377,7 +598,7 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              Expanded( 
+              Expanded(
                 child: _buildCompactKPICard(
                   title: 'Productos',
                   value: '${_dashboardData['totalProducts'] ?? 0}',
@@ -464,68 +685,67 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
     required IconData icon,
     required Color color,
     VoidCallback? onTap,
-
   }) {
     if (onTap != null) {
       return InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
               ),
-              Icon(icon, size: 18, color: color),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Icon(icon, size: 18, color: color),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: color,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 10,
-              color: color,
-              fontWeight: FontWeight.w500,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    )
+        ),
       );
     }
     return Container(
@@ -584,8 +804,6 @@ class _DashboardWebScreenState extends State<DashboardWebScreen> {
         ],
       ),
     );
-
-    
   }
 
   Widget _buildKPICard(
