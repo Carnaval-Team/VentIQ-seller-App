@@ -10,32 +10,38 @@ class StoreConfigService {
   static Future<Map<String, dynamic>> getStoreConfig(int storeId) async {
     try {
       print('🔧 Obteniendo configuración para tienda ID: $storeId');
-      
+
       // Intentar obtener configuración existente
-      final response = await _supabase
-          .from('app_dat_configuracion_tienda')
-          .select('*')
-          .eq('id_tienda', storeId)
-          .maybeSingle();
+      final response =
+          await _supabase
+              .from('app_dat_configuracion_tienda')
+              .select('*')
+              .eq('id_tienda', storeId)
+              .maybeSingle();
 
       if (response != null) {
         print('✅ Configuración encontrada para tienda $storeId');
         return response;
       } else {
-        print('⚠️ No existe configuración para tienda $storeId, creando con valores por defecto...');
-        
-        // Crear configuración con valores por defecto
-        final newConfig = await _supabase
-            .from('app_dat_configuracion_tienda')
-            .insert({
-              'id_tienda': storeId,
-              'need_master_password_to_cancel': false,
-              'need_all_orders_completed_to_continue': false,
-            })
-            .select()
-            .single();
+        print(
+          '⚠️ No existe configuración para tienda $storeId, creando con valores por defecto...',
+        );
 
-        print('✅ Configuración creada para tienda $storeId con valores por defecto');
+        // Crear configuración con valores por defecto
+        final newConfig =
+            await _supabase
+                .from('app_dat_configuracion_tienda')
+                .insert({
+                  'id_tienda': storeId,
+                  'need_master_password_to_cancel': false,
+                  'need_all_orders_completed_to_continue': false,
+                })
+                .select()
+                .single();
+
+        print(
+          '✅ Configuración creada para tienda $storeId con valores por defecto',
+        );
         return newConfig;
       }
     } catch (e) {
@@ -53,22 +59,29 @@ class StoreConfigService {
     bool? manejaInventario,
     bool? permiteVenderAunSinDisponibilidad,
     bool? noSolicitarCliente,
+    Map<String, dynamic>? tpvTrabajadorEncargadoCarnaval,
   }) async {
     try {
       print('🔧 Actualizando configuración para tienda ID: $storeId');
-      
+
       final updateData = <String, dynamic>{};
-      
+
       if (needMasterPasswordToCancel != null) {
-        updateData['need_master_password_to_cancel'] = needMasterPasswordToCancel;
-        print('  - need_master_password_to_cancel: $needMasterPasswordToCancel');
+        updateData['need_master_password_to_cancel'] =
+            needMasterPasswordToCancel;
+        print(
+          '  - need_master_password_to_cancel: $needMasterPasswordToCancel',
+        );
       }
-      
+
       if (needAllOrdersCompletedToContinue != null) {
-        updateData['need_all_orders_completed_to_continue'] = needAllOrdersCompletedToContinue;
-        print('  - need_all_orders_completed_to_continue: $needAllOrdersCompletedToContinue');
+        updateData['need_all_orders_completed_to_continue'] =
+            needAllOrdersCompletedToContinue;
+        print(
+          '  - need_all_orders_completed_to_continue: $needAllOrdersCompletedToContinue',
+        );
       }
-      
+
       if (masterPassword != null) {
         // Encriptar la contraseña usando SHA-256
         final bytes = utf8.encode(masterPassword);
@@ -76,32 +89,44 @@ class StoreConfigService {
         updateData['master_password'] = digest.toString();
         print('  - master_password: [ENCRIPTADA]');
       }
-      
+
       if (manejaInventario != null) {
         updateData['maneja_inventario'] = manejaInventario;
         print('  - maneja_inventario: $manejaInventario');
       }
-      
+
       if (permiteVenderAunSinDisponibilidad != null) {
-        updateData['permite_vender_aun_sin_disponibilidad'] = permiteVenderAunSinDisponibilidad;
-        print('  - permite_vender_aun_sin_disponibilidad: $permiteVenderAunSinDisponibilidad');
+        updateData['permite_vender_aun_sin_disponibilidad'] =
+            permiteVenderAunSinDisponibilidad;
+        print(
+          '  - permite_vender_aun_sin_disponibilidad: $permiteVenderAunSinDisponibilidad',
+        );
       }
-      
+
       if (noSolicitarCliente != null) {
         updateData['no_solicitar_cliente'] = noSolicitarCliente;
         print('  - no_solicitar_cliente: $noSolicitarCliente');
+      }
+
+      if (tpvTrabajadorEncargadoCarnaval != null) {
+        updateData['tpv_trabajador_encargado_carnaval'] =
+            tpvTrabajadorEncargadoCarnaval;
+        print(
+          '  - tpv_trabajador_encargado_carnaval: $tpvTrabajadorEncargadoCarnaval',
+        );
       }
 
       if (updateData.isEmpty) {
         throw Exception('No hay datos para actualizar');
       }
 
-      final response = await _supabase
-          .from('app_dat_configuracion_tienda')
-          .update(updateData)
-          .eq('id_tienda', storeId)
-          .select()
-          .single();
+      final response =
+          await _supabase
+              .from('app_dat_configuracion_tienda')
+              .update(updateData)
+              .eq('id_tienda', storeId)
+              .select()
+              .single();
 
       print('✅ Configuración actualizada exitosamente para tienda $storeId');
       return response;
@@ -134,12 +159,18 @@ class StoreConfigService {
   }
 
   /// Actualiza solo need_master_password_to_cancel
-  static Future<void> updateNeedMasterPasswordToCancel(int storeId, bool value) async {
+  static Future<void> updateNeedMasterPasswordToCancel(
+    int storeId,
+    bool value,
+  ) async {
     await updateStoreConfig(storeId, needMasterPasswordToCancel: value);
   }
 
   /// Actualiza solo need_all_orders_completed_to_continue
-  static Future<void> updateNeedAllOrdersCompletedToContinue(int storeId, bool value) async {
+  static Future<void> updateNeedAllOrdersCompletedToContinue(
+    int storeId,
+    bool value,
+  ) async {
     await updateStoreConfig(storeId, needAllOrdersCompletedToContinue: value);
   }
 
@@ -198,7 +229,10 @@ class StoreConfigService {
   }
 
   /// Actualiza solo permite_vender_aun_sin_disponibilidad
-  static Future<void> updatePermiteVenderAunSinDisponibilidad(int storeId, bool value) async {
+  static Future<void> updatePermiteVenderAunSinDisponibilidad(
+    int storeId,
+    bool value,
+  ) async {
     await updateStoreConfig(storeId, permiteVenderAunSinDisponibilidad: value);
   }
 
@@ -216,5 +250,29 @@ class StoreConfigService {
   /// Actualiza solo no_solicitar_cliente
   static Future<void> updateNoSolicitarCliente(int storeId, bool value) async {
     await updateStoreConfig(storeId, noSolicitarCliente: value);
+  }
+
+  /// Obtiene solo el valor de tpv_trabajador_encargado_carnaval
+  static Future<Map<String, dynamic>?> getTpvTrabajadorEncargadoCarnaval(
+    int storeId,
+  ) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final value = config['tpv_trabajador_encargado_carnaval'];
+      if (value == null) return null;
+      if (value is String) return jsonDecode(value);
+      return value as Map<String, dynamic>;
+    } catch (e) {
+      print('❌ Error al obtener tpv_trabajador_encargado_carnaval: $e');
+      return null;
+    }
+  }
+
+  /// Actualiza solo tpv_trabajador_encargado_carnaval
+  static Future<void> updateTpvTrabajadorEncargadoCarnaval(
+    int storeId,
+    Map<String, dynamic>? value,
+  ) async {
+    await updateStoreConfig(storeId, tpvTrabajadorEncargadoCarnaval: value);
   }
 }

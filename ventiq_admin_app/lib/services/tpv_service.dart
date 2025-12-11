@@ -25,9 +25,13 @@ class TpvService {
       ),
       vendedor:app_dat_vendedor(
         id,
+        uuid,
+        id_trabajador,
         trabajador:app_dat_trabajadores(
           nombres,
-          apellidos
+          apellidos,
+          uuid,
+          id_tienda
         )
       )
     ''')

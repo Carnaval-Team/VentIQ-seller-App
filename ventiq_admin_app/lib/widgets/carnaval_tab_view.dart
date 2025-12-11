@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/carnaval_service.dart';
 import '../services/store_service.dart';
+import '../services/tpv_service.dart';
+import '../services/store_config_service.dart';
 import 'store_config_dialog.dart';
 import 'product_sync_sheet.dart';
 import 'product_sales_dialog.dart';
@@ -22,6 +24,8 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
   Map<String, dynamic>? _carnavalProviderInfo;
   int _syncedProductsCount = 0;
   Map<String, List<Map<String, dynamic>>> _syncedProducts = {};
+  List<Map<String, dynamic>> _tpvs = [];
+  Map<String, dynamic>? _assignedTpvConfig;
 
   @override
   void initState() {
@@ -67,6 +71,13 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
           _syncedProducts = await CarnavalService.getSyncedProductsWithLocation(
             _carnavalStoreId!,
           );
+
+          // Cargar TPVs y configuración de asignación
+          _tpvs = await TpvService.getTpvsByStore();
+          _assignedTpvConfig =
+              await StoreConfigService.getTpvTrabajadorEncargadoCarnaval(
+                _storeId!,
+              );
         }
       }
     } catch (e) {
@@ -326,6 +337,12 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
 
           // Información de la Tienda Compacta
           if (_storeInfo != null) _buildCompactStoreInfo(),
+
+          // Sección de Asignación de TPV (Nueva funcionalidad)
+          if (_isSynced) ...[
+            const SizedBox(height: 16),
+            _buildTpvAssignmentSection(),
+          ],
 
           // Lista de Productos Sincronizados
           if (_isSynced && _carnavalStoreId != null) ...[
@@ -785,6 +802,272 @@ class _CarnavalTabViewState extends State<CarnavalTabView> {
           }),
       ],
     );
+  }
+
+  Widget _buildTpvAssignmentSection() {
+    final hasAssignment = _assignedTpvConfig != null;
+    final tpvName = _assignedTpvConfig?['tpv_name'] ?? 'No asignado';
+    final workerName = _assignedTpvConfig?['worker_name'] ?? '';
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Gestión de Ventas Carnaval',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                TextButton.icon(
+                  onPressed: _showTpvAssignmentDialog,
+                  icon: Icon(
+                    hasAssignment ? Icons.edit : Icons.add_circle_outline,
+                    size: 18,
+                  ),
+                  label: Text(hasAssignment ? 'Cambiar' : 'Asignar'),
+                ),
+              ],
+            ),
+            if (hasAssignment) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.shade100),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.point_of_sale,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            tpvName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          if (workerName.isNotEmpty)
+                            Text(
+                              'Vendedor: $workerName',
+                              style: TextStyle(
+                                color: Colors.blue.shade800,
+                                fontSize: 13,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade100),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber, color: Colors.orange),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Las ventas no se asignarán a un TPV específico.',
+                        style: TextStyle(color: Colors.orange, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showTpvAssignmentDialog() async {
+    // Preparar lista plana de opciones (TPV + Vendedor)
+    final List<Map<String, dynamic>> options = [];
+
+    for (var tpv in _tpvs) {
+      var vendedoresData = tpv['vendedor'];
+      List<dynamic> vendedores = [];
+
+      if (vendedoresData is List) {
+        vendedores = vendedoresData;
+      } else if (vendedoresData != null) {
+        vendedores = [vendedoresData];
+      }
+
+      if (vendedores.isEmpty) {
+        // Opción de TPV sin vendedor (opcional, si se permite)
+        // Por ahora solo añadimos si hay vendedor, o mostramos mensaje
+        continue;
+      }
+
+      for (var vendedor in vendedores) {
+        if (vendedor is Map<String, dynamic>) {
+          options.add({
+            'tpv': tpv,
+            'vendedor': vendedor,
+            'trabajador': vendedor['trabajador'],
+          });
+        }
+      }
+    }
+
+    if (options.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay TPVs con vendedores disponibles'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Asignar TPV para Carnaval'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Selecciona el TPV y vendedor que gestionará las ventas de Carnaval App:',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      separatorBuilder:
+                          (context, index) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final option = options[index];
+                        final tpv = option['tpv'];
+                        final trabajador = option['trabajador'];
+                        final workerName =
+                            trabajador != null
+                                ? '${trabajador['nombres']} ${trabajador['apellidos']}'
+                                : 'Sin datos de trabajador';
+
+                        return ListTile(
+                          title: Text(
+                            tpv['denominacion'],
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text('Vendedor: $workerName'),
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.blue.shade50,
+                            child: const Icon(
+                              Icons.person_outline,
+                              color: Colors.blue,
+                            ),
+                          ),
+                          trailing: const Icon(
+                            Icons.arrow_forward_ios,
+                            size: 14,
+                            color: Colors.grey,
+                          ),
+                          onTap: () {
+                            Navigator.pop(context, option);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+            ],
+          ),
+    );
+
+    if (result != null) {
+      await _assignTpv(result);
+    }
+  }
+
+  Future<void> _assignTpv(Map<String, dynamic> selection) async {
+    setState(() => _isLoading = true);
+    try {
+      final tpv = selection['tpv'];
+      final vendedor = selection['vendedor'];
+      final trabajador = selection['trabajador'];
+
+      if (vendedor == null || trabajador == null) {
+        throw Exception('Datos de vendedor incompletos');
+      }
+
+      final workerName = '${trabajador['nombres']} ${trabajador['apellidos']}';
+
+      final configData = {
+        'tpv_id': tpv['id'],
+        'tpv_name': tpv['denominacion'],
+        'app_dat_vendedor_uuid': vendedor['uuid'],
+        'worker_name': workerName,
+        'worker_data': trabajador,
+      };
+
+      await StoreConfigService.updateTpvTrabajadorEncargadoCarnaval(
+        _storeId!,
+        configData,
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ TPV asignado correctamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      await _loadData();
+    } catch (e) {
+      print('❌ Error asignando TPV: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al asignar TPV: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() => _isLoading = false);
+    }
   }
 
   Widget _buildQuickActions() {
