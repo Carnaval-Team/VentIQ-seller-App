@@ -91,7 +91,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _esComprable = true;
   bool _esInventariable = true;
   bool _esPorLotes = false;
-  
+
   // Control de SKU manual
   bool _skuManual = false;
 
@@ -143,7 +143,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('  • descripcionCorta: "${widget.product!.descripcionCorta}"');
       print('  • codigoBarras: "${widget.product!.codigoBarras}"');
       print('  • nombreComercial: "${widget.product!.nombreComercial}"');
-      
+
       // Debug: Verificar carga de campos específicos en controladores
       print('📝 Campos cargados en controladores:');
       print('  • Nombre comercial: "${_nombreComercialController.text}"');
@@ -267,32 +267,43 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       // ✅ NUEVO: En modo edición, cargar categoría y subcategorías ANTES del setState
       List<Map<String, dynamic>> subcategoriasParaEdicion = [];
-      bool categoriaExisteEnTienda = true; // ✅ NUEVO: Flag para verificar si la categoría existe
+      bool categoriaExisteEnTienda =
+          true; // ✅ NUEVO: Flag para verificar si la categoría existe
       if (widget.product != null) {
         print('🏷️ Precargando categoría y subcategorías para edición...');
         final categoryId = int.tryParse(widget.product!.categoryId);
         if (categoryId != null) {
           // Asignar categorías temporalmente para poder buscar
           _categorias = futures[0];
-          
+
           // ✅ NUEVO: Verificar si la categoría existe en la tienda
-          final categoriaEncontrada = _categorias.any((cat) => cat['id'] == categoryId);
+          final categoriaEncontrada = _categorias.any(
+            (cat) => cat['id'] == categoryId,
+          );
           categoriaExisteEnTienda = categoriaEncontrada;
-          
+
           if (!categoriaEncontrada) {
             print('⚠️ La categoría ID $categoryId no existe en esta tienda');
             print('ℹ️ El usuario deberá seleccionar manualmente la categoría');
           } else {
             subcategoriasParaEdicion = _loadSubcategoriasSyncDirect(categoryId);
-            print('✅ Subcategorías precargadas: ${subcategoriasParaEdicion.length}');
-            
+            print(
+              '✅ Subcategorías precargadas: ${subcategoriasParaEdicion.length}',
+            );
+
             // ✅ NUEVO: Si no hay subcategorías en la categoría, cargar desde API
-            if (subcategoriasParaEdicion.isEmpty && widget.product!.subcategorias.isNotEmpty) {
-              print('⚠️ No hay subcategorías en categoría pero el producto tiene subcategorías asignadas');
+            if (subcategoriasParaEdicion.isEmpty &&
+                widget.product!.subcategorias.isNotEmpty) {
+              print(
+                '⚠️ No hay subcategorías en categoría pero el producto tiene subcategorías asignadas',
+              );
               print('🔄 Cargando subcategorías desde API...');
               try {
-                subcategoriasParaEdicion = await ProductService.getSubcategorias(categoryId);
-                print('✅ Subcategorías cargadas desde API: ${subcategoriasParaEdicion.length}');
+                subcategoriasParaEdicion =
+                    await ProductService.getSubcategorias(categoryId);
+                print(
+                  '✅ Subcategorías cargadas desde API: ${subcategoriasParaEdicion.length}',
+                );
               } catch (e) {
                 print('❌ Error cargando subcategorías desde API: $e');
               }
@@ -316,14 +327,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
           _loadExistingIngredients();
           // ✅ AGREGADO: Cargar unidad de medida en modo edición
           _loadUnidadMedidaForEditing();
-          
+
           // ✅ NUEVO: Cargar categoría y subcategorías directamente
           _loadCategoryAndSubcategoriesForEditingDirect();
-          
+
           // ✅ IMPORTANTE: Asignar las subcategorías precargadas
           _subcategorias = subcategoriasParaEdicion;
-          print('📌 Subcategorías asignadas en setState: ${_subcategorias.length}');
-          print('📌 Subcategorías seleccionadas en setState: ${_selectedSubcategorias.length}');
+          print(
+            '📌 Subcategorías asignadas en setState: ${_subcategorias.length}',
+          );
+          print(
+            '📌 Subcategorías seleccionadas en setState: ${_selectedSubcategorias.length}',
+          );
         }
 
         _isLoadingData = false;
@@ -451,21 +466,25 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('🔍 Product categoryId string: "${widget.product!.categoryId}"');
       final categoryId = int.tryParse(widget.product!.categoryId);
       print('🔍 Parsed categoryId: $categoryId');
-      
+
       if (categoryId != null) {
         // ✅ NUEVO: Verificar si la categoría existe en la tienda
-        final categoriaExiste = _categorias.any((cat) => cat['id'] == categoryId);
-        
+        final categoriaExiste = _categorias.any(
+          (cat) => cat['id'] == categoryId,
+        );
+
         if (!categoriaExiste) {
           print('⚠️ La categoría ID $categoryId no existe en esta tienda');
-          print('ℹ️ No se seleccionará automáticamente. Usuario debe elegir manualmente.');
+          print(
+            'ℹ️ No se seleccionará automáticamente. Usuario debe elegir manualmente.',
+          );
           // ✅ IMPORTANTE: Limpiar _selectedCategoryId y _selectedSubcategorias
           _selectedCategoryId = null;
           _selectedSubcategorias.clear();
           print('🧹 _selectedCategoryId y _selectedSubcategorias limpiados');
           return;
         }
-        
+
         _selectedCategoryId = categoryId;
         print('✅ Categoría cargada: ID $categoryId');
 
@@ -503,9 +522,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
   /// ✅ NUEVO: Carga subcategorías sin setState (retorna la lista)
   List<Map<String, dynamic>> _loadSubcategoriasSyncDirect(int categoryId) {
     try {
-      print('📂 Cargando subcategorías para categoría $categoryId (sync directo)...');
+      print(
+        '📂 Cargando subcategorías para categoría $categoryId (sync directo)...',
+      );
       print('📊 Total de categorías disponibles: ${_categorias.length}');
-      
+
       // Buscar la categoría
       final categoria = _categorias.firstWhere(
         (cat) {
@@ -526,22 +547,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       print('✅ Categoría encontrada: ${categoria['denominacion']}');
-      
+
       final subcategorias = categoria['subcategorias'] as List<dynamic>? ?? [];
       print('📋 Subcategorías en categoría: ${subcategorias.length}');
 
-      final nuevasSubcategorias = subcategorias
-          .map((subcat) {
-            print('  - Subcategoría: ${subcat['denominacion']} (ID: ${subcat['id']})');
-            return {
-              'id': subcat['id'],
-              'denominacion': subcat['denominacion'],
-            };
-          })
-          .cast<Map<String, dynamic>>()
-          .toList();
+      final nuevasSubcategorias =
+          subcategorias
+              .map((subcat) {
+                print(
+                  '  - Subcategoría: ${subcat['denominacion']} (ID: ${subcat['id']})',
+                );
+                return {
+                  'id': subcat['id'],
+                  'denominacion': subcat['denominacion'],
+                };
+              })
+              .cast<Map<String, dynamic>>()
+              .toList();
 
-      print('✅ Subcategorías cargadas (sync directo): ${nuevasSubcategorias.length}');
+      print(
+        '✅ Subcategorías cargadas (sync directo): ${nuevasSubcategorias.length}',
+      );
       return nuevasSubcategorias;
     } catch (e) {
       print('❌ Error cargando subcategorías (sync directo): $e');
@@ -560,7 +586,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('🔍 Product categoryId string: "${widget.product!.categoryId}"');
       final categoryId = int.tryParse(widget.product!.categoryId);
       print('🔍 Parsed categoryId: $categoryId');
-      
+
       if (categoryId != null) {
         setState(() {
           _selectedCategoryId = categoryId;
@@ -603,7 +629,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     try {
       print('📂 Cargando subcategorías para categoría $categoryId (sync)...');
       print('📊 Total de categorías disponibles: ${_categorias.length}');
-      
+
       // Buscar la categoría
       final categoria = _categorias.firstWhere(
         (cat) {
@@ -623,29 +649,32 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       print('✅ Categoría encontrada: ${categoria['denominacion']}');
-      
+
       final subcategorias = categoria['subcategorias'] as List<dynamic>? ?? [];
       print('📋 Subcategorías en categoría: ${subcategorias.length}');
 
-      final nuevasSubcategorias = subcategorias
-          .map((subcat) {
-            print('  - Subcategoría: ${subcat['denominacion']} (ID: ${subcat['id']})');
-            return {
-              'id': subcat['id'],
-              'denominacion': subcat['denominacion'],
-            };
-          })
-          .cast<Map<String, dynamic>>()
-          .toList();
+      final nuevasSubcategorias =
+          subcategorias
+              .map((subcat) {
+                print(
+                  '  - Subcategoría: ${subcat['denominacion']} (ID: ${subcat['id']})',
+                );
+                return {
+                  'id': subcat['id'],
+                  'denominacion': subcat['denominacion'],
+                };
+              })
+              .cast<Map<String, dynamic>>()
+              .toList();
 
       print('✅ Subcategorías cargadas (sync): ${nuevasSubcategorias.length}');
       print('📌 Subcategorías seleccionadas antes: $_selectedSubcategorias');
-      
+
       // ✅ IMPORTANTE: Usar setState para actualizar la UI
       setState(() {
         _subcategorias = nuevasSubcategorias;
       });
-      
+
       print('📌 Subcategorías seleccionadas después: $_selectedSubcategorias');
     } catch (e) {
       print('❌ Error cargando subcategorías (sync): $e');
@@ -671,21 +700,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
       final umProducto = widget.product!.um ?? '';
       print('🔍 Buscando unidad de medida: "$umProducto"');
 
-      final unidadEncontrada = unidades.firstWhere(
-        (unidad) {
-          final denominacion = (unidad['denominacion'] ?? '').toString().toLowerCase();
-          final abreviatura = (unidad['abreviatura'] ?? '').toString().toLowerCase();
-          return denominacion == umProducto.toLowerCase() || 
-                 abreviatura == umProducto.toLowerCase();
-        },
-        orElse: () => <String, dynamic>{},
-      );
+      final unidadEncontrada = unidades.firstWhere((unidad) {
+        final denominacion =
+            (unidad['denominacion'] ?? '').toString().toLowerCase();
+        final abreviatura =
+            (unidad['abreviatura'] ?? '').toString().toLowerCase();
+        return denominacion == umProducto.toLowerCase() ||
+            abreviatura == umProducto.toLowerCase();
+      }, orElse: () => <String, dynamic>{});
 
       if (unidadEncontrada.isNotEmpty) {
         setState(() {
           _selectedUnidadMedidaId = unidadEncontrada['id'];
         });
-        print('✅ Unidad de medida cargada: ID ${unidadEncontrada['id']}, ${unidadEncontrada['denominacion']}');
+        print(
+          '✅ Unidad de medida cargada: ID ${unidadEncontrada['id']}, ${unidadEncontrada['denominacion']}',
+        );
       } else {
         print('⚠️ No se encontró unidad de medida: "$umProducto"');
         // Usar la primera unidad disponible como fallback
@@ -693,7 +723,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
           setState(() {
             _selectedUnidadMedidaId = unidades.first['id'];
           });
-          print('🔄 Usando unidad por defecto: ${unidades.first['denominacion']}');
+          print(
+            '🔄 Usando unidad por defecto: ${unidades.first['denominacion']}',
+          );
         }
       }
     } catch (e) {
@@ -740,31 +772,38 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Future<void> _setDefaultUnidadMedida() async {
     try {
       print('🔧 Estableciendo unidad de medida por defecto...');
-      
+
       // Cargar unidades de medida
       final unidades = await ProductService.getUnidadesMedida();
-      
+
       // Buscar "Unidad" en la lista (puede ser "Unidad", "unidad", "und", etc.)
       final unidadDefecto = unidades.firstWhere(
         (unidad) {
-          final denominacion = (unidad['denominacion'] ?? '').toString().toLowerCase();
-          final abreviatura = (unidad['abreviatura'] ?? '').toString().toLowerCase();
-          return denominacion.contains('unidad') || 
-                 abreviatura == 'und' || 
-                 abreviatura == 'unidad' ||
-                 denominacion == 'unidad';
+          final denominacion =
+              (unidad['denominacion'] ?? '').toString().toLowerCase();
+          final abreviatura =
+              (unidad['abreviatura'] ?? '').toString().toLowerCase();
+          return denominacion.contains('unidad') ||
+              abreviatura == 'und' ||
+              abreviatura == 'unidad' ||
+              denominacion == 'unidad';
         },
-        orElse: () => unidades.isNotEmpty ? unidades.first : <String, dynamic>{},
+        orElse:
+            () => unidades.isNotEmpty ? unidades.first : <String, dynamic>{},
       );
-      
+
       if (unidadDefecto.isNotEmpty) {
         setState(() {
           _selectedUnidadMedidaId = unidadDefecto['id'];
           _unidadMedidaController.text = unidadDefecto['abreviatura'] ?? 'und';
         });
-        print('✅ Unidad de medida por defecto establecida: ${unidadDefecto['denominacion']} (${unidadDefecto['abreviatura']})');
+        print(
+          '✅ Unidad de medida por defecto establecida: ${unidadDefecto['denominacion']} (${unidadDefecto['abreviatura']})',
+        );
       } else {
-        print('⚠️ No se encontró unidad de medida por defecto, usando valores hardcoded');
+        print(
+          '⚠️ No se encontró unidad de medida por defecto, usando valores hardcoded',
+        );
         setState(() {
           _selectedUnidadMedidaId = 1;
           _unidadMedidaController.text = 'und';
@@ -787,28 +826,31 @@ class _AddProductScreenState extends State<AddProductScreen> {
         _subcategorias = [];
         // ✅ ACTUALIZADO: Solo limpiar selecciones en modo creación, no en edición
         if (widget.product == null) {
-          _selectedSubcategorias.clear(); // Limpiar selecciones previas solo en creación
+          _selectedSubcategorias
+              .clear(); // Limpiar selecciones previas solo en creación
         }
       });
 
       final subcategorias = await ProductService.getSubcategorias(categoryId);
-      
+
       setState(() {
         _subcategorias = subcategorias;
         _isLoadingSubcategorias = false;
-        
+
         // ✅ NUEVO: Selección automática si hay una sola subcategoría
         if (subcategorias.length == 1 && widget.product == null) {
           _selectedSubcategorias.add(subcategorias.first['id']);
-          print('✅ Subcategoría única seleccionada automáticamente: ${subcategorias.first['denominacion']}');
+          print(
+            '✅ Subcategoría única seleccionada automáticamente: ${subcategorias.first['denominacion']}',
+          );
         }
       });
-      
+
       // Solo generar SKU en modo creación, no en edición
       if (widget.product == null) {
         _generateSKU(); // Generar SKU cuando cambia la categoría
       }
-      
+
       print('✅ Subcategorías cargadas: ${subcategorias.length}');
       if (subcategorias.length == 1) {
         print('🎯 Subcategoría única seleccionada automáticamente');
@@ -828,7 +870,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('🔒 Modo edición: SKU no se regenera, se preserva el original');
       return;
     }
-    
+
     // No generar SKU si está en modo manual
     if (_skuManual) {
       print('✋ SKU manual activado: no se genera automáticamente');
@@ -924,35 +966,36 @@ class _AddProductScreenState extends State<AddProductScreen> {
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _saveProduct,
-            child: _isLoading
-                ? const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+            child:
+                _isLoading
+                    ? const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        'GUARDANDO...',
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontWeight: FontWeight.w600,
+                        SizedBox(width: 8),
+                        Text(
+                          'GUARDANDO...',
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
+                      ],
+                    )
+                    : Text(
+                      widget.product != null ? 'ACTUALIZAR' : 'GUARDAR',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
                       ),
-                    ],
-                  )
-                : Text(
-                    widget.product != null ? 'ACTUALIZAR' : 'GUARDAR',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
                     ),
-                  ),
           ),
         ],
       ),
@@ -1043,20 +1086,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
           controller: _skuController,
           decoration: InputDecoration(
             labelText: 'SKU *',
-            hintText: _skuManual || widget.product != null
-                ? 'Ingrese el SKU manualmente'
-                : 'Se genera automáticamente',
+            hintText:
+                _skuManual || widget.product != null
+                    ? 'Ingrese el SKU manualmente'
+                    : 'Se genera automáticamente',
             border: const OutlineInputBorder(),
             suffixIcon: Icon(
               _skuManual || widget.product != null
-                  ? Icons.edit 
-                  : Icons.auto_awesome, 
-              color: AppColors.primary
+                  ? Icons.edit
+                  : Icons.auto_awesome,
+              color: AppColors.primary,
             ),
           ),
-          readOnly: widget.product != null 
-              ? !_skuManual  // En modo edición: solo editable si _skuManual está activado
-              : !_skuManual, // En modo creación: solo editable si _skuManual está activado
+          readOnly:
+              widget.product != null
+                  ? !_skuManual // En modo edición: solo editable si _skuManual está activado
+                  : !_skuManual, // En modo creación: solo editable si _skuManual está activado
           validator: (value) {
             if (value == null || value.isEmpty) {
               return 'El SKU es requerido';
@@ -1092,16 +1137,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   style: TextStyle(
                     fontSize: 14,
                     color: _skuManual ? AppColors.primary : Colors.grey[600],
-                    fontWeight: _skuManual ? FontWeight.w500 : FontWeight.normal,
+                    fontWeight:
+                        _skuManual ? FontWeight.w500 : FontWeight.normal,
                   ),
                 ),
               ),
               if (_skuManual)
-                Icon(
-                  Icons.info_outline,
-                  size: 16,
-                  color: Colors.grey[600],
-                ),
+                Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
             ],
           ),
         ]
@@ -1126,16 +1168,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   style: TextStyle(
                     fontSize: 14,
                     color: _skuManual ? AppColors.primary : Colors.grey[600],
-                    fontWeight: _skuManual ? FontWeight.w500 : FontWeight.normal,
+                    fontWeight:
+                        _skuManual ? FontWeight.w500 : FontWeight.normal,
                   ),
                 ),
               ),
               if (_skuManual)
-                Icon(
-                  Icons.info_outline,
-                  size: 16,
-                  color: Colors.grey[600],
-                ),
+                Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
             ],
           ),
           if (_skuManual)
@@ -1143,10 +1182,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
               padding: const EdgeInsets.only(left: 56, top: 4),
               child: Text(
                 'Ingrese un SKU único para el producto',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ),
         ],
@@ -1274,9 +1310,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
     print('🎨 Renderizando subcategorías:');
     print('  • _selectedCategoryId: $_selectedCategoryId');
     print('  • _subcategorias.length: ${_subcategorias.length}');
-    print('  • _selectedSubcategorias.length: ${_selectedSubcategorias.length}');
+    print(
+      '  • _selectedSubcategorias.length: ${_selectedSubcategorias.length}',
+    );
     print('  • _isLoadingSubcategorias: $_isLoadingSubcategorias');
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1303,7 +1341,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ],
         ),
         const SizedBox(height: 8),
-        
+
         // Estado: Sin categoría seleccionada
         if (_selectedCategoryId == null) ...[
           Container(
@@ -1320,17 +1358,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 const Expanded(
                   child: Text(
                     'Selecciona una categoría para ver las subcategorías disponibles',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.blue,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.blue),
                   ),
                 ),
               ],
             ),
           ),
         ]
-        
         // Estado: Categoría seleccionada pero sin subcategorías
         else if (_subcategorias.isEmpty && !_isLoadingSubcategorias) ...[
           Container(
@@ -1375,34 +1409,36 @@ class _AddProductScreenState extends State<AddProductScreen> {
             ),
           ),
         ]
-        
         // Estado: Subcategorías disponibles
         else if (_subcategorias.isNotEmpty) ...[
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _subcategorias.map((subcat) {
-              final isSelected = _selectedSubcategorias.contains(subcat['id']);
-              return FilterChip(
-                label: Text(subcat['denominacion']),
-                selected: isSelected,
-                onSelected: (selected) {
-                  setState(() {
-                    if (selected) {
-                      _selectedSubcategorias.add(subcat['id']);
-                    } else {
-                      _selectedSubcategorias.remove(subcat['id']);
-                    }
-                  });
-                  // Solo generar SKU en modo creación, no en edición
-                  if (widget.product == null) {
-                    _generateSKU();
-                  }
-                },
-                selectedColor: AppColors.primary.withOpacity(0.2),
-                checkmarkColor: AppColors.primary,
-              );
-            }).toList(),
+            children:
+                _subcategorias.map((subcat) {
+                  final isSelected = _selectedSubcategorias.contains(
+                    subcat['id'],
+                  );
+                  return FilterChip(
+                    label: Text(subcat['denominacion']),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedSubcategorias.add(subcat['id']);
+                        } else {
+                          _selectedSubcategorias.remove(subcat['id']);
+                        }
+                      });
+                      // Solo generar SKU en modo creación, no en edición
+                      if (widget.product == null) {
+                        _generateSKU();
+                      }
+                    },
+                    selectedColor: AppColors.primary.withOpacity(0.2),
+                    checkmarkColor: AppColors.primary,
+                  );
+                }).toList(),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
@@ -1925,16 +1961,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 ),
                 CheckboxListTile(
                   title: const Text('Es Servicio'),
-                  subtitle: const Text('Servicio a clientes, puede necesitar productos'),
+                  subtitle: const Text(
+                    'Servicio a clientes, puede necesitar productos',
+                  ),
                   value: _esServicio,
                   onChanged:
                       (value) => setState(() {
                         _esServicio = value ?? false;
-                    if (!_esServicio) {
-                      _ingredientes.clear();
-                      _costoProduccionCalculado = 0.0;
-                    }
-                  }),
+                        if (!_esServicio) {
+                          _ingredientes.clear();
+                          _costoProduccionCalculado = 0.0;
+                        }
+                      }),
                 ),
                 // Sección de ingredientes para productos elaborados
                 if (_esElaborado || _esServicio) ...[
@@ -2570,11 +2608,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
     print('🔄 Datos del producto a actualizar: ${jsonEncode(productoData)}');
     print('🏷️ Categoría seleccionada: $_selectedCategoryId');
     print('🏷️ Subcategorías seleccionadas: $_selectedSubcategorias');
-    
+
     // Debug: Verificar campos específicos antes de enviar
     print('📤 Campos específicos a actualizar:');
     print('  • ID Tienda: ${productoData['id_tienda']}');
-    print('  • SKU: ${_skuManual ? "\"${productoData['sku']}\" (SE ACTUALIZARÁ)" : "NO SE ACTUALIZA (switch desactivado)"}');
+    print(
+      '  • SKU: ${_skuManual ? "\"${productoData['sku']}\" (SE ACTUALIZARÁ)" : "NO SE ACTUALIZA (switch desactivado)"}',
+    );
     print('  • ID Categoría: ${productoData['id_categoria']}');
     print('  • Denominación: "${productoData['denominacion']}"');
     print('  • Nombre comercial: "${productoData['nombre_comercial']}"');
@@ -2592,7 +2632,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           .from('app_dat_producto')
           .update(productoData)
           .eq('id', productId);
-      
+
       print('✅ Resultado de actualización: $updateResult');
       print('✅ Datos básicos del producto actualizados exitosamente');
 
@@ -2672,13 +2712,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
     } catch (e, stackTrace) {
       print('❌ Error actualizando producto: $e');
       print('📍 StackTrace: $stackTrace');
-      
+
       // Verificar si es un error específico de Supabase
       if (e.toString().contains('PostgrestException')) {
         print('🔍 Error de PostgreSQL detectado');
         print('🔍 Detalles del error: ${e.toString()}');
       }
-      
+
       throw Exception('Error actualizando producto: $e');
     }
 
@@ -2764,16 +2804,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       // Insertar nuevas subcategorías si hay seleccionadas
       if (_selectedSubcategorias.isNotEmpty) {
-        final subcategoriasData = _selectedSubcategorias.map((id) => {
-          'id_producto': productId,
-          'id_sub_categoria': id,
-        }).toList();
+        final subcategoriasData =
+            _selectedSubcategorias
+                .map((id) => {'id_producto': productId, 'id_sub_categoria': id})
+                .toList();
 
         await _supabase
             .from('app_dat_productos_subcategorias')
             .insert(subcategoriasData);
 
-        print('✅ Subcategorías actualizadas exitosamente: ${_selectedSubcategorias.length}');
+        print(
+          '✅ Subcategorías actualizadas exitosamente: ${_selectedSubcategorias.length}',
+        );
         for (final subId in _selectedSubcategorias) {
           final subcat = _subcategorias.firstWhere(
             (s) => s['id'] == subId,
@@ -2804,11 +2846,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
       print('💰 Nuevo precio: $precioVenta CUP');
 
       // Verificar si ya existe un precio para este producto
-      final existingPrice = await _supabase
-          .from('app_dat_precio_venta')
-          .select('id')
-          .eq('id_producto', productId)
-          .maybeSingle();
+      final existingPrice =
+          await _supabase
+              .from('app_dat_precio_venta')
+              .select('id')
+              .eq('id_producto', productId)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
 
       if (existingPrice != null) {
         // Actualizar precio existente
@@ -2818,19 +2863,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
               'precio_venta_cup': precioVenta,
               'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
             })
-            .eq('id_producto', productId);
+            .eq('id', existingPrice['id']);
 
         print('✅ Precio de venta actualizado');
       } else {
         // Insertar nuevo precio
-        await _supabase
-            .from('app_dat_precio_venta')
-            .insert({
-              'id_producto': productId,
-              'precio_venta_cup': precioVenta,
-              'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
-              'id_variante': null,
-            });
+        await _supabase.from('app_dat_precio_venta').insert({
+          'id_producto': productId,
+          'precio_venta_cup': precioVenta,
+          'fecha_desde': DateTime.now().toIso8601String().substring(0, 10),
+          'id_variante': null,
+        });
 
         print('✅ Precio de venta insertado');
       }
@@ -2861,200 +2904,229 @@ class _AddProductScreenState extends State<AddProductScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.category, color: AppColors.primary),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Crear Categoría y Subcategoría',
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Para crear un producto necesitas al menos una categoría con una subcategoría.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Categoría
-                const Text(
-                  'Categoría Principal',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: categoriaController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre de la categoría *',
-                    hintText: 'Ej: Bebidas, Comida, Postres',
-                    prefixIcon: Icon(Icons.category),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: categoriaDescController,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción de la categoría',
-                    hintText: 'Descripción opcional',
-                    prefixIcon: Icon(Icons.description),
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 2,
-                ),
-                const SizedBox(height: 20),
-
-                // Subcategoría
-                const Text(
-                  'Subcategoría (Requerida)',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: subcategoriaController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre de la subcategoría *',
-                    hintText: 'Ej: Gaseosas, Jugos, Cervezas',
-                    prefixIcon: Icon(Icons.subdirectory_arrow_right),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: subcategoriaDescController,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción de la subcategoría',
-                    hintText: 'Descripción opcional',
-                    prefixIcon: Icon(Icons.description),
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 2,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: isLoading ? null : () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: isLoading ? null : () async {
-                if (categoriaController.text.trim().isEmpty ||
-                    subcategoriaController.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('El nombre de la categoría y subcategoría son obligatorios'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return;
-                }
-
-                setDialogState(() => isLoading = true);
-
-                try {
-                  // Crear categoría
-                  final categoriaResult = await ProductService.createCategoria(
-                    denominacion: categoriaController.text.trim(),
-                    descripcion: categoriaDescController.text.trim().isEmpty
-                        ? categoriaController.text.trim()
-                        : categoriaDescController.text.trim(),
-                    // SKU se genera automáticamente
-                  );
-
-                  if (categoriaResult['success']) {
-                    final categoriaId = categoriaResult['id'] as int;
-
-                    // Crear subcategoría
-                    final subcategoriaResult = await ProductService.createSubcategoria(
-                      idCategoria: categoriaId,
-                      denominacion: subcategoriaController.text.trim(),
-                    );
-
-                    if (subcategoriaResult['success']) {
-                      final subcategoriaId = subcategoriaResult['id'] as int;
-
-                      // Recargar categorías
-                      await _reloadCategorias();
-
-                      // Seleccionar la nueva categoría
-                      setState(() {
-                        _selectedCategoryId = categoriaId;
-                      });
-
-                      // Cargar subcategorías de la nueva categoría y seleccionar la nueva subcategoría
-                      await _loadSubcategorias(categoriaId);
-
-                      // Seleccionar automáticamente la subcategoría recién creada
-                      setState(() {
-                        _selectedSubcategorias = [subcategoriaId];
-                      });
-
-                      Navigator.pop(context);
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Categoría "${categoriaController.text.trim()}" y subcategoría "${subcategoriaController.text.trim()}" creadas exitosamente',
-                          ),
-                          backgroundColor: Colors.green,
-                          duration: const Duration(seconds: 4),
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Row(
+                    children: [
+                      Icon(Icons.category, color: AppColors.primary),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Crear Categoría y Subcategoría',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
-                      );
-                    }
-                  }
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al crear categoría: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                } finally {
-                  setDialogState(() => isLoading = false);
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
                       ),
-                    )
-                  : const Text('Crear Categoría y Subcategoría'),
-            ),
-          ],
-        ),
-      ),
+                    ],
+                  ),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Para crear un producto necesitas al menos una categoría con una subcategoría.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Categoría
+                        const Text(
+                          'Categoría Principal',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: categoriaController,
+                          decoration: const InputDecoration(
+                            labelText: 'Nombre de la categoría *',
+                            hintText: 'Ej: Bebidas, Comida, Postres',
+                            prefixIcon: Icon(Icons.category),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: categoriaDescController,
+                          decoration: const InputDecoration(
+                            labelText: 'Descripción de la categoría',
+                            hintText: 'Descripción opcional',
+                            prefixIcon: Icon(Icons.description),
+                            border: OutlineInputBorder(),
+                          ),
+                          maxLines: 2,
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Subcategoría
+                        const Text(
+                          'Subcategoría (Requerida)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: subcategoriaController,
+                          decoration: const InputDecoration(
+                            labelText: 'Nombre de la subcategoría *',
+                            hintText: 'Ej: Gaseosas, Jugos, Cervezas',
+                            prefixIcon: Icon(Icons.subdirectory_arrow_right),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: subcategoriaDescController,
+                          decoration: const InputDecoration(
+                            labelText: 'Descripción de la subcategoría',
+                            hintText: 'Descripción opcional',
+                            prefixIcon: Icon(Icons.description),
+                            border: OutlineInputBorder(),
+                          ),
+                          maxLines: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          isLoading ? null : () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      onPressed:
+                          isLoading
+                              ? null
+                              : () async {
+                                if (categoriaController.text.trim().isEmpty ||
+                                    subcategoriaController.text
+                                        .trim()
+                                        .isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'El nombre de la categoría y subcategoría son obligatorios',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                setDialogState(() => isLoading = true);
+
+                                try {
+                                  // Crear categoría
+                                  final categoriaResult =
+                                      await ProductService.createCategoria(
+                                        denominacion:
+                                            categoriaController.text.trim(),
+                                        descripcion:
+                                            categoriaDescController.text
+                                                    .trim()
+                                                    .isEmpty
+                                                ? categoriaController.text
+                                                    .trim()
+                                                : categoriaDescController.text
+                                                    .trim(),
+                                        // SKU se genera automáticamente
+                                      );
+
+                                  if (categoriaResult['success']) {
+                                    final categoriaId =
+                                        categoriaResult['id'] as int;
+
+                                    // Crear subcategoría
+                                    final subcategoriaResult =
+                                        await ProductService.createSubcategoria(
+                                          idCategoria: categoriaId,
+                                          denominacion:
+                                              subcategoriaController.text
+                                                  .trim(),
+                                        );
+
+                                    if (subcategoriaResult['success']) {
+                                      final subcategoriaId =
+                                          subcategoriaResult['id'] as int;
+
+                                      // Recargar categorías
+                                      await _reloadCategorias();
+
+                                      // Seleccionar la nueva categoría
+                                      setState(() {
+                                        _selectedCategoryId = categoriaId;
+                                      });
+
+                                      // Cargar subcategorías de la nueva categoría y seleccionar la nueva subcategoría
+                                      await _loadSubcategorias(categoriaId);
+
+                                      // Seleccionar automáticamente la subcategoría recién creada
+                                      setState(() {
+                                        _selectedSubcategorias = [
+                                          subcategoriaId,
+                                        ];
+                                      });
+
+                                      Navigator.pop(context);
+
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Categoría "${categoriaController.text.trim()}" y subcategoría "${subcategoriaController.text.trim()}" creadas exitosamente',
+                                          ),
+                                          backgroundColor: Colors.green,
+                                          duration: const Duration(seconds: 4),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Error al crear categoría: $e',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                } finally {
+                                  setDialogState(() => isLoading = false);
+                                }
+                              },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      child:
+                          isLoading
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                              : const Text('Crear Categoría y Subcategoría'),
+                    ),
+                  ],
+                ),
+          ),
     );
   }
 
@@ -3088,125 +3160,150 @@ class _AddProductScreenState extends State<AddProductScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.subdirectory_arrow_right, color: AppColors.primary),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Crear Subcategoría',
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Crear una nueva subcategoría para la categoría seleccionada.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: subcategoriaController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre de la subcategoría *',
-                  hintText: 'Ej: Gaseosas, Jugos, Cervezas',
-                  prefixIcon: Icon(Icons.subdirectory_arrow_right),
-                  border: OutlineInputBorder(),
-                ),
-                autofocus: true,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isLoading ? null : () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: isLoading ? null : () async {
-                if (subcategoriaController.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('El nombre de la subcategoría es obligatorio'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return;
-                }
-
-                setDialogState(() => isLoading = true);
-
-                try {
-                  // Crear subcategoría
-                  final subcategoriaResult = await ProductService.createSubcategoria(
-                    idCategoria: _selectedCategoryId!,
-                    denominacion: subcategoriaController.text.trim(),
-                  );
-
-                  if (subcategoriaResult['success']) {
-                    final subcategoriaId = subcategoriaResult['id'] as int;
-                    
-                    // Recargar subcategorías de la categoría actual
-                    await _loadSubcategorias(_selectedCategoryId!);
-                    
-                    // Seleccionar automáticamente la nueva subcategoría
-                    setState(() {
-                      if (!_selectedSubcategorias.contains(subcategoriaId)) {
-                        _selectedSubcategorias.add(subcategoriaId);
-                      }
-                    });
-
-                    Navigator.pop(context);
-                    
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Subcategoría "${subcategoriaController.text.trim()}" creada exitosamente',
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Row(
+                    children: [
+                      Icon(
+                        Icons.subdirectory_arrow_right,
+                        color: AppColors.primary,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Crear Subcategoría',
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
-                        backgroundColor: Colors.green,
-                        duration: const Duration(seconds: 3),
                       ),
-                    );
-                  }
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al crear subcategoría: $e'),
-                      backgroundColor: Colors.red,
+                    ],
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Crear una nueva subcategoría para la categoría seleccionada.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: subcategoriaController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre de la subcategoría *',
+                          hintText: 'Ej: Gaseosas, Jugos, Cervezas',
+                          prefixIcon: Icon(Icons.subdirectory_arrow_right),
+                          border: OutlineInputBorder(),
+                        ),
+                        autofocus: true,
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed:
+                          isLoading ? null : () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
                     ),
-                  );
-                } finally {
-                  setDialogState(() => isLoading = false);
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+                    ElevatedButton(
+                      onPressed:
+                          isLoading
+                              ? null
+                              : () async {
+                                if (subcategoriaController.text
+                                    .trim()
+                                    .isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'El nombre de la subcategoría es obligatorio',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                setDialogState(() => isLoading = true);
+
+                                try {
+                                  // Crear subcategoría
+                                  final subcategoriaResult =
+                                      await ProductService.createSubcategoria(
+                                        idCategoria: _selectedCategoryId!,
+                                        denominacion:
+                                            subcategoriaController.text.trim(),
+                                      );
+
+                                  if (subcategoriaResult['success']) {
+                                    final subcategoriaId =
+                                        subcategoriaResult['id'] as int;
+
+                                    // Recargar subcategorías de la categoría actual
+                                    await _loadSubcategorias(
+                                      _selectedCategoryId!,
+                                    );
+
+                                    // Seleccionar automáticamente la nueva subcategoría
+                                    setState(() {
+                                      if (!_selectedSubcategorias.contains(
+                                        subcategoriaId,
+                                      )) {
+                                        _selectedSubcategorias.add(
+                                          subcategoriaId,
+                                        );
+                                      }
+                                    });
+
+                                    Navigator.pop(context);
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Subcategoría "${subcategoriaController.text.trim()}" creada exitosamente',
+                                        ),
+                                        backgroundColor: Colors.green,
+                                        duration: const Duration(seconds: 3),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Error al crear subcategoría: $e',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                } finally {
+                                  setDialogState(() => isLoading = false);
+                                }
+                              },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
                       ),
-                    )
-                  : const Text('Crear Subcategoría'),
-            ),
-          ],
-        ),
-      ),
+                      child:
+                          isLoading
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                              : const Text('Crear Subcategoría'),
+                    ),
+                  ],
+                ),
+          ),
     );
   }
 
@@ -3453,14 +3550,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                     hintText: 'Selecciona un atributo',
                                     isDense: true,
                                   ),
-                                  items: _atributos.map((atributo) {
-                                    return DropdownMenuItem<int>(
-                                      value: atributo['id'],
-                                      child: Text(
-                                        atributo['denominacion'] ?? 'Sin nombre',
-                                      ),
-                                    );
-                                  }).toList(),
+                                  items:
+                                      _atributos.map((atributo) {
+                                        return DropdownMenuItem<int>(
+                                          value: atributo['id'],
+                                          child: Text(
+                                            atributo['denominacion'] ??
+                                                'Sin nombre',
+                                          ),
+                                        );
+                                      }).toList(),
                                   onChanged: (value) {
                                     setState(() {
                                       _selectedAtributoId = value;
@@ -3488,9 +3587,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                     hintText: '0.00',
                                     isDense: true,
                                   ),
-                                  keyboardType: const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
                                 ),
                               ],
                             ),
@@ -3523,7 +3623,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 children: [
                                   const Text(
                                     'Atributo:',
-                                    style: TextStyle(fontWeight: FontWeight.w500),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
                                   DropdownButtonFormField<int>(
@@ -3532,14 +3634,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                       hintText: 'Selecciona un atributo',
                                       isDense: true,
                                     ),
-                                    items: _atributos.map((atributo) {
-                                      return DropdownMenuItem<int>(
-                                        value: atributo['id'],
-                                        child: Text(
-                                          atributo['denominacion'] ?? 'Sin nombre',
-                                        ),
-                                      );
-                                    }).toList(),
+                                    items:
+                                        _atributos.map((atributo) {
+                                          return DropdownMenuItem<int>(
+                                            value: atributo['id'],
+                                            child: Text(
+                                              atributo['denominacion'] ??
+                                                  'Sin nombre',
+                                            ),
+                                          );
+                                        }).toList(),
                                     onChanged: (value) {
                                       setState(() {
                                         _selectedAtributoId = value;
@@ -3559,7 +3663,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 children: [
                                   const Text(
                                     'Precio:',
-                                    style: TextStyle(fontWeight: FontWeight.w500),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
                                   TextFormField(
@@ -3570,9 +3676,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                       hintText: '0.00',
                                       isDense: true,
                                     ),
-                                    keyboardType: const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
                                   ),
                                 ],
                               ),
