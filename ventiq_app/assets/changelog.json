@@ -17,6 +17,11 @@
           "type": "improvement",
           "title": "Imágenes de Producto Confiables",
           "description": "Mejoramos la forma en que se muestran las imágenes en los detalles del producto. Ahora se cargan correctamente desde nuestra base de datos para que siempre veas lo que estás comprando con la mejor calidad posible."
+        },
+        {
+          "type": "feature",
+          "title": "Integración Total con Carnaval App",
+          "description": "Tus ventas desde la app de Carnaval ahora llegan diferenciadas y puedes ver su estado en tiempo real. ¡Descarga Carnaval App aquí y expande tu negocio! https://play.google.com/store/apps/details?id=com.carnaval24"
         }
       ]
     },
