@@ -91,6 +91,12 @@ class ProductDetailService {
 
     // Generate product image URL from multimedias or fallback
     String? imageUrl;
+
+    // Debug output for raw image data
+    print('📸 Raw data from Supabase for product ${productData['id']}:');
+    print('   - multimedias: ${productData['multimedias']}');
+    print('   - foto: ${productData['foto']}');
+
     if (productData['multimedias'] != null &&
         productData['multimedias'] is List) {
       final multimedias = productData['multimedias'] as List;
@@ -107,6 +113,10 @@ class ProductDetailService {
         productData['foto'] != null &&
         productData['foto'].toString().isNotEmpty) {
       imageUrl = productData['foto'];
+    }
+
+    if (imageUrl == null && productData['imagen'] != null) {
+      imageUrl = productData['imagen'];
     }
 
     // Final fallback to random image
@@ -292,11 +302,12 @@ class ProductDetailService {
 
       // Transform the response and fetch inventory for each ingredient
       final List<Map<String, dynamic>> ingredients = [];
-      
+
       for (final item in response) {
-        final producto = item['app_dat_producto'] as Map<String, dynamic>? ?? {};
+        final producto =
+            item['app_dat_producto'] as Map<String, dynamic>? ?? {};
         final idIngrediente = item['id_ingrediente'] as int?;
-        
+
         // Obtener cantidad disponible actual del inventario
         double? cantidadDisponible;
         if (idIngrediente != null) {
@@ -307,28 +318,38 @@ class ProductDetailService {
                 .eq('id_producto', idIngrediente)
                 .order('created_at', ascending: false)
                 .limit(1);
-            
+
             if (inventoryResponse.isNotEmpty) {
-              cantidadDisponible = (inventoryResponse.first['cantidad_final'] as num?)?.toDouble();
-              debugPrint('📊 Ingrediente ${producto['denominacion']}: cantidad disponible = $cantidadDisponible');
+              cantidadDisponible =
+                  (inventoryResponse.first['cantidad_final'] as num?)
+                      ?.toDouble();
+              debugPrint(
+                '📊 Ingrediente ${producto['denominacion']}: cantidad disponible = $cantidadDisponible',
+              );
             }
           } catch (e) {
-            debugPrint('⚠️ Error obteniendo inventario para ingrediente $idIngrediente: $e');
+            debugPrint(
+              '⚠️ Error obteniendo inventario para ingrediente $idIngrediente: $e',
+            );
           }
         }
-        
+
         ingredients.add({
           'producto_id': producto['id'],
-          'producto_nombre': producto['denominacion'] ?? 'Ingrediente desconocido',
+          'producto_nombre':
+              producto['denominacion'] ?? 'Ingrediente desconocido',
           'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
           'unidad_medida': item['unidad_medida'] ?? '',
           'sku': producto['sku'] ?? '',
           'imagen': producto['imagen'],
-          'cantidad_disponible': cantidadDisponible, // Cantidad actual en inventario
+          'cantidad_disponible':
+              cantidadDisponible, // Cantidad actual en inventario
         });
       }
 
-      debugPrint('✅ Encontrados ${ingredients.length} ingredientes con inventario');
+      debugPrint(
+        '✅ Encontrados ${ingredients.length} ingredientes con inventario',
+      );
 
       return ingredients;
     } catch (e) {
@@ -386,16 +407,20 @@ class ProductDetailService {
                         final nombre =
                             ingredient['producto_nombre'] ??
                             'Ingrediente desconocido';
-                        final cantidadNecesaria = ingredient['cantidad_necesaria'] ?? 0;
+                        final cantidadNecesaria =
+                            ingredient['cantidad_necesaria'] ?? 0;
                         final unidad = ingredient['unidad_medida'] ?? '';
-                        final cantidadDisponible = ingredient['cantidad_disponible'] as double?;
-                        
+                        final cantidadDisponible =
+                            ingredient['cantidad_disponible'] as double?;
+
                         // Determinar si hay suficiente stock
-                        final bool tieneSuficiente = cantidadDisponible != null && 
+                        final bool tieneSuficiente =
+                            cantidadDisponible != null &&
                             cantidadDisponible >= cantidadNecesaria;
-                        final Color statusColor = cantidadDisponible == null 
-                            ? Colors.grey 
-                            : (tieneSuficiente ? Colors.green : Colors.red);
+                        final Color statusColor =
+                            cantidadDisponible == null
+                                ? Colors.grey
+                                : (tieneSuficiente ? Colors.green : Colors.red);
 
                         return Card(
                           margin: const EdgeInsets.symmetric(vertical: 4),
@@ -433,15 +458,16 @@ class ProductDetailService {
                                 ),
                               ],
                             ),
-                            trailing: cantidadDisponible != null
-                                ? Icon(
-                                    tieneSuficiente 
-                                        ? Icons.check_circle 
-                                        : Icons.warning,
-                                    color: statusColor,
-                                    size: 20,
-                                  )
-                                : null,
+                            trailing:
+                                cantidadDisponible != null
+                                    ? Icon(
+                                      tieneSuficiente
+                                          ? Icons.check_circle
+                                          : Icons.warning,
+                                      color: statusColor,
+                                      size: 20,
+                                    )
+                                    : null,
                           ),
                         );
                       },

@@ -158,24 +158,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // Si no hay promociones para este producto, usar precio sin descuento
     final productPromotions = _productPromotions[productId];
     if (productPromotions == null || productPromotions.isEmpty) {
-      return item.subtotal; // Precio original ya calculado
+      return item.subtotal;
     }
 
     // Buscar promoción aplicable según método de pago
     Map<String, dynamic>? applicablePromotion;
 
     for (final promo in productPromotions) {
+      // Nota: shouldApplyPromotion maneja internamente la conversión de 999 a 4
       if (_promotionService.shouldApplyPromotion(promo, paymentMethodId)) {
         applicablePromotion = promo;
         break; // Tomar primera promoción aplicable
       }
     }
 
-    // Si no hay promoción aplicable, usar precio original
+    // Definir tipo de pago explícitamente (Lógica espejo de OrderService)
+    // ID 1 -> Tipo 1 (Efectivo Oferta)
+    // ID 999 -> Tipo 2 (Efectivo Regular)
+    // Otro -> Tipo 2 (Regular)
+    int tipoPago = 1;
+    if (paymentMethodId == 999 ||
+        (paymentMethodId != null && paymentMethodId != 1)) {
+      tipoPago = 2; // Pago Regular o Tarjeta/Otros
+    }
+
+    // Si no hay promoción aplicable, es un caso de precio base
+    // Pero debemos asegurar que si es "Pago Regular" (999), se mantenga esa intención
     if (applicablePromotion == null) {
-      print(
-        '  ⚠️ ${item.producto.denominacion}: Sin promoción aplicable (método pago: $paymentMethodId)',
-      );
       return item.subtotal;
     }
 
@@ -193,13 +202,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       tipoDescuento,
     );
 
-    final precioFinal = prices['precio_oferta']!;
+    // FIX: Seleccionar precio final basado explícitamente en el TIPO DE PAGO
+    // Tipo 1 -> Aplica Oferta (Descuento o Precio Base según sea el recargo)
+    // Tipo 2 -> Aplica Precio Venta (Base o Recargo)
+    final double precioFinal;
+
+    if (tipoPago == 1) {
+      // Tipo 1: Efectivo Oferta -> Usar precio_oferta (siempre el más favorable/base para efectivo)
+      precioFinal = prices['precio_oferta']!;
+    } else {
+      // Tipo 2: Regular (Tarjeta u Otros) -> Usar precio_venta (Standard o Recargado)
+      precioFinal = prices['precio_venta']!;
+    }
+
     final itemTotal = precioFinal * item.cantidad;
 
     print('  💰 ${item.producto.denominacion}:');
+    print('     - Método Pago ID: $paymentMethodId -> Tipo Pago: $tipoPago');
     print('     - Precio base: \$${precioBase.toStringAsFixed(2)}');
     print(
-      '     - Precio final: \$${precioFinal.toStringAsFixed(2)} ${esRecargo ? "(recargo)" : "(descuento)"}',
+      '     - Precio calculado: \$${precioFinal.toStringAsFixed(2)} ${esRecargo ? "(recargo)" : "(promoción)"}',
     );
     print('     - Cantidad: ${item.cantidad}');
     print('     - Total item: \$${itemTotal.toStringAsFixed(2)}');

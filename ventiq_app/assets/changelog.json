@@ -1,8 +1,25 @@
 {
-  "current_version": "1.7.9",
-  "build": 709,
+  "current_version": "1.8.0",
+  "build": 710,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.8.0",
+      "date": "2025-12-15",
+      "title": "🛒 Checkout Transparente y Detalles Visuales Mejorados",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Precios Claros en el Checkout",
+          "description": "Ahora verás los precios correctos y detallados al finalizar tu compra. Hemos ajustado los cálculos para asegurar que pagues exactamente lo que ves, sin sorpresas."
+        },
+        {
+          "type": "improvement",
+          "title": "Imágenes de Producto Confiables",
+          "description": "Mejoramos la forma en que se muestran las imágenes en los detalles del producto. Ahora se cargan correctamente desde nuestra base de datos para que siempre veas lo que estás comprando con la mejor calidad posible."
+        }
+      ]
+    },
     {
       "version": "1.7.9",
       "date": "2025-12-09",
