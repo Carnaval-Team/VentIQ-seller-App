@@ -16,7 +16,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   List<Map<String, dynamic>> _suscripciones = [];
   List<Map<String, dynamic>> _filteredSuscripciones = [];
   List<Map<String, dynamic>> _tiendas = [];
-  
+
   bool _isLoading = true;
   String _searchQuery = '';
   String _selectedPlan = 'todos';
@@ -30,14 +30,14 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    
+
     try {
       // Cargar tiendas
       final tiendasResponse = await _supabase
           .from('app_dat_tienda')
           .select('id, denominacion')
           .order('denominacion');
-      
+
       // Cargar suscripciones con información de tienda
       final suscripcionesResponse = await _supabase
           .from('app_suscripciones')
@@ -50,6 +50,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
             estado,
             metodo_pago,
             renovacion_automatica,
+            observaciones,
             created_at,
             app_dat_tienda!inner(
               denominacion,
@@ -62,18 +63,20 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
             )
           ''')
           .order('fecha_fin', ascending: true);
-      
+
       // Formatear datos de suscripciones
       final suscripciones = <Map<String, dynamic>>[];
-      
+
       for (var suscripcion in suscripcionesResponse) {
         final tienda = suscripcion['app_dat_tienda'];
         final plan = suscripcion['app_suscripciones_plan'];
-        final fechaVencimiento = suscripcion['fecha_fin'] != null 
-            ? DateTime.parse(suscripcion['fecha_fin'])
-            : DateTime.now().add(const Duration(days: 365));
-        final diasRestantes = fechaVencimiento.difference(DateTime.now()).inDays;
-        
+        final fechaVencimiento =
+            suscripcion['fecha_fin'] != null
+                ? DateTime.parse(suscripcion['fecha_fin'])
+                : DateTime.now().add(const Duration(days: 365));
+        final diasRestantes =
+            fechaVencimiento.difference(DateTime.now()).inDays;
+
         String estado = 'activa';
         if (suscripcion['estado'] != 1) {
           estado = 'inactiva';
@@ -82,7 +85,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
         } else if (diasRestantes <= 30) {
           estado = 'por_vencer';
         }
-        
+
         suscripciones.add({
           ...suscripcion,
           'plan': plan?['denominacion'] ?? 'Sin plan',
@@ -93,10 +96,12 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
           'tienda_direccion': tienda?['direccion'] ?? 'Sin dirección',
           'tienda_ubicacion': tienda?['ubicacion'] ?? 'Sin ubicación',
           'dias_restantes': diasRestantes,
+          'estado_computed': estado,
           'estado': estado,
+          'estado_id': suscripcion['estado'],
         });
       }
-      
+
       if (mounted) {
         setState(() {
           _tiendas = List<Map<String, dynamic>>.from(tiendasResponse);
@@ -112,7 +117,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
         setState(() {
           _isLoading = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al cargar suscripciones: $e'),
@@ -125,19 +130,27 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
 
   void _filterSuscripciones() {
     setState(() {
-      _filteredSuscripciones = _suscripciones.where((suscripcion) {
-        final matchesSearch = 
-            suscripcion['tienda_nombre'].toString().toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            suscripcion['plan'].toString().toLowerCase().contains(_searchQuery.toLowerCase());
-        
-        final matchesPlan = _selectedPlan == 'todos' ||
-                          suscripcion['plan'].toString().toLowerCase() == _selectedPlan.toLowerCase();
-        
-        final matchesEstado = _selectedEstado == 'todos' ||
-                            suscripcion['estado'] == _selectedEstado;
-        
-        return matchesSearch && matchesPlan && matchesEstado;
-      }).toList();
+      _filteredSuscripciones =
+          _suscripciones.where((suscripcion) {
+            final matchesSearch =
+                suscripcion['tienda_nombre'].toString().toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                ) ||
+                suscripcion['plan'].toString().toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                );
+
+            final matchesPlan =
+                _selectedPlan == 'todos' ||
+                suscripcion['plan'].toString().toLowerCase() ==
+                    _selectedPlan.toLowerCase();
+
+            final matchesEstado =
+                _selectedEstado == 'todos' ||
+                suscripcion['estado'] == _selectedEstado;
+
+            return matchesSearch && matchesPlan && matchesEstado;
+          }).toList();
     });
   }
 
@@ -145,7 +158,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isDesktop = PlatformUtils.shouldUseDesktopLayout(screenSize.width);
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gestión de Licencias'),
@@ -164,9 +177,10 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
         ],
       ),
       drawer: const AppDrawer(),
-      body: _isLoading 
-          ? const Center(child: CircularProgressIndicator())
-          : _buildBody(isDesktop),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _buildBody(isDesktop),
     );
   }
 
@@ -182,9 +196,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
             const SizedBox(height: 16),
             SizedBox(
               height: MediaQuery.of(context).size.height * 0.5,
-              child: isDesktop 
-                  ? _buildDesktopTable()
-                  : _buildMobileList(),
+              child: isDesktop ? _buildDesktopTable() : _buildMobileList(),
             ),
           ],
         ),
@@ -195,16 +207,117 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   Widget _buildFilters() {
     final screenSize = MediaQuery.of(context).size;
     final isDesktop = PlatformUtils.shouldUseDesktopLayout(screenSize.width);
-    
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: isDesktop
-            ? Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
+        child:
+            isDesktop
+                ? Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Buscar licencia',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                          _filterSuscripciones();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedPlan,
+                        decoration: const InputDecoration(
+                          labelText: 'Plan',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'todos',
+                            child: Text('Todos'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'gratuita',
+                            child: Text('Gratuita'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'basica',
+                            child: Text('Básica'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'premium',
+                            child: Text('Premium'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'enterprise',
+                            child: Text('Enterprise'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedPlan = value!;
+                          });
+                          _filterSuscripciones();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedEstado,
+                        decoration: const InputDecoration(
+                          labelText: 'Estado',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'todos',
+                            child: Text('Todos'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'activa',
+                            child: Text('Activas'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'por_vencer',
+                            child: Text('Por Vencer'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'vencida',
+                            child: Text('Vencidas'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'inactiva',
+                            child: Text('Inactivas'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedEstado = value!;
+                          });
+                          _filterSuscripciones();
+                        },
+                      ),
+                    ),
+                  ],
+                )
+                : Column(
+                  spacing: 12,
+                  children: [
+                    TextField(
                       decoration: const InputDecoration(
                         labelText: 'Buscar licencia',
                         prefixIcon: Icon(Icons.search),
@@ -218,129 +331,89 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                         _filterSuscripciones();
                       },
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    flex: 1,
-                    child: DropdownButtonFormField<String>(
-                      value: _selectedPlan,
-                      decoration: const InputDecoration(
-                        labelText: 'Plan',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'todos', child: Text('Todos')),
-                        DropdownMenuItem(value: 'gratuita', child: Text('Gratuita')),
-                        DropdownMenuItem(value: 'basica', child: Text('Básica')),
-                        DropdownMenuItem(value: 'premium', child: Text('Premium')),
-                        DropdownMenuItem(value: 'enterprise', child: Text('Enterprise')),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedPlan = value!;
-                        });
-                        _filterSuscripciones();
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    flex: 1,
-                    child: DropdownButtonFormField<String>(
-                      value: _selectedEstado,
-                      decoration: const InputDecoration(
-                        labelText: 'Estado',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'todos', child: Text('Todos')),
-                        DropdownMenuItem(value: 'activa', child: Text('Activas')),
-                        DropdownMenuItem(value: 'por_vencer', child: Text('Por Vencer')),
-                        DropdownMenuItem(value: 'vencida', child: Text('Vencidas')),
-                        DropdownMenuItem(value: 'inactiva', child: Text('Inactivas')),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedEstado = value!;
-                        });
-                        _filterSuscripciones();
-                      },
-                    ),
-                  ),
-                ],
-              )
-            : Column(
-                spacing: 12,
-                children: [
-                  TextField(
-                    decoration: const InputDecoration(
-                      labelText: 'Buscar licencia',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value;
-                      });
-                      _filterSuscripciones();
-                    },
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: _selectedPlan,
-                          decoration: const InputDecoration(
-                            labelText: 'Plan',
-                            border: OutlineInputBorder(),
-                            isDense: true,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedPlan,
+                            decoration: const InputDecoration(
+                              labelText: 'Plan',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'todos',
+                                child: Text('Todos'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'gratuita',
+                                child: Text('Gratuita'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'basica',
+                                child: Text('Básica'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'premium',
+                                child: Text('Premium'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'enterprise',
+                                child: Text('Enterprise'),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedPlan = value!;
+                              });
+                              _filterSuscripciones();
+                            },
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 'todos', child: Text('Todos')),
-                            DropdownMenuItem(value: 'gratuita', child: Text('Gratuita')),
-                            DropdownMenuItem(value: 'basica', child: Text('Básica')),
-                            DropdownMenuItem(value: 'premium', child: Text('Premium')),
-                            DropdownMenuItem(value: 'enterprise', child: Text('Enterprise')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedPlan = value!;
-                            });
-                            _filterSuscripciones();
-                          },
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: _selectedEstado,
-                          decoration: const InputDecoration(
-                            labelText: 'Estado',
-                            border: OutlineInputBorder(),
-                            isDense: true,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedEstado,
+                            decoration: const InputDecoration(
+                              labelText: 'Estado',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'todos',
+                                child: Text('Todos'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'activa',
+                                child: Text('Activas'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'por_vencer',
+                                child: Text('Por Vencer'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'vencida',
+                                child: Text('Vencidas'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'inactiva',
+                                child: Text('Inactivas'),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedEstado = value!;
+                              });
+                              _filterSuscripciones();
+                            },
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 'todos', child: Text('Todos')),
-                            DropdownMenuItem(value: 'activa', child: Text('Activas')),
-                            DropdownMenuItem(value: 'por_vencer', child: Text('Por Vencer')),
-                            DropdownMenuItem(value: 'vencida', child: Text('Vencidas')),
-                            DropdownMenuItem(value: 'inactiva', child: Text('Inactivas')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedEstado = value!;
-                            });
-                            _filterSuscripciones();
-                          },
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                      ],
+                    ),
+                  ],
+                ),
       ),
     );
   }
@@ -348,23 +421,35 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   Widget _buildStats() {
     final screenSize = MediaQuery.of(context).size;
     final isDesktop = PlatformUtils.shouldUseDesktopLayout(screenSize.width);
-    
+
     final activas = _suscripciones.where((s) => s['estado'] == 'activa').length;
-    final porVencer = _suscripciones.where((s) => s['estado'] == 'por_vencer').length;
-    final vencidas = _suscripciones.where((s) => s['estado'] == 'vencida').length;
-    
+    final porVencer =
+        _suscripciones.where((s) => s['estado'] == 'por_vencer').length;
+    final vencidas =
+        _suscripciones.where((s) => s['estado'] == 'vencida').length;
+
     final ingresosMensuales = _suscripciones
         .where((s) => s['activa'] == true)
         .fold<double>(0, (sum, s) => sum + (s['precio'] ?? 0).toDouble());
-    
+
     final stats = [
-      ('Total Licencias', _suscripciones.length.toString(), Icons.card_membership, AppColors.primary),
+      (
+        'Total Licencias',
+        _suscripciones.length.toString(),
+        Icons.card_membership,
+        AppColors.primary,
+      ),
       ('Activas', activas.toString(), Icons.check_circle, AppColors.success),
       ('Por Vencer', porVencer.toString(), Icons.schedule, AppColors.warning),
       ('Vencidas', vencidas.toString(), Icons.cancel, AppColors.error),
-      ('Ingresos/Mes', '\$${ingresosMensuales.toStringAsFixed(0)}', Icons.attach_money, AppColors.info),
+      (
+        'Ingresos/Mes',
+        '\$${ingresosMensuales.toStringAsFixed(0)}',
+        Icons.attach_money,
+        AppColors.info,
+      ),
     ];
-    
+
     if (isDesktop) {
       return Row(
         children: [
@@ -427,18 +512,18 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
               ),
             ],
           ),
-          _buildStatCard(
-            stats[4].$1,
-            stats[4].$2,
-            stats[4].$3,
-            stats[4].$4,
-          ),
+          _buildStatCard(stats[4].$1, stats[4].$2, stats[4].$3, stats[4].$4),
         ],
       );
     }
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -491,66 +576,91 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                       DataColumn(label: Text('Precio')),
                       DataColumn(label: Text('Acciones')),
                     ],
-                    rows: _filteredSuscripciones.map((suscripcion) {
-                      return DataRow(
-                        cells: [
-                          DataCell(
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  suscripcion['tienda_nombre'],
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                    rows:
+                        _filteredSuscripciones.map((suscripcion) {
+                          return DataRow(
+                            cells: [
+                              DataCell(
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      suscripcion['tienda_nombre'],
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      suscripcion['tienda_ubicacion'],
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
+                              ),
+                              DataCell(_buildPlanChip(suscripcion['plan'])),
+                              DataCell(_buildEstadoChip(suscripcion['estado'])),
+                              DataCell(
+                                Text(_formatDate(suscripcion['fecha_inicio'])),
+                              ),
+                              DataCell(
                                 Text(
-                                  suscripcion['tienda_ubicacion'],
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary,
+                                  _formatDate(suscripcion['fecha_vencimiento']),
+                                ),
+                              ),
+                              DataCell(
+                                _buildDiasRestantesChip(
+                                  suscripcion['dias_restantes'],
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  '\$${suscripcion['precio'] ?? 0}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                          DataCell(_buildPlanChip(suscripcion['plan'])),
-                          DataCell(_buildEstadoChip(suscripcion['estado'])),
-                          DataCell(Text(_formatDate(suscripcion['fecha_inicio']))),
-                          DataCell(Text(_formatDate(suscripcion['fecha_vencimiento']))),
-                          DataCell(_buildDiasRestantesChip(suscripcion['dias_restantes'])),
-                          DataCell(
-                            Text(
-                              '\$${suscripcion['precio'] ?? 0}',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          DataCell(
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.visibility),
-                                  onPressed: () => _showLicenciaDetails(suscripcion),
-                                  tooltip: 'Ver Detalles',
+                              ),
+                              DataCell(
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.visibility),
+                                      onPressed:
+                                          () =>
+                                              _showLicenciaDetails(suscripcion),
+                                      tooltip: 'Ver Detalles',
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit),
+                                      onPressed:
+                                          () => _showEditLicenciaDialog(
+                                            suscripcion,
+                                          ),
+                                      tooltip: 'Editar',
+                                    ),
+                                    if (suscripcion['estado'] == 'por_vencer' ||
+                                        suscripcion['estado'] == 'vencida')
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.refresh,
+                                          color: AppColors.success,
+                                        ),
+                                        onPressed:
+                                            () =>
+                                                _showRenovarDialog(suscripcion),
+                                        tooltip: 'Renovar',
+                                      ),
+                                  ],
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.edit),
-                                  onPressed: () => _showEditLicenciaDialog(suscripcion),
-                                  tooltip: 'Editar',
-                                ),
-                                if (suscripcion['estado'] == 'por_vencer' || 
-                                    suscripcion['estado'] == 'vencida')
-                                  IconButton(
-                                    icon: const Icon(Icons.refresh, color: AppColors.success),
-                                    onPressed: () => _showRenovarDialog(suscripcion),
-                                    tooltip: 'Renovar',
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
+                              ),
+                            ],
+                          );
+                        }).toList(),
                   ),
                 ),
               ),
@@ -566,12 +676,14 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
       itemCount: _filteredSuscripciones.length,
       itemBuilder: (context, index) {
         final suscripcion = _filteredSuscripciones[index];
-        
+
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ExpansionTile(
             leading: CircleAvatar(
-              backgroundColor: _getEstadoColor(suscripcion['estado']).withOpacity(0.1),
+              backgroundColor: _getEstadoColor(
+                suscripcion['estado'],
+              ).withOpacity(0.1),
               child: Icon(
                 Icons.card_membership,
                 color: _getEstadoColor(suscripcion['estado']),
@@ -601,11 +713,23 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildInfoRow(Icons.calendar_today, 'Inicio', _formatDate(suscripcion['fecha_inicio'])),
-                    _buildInfoRow(Icons.event, 'Vencimiento', _formatDate(suscripcion['fecha_vencimiento'])),
+                    _buildInfoRow(
+                      Icons.calendar_today,
+                      'Inicio',
+                      _formatDate(suscripcion['fecha_inicio']),
+                    ),
+                    _buildInfoRow(
+                      Icons.event,
+                      'Vencimiento',
+                      _formatDate(suscripcion['fecha_vencimiento']),
+                    ),
                     Row(
                       children: [
-                        Icon(Icons.schedule, size: 16, color: AppColors.textSecondary),
+                        Icon(
+                          Icons.schedule,
+                          size: 16,
+                          color: AppColors.textSecondary,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           'Días restantes: ',
@@ -618,7 +742,11 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    _buildInfoRow(Icons.attach_money, 'Precio', '\$${suscripcion['precio'] ?? 0}'),
+                    _buildInfoRow(
+                      Icons.attach_money,
+                      'Precio',
+                      '\$${suscripcion['precio'] ?? 0}',
+                    ),
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -629,8 +757,14 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           onPressed: () => _showLicenciaDetails(suscripcion),
                         ),
                         TextButton.icon(
-                          icon: const Icon(Icons.refresh, color: AppColors.success),
-                          label: const Text('Renovar', style: TextStyle(color: AppColors.success)),
+                          icon: const Icon(
+                            Icons.refresh,
+                            color: AppColors.success,
+                          ),
+                          label: const Text(
+                            'Renovar',
+                            style: TextStyle(color: AppColors.success),
+                          ),
                           onPressed: () => _showRenovarDialog(suscripcion),
                         ),
                       ],
@@ -663,7 +797,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
       default:
         color = AppColors.textSecondary;
     }
-    
+
     return Chip(
       label: Text(
         plan.toUpperCase(),
@@ -681,7 +815,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   Widget _buildEstadoChip(String estado) {
     final color = _getEstadoColor(estado);
     String text;
-    
+
     switch (estado) {
       case 'activa':
         text = 'ACTIVA';
@@ -698,7 +832,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
       default:
         text = estado.toUpperCase();
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -727,9 +861,9 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
     } else {
       color = AppColors.success;
     }
-    
+
     final text = dias < 0 ? 'Vencido hace ${-dias} días' : '$dias días';
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -756,15 +890,9 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
           const SizedBox(width: 8),
           Text(
             '$label: ',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 12),
-          ),
+          Text(value, style: const TextStyle(fontSize: 12)),
         ],
       ),
     );
@@ -800,72 +928,77 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   void _showCreateLicenciaDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nueva Licencia'),
-        content: const Text('Funcionalidad de creación de licencia en desarrollo.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Nueva Licencia'),
+            content: const Text(
+              'Funcionalidad de creación de licencia en desarrollo.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _showLicenciaDetails(Map<String, dynamic> suscripcion) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(suscripcion['tienda_nombre']),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('ID: ${suscripcion['id']}'),
-            Text('Plan: ${suscripcion['plan']}'),
-            Text('Estado: ${suscripcion['estado']}'),
-            Text('Fecha Inicio: ${_formatDate(suscripcion['fecha_inicio'])}'),
-            Text('Fecha Vencimiento: ${_formatDate(suscripcion['fecha_vencimiento'])}'),
-            Text('Días Restantes: ${suscripcion['dias_restantes']}'),
-            Text('Precio: \$${suscripcion['precio'] ?? 0}'),
-            Text('Activa: ${suscripcion['activa'] ? 'Sí' : 'No'}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(suscripcion['tienda_nombre']),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('ID: ${suscripcion['id']}'),
+                Text('Plan: ${suscripcion['plan']}'),
+                Text('Estado: ${suscripcion['estado']}'),
+                Text(
+                  'Fecha Inicio: ${_formatDate(suscripcion['fecha_inicio'])}',
+                ),
+                Text(
+                  'Fecha Vencimiento: ${_formatDate(suscripcion['fecha_vencimiento'])}',
+                ),
+                Text('Días Restantes: ${suscripcion['dias_restantes']}'),
+                Text('Precio: \$${suscripcion['precio'] ?? 0}'),
+                Text('Activa: ${suscripcion['activa'] ? 'Sí' : 'No'}'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _showEditLicenciaDialog(Map<String, dynamic> suscripcion) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Editar Licencia - ${suscripcion['tienda_nombre']}'),
-        content: const Text('Funcionalidad de edición en desarrollo.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => _EditLicenciaDialogContent(
+            suscripcion: suscripcion,
+            supabase: _supabase,
+            onEditComplete: _loadData,
           ),
-        ],
-      ),
     );
   }
 
   void _showRenovarDialog(Map<String, dynamic> suscripcion) {
     showDialog(
       context: context,
-      builder: (context) => _RenovarDialogContent(
-        suscripcion: suscripcion,
-        supabase: _supabase,
-        onRenovacionCompleta: _loadData,
-      ),
+      builder:
+          (context) => _RenovarDialogContent(
+            suscripcion: suscripcion,
+            supabase: _supabase,
+            onRenovacionCompleta: _loadData,
+          ),
     );
   }
 }
@@ -950,10 +1083,10 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
     try {
       final idTienda = widget.suscripcion['id_tienda'];
       final idSuscripcionActual = widget.suscripcion['id'];
-      final esPlanPro = _planSeleccionado!['denominacion']
-              ?.toString()
-              .toLowerCase()
-              .contains('pro') ??
+      final esPlanPro =
+          _planSeleccionado!['denominacion']?.toString().toLowerCase().contains(
+            'pro',
+          ) ??
           false;
 
       // Nueva fecha de fin: día 2 del mes siguiente
@@ -1085,14 +1218,15 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
                 labelText: 'Plan',
                 border: OutlineInputBorder(),
               ),
-              items: _planesDisponibles.map((plan) {
-                return DropdownMenuItem(
-                  value: plan,
-                  child: Text(
-                    '${plan['denominacion']} - \$${plan['precio_mensual']}/mes',
-                  ),
-                );
-              }).toList(),
+              items:
+                  _planesDisponibles.map((plan) {
+                    return DropdownMenuItem(
+                      value: plan,
+                      child: Text(
+                        '${plan['denominacion']} - \$${plan['precio_mensual']}/mes',
+                      ),
+                    );
+                  }).toList(),
               onChanged: (plan) {
                 setState(() => _planSeleccionado = plan);
               },
@@ -1108,13 +1242,342 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
         ElevatedButton(
           onPressed: _isProcessing ? null : _confirmarRenovacion,
           style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
-          child: _isProcessing
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Confirmar Renovación'),
+          child:
+              _isProcessing
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                  : const Text('Confirmar Renovación'),
+        ),
+      ],
+    );
+  }
+}
+
+class _EditLicenciaDialogContent extends StatefulWidget {
+  final Map<String, dynamic> suscripcion;
+  final SupabaseClient supabase;
+  final VoidCallback onEditComplete;
+
+  const _EditLicenciaDialogContent({
+    super.key,
+    required this.suscripcion,
+    required this.supabase,
+    required this.onEditComplete,
+  });
+
+  @override
+  State<_EditLicenciaDialogContent> createState() =>
+      _EditLicenciaDialogContentState();
+}
+
+class _EditLicenciaDialogContentState
+    extends State<_EditLicenciaDialogContent> {
+  final _formKey = GlobalKey<FormState>();
+
+  List<Map<String, dynamic>> _planesDisponibles = [];
+  bool _isLoading = true;
+  bool _isProcessing = false;
+
+  // Form fields
+  late DateTime _fechaInicio;
+  late DateTime _fechaFin;
+  late int _estado;
+  late int _idPlan;
+  late TextEditingController _observacionesController;
+
+  @override
+  void initState() {
+    super.initState();
+    _initFields();
+    _cargarPlanes();
+  }
+
+  @override
+  void dispose() {
+    _observacionesController.dispose();
+    super.dispose();
+  }
+
+  void _initFields() {
+    // Initialize dates
+    try {
+      _fechaInicio = DateTime.parse(widget.suscripcion['fecha_inicio']);
+    } catch (e) {
+      _fechaInicio = DateTime.now();
+    }
+
+    try {
+      if (widget.suscripcion['fecha_fin'] != null) {
+        _fechaFin = DateTime.parse(widget.suscripcion['fecha_fin']);
+      } else {
+        _fechaFin = DateTime.now().add(const Duration(days: 30));
+      }
+    } catch (e) {
+      _fechaFin = DateTime.now().add(const Duration(days: 30));
+    }
+
+    // Initialize other fields
+    _estado = int.tryParse(widget.suscripcion['estado_id'].toString()) ?? 1;
+    _idPlan = int.tryParse(widget.suscripcion['id_plan'].toString()) ?? 1;
+    _observacionesController = TextEditingController(
+      text: widget.suscripcion['observaciones'] ?? '',
+    );
+  }
+
+  Future<void> _cargarPlanes() async {
+    try {
+      final planesResponse = await widget.supabase
+          .from('app_suscripciones_plan')
+          .select('*')
+          .eq('es_activo', true)
+          .order('id', ascending: true);
+
+      if (mounted) {
+        setState(() {
+          _planesDisponibles = List<Map<String, dynamic>>.from(planesResponse);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error cargando planes: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _selectDate(BuildContext context, bool isStart) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: isStart ? _fechaInicio : _fechaFin,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStart) {
+          _fechaInicio = picked;
+        } else {
+          _fechaFin = picked;
+        }
+      });
+    }
+  }
+
+  Future<void> _guardarCambios() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isProcessing = true);
+
+    try {
+      final idSuscripcion = widget.suscripcion['id'];
+      final currentUser = widget.supabase.auth.currentUser;
+
+      // 1. Guardar historial antes de actualizar
+      final planAnterior = widget.suscripcion['id_plan'];
+      final estadoAnterior = widget.suscripcion['estado_id'];
+
+      // Detectar cambios
+      final fechaFinString = _fechaFin.toIso8601String();
+      final fechaInicioString = _fechaInicio.toIso8601String();
+
+      final haCambiadoPlan = planAnterior != _idPlan;
+      final haCambiadoEstado = estadoAnterior != _estado;
+      final haCambiadoFecha = widget.suscripcion['fecha_fin'] != fechaFinString;
+
+      if ((haCambiadoPlan || haCambiadoEstado || haCambiadoFecha) &&
+          currentUser != null) {
+        await widget.supabase.from('app_suscripciones_historial').insert({
+          'id_suscripcion': idSuscripcion,
+          'id_plan_anterior': planAnterior,
+          'id_plan_nuevo': _idPlan,
+          'estado_anterior': estadoAnterior,
+          'estado_nuevo': _estado,
+          'motivo': 'Edición administrativa de licencia',
+          'cambiado_por': currentUser.id,
+        });
+      }
+
+      // 2. Actualizar suscripción
+      await widget.supabase
+          .from('app_suscripciones')
+          .update({
+            'id_plan': _idPlan,
+            'fecha_inicio': fechaInicioString,
+            'fecha_fin': fechaFinString,
+            'estado': _estado,
+            'observaciones': _observacionesController.text,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', idSuscripcion);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Licencia actualizada correctamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        widget.onEditComplete();
+      }
+    } catch (e) {
+      debugPrint('Error al actualizar licencia: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const AlertDialog(
+        content: SizedBox(
+          height: 100,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    return AlertDialog(
+      title: Text('Editar Licencia - ${widget.suscripcion['tienda_nombre']}'),
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Plan Selector
+              DropdownButtonFormField<int>(
+                value: _idPlan,
+                decoration: const InputDecoration(
+                  labelText: 'Plan',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items:
+                    _planesDisponibles.map((plan) {
+                      return DropdownMenuItem<int>(
+                        value: plan['id'],
+                        child: Text(plan['denominacion']),
+                      );
+                    }).toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _idPlan = value);
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Estado Selector
+              DropdownButtonFormField<int>(
+                value: _estado,
+                decoration: const InputDecoration(
+                  labelText: 'Estado',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('Activa')),
+                  DropdownMenuItem(value: 0, child: Text('Inactiva')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _estado = value);
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Fechas
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _selectDate(context, true),
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Fecha Inicio',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${_fechaInicio.day}/${_fechaInicio.month}/${_fechaInicio.year}',
+                            ),
+                            const Icon(Icons.calendar_today, size: 16),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => _selectDate(context, false),
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Fecha Vencimiento',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${_fechaFin.day}/${_fechaFin.month}/${_fechaFin.year}',
+                            ),
+                            const Icon(Icons.calendar_today, size: 16),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Observaciones
+              TextFormField(
+                controller: _observacionesController,
+                decoration: const InputDecoration(
+                  labelText: 'Observaciones',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isProcessing ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: _isProcessing ? null : _guardarCambios,
+          child:
+              _isProcessing
+                  ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                  : const Text('Guardar'),
         ),
       ],
     );

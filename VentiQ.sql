@@ -327,6 +327,7 @@ CREATE TABLE public.app_dat_configuracion_tienda (
   maneja_inventario boolean DEFAULT false,
   permite_vender_aun_sin_disponibilidad boolean DEFAULT false,
   no_solicitar_cliente boolean NOT NULL DEFAULT false,
+  tpv_trabajador_encargado_carnaval jsonb,
   CONSTRAINT app_dat_configuracion_tienda_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_configuracion_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
@@ -1544,6 +1545,18 @@ CREATE TABLE public.provincias (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   nombre text,
   CONSTRAINT provincias_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.relation_products_carnaval (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  id_producto bigint,
+  id_producto_carnaval bigint,
+  id_ubicacion bigint,
+  extra_info_prod jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT relation_products_carnaval_pkey PRIMARY KEY (id),
+  CONSTRAINT fk__products_carnaval_id_producto FOREIGN KEY (id_producto) REFERENCES public.app_dat_producto(id),
+  CONSTRAINT fk__products_carnaval_id_ubicacion FOREIGN KEY (id_ubicacion) REFERENCES public.app_dat_layout_almacen(id),
+  CONSTRAINT fk__products_carnaval_id_producto_carnaval FOREIGN KEY (id_producto_carnaval) REFERENCES carnavalapp.Productos(id)
 );
 CREATE TABLE public.seg_roll (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
