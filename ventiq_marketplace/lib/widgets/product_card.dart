@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import 'marquee_text.dart';
 
 /// Tarjeta de producto para el marketplace
 class ProductCard extends StatelessWidget {
@@ -53,10 +54,7 @@ class ProductCard extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        Colors.grey[100]!,
-                        Colors.grey[200]!,
-                      ],
+                      colors: [Colors.grey[100]!, Colors.grey[200]!],
                     ),
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(AppTheme.radiusL),
@@ -173,7 +171,7 @@ class ProductCard extends StatelessWidget {
                   ),
               ],
             ),
-            
+
             // Información del producto con mejor diseño
             Padding(
               padding: const EdgeInsets.all(12),
@@ -181,19 +179,20 @@ class ProductCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Nombre del producto
-                  Text(
-                    productName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary,
-                      height: 1.3,
+                  SizedBox(
+                    height: 20, // Altura fija para evitar saltos
+                    child: MarqueeText(
+                      text: productName,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
+                        height: 1.3,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  
+
                   // Tienda con badge
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -229,7 +228,7 @@ class ProductCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  
+
                   // Precio y rating en fila
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -259,7 +258,7 @@ class ProductCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      
+
                       // Rating con estrella
                       Container(
                         padding: const EdgeInsets.symmetric(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import 'marquee_text.dart';
 
 /// Tarjeta de tienda para el marketplace
 class StoreCard extends StatelessWidget {
@@ -113,14 +114,15 @@ class StoreCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          storeName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
+                        SizedBox(
+                          height: 22,
+                          child: MarqueeText(
+                            text: storeName,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
