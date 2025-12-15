@@ -2668,6 +2668,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
         print('✅ Presentación base actualizada');
       }
 
+      // Actualizar presentaciones adicionales
+      await _updatePresentacionesAdicionales(productId);
+
       // Actualizar ingredientes si es producto elaborado
       if ((_esElaborado || _esServicio) && _ingredientes.isNotEmpty) {
         print('🍽️ Actualizando ingredientes...');
@@ -2789,6 +2792,89 @@ class _AddProductScreenState extends State<AddProductScreen> {
       );
     }
   }
+
+  Future<void> _updatePresentacionesAdicionales(int productId) async {
+    try {
+      print('📦 Actualizando presentaciones adicionales...');
+
+      // 1. Obtener presentaciones existentes de la base de datos
+      final existingPresentations = await _supabase
+          .from('app_dat_producto_presentacion')
+          .select('id, id_presentacion, cantidad, es_base')
+          .eq('id_producto', productId);
+
+      print('📊 Presentaciones existentes en BD: ${existingPresentations.length}');
+      print('📊 Presentaciones adicionales en UI: ${_presentacionesAdicionales.length}');
+
+      // 2. Construir lista de IDs de presentaciones que deben existir
+      final desiredPresentationIds = <int>{};
+
+      // Agregar presentación base
+      if (_selectedBasePresentationId != null) {
+        desiredPresentationIds.add(_selectedBasePresentationId!);
+      }
+
+      // Agregar presentaciones adicionales
+      for (final presentacion in _presentacionesAdicionales) {
+        desiredPresentationIds.add(presentacion['id_presentacion'] as int);
+      }
+
+      print('🎯 IDs de presentaciones deseadas: $desiredPresentationIds');
+
+      // 3. Eliminar presentaciones que ya no son necesarias
+      for (final existing in existingPresentations) {
+        final idPresentacion = existing['id_presentacion'] as int;
+        if (!desiredPresentationIds.contains(idPresentacion)) {
+          await _supabase
+              .from('app_dat_producto_presentacion')
+              .delete()
+              .eq('id', existing['id']);
+          print('🗑️ Presentación eliminada: ID $idPresentacion');
+        }
+      }
+
+      // 4. Insertar o actualizar presentaciones adicionales
+      for (final presentacion in _presentacionesAdicionales) {
+        final idPresentacion = presentacion['id_presentacion'] as int;
+        final cantidad = presentacion['cantidad'] as num;
+
+        // Verificar si esta presentación ya existe (y no es base)
+        final existingRecord = existingPresentations.firstWhere(
+          (p) =>
+              p['id_presentacion'] == idPresentacion &&
+              !(p['es_base'] as bool),
+          orElse: () => <String, dynamic>{},
+        );
+
+        if (existingRecord.isNotEmpty) {
+          // Actualizar existente
+          await _supabase
+              .from('app_dat_producto_presentacion')
+              .update({'cantidad': cantidad})
+              .eq('id_producto', productId)
+              .eq('id_presentacion', idPresentacion)
+              .eq('es_base', false);
+          print('✏️ Presentación actualizada: ID $idPresentacion, cantidad: $cantidad');
+        } else {
+          // Insertar nueva
+          await _supabase.from('app_dat_producto_presentacion').insert({
+            'id_producto': productId,
+            'id_presentacion': idPresentacion,
+            'cantidad': cantidad,
+            'es_base': false,
+          });
+          print('➕ Presentación creada: ID $idPresentacion, cantidad: $cantidad');
+        }
+      }
+
+      print('✅ Presentaciones adicionales actualizadas exitosamente');
+    } catch (e, stackTrace) {
+      print('❌ Error al actualizar presentaciones adicionales: $e');
+      print('📍 StackTrace: $stackTrace');
+      throw Exception('Error al actualizar presentaciones adicionales: $e');
+    }
+  }
+
 
   Future<void> _updateSubcategorias(int productId) async {
     try {
