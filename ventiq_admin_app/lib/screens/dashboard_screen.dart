@@ -406,9 +406,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
 
       final storeId = store['id_tienda'] as int;
 
-      // Limpiar caché de roles para forzar recarga
-      _permissionsService.clearCache();
-      print('🧹 Caché de roles limpiado');
+      // Limpiar TODO el caché de roles para forzar recarga completa
+      _permissionsService.clearAllCache();
+      print('🧹 TODO el caché de roles limpiado al cambiar de tienda');
 
       // Update selected store in preferences
       await _userPreferencesService.updateSelectedStore(storeId);

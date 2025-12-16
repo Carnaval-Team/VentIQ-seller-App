@@ -217,4 +217,29 @@ class SubscriptionService {
       return {};
     }
   }
+
+  /// Verifica si la suscripción está próxima a vencer (3 días o menos)
+  Future<Map<String, dynamic>?> checkSubscriptionExpiration(int idTienda) async {
+    try {
+      final subscription = await getCurrentSubscription(idTienda);
+      if (subscription == null) return null;
+
+      final diasRestantes = subscription.diasRestantes;
+      
+      // Si tiene fecha fin y quedan 3 días o menos (pero no está vencida)
+      if (subscription.fechaFin != null && diasRestantes >= 0 && diasRestantes <= 3) {
+        return {
+          'diasRestantes': diasRestantes,
+          'fechaFin': subscription.fechaFin,
+          'planNombre': subscription.planDenominacion ?? 'Plan desconocido',
+          'estado': subscription.estadoText,
+        };
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Error verificando expiración de suscripción: $e');
+      return null;
+    }
+  }
 }

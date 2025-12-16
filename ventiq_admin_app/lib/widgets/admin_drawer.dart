@@ -645,16 +645,10 @@ class _AdminDrawerState extends State<AdminDrawer> {
   // Realizar logout y navegar al login
   Future<void> _performLogout(BuildContext context) async {
     try {
-      final userPrefs = UserPreferencesService();
+      final authService = AuthService();
 
-      // Limpiar datos del usuario pero mantener credenciales si "recordar" está activo
-      final shouldRemember = await userPrefs.shouldRememberMe();
-      if (!shouldRemember) {
-        await userPrefs.clearSavedCredentials();
-      }
-
-      // Limpiar datos de sesión
-      await userPrefs.clearUserData();
+      // Usar AuthService.signOut() que limpia TODO correctamente
+      await authService.signOut();
 
       // Navegar al login y limpiar stack de navegación
       if (context.mounted) {
