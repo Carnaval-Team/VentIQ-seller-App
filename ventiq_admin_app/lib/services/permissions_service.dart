@@ -286,11 +286,24 @@ class PermissionsService {
   }
 
   /// Limpiar caché de permisos
+  /// NOTA: No limpia _cachedRolesByStore porque los roles por tienda no cambian
+  /// al cambiar de tienda. Solo se limpia el rol individual y el almacén.
   void clearCache() {
     _cachedRole = null;
     _cachedWarehouseId = null;
     _cachedUserId = null;
+    // NO limpiar _cachedRolesByStore - se mantiene durante toda la sesión
+    print('🧹 Caché de permisos limpiado (roles por tienda preservados)');
+  }
+
+  /// Limpiar TODO el caché incluyendo roles por tienda
+  /// Solo usar al cerrar sesión
+  void clearAllCache() {
+    _cachedRole = null;
+    _cachedWarehouseId = null;
+    _cachedUserId = null;
     _cachedRolesByStore = null;
+    print('🧹 TODO el caché de permisos limpiado');
   }
 
   /// Verificar si el usuario puede acceder a una pantalla

@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import 'permissions_service.dart';
 import 'subscription_guard_service.dart';
+import 'user_preferences_service.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -43,10 +44,12 @@ class AuthService {
   Future<void> signOut() async {
     try {
       await _supabase.auth.signOut();
-      // Limpiar caché de permisos
-      PermissionsService().clearCache();
+      // Limpiar TODO el caché de permisos (incluyendo roles por tienda)
+      PermissionsService().clearAllCache();
       // Limpiar caché de suscripción
       await SubscriptionGuardService().clearCache();
+      // Limpiar TODOS los datos del usuario (tienda, roles, etc.)
+      await UserPreferencesService().clearUserData();
       print('👋 Admin signed out successfully');
     } catch (e) {
       print('❌ Admin sign out error: $e');
