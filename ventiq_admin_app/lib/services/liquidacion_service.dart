@@ -23,7 +23,7 @@ class LiquidacionService {
       }
 
       final response = await _supabase.rpc(
-        'fn_crear_liquidacion_consignacion',
+        'crear_liquidacion_consignacion2',
         params: {
           'p_id_contrato': contratoId,
           'p_monto_cup': montoCup,
@@ -187,6 +187,7 @@ class LiquidacionService {
       return {
         'monto_total': montoTotal,
         'total_liquidaciones': totalLiquidaciones,
+        'total_liquidado': totalLiquidaciones,
         'saldo_pendiente': montoTotal - totalLiquidaciones,
       };
     } catch (e) {

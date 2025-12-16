@@ -4,6 +4,7 @@ import '../services/consignacion_service.dart';
 import '../services/consignacion_movimientos_service.dart';
 import '../services/liquidacion_service.dart';
 import 'liquidaciones_list_screen.dart';
+import 'operaciones_venta_consignacion_screen.dart';
 
 class DetalleContratoConsignacionScreen extends StatefulWidget {
   final Map<String, dynamic> contrato;
@@ -20,17 +21,11 @@ class DetalleContratoConsignacionScreen extends StatefulWidget {
 
 class _DetalleContratoConsignacionScreenState
     extends State<DetalleContratoConsignacionScreen> {
-  List<Map<String, dynamic>> _movimientos = [];
   Map<String, dynamic> _estadisticas = {};
   Map<String, dynamic> _totalesContrato = {};
   bool _isLoading = true;
   bool _puedeRescindirse = false;
-  bool _isLoadingMovimientos = false;
   double _totalDineroEnviado = 0.0;
-  
-  // Filtros de fecha
-  DateTime? _fechaDesde;
-  DateTime? _fechaHasta;
 
   @override
   void initState() {
@@ -104,57 +99,31 @@ class _DetalleContratoConsignacionScreenState
   }
 
   Future<void> _loadMovimientosYEstadisticas() async {
-    setState(() => _isLoadingMovimientos = true);
-
     try {
-      debugPrint('📊 [LOAD] Iniciando carga de movimientos y estadísticas');
+      debugPrint('📊 [LOAD] Iniciando carga de estadísticas');
       debugPrint('📊 [LOAD] ID Contrato: ${widget.contrato['id']}');
-      debugPrint('📊 [LOAD] Tienda Consignadora: ${widget.contrato['tienda_consignadora']['denominacion']}');
-      debugPrint('📊 [LOAD] Tienda Consignataria: ${widget.contrato['tienda_consignataria']['denominacion']}');
-      debugPrint('📊 [LOAD] Almacén Destino: ${widget.contrato['id_almacen_destino']}');
-      debugPrint('📊 [LOAD] Filtro Fecha Desde: $_fechaDesde');
-      debugPrint('📊 [LOAD] Filtro Fecha Hasta: $_fechaHasta');
 
-      debugPrint('📊 [LOAD] Obteniendo movimientos desde zona...');
-      final movimientos = await ConsignacionMovimientosService.getMovimientosConsignacion(
-        idContrato: widget.contrato['id'],
-        fechaDesde: _fechaDesde,
-        fechaHasta: _fechaHasta,
-      );
-      debugPrint('✅ [LOAD] Movimientos obtenidos: ${movimientos.length}');
-      for (var i = 0; i < movimientos.length; i++) {
-        final mov = movimientos[i];
-        debugPrint('  📦 [MOV-$i] ID Op: ${mov['id_operacion']}, Producto: ${mov['denominacion_producto']}, Cantidad: ${mov['cantidad_vendida']}, Motivo: ${mov['motivo_extraccion']}');
-      }
-
-      debugPrint('📊 [LOAD] Obteniendo estadísticas consolidadas...');
+      debugPrint('📊 [LOAD] Obteniendo estadísticas consolidadas (TODO el tiempo)...');
       final estadisticas = await ConsignacionMovimientosService.getEstadisticasVentas(
         idContrato: widget.contrato['id'],
-        fechaDesde: _fechaDesde,
-        fechaHasta: _fechaHasta,
+        fechaDesde: null,
+        fechaHasta: null,
       );
       debugPrint('✅ [LOAD] Estadísticas obtenidas:');
       debugPrint('  📈 Total Enviado: ${estadisticas['totalEnviado']}');
       debugPrint('  📈 Total Vendido: ${estadisticas['totalVendido']}');
       debugPrint('  📈 Total Devuelto: ${estadisticas['totalDevuelto']}');
       debugPrint('  📈 Total Pendiente: ${estadisticas['totalPendiente']}');
-      debugPrint('  📈 Total Operaciones: ${estadisticas['totalOperaciones']}');
       debugPrint('  📈 Total Monto Ventas: ${estadisticas['totalMontoVentas']}');
-      debugPrint('  📈 Promedio Venta: ${estadisticas['promedioVenta']}');
 
       if (mounted) {
         setState(() {
-          _movimientos = movimientos;
           _estadisticas = estadisticas;
-          _isLoadingMovimientos = false;
         });
         debugPrint('✅ [LOAD] Estado actualizado exitosamente');
       }
     } catch (e) {
-      debugPrint('❌ [LOAD] Error cargando movimientos: $e');
-      if (mounted) {
-        setState(() => _isLoadingMovimientos = false);
-      }
+      debugPrint('❌ [LOAD] Error cargando estadísticas: $e');
     }
   }
 
@@ -177,14 +146,8 @@ class _DetalleContratoConsignacionScreenState
                   // Información del contrato
                   _buildContratoInfo(),
 
-                  // Filtro de fechas global
-                  _buildFiltroFechasGlobal(),
-
-                  // Estadísticas de ventas (REEMPLAZA productos)
+                  // Estadísticas de ventas y productos
                   _buildEstadisticasSection(),
-
-                  // Movimientos de ventas
-                  _buildMovimientosSection(),
 
                   // Opción de rescindir
                   if (_puedeRescindirse)
@@ -684,9 +647,10 @@ class _DetalleContratoConsignacionScreenState
     final totalVendido = _estadisticas['totalVendido'] as num? ?? 0;
     final totalDevuelto = _estadisticas['totalDevuelto'] as num? ?? 0;
     final totalPendiente = _estadisticas['totalPendiente'] as num? ?? 0;
-    final totalOperaciones = _estadisticas['totalOperaciones'] as num? ?? 0;
     final totalMontoVentas = _estadisticas['totalMontoVentas'] as num? ?? 0;
-    final promedioVenta = _estadisticas['promedioVenta'] as num? ?? 0;
+    
+    final totalLiquidado = _totalesContrato['total_liquidado'] as num? ?? 0;
+    final saldoPendiente = _totalesContrato['saldo_pendiente'] as num? ?? 0;
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -714,11 +678,11 @@ class _DetalleContratoConsignacionScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Estadísticas de Ventas en Zona',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      'Estadísticas del Contrato',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                     ),
                     Text(
                       'Almacén: ${widget.contrato['id_almacen_destino']}',
@@ -734,7 +698,7 @@ class _DetalleContratoConsignacionScreenState
           ),
           const SizedBox(height: 16),
 
-          // Fila 1: Cantidades
+          // Fila 1: Productos
           Row(
             children: [
               Expanded(
@@ -781,18 +745,8 @@ class _DetalleContratoConsignacionScreenState
             children: [
               Expanded(
                 child: _buildStatBox(
-                  'Operaciones',
-                  '${totalOperaciones.toStringAsFixed(0)}',
-                  Colors.purple,
-                  Icons.receipt,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: _buildStatBox(
                   'Monto Total',
-                  '\$${totalMontoVentas.toStringAsFixed(2)}',
+                  '\$${totalMontoVentas.toStringAsFixed(2)} USD',
                   Colors.teal,
                   Icons.attach_money,
                 ),
@@ -800,15 +754,24 @@ class _DetalleContratoConsignacionScreenState
               const SizedBox(width: 12),
               Expanded(
                 child: _buildStatBox(
-                  'Promedio',
-                  '\$${promedioVenta.toStringAsFixed(2)}',
-                  Colors.indigo,
-                  Icons.trending_up,
+                  'Liquidado',
+                  '\$${totalLiquidado.toStringAsFixed(2)} USD',
+                  Colors.green,
+                  Icons.payments,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatBox(
+                  'Saldo',
+                  '\$${saldoPendiente.toStringAsFixed(2)} USD',
+                  Colors.orange,
+                  Icons.pending_actions,
                 ),
               ),
             ],
           ),
-
+          
           // Porcentaje de venta
           const SizedBox(height: 16),
           Container(
@@ -856,6 +819,33 @@ class _DetalleContratoConsignacionScreenState
               ],
             ),
           ),
+
+          // Botón para ver operaciones de venta
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => OperacionesVentaConsignacionScreen(
+                      contratoId: widget.contrato['id'],
+                      nombreConsignadora: widget.contrato['tienda_consignadora']['denominacion'],
+                      nombreConsignataria: widget.contrato['tienda_consignataria']['denominacion'],
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.receipt_long),
+              label: const Text('Ver Operaciones de Venta'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -895,319 +885,4 @@ class _DetalleContratoConsignacionScreenState
     );
   }
 
-  Widget _buildMovimientosSection() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Movimientos de Ventas',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (_isLoadingMovimientos)
-            const Center(child: CircularProgressIndicator())
-          else if (_movimientos.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 32),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.receipt_long,
-                      size: 48,
-                      color: Colors.grey[400],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'No hay movimientos registrados',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _movimientos.length,
-              itemBuilder: (context, index) {
-                final mov = _movimientos[index];
-                return _buildMovimientoCard(mov);
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMovimientoCard(Map<String, dynamic> movimiento) {
-    final cantidad = movimiento['cantidad_vendida'] as num? ?? 0;
-    final motivo = movimiento['motivo_extraccion'] as String? ?? 'Venta';
-    final fecha = movimiento['fecha_venta'] as String? ?? '';
-    final producto = movimiento['denominacion_producto'] as String? ?? 'Producto desconocido';
-    final importe = movimiento['importe_total'] as num? ?? 0;
-
-    debugPrint('📦 [CARD] Renderizando movimiento: $producto, Motivo: $motivo, Cantidad: $cantidad');
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.shopping_cart, color: Colors.green, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        motivo,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'Cantidad: ${cantidad.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    producto,
-                    style: const TextStyle(fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.calendar_today, size: 12, color: Colors.grey[600]),
-                          const SizedBox(width: 4),
-                          Text(
-                            _formatearFecha(fecha),
-                            style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        '\$${importe.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.teal,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFiltroFechasGlobal() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.blue.shade50,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.blue.shade200),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.filter_list, color: Colors.blue.shade700, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  'Filtro de Fechas',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                // Fecha Desde
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () async {
-                      final fecha = await showDatePicker(
-                        context: context,
-                        initialDate: _fechaDesde ?? DateTime.now(),
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now(),
-                      );
-                      if (fecha != null) {
-                        setState(() => _fechaDesde = fecha);
-                        debugPrint('📅 [FILTRO] Fecha Desde: $_fechaDesde');
-                        _loadMovimientosYEstadisticas();
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.blue.shade300),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Desde',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _fechaDesde?.toString().split(' ')[0] ?? 'Seleccionar',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: _fechaDesde != null ? Colors.blue.shade700 : Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Fecha Hasta
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () async {
-                      final fecha = await showDatePicker(
-                        context: context,
-                        initialDate: _fechaHasta ?? DateTime.now(),
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now(),
-                      );
-                      if (fecha != null) {
-                        setState(() => _fechaHasta = fecha);
-                        debugPrint('📅 [FILTRO] Fecha Hasta: $_fechaHasta');
-                        _loadMovimientosYEstadisticas();
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.blue.shade300),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Hasta',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _fechaHasta?.toString().split(' ')[0] ?? 'Seleccionar',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: _fechaHasta != null ? Colors.blue.shade700 : Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Botón Limpiar
-                if (_fechaDesde != null || _fechaHasta != null)
-                  SizedBox(
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _fechaDesde = null;
-                          _fechaHasta = null;
-                        });
-                        debugPrint('📅 [FILTRO] Filtros limpiados');
-                        _loadMovimientosYEstadisticas();
-                      },
-                      icon: const Icon(Icons.clear, size: 16),
-                      label: const Text('Limpiar', style: TextStyle(fontSize: 11)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade400,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatearFecha(String? fecha) {
-    if (fecha == null) return 'N/A';
-    try {
-      final dt = DateTime.parse(fecha);
-      return '${dt.day}/${dt.month}/${dt.year} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (e) {
-      return fecha;
-    }
-  }
 }

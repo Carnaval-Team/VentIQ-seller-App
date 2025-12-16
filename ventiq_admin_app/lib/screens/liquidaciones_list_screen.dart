@@ -603,9 +603,9 @@ class _LiquidacionesListScreenState extends State<LiquidacionesListScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Tasa de cambio
+            // Tasa de cambio (invertida para mostrar correctamente)
             Text(
-              'Tasa: 1 USD = ${tasaCambio.toStringAsFixed(2)} CUP',
+              'Tasa: 1 CUP = ${tasaCambio.toStringAsFixed(6)} USD (1 USD = ${(1.0 / tasaCambio).toStringAsFixed(2)} CUP)',
               style: TextStyle(fontSize: 11, color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
