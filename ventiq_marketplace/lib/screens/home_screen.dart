@@ -195,7 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                             Text(
-                              'Marketplace',
+                              'Catálogo',
                               style: TextStyle(
                                 color: Colors.white70,
                                 fontSize: 12,

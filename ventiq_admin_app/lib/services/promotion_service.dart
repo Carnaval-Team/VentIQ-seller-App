@@ -54,16 +54,16 @@ class PromotionService {
       print('📢 Respuesta promociones: $response');
 
       if (response == null) {
-        print('⚠️ Respuesta nula, usando datos mock');
-        return _getMockPromotions();
+        print('⚠️ Respuesta nula del servidor');
+        return [];
       }
 
       // La función retorna directamente una lista de promociones
       final List<dynamic> promotionsData = response is List ? response : [];
 
       if (promotionsData.isEmpty) {
-        print('⚠️ No se encontraron promociones, usando datos mock');
-        return _getMockPromotions();
+        print('⚠️ No se encontraron promociones');
+        return [];
       }
 
       print('✅ Procesando ${promotionsData.length} promociones de Supabase');
@@ -179,9 +179,7 @@ class PromotionService {
       return filteredPromotions;
     } catch (e) {
       print('❌ Error listando promociones: $e');
-      print('🔄 Usando datos mock como fallback');
-      // Fallback a datos mock
-      return _getMockPromotions();
+      return [];
     }
   }
 
@@ -399,8 +397,8 @@ class PromotionService {
       final response = await _supabase.rpc('fn_listar_tipos_promocion');
 
       if (response == null) {
-        print('⚠️ Respuesta nula, usando datos mock');
-        return _getMockPromotionTypes();
+        print('⚠️ Respuesta nula del servidor');
+        return [];
       }
 
       print('📋 Respuesta tipos promoción: $response');
@@ -409,8 +407,8 @@ class PromotionService {
           response is List ? response : response['data'] ?? [];
 
       if (typesData.isEmpty) {
-        print('⚠️ No se encontraron tipos de promoción, usando datos mock');
-        return _getMockPromotionTypes();
+        print('⚠️ No se encontraron tipos de promoción');
+        return [];
       }
 
       final types = typesData.map((t) => PromotionType.fromJson(t)).toList();
@@ -419,7 +417,7 @@ class PromotionService {
       return types;
     } catch (e) {
       print('❌ Error obteniendo tipos promoción: $e');
-      return _getMockPromotionTypes();
+      return [];
     }
   }
 
@@ -446,10 +444,10 @@ class PromotionService {
         },
       );
 
-      return response ?? _getMockStats();
+      return response ?? {};
     } catch (e) {
       print('❌ Error obteniendo estadísticas: $e');
-      return _getMockStats();
+      return {};
     }
   }
 

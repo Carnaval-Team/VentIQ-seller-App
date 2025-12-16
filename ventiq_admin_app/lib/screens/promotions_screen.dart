@@ -227,7 +227,10 @@ class _PromotionsScreenState extends State<PromotionsScreen> {
   }
 
   Widget _buildStatsCards() {
-    if (_stats.isEmpty) return const SizedBox.shrink();
+    // No mostrar estadísticas si no hay promociones activas
+    if (_stats.isEmpty || (_stats['promociones_activas'] ?? 0) == 0) {
+      return const SizedBox.shrink();
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),

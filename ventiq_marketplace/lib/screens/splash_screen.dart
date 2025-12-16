@@ -71,7 +71,7 @@ class _SplashScreenState extends State<SplashScreen> {
               const SizedBox(height: 8),
               // Subtítulo
               const Text(
-                'Marketplace',
+                'Catálogo',
                 style: TextStyle(
                   color: Colors.white70,
                   fontSize: 16,
