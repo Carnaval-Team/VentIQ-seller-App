@@ -258,6 +258,16 @@ class _DetalleContratoConsignacionScreenState
             ),
             const SizedBox(height: 12),
 
+            // Almacén destino (si existe)
+            if (widget.contrato['almacen_destino'] != null)
+              _buildInfoRow(
+                'Almacén de Recepción:',
+                widget.contrato['almacen_destino']['denominacion'],
+                Colors.purple,
+              ),
+            if (widget.contrato['almacen_destino'] != null)
+              const SizedBox(height: 12),
+
             // Total de dinero enviado y plazo
             Row(
               children: [

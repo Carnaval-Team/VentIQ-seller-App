@@ -124,13 +124,15 @@ class ConsignacionMovimientosService {
   }) async {
     try {
       final response = await _supabase.rpc(
-        'get_estadisticas_ventas_consignacion',
+        'get_estadisticas_ventas_consignacion2',
         params: {
           'p_id_contrato': idContrato,
           'p_fecha_desde': fechaDesde?.toIso8601String(),
           'p_fecha_hasta': fechaHasta?.toIso8601String(),
         },
       );
+      print('respuesta de ventas');
+      print('response: $response');
 
       if (response == null || (response is List && response.isEmpty)) {
         return {
