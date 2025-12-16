@@ -61,10 +61,26 @@ class ConsignacionService {
             .eq('id', idConsignataria)
             .single();
 
+        // Obtener datos del almacén destino si existe
+        Map<String, dynamic>? almacenDestino;
+        if (contrato['id_almacen_destino'] != null) {
+          try {
+            almacenDestino = await _supabase
+                .from('app_dat_almacen')
+                .select('id, denominacion, direccion')
+                .eq('id', contrato['id_almacen_destino'])
+                .single();
+            debugPrint('✅ Almacén destino obtenido: ${almacenDestino['denominacion']}');
+          } catch (e) {
+            debugPrint('⚠️ No se pudo obtener almacén destino: $e');
+          }
+        }
+
         enrichedContratos.add({
           ...contrato,
           'tienda_consignadora': tiendaConsignadora,
           'tienda_consignataria': tiendaConsignataria,
+          if (almacenDestino != null) 'almacen_destino': almacenDestino,
         });
       }
 
@@ -390,6 +406,24 @@ class ConsignacionService {
     }
   }
 
+  /// Actualizar layout destino (zona de consignación) de un contrato
+  static Future<bool> actualizarLayoutDestino(int idContrato, int idLayoutDestino) async {
+    try {
+      debugPrint('🏭 Actualizando layout destino del contrato: $idContrato');
+
+      await _supabase
+          .from('app_dat_contrato_consignacion')
+          .update({'id_layout_destino': idLayoutDestino})
+          .eq('id', idContrato);
+
+      debugPrint('✅ Layout destino actualizado: $idLayoutDestino');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error actualizando layout destino: $e');
+      return false;
+    }
+  }
+
   /// Obtener el almacén origen desde el primer producto de consignación
   static Future<int?> getAlmacenOrigenFromContrato(int idContrato) async {
     try {
@@ -483,7 +517,7 @@ class ConsignacionService {
       if (idAlmacenOrigen == null || idTiendaOrigen == null || idTiendaDestino == null) {
         contrato = await _supabase
             .from('app_dat_contrato_consignacion')
-            .select('id_tienda_consignadora, id_tienda_consignataria, id_almacen_destino, app_dat_tienda!id_tienda_consignadora(denominacion)')
+            .select('id_tienda_consignadora, id_tienda_consignataria, id_almacen_destino, id_layout_destino, app_dat_tienda!id_tienda_consignadora(denominacion)')
             .eq('id', idContrato)
             .single();
 
@@ -492,15 +526,19 @@ class ConsignacionService {
         nombreTiendaConsignadora = contrato['app_dat_tienda']['denominacion'];
       }
 
-      // Obtener almacén destino del contrato si no se proporcionó
-      if (idAlmacenDestino == null) {
+      // Obtener almacén destino y layout destino del contrato si no se proporcionó
+      int? idLayoutDestino;
+      if (idAlmacenDestino == null || contrato == null) {
         final contratoDestino = await _supabase
             .from('app_dat_contrato_consignacion')
-            .select('id_almacen_destino')
+            .select('id_almacen_destino, id_layout_destino')
             .eq('id', idContrato)
             .single();
 
         idAlmacenDestino = contratoDestino['id_almacen_destino'] as int?;
+        idLayoutDestino = contratoDestino['id_layout_destino'] as int?;
+      } else {
+        idLayoutDestino = contrato['id_layout_destino'] as int?;
       }
 
       if (idAlmacenDestino == null) {
@@ -508,21 +546,32 @@ class ConsignacionService {
         return false;
       }
 
-      // Obtener o crear zona de consignación (solo en almacén destino)
-      final zona = await obtenerOCrearZonaConsignacion(
-        idContrato: idContrato,
-        idAlmacenDestino: idAlmacenDestino,
-        idTiendaConsignadora: idTiendaOrigen!,
-        idTiendaConsignataria: idTiendaDestino!,
-        nombreTiendaConsignadora: nombreTiendaConsignadora ?? 'Tienda',
-      );
+      // Usar la zona de consignación ya creada en el contrato
+      int idZonaDestino;
+      if (idLayoutDestino != null) {
+        debugPrint('✅ Usando zona de consignación del contrato: $idLayoutDestino');
+        idZonaDestino = idLayoutDestino;
+      } else {
+        // Fallback: crear zona si no existe (para contratos antiguos)
+        debugPrint('⚠️ Contrato sin zona asignada, creando zona de consignación...');
+        final zona = await obtenerOCrearZonaConsignacion(
+          idContrato: idContrato,
+          idAlmacenDestino: idAlmacenDestino,
+          idTiendaConsignadora: idTiendaOrigen!,
+          idTiendaConsignataria: idTiendaDestino!,
+          nombreTiendaConsignadora: nombreTiendaConsignadora ?? 'Tienda',
+        );
 
-      if (zona == null) {
-        debugPrint('❌ Error: No se pudo crear la zona de consignación');
-        return false;
+        if (zona == null) {
+          debugPrint('❌ Error: No se pudo crear la zona de consignación');
+          return false;
+        }
+
+        idZonaDestino = zona['id'] as int;
+        
+        // Guardar el ID de la zona en el contrato para futuras asignaciones
+        await actualizarLayoutDestino(idContrato, idZonaDestino);
       }
-
-      final idZonaDestino = zona['id'] as int;
 
       // Asignar productos al contrato con estado PENDIENTE
       for (var producto in productos) {

@@ -1066,6 +1066,36 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
         idAlmacenDestino,
       );
 
+      // Crear la zona de consignación inmediatamente
+      debugPrint('🏭 Creando zona de consignación para el contrato...');
+      final zona = await ConsignacionService.obtenerOCrearZonaConsignacion(
+        idContrato: contrato['id'] as int,
+        idAlmacenDestino: idAlmacenDestino,
+        idTiendaConsignadora: contrato['id_tienda_consignadora'] as int,
+        idTiendaConsignataria: contrato['id_tienda_consignataria'] as int,
+        nombreTiendaConsignadora: contrato['tienda_consignadora']['denominacion'] as String,
+      );
+
+      if (zona == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Error al crear la zona de consignación'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      debugPrint('✅ Zona de consignación creada: ${zona['id']}');
+
+      // Guardar el ID de la zona en el contrato
+      await ConsignacionService.actualizarLayoutDestino(
+        contrato['id'] as int,
+        zona['id'] as int,
+      );
+
+      // Confirmar el contrato
       final success = await ConsignacionService.confirmarContrato(contrato['id']);
 
       if (!mounted) return;
@@ -1073,7 +1103,7 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Contrato confirmado exitosamente'),
+            content: Text('✅ Contrato confirmado y zona de consignación creada exitosamente'),
             backgroundColor: Colors.green,
           ),
         );
