@@ -745,7 +745,7 @@ class _DetalleContratoConsignacionScreenState
             children: [
               Expanded(
                 child: _buildStatBox(
-                  'Monto Total',
+                  'Monto Total Vendido',
                   '\$${totalMontoVentas.toStringAsFixed(2)} USD',
                   Colors.teal,
                   Icons.attach_money,
