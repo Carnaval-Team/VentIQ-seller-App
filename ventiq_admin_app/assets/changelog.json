@@ -1,8 +1,45 @@
 {
-  "current_version": "1.5.1",
-  "build": 151,
+  "current_version": "1.5.2",
+  "build": 152,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.5.2",
+      "date": "2025-12-17",
+      "title": "🔧 Correcciones Varias e Integración Carnaval",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Corrección en Integración",
+          "description": "Corrección en las funcionalidades relacionadas con la integración de Carnaval."
+        },
+        {
+          "type": "fix",
+          "title": "Correcciones en Consignaciones",
+          "description": "Ajustes y correcciones en el módulo de consignaciones."
+        },
+        {
+          "type": "fix",
+          "title": "Correcciones en Dashboard",
+          "description": "Mejoras y correcciones visuales en el dashboard principal."
+        },
+        {
+          "type": "fix",
+          "title": "Correcciones en Login",
+          "description": "Solución de problemas reportados en la pantalla de inicio de sesión."
+        },
+        {
+          "type": "fix",
+          "title": "Correcciones en Suscripciones",
+          "description": "Ajustes en la gestión y visualización de suscripciones."
+        },
+        {
+          "type": "fix",
+          "title": "Correcciones en Admin Drawer",
+          "description": "Correcciones en el menú lateral de administración."
+        }
+      ]
+    },
     {
       "version": "1.5.1",
       "date": "2025-12-08",
