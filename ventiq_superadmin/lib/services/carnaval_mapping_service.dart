@@ -7,7 +7,9 @@ class CarnavalMappingService {
   Future<List<Map<String, dynamic>>> getStores() async {
     final response = await supabase
         .from('app_dat_tienda')
-        .select('id, denominacion, direccion')
+        .select(
+          'id, denominacion, direccion, id_tienda_carnaval, app_dat_gerente!inner(*)',
+        )
         .order('denominacion');
     return List<Map<String, dynamic>>.from(response);
   }
@@ -30,7 +32,7 @@ class CarnavalMappingService {
     final response = await supabase
         .schema('carnavalapp')
         .from('proveedores')
-        .select('id, name')
+        .select('id, name, logo')
         .order('name');
     return List<Map<String, dynamic>>.from(response);
   }
@@ -48,23 +50,25 @@ class CarnavalMappingService {
 
   // Obtener un producto de Carnaval por ID (para mostrar detalles si ya está enlazado)
   Future<Map<String, dynamic>?> getCarnavalProductById(int productId) async {
-    final response = await supabase
-        .schema('carnavalapp')
-        .from('Productos')
-        .select('id, name, price, description, image, proveedor')
-        .eq('id', productId)
-        .maybeSingle();
+    final response =
+        await supabase
+            .schema('carnavalapp')
+            .from('Productos')
+            .select('id, name, price, description, image, proveedor')
+            .eq('id', productId)
+            .maybeSingle();
     return response;
   }
 
   // Obtener nombre del proveedor por ID
   Future<String?> getProviderName(int providerId) async {
-    final response = await supabase
-        .schema('carnavalapp')
-        .from('proveedores')
-        .select('name')
-        .eq('id', providerId)
-        .maybeSingle();
+    final response =
+        await supabase
+            .schema('carnavalapp')
+            .from('proveedores')
+            .select('name')
+            .eq('id', providerId)
+            .maybeSingle();
 
     if (response != null && response['name'] != null) {
       return response['name'] as String;
@@ -99,5 +103,23 @@ class CarnavalMappingService {
         .from('app_dat_producto')
         .update(updates)
         .eq('id', localProductId);
+  }
+
+  // Actualizar información de Carnaval en la tienda (primer enlace)
+  Future<void> updateStoreCarnavalInfo(
+    int storeId,
+    int carnavalStoreId,
+    String? imageUrl,
+  ) async {
+    final updates = <String, dynamic>{
+      'admin_carnaval': true,
+      'id_tienda_carnaval': carnavalStoreId,
+    };
+
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      updates['imagen_url'] = imageUrl;
+    }
+
+    await supabase.from('app_dat_tienda').update(updates).eq('id', storeId);
   }
 }

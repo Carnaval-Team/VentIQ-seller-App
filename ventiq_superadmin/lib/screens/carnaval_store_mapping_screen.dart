@@ -104,7 +104,7 @@ class _CarnavalStoreMappingScreenState
             carnavalProduct['proveedor'],
           );
         }
-  //dep
+        //dep
         setState(() {
           _linkedCarnavalProduct = carnavalProduct;
           _linkedProviderName = providerName;
@@ -155,9 +155,8 @@ class _CarnavalStoreMappingScreenState
 
     try {
       final updateName = _namePreference == 0; // 0 = Carnaval Name
-      final newName = updateName
-          ? _selectedCarnavalProductToLink!['name']
-          : null;
+      final newName =
+          updateName ? _selectedCarnavalProductToLink!['name'] : null;
       final newImage = _selectedCarnavalProductToLink!['image'];
 
       await _service.linkProduct(
@@ -167,6 +166,34 @@ class _CarnavalStoreMappingScreenState
         newName: newName,
         newImage: newImage,
       );
+
+      // Check if store needs to be linked (first time sync)
+      if (_selectedStore != null &&
+          _selectedStore!['id_tienda_carnaval'] == null) {
+        try {
+          await _service.updateStoreCarnavalInfo(
+            _selectedStore!['id'],
+            _selectedProvider!['id'],
+            _selectedProvider!['logo'],
+          );
+
+          // Update local state to prevent re-running
+          _selectedStore!['id_tienda_carnaval'] = _selectedProvider!['id'];
+          _selectedStore!['admin_carnaval'] = true;
+          if (_selectedProvider!['logo'] != null) {
+            _selectedStore!['imagen'] = _selectedProvider!['logo'];
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tienda vinculada a Carnaval correctamente'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        } catch (e) {
+          _showError('Error al vincular tienda: $e');
+        }
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -187,6 +214,7 @@ class _CarnavalStoreMappingScreenState
           _selectedCarnavalProductToLink!['id'];
 
       _onProductSelected(_selectedLocalProduct!); // Reload details view
+      _resetRightPanel(); // Reset right panel state after successful link
     } catch (e) {
       _showError('Error al enlazar producto: $e');
     }
@@ -195,8 +223,13 @@ class _CarnavalStoreMappingScreenState
   void _resetRightPanel() {
     _linkedCarnavalProduct = null;
     _linkedProviderName = null;
-    // Keep provider selection to save clicks
-    // _selectedProvider = null;
+    // Keep provider selection if store is not fully linked yet or to save clicks
+    if (_selectedStore != null &&
+        _selectedStore!['id_tienda_carnaval'] == null) {
+      // Keep provider selected for potential store linking
+    } else {
+      // _selectedProvider = null;
+    }
     // _providerProducts = [];
     _selectedCarnavalProductToLink = null;
     _namePreference = 0;
@@ -258,12 +291,13 @@ class _CarnavalStoreMappingScreenState
           border: OutlineInputBorder(),
         ),
         value: _selectedStore,
-        items: _stores.map((store) {
-          return DropdownMenuItem(
-            value: store,
-            child: Text(store['denominacion'] ?? 'Sin Nombre'),
-          );
-        }).toList(),
+        items:
+            _stores.map((store) {
+              return DropdownMenuItem(
+                value: store,
+                child: Text(store['denominacion'] ?? 'Sin Nombre'),
+              );
+            }).toList(),
         onChanged: (value) {
           if (value != null) {
             setState(() => _selectedStore = value);
@@ -298,9 +332,10 @@ class _CarnavalStoreMappingScreenState
           selected: isSelected,
           selectedTileColor: AppColors.primary.withOpacity(0.1),
           leading: CircleAvatar(
-            backgroundColor: isLinked
-                ? AppColors.success.withOpacity(0.2)
-                : AppColors.warning.withOpacity(0.2),
+            backgroundColor:
+                isLinked
+                    ? AppColors.success.withOpacity(0.2)
+                    : AppColors.warning.withOpacity(0.2),
             child: Icon(
               isLinked ? Icons.link : Icons.link_off,
               color: isLinked ? AppColors.success : AppColors.warning,
@@ -450,31 +485,32 @@ class _CarnavalStoreMappingScreenState
         // Step 1: Provider Selector
         _isLoadingProviders
             ? const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            : DropdownButtonFormField<Map<String, dynamic>>(
-                decoration: const InputDecoration(
-                  labelText: 'Seleccionar Proveedor',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.storefront),
-                ),
-                value: _selectedProvider,
-                items: _carnavalProviders.map((provider) {
-                  return DropdownMenuItem(
-                    value: provider,
-                    child: Text(provider['name']),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() => _selectedProvider = value);
-                    _loadProviderProducts(value['id']);
-                  }
-                },
+              child: Padding(
+                padding: EdgeInsets.all(8.0),
+                child: CircularProgressIndicator(),
               ),
+            )
+            : DropdownButtonFormField<Map<String, dynamic>>(
+              decoration: const InputDecoration(
+                labelText: 'Seleccionar Proveedor',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.storefront),
+              ),
+              value: _selectedProvider,
+              items:
+                  _carnavalProviders.map((provider) {
+                    return DropdownMenuItem(
+                      value: provider,
+                      child: Text(provider['name']),
+                    );
+                  }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _selectedProvider = value);
+                  _loadProviderProducts(value['id']);
+                }
+              },
+            ),
 
         const SizedBox(height: 16),
 
@@ -482,29 +518,30 @@ class _CarnavalStoreMappingScreenState
         if (_selectedProvider != null)
           _isLoadingCarnavalProducts
               ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              : DropdownButtonFormField<Map<String, dynamic>>(
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Seleccionar Producto de Carnaval',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.shopping_bag_outlined),
-                  ),
-                  value: _selectedCarnavalProductToLink,
-                  items: _providerProducts.map((prod) {
-                    return DropdownMenuItem(
-                      value: prod,
-                      child: Text('${prod['name']} (\$${prod['price']})'),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() => _selectedCarnavalProductToLink = value);
-                  },
+                child: Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: CircularProgressIndicator(),
                 ),
+              )
+              : DropdownButtonFormField<Map<String, dynamic>>(
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Seleccionar Producto de Carnaval',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.shopping_bag_outlined),
+                ),
+                value: _selectedCarnavalProductToLink,
+                items:
+                    _providerProducts.map((prod) {
+                      return DropdownMenuItem(
+                        value: prod,
+                        child: Text('${prod['name']} (\$${prod['price']})'),
+                      );
+                    }).toList(),
+                onChanged: (value) {
+                  setState(() => _selectedCarnavalProductToLink = value);
+                },
+              ),
 
         const SizedBox(height: 24),
 

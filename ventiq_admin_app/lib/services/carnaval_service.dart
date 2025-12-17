@@ -539,7 +539,11 @@ class CarnavalService {
       // Calcular precios con markup:
       // precio_descuento = basePrice + 5.35% (redondeado a entero)
       // price (oficial) = basePrice + 11%
-      final precioDescuento = (basePrice * 1.0535).round();
+      double precioDescuento = (basePrice * 1.0535).round();
+
+      if (carnavalStoreId == 1) {
+        precioDescuento = basePrice;
+      }
       final precioOficial = basePrice * 1.11;
 
       // 3. Obtener stock actual de la ubicación específica
