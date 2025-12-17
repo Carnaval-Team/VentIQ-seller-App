@@ -573,18 +573,58 @@ class ConsignacionService {
         await actualizarLayoutDestino(idContrato, idZonaDestino);
       }
 
-      // Asignar productos al contrato con estado PENDIENTE
+      // 1. Crear operación de extracción para RESERVAR el stock (Estado 1 = Pendiente)
+      // Esto evitará que los productos se vendan en la tienda origen mientras están en consignación
+      final uuid = _supabase.auth.currentUser?.id;
+      final email = _supabase.auth.currentUser?.email ?? 'Sistema';
+      
+      if (uuid == null) throw Exception('Usuario no autenticado');
+
+      final productosExtraccion = productos.map((p) => {
+        'id_producto': p['id_producto'],
+        'cantidad': p['cantidad'],
+        'id_presentacion': p['id_presentacion'],
+        'id_ubicacion': p['id_ubicacion'],
+        'id_variante': p['id_variante'],
+        'id_opcion_variante': p['id_opcion_variante'],
+        'precio_unitario': p['precio_costo_unitario'] ?? 0,
+      }).toList();
+
+      debugPrint('🔄 Creando operación de extracción (Reserva) para ${productos.length} productos...');
+      
+      final extraccionResult = await _supabase.rpc(
+        'fn_insertar_extraccion_completa',
+        params: {
+          'p_autorizado_por': email,
+          'p_estado_inicial': 1, // 1 = Pendiente (Reserva)
+          'p_id_motivo_operacion': 5, // Transferencia a otra tienda
+          'p_id_tienda': idTiendaOrigen,
+          'p_observaciones': 'Envío a consignación - Contrato #$idContrato',
+          'p_productos': productosExtraccion,
+          'p_uuid': uuid,
+        },
+      );
+
+      if (extraccionResult['status'] != 'success') {
+        throw Exception('Error creando reserva: ${extraccionResult['message']}');
+      }
+
+      final idExtraccion = extraccionResult['id_operacion'];
+      debugPrint('✅ Reserva creada con ID Operación: $idExtraccion');
+
+      // 2. Asignar productos al contrato con referencia a la extracción
       for (var producto in productos) {
         final productoData = {
           'id_contrato': idContrato,
           'id_producto': producto['id_producto'],
           'id_variante': producto['id_variante'],
           'id_presentacion': producto['id_presentacion'],
-          'id_ubicacion_origen': producto['id_ubicacion'], // Guardar ubicación de origen
+          'id_ubicacion_origen': producto['id_ubicacion'],
           'cantidad_enviada': producto['cantidad'],
-          'precio_venta_sugerido': producto['precio_costo_unitario'], // ✅ Precio de costo (informativo)
+          'precio_venta_sugerido': producto['precio_costo_unitario'],
           'puede_modificar_precio': producto['puede_modificar_precio'] ?? false,
-          'estado': 0, // PENDIENTE - Esperando confirmación del consignatario
+          'estado': 0, // PENDIENTE
+          'id_operacion_extraccion': idExtraccion, // Link a la reserva
         };
 
         // Insertar producto en consignación
@@ -594,11 +634,10 @@ class ConsignacionService {
             .select()
             .single();
 
-        debugPrint('✅ Producto consignación creado (Pendiente): ${prodConsig['id']}');
-        debugPrint('   Ubicación origen: ${producto['id_ubicacion']}');
+        debugPrint('✅ Producto consignación creado: ${prodConsig['id']}');
       }
 
-      debugPrint('✅ Productos asignados exitosamente (Estado: Pendiente)');
+      debugPrint('✅ Productos asignados y reservados exitosamente');
       return true;
     } catch (e) {
       debugPrint('❌ Error asignando productos: $e');

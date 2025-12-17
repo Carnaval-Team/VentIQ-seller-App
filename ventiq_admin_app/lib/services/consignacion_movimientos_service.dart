@@ -131,8 +131,7 @@ class ConsignacionMovimientosService {
           'p_fecha_hasta': fechaHasta?.toIso8601String(),
         },
       );
-      print('respuesta de ventas');
-      print('response: $response');
+      debugPrint('📊 Respuesta de estadísticas: $response');
 
       if (response == null || (response is List && response.isEmpty)) {
         return {
@@ -140,22 +139,20 @@ class ConsignacionMovimientosService {
           'totalVendido': 0,
           'totalDevuelto': 0,
           'totalPendiente': 0,
-          'totalOperaciones': 0,
           'totalMontoVentas': 0,
-          'promedioVenta': 0,
         };
       }
 
       final stats = (response is List ? response[0] : response) as Map<String, dynamic>;
 
+      // ✅ Retornar solo los campos necesarios (sin promedio ni cantidad de operaciones)
+      // El total a liquidar es: cantidad_vendida * precio_costo_promedio
       return {
         'totalEnviado': stats['total_enviado'] ?? 0,
         'totalVendido': stats['total_vendido'] ?? 0,
         'totalDevuelto': stats['total_devuelto'] ?? 0,
         'totalPendiente': stats['total_pendiente'] ?? 0,
-        'totalOperaciones': stats['total_operaciones'] ?? 0,
         'totalMontoVentas': stats['total_monto_ventas'] ?? 0,
-        'promedioVenta': stats['promedio_venta'] ?? 0,
       };
     } catch (e) {
       debugPrint('❌ Error obteniendo estadísticas: $e');

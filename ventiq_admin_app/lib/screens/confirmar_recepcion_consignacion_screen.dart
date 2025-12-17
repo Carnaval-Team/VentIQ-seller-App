@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
+import '../services/consignacion_envio_service.dart';
 import '../services/currency_display_service.dart';
 
 class ConfirmarRecepcionConsignacionScreen extends StatefulWidget {
@@ -795,24 +796,53 @@ class _ConfirmarRecepcionConsignacionScreenState
       setState(() => _isConfirming = true);
 
       try {
-        // Obtener IDs de todos los productos
-        final idsProductos = _productosPendientes.map((p) => p['id'] as int).toList();
-        
-        final success = await ConsignacionService.confirmarRecepcionProductosConsignacion(
+        // Obtener usuario actual
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ Error: Usuario no autenticado'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          setState(() => _isConfirming = false);
+          return;
+        }
+
+        // Buscar envío pendiente para este contrato
+        final enviosPendientes = await ConsignacionEnvioService.obtenerEnviosPorEstado(
           idContrato: widget.idContrato,
-          idTiendaOrigen: widget.idTiendaOrigen,
-          idTiendaDestino: widget.idTiendaDestino,
-          idAlmacenOrigen: widget.idAlmacenOrigen,
-          idAlmacenDestino: widget.idAlmacenDestino,
-          idsProductosConsignacion: idsProductos,
-          preciosVenta: _preciosVentaConfigurables,
+          estado: ConsignacionEnvioService.ESTADO_EN_TRANSITO,
+        );
+
+        if (enviosPendientes.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ No hay envío pendiente para aceptar'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          setState(() => _isConfirming = false);
+          return;
+        }
+
+        final idEnvio = enviosPendientes[0]['id'] as int;
+
+        // Aceptar envío completo con ConsignacionEnvioService
+        final aceptarResult = await ConsignacionEnvioService.aceptarEnvio(
+          idEnvio: idEnvio,
+          idUsuario: user.id,
         );
 
         if (!mounted) return;
 
         setState(() => _isConfirming = false);
 
-        if (success) {
+        if (aceptarResult != null && aceptarResult['success'] == true) {
           // ✅ NUEVO: Actualizar monto_total del contrato
           try {
             await ConsignacionService.actualizarMontoTotalContrato(
@@ -822,26 +852,25 @@ class _ConfirmarRecepcionConsignacionScreenState
             debugPrint('✅ Monto total del contrato actualizado');
           } catch (e) {
             debugPrint('⚠️ Error actualizando monto total (no crítico): $e');
-            // No bloquear el flujo si falla esta actualización
           }
-          
+
           if (!mounted) return;
-          
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('✅ Envío aceptado exitosamente'),
               backgroundColor: Colors.green,
             ),
           );
-          
+
           // ✅ Navegar a la vista de operaciones de inventario
           if (mounted) {
             Navigator.of(context).pushReplacementNamed('/inventory');
           }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ Error al aceptar envío'),
+            SnackBar(
+              content: Text('❌ Error al aceptar envío: ${aceptarResult?['mensaje'] ?? 'Error desconocido'}'),
               backgroundColor: Colors.red,
             ),
           );

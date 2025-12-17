@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
+import '../services/consignacion_envio_service.dart';
 import '../services/currency_service.dart';
 
 class AsignarProductosConsignacionScreen extends StatefulWidget {
@@ -21,7 +22,7 @@ class AsignarProductosConsignacionScreen extends StatefulWidget {
 class _AsignarProductosConsignacionScreenState extends State<AsignarProductosConsignacionScreen> {
   final _supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _almacenes = [];
-  Map<int, bool> _productosSeleccionados = {}; // id_inventario -> seleccionado
+  Map<int, Map<String, dynamic>> _productosSeleccionados = {}; // id_inventario -> {seleccionado, cantidad}
   
   // Estados de expansión
   Map<String, bool> _expandedAlmacenes = {}; // almacen_id -> expandido
@@ -84,13 +85,27 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
 
   void _toggleProductoSeleccion(int idInventario) {
     setState(() {
-      _productosSeleccionados[idInventario] = !(_productosSeleccionados[idInventario] ?? false);
+      if (_productosSeleccionados[idInventario]?['seleccionado'] == true) {
+        _productosSeleccionados[idInventario] = {'seleccionado': false, 'cantidad': 0.0};
+      } else {
+        _productosSeleccionados[idInventario] = {'seleccionado': true, 'cantidad': 0.0};
+      }
+    });
+  }
+
+  void _actualizarCantidad(int idInventario, double cantidad) {
+    setState(() {
+      if (_productosSeleccionados[idInventario] == null) {
+        _productosSeleccionados[idInventario] = {'seleccionado': false, 'cantidad': cantidad};
+      } else {
+        _productosSeleccionados[idInventario]!['cantidad'] = cantidad;
+      }
     });
   }
 
   Future<void> _procederConConfiguracion() async {
     final productosSeleccionados = _productosSeleccionados.entries
-        .where((e) => e.value)
+        .where((e) => e.value['seleccionado'] == true)
         .map((e) => e.key)
         .toList();
 
@@ -102,6 +117,22 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
         ),
       );
       return;
+    }
+
+    // Validar que todos los productos seleccionados tengan cantidad > 0
+    for (final entry in _productosSeleccionados.entries) {
+      if (entry.value['seleccionado'] == true) {
+        final cantidad = entry.value['cantidad'] as double;
+        if (cantidad <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Todos los productos seleccionados deben tener cantidad > 0'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+      }
     }
 
     // Cargar datos completos de los productos seleccionados
@@ -117,6 +148,8 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
             id_producto,
             id_ubicacion,
             id_presentacion,
+            id_variante,
+            id_opcion_variante,
             app_dat_producto(
               id,
               denominacion,
@@ -132,6 +165,14 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
 
       // Obtener precios de venta para cada producto
       final productosData = List<Map<String, dynamic>>.from(response);
+      
+      // Agregar cantidades seleccionadas a cada producto
+      for (final producto in productosData) {
+        final idInventario = producto['id'] as int;
+        final cantidadSeleccionada = _productosSeleccionados[idInventario]?['cantidad'] as double? ?? 0.0;
+        producto['cantidad_seleccionada'] = cantidadSeleccionada;
+      }
+      
       for (final producto in productosData) {
         final idProducto = producto['id_producto'];
         try {
@@ -167,6 +208,13 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
           producto['precio_costo_cup'] = 0.0;
         }
       }
+
+      // Ordenar productos alfabéticamente por denominación
+      productosData.sort((a, b) {
+        final nombreA = a['app_dat_producto']?['denominacion'] ?? '';
+        final nombreB = b['app_dat_producto']?['denominacion'] ?? '';
+        return nombreA.toString().toLowerCase().compareTo(nombreB.toString().toLowerCase());
+      });
 
       Navigator.push(
         context,
@@ -211,38 +259,84 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
                 debugPrint('Error obteniendo almacén origen: $e');
               }
 
-              final success = await ConsignacionService.asignarProductos(
+              // Obtener ID de usuario actual
+              final user = _supabase.auth.currentUser;
+              if (user == null) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('❌ Error: Usuario no autenticado'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+                return;
+              }
+
+              // Preparar productos para crear envío
+              final productosParaEnvio = productosConfigurados.map((p) => {
+                'id_inventario': p['id_ubicacion'] ?? 0,
+                'id_producto': p['id_producto'],
+                'cantidad': p['cantidad'],
+                'precio_costo_usd': (p['precio_costo_unitario'] ?? 0).toDouble(),
+                'precio_costo_cup': ((p['precio_costo_unitario'] ?? 0) * 440).toDouble(),
+                'tasa_cambio': 440.0,
+              }).toList();
+
+              // Crear envío con operación de extracción
+              final envioResult = await ConsignacionEnvioService.crearEnvio(
                 idContrato: widget.idContrato,
-                productos: productosConfigurados,
-                idAlmacenOrigen: idAlmacenOrigen,
-                idTiendaOrigen: idTiendaConsignadora,
-                idTiendaDestino: idTiendaConsignataria,
-                nombreTiendaConsignadora: nombreTiendaConsignadora,
-                idAlmacenDestino: idAlmacenDestino,
+                idAlmacenOrigen: idAlmacenOrigen ?? 0,
+                idAlmacenDestino: idAlmacenDestino ?? 0,
+                idUsuario: user.id,
+                productos: productosParaEnvio,
+                descripcion: 'Envío de consignación - ${widget.contrato['denominacion'] ?? 'Contrato'}',
               );
 
               if (!mounted) return;
 
-              if (success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('✅ Productos asignados exitosamente'),
-                    backgroundColor: Colors.green,
-                  ),
+              if (envioResult != null) {
+                // Ahora asignar productos (mantener compatibilidad con flujo anterior)
+                final success = await ConsignacionService.asignarProductos(
+                  idContrato: widget.idContrato,
+                  productos: productosConfigurados,
+                  idAlmacenOrigen: idAlmacenOrigen,
+                  idTiendaOrigen: idTiendaConsignadora,
+                  idTiendaDestino: idTiendaConsignataria,
+                  nombreTiendaConsignadora: nombreTiendaConsignadora,
+                  idAlmacenDestino: idAlmacenDestino,
                 );
-                // Cerrar pantalla de configuración
-                Navigator.pop(context);
-                // Esperar un poco y cerrar pantalla de asignación
-                await Future.delayed(const Duration(milliseconds: 300));
-                if (mounted) {
-                  // Retornar a la vista de contratos (cerrar 2 pantallas)
+
+                if (!mounted) return;
+
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('✅ Envío creado: ${envioResult['numero_envio']}'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  // Cerrar pantalla de configuración
                   Navigator.pop(context);
-                  Navigator.pop(context, true);
+                  // Esperar un poco y cerrar pantalla de asignación
+                  await Future.delayed(const Duration(milliseconds: 300));
+                  if (mounted) {
+                    // Retornar a la vista de contratos (cerrar 2 pantallas)
+                    Navigator.pop(context);
+                    Navigator.pop(context, true);
+                  }
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('⚠️ Envío creado pero error al asignar productos'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
                 }
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('❌ Error al asignar productos'),
+                    content: Text('❌ Error al crear envío'),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -268,12 +362,12 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
-          if (_productosSeleccionados.values.any((v) => v))
+          if (_productosSeleccionados.values.any((v) => v['seleccionado'] == true))
             Center(
               child: Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Chip(
-                  label: Text('${_productosSeleccionados.values.where((v) => v).length}'),
+                  label: Text('${_productosSeleccionados.values.where((v) => v['seleccionado'] == true).length}'),
                   backgroundColor: Colors.white,
                   labelStyle: const TextStyle(
                     fontWeight: FontWeight.bold,
@@ -347,7 +441,7 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
                 ),
 
                 // Botón proceder
-                if (_productosSeleccionados.values.any((v) => v))
+                if (_productosSeleccionados.values.any((v) => v['seleccionado'] == true))
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -611,7 +705,8 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     final sku = producto['sku_producto'] as String? ?? 'N/A';
     final stockDisponible = (producto['cantidad_final'] ?? 0).toDouble();
     final idInventario = producto['id'] as int;
-    final isSelected = _productosSeleccionados[idInventario] ?? false;
+    final isSelected = _productosSeleccionados[idInventario]?['seleccionado'] == true;
+    final cantidad = _productosSeleccionados[idInventario]?['cantidad'] as double? ?? 0.0;
     
     // ✅ CORREGIDO: El RPC retorna precio_promedio directamente
     double precioCosto = (producto['precio_promedio'] ?? 0).toDouble();
@@ -637,6 +732,31 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
             onChanged: (_) => _toggleProductoSeleccion(idInventario),
             activeColor: AppColors.primary,
           ),
+          const SizedBox(width: 8),
+          // Campo de cantidad
+          if (isSelected)
+            SizedBox(
+              width: 80,
+              child: TextFormField(
+                initialValue: cantidad > 0 ? cantidad.toString() : '',
+                decoration: InputDecoration(
+                  labelText: 'Cant.',
+                  labelStyle: const TextStyle(fontSize: 11),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  isDense: true,
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: const TextStyle(fontSize: 13),
+                onChanged: (value) {
+                  final nuevaCantidad = double.tryParse(value) ?? 0.0;
+                  _actualizarCantidad(idInventario, nuevaCantidad);
+                },
+              ),
+            ),
+          if (isSelected) const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -819,11 +939,20 @@ class _ConsignacionProductosConfigScreenState
   void initState() {
     super.initState();
     _productosConfig = {};
-    // Inicializar configuración para cada producto
+    
+    // Ordenar productos alfabéticamente
+    widget.productos.sort((a, b) {
+      final nombreA = a['app_dat_producto']?['denominacion'] ?? '';
+      final nombreB = b['app_dat_producto']?['denominacion'] ?? '';
+      return nombreA.toString().toLowerCase().compareTo(nombreB.toString().toLowerCase());
+    });
+    
+    // Inicializar configuración para cada producto con la cantidad ya seleccionada
     for (final producto in widget.productos) {
+      final cantidadSeleccionada = producto['cantidad_seleccionada'] as double? ?? 0.0;
       _productosConfig[producto['id']] = {
-        'cantidad': 0.0,
-        'precio_venta': null, // ✅ Cambiado de precio_venta_sugerido a precio_venta (obligatorio)
+        'cantidad': cantidadSeleccionada, // Usar cantidad del primer paso
+        'precio_venta': null, // Solo falta configurar el precio de venta
       };
     }
     _loadAlmacenes();
@@ -1282,22 +1411,59 @@ class _ConsignacionProductosConfigScreenState
                         ),
                         const SizedBox(height: 16),
 
-                        // Cantidad
-                        TextFormField(
-                          initialValue: config['cantidad'] > 0 ? config['cantidad'].toString() : '',
-                          decoration: InputDecoration(
-                            labelText: 'Cantidad a transferir',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            prefixIcon: const Icon(Icons.inventory),
+                        // Cantidad (solo lectura - ya configurada en paso anterior)
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade300),
                           ),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          onChanged: (value) {
-                            setState(() {
-                              config['cantidad'] = double.tryParse(value) ?? 0.0;
-                            });
-                          },
+                          child: Row(
+                            children: [
+                              Icon(Icons.inventory, color: Colors.grey[700]),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Cantidad a Consignar',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${config['cantidad'].toStringAsFixed(0)} unidades',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'Configurado',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue[700],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
