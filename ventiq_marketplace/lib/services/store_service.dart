@@ -6,11 +6,9 @@ class StoreService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
   /// Obtener tiendas destacadas usando función RPC optimizada
-  /// 
+  ///
   /// [limit] - Número máximo de tiendas a retornar (default: 10)
-  Future<List<Map<String, dynamic>>> getFeaturedStores({
-    int limit = 10,
-  }) async {
+  Future<List<Map<String, dynamic>>> getFeaturedStores({int limit = 10}) async {
     try {
       print('🔍 Llamando RPC: fn_get_tiendas_destacadas');
       print('  - Límite: $limit');
@@ -18,9 +16,7 @@ class StoreService {
       // Usar la función RPC optimizada que ya creamos
       final response = await _supabase.rpc(
         'fn_get_tiendas_destacadas',
-        params: {
-          'p_limit': limit,
-        },
+        params: {'p_limit': limit},
       );
 
       if (response == null) {
@@ -28,14 +24,33 @@ class StoreService {
         return [];
       }
 
-      final List<Map<String, dynamic>> stores = 
-          List<Map<String, dynamic>>.from(response as List);
+      final List<Map<String, dynamic>> stores = List<Map<String, dynamic>>.from(
+        response as List,
+      );
 
       print('✅ ${stores.length} tiendas obtenidas desde RPC');
-      
+
       return stores;
     } catch (e) {
       print('❌ Error en RPC fn_get_tiendas_destacadas: $e');
+      return [];
+    }
+  }
+
+  /// Obtener todas las tiendas con ubicación válida para el mapa
+  Future<List<Map<String, dynamic>>> getStoresWithLocation() async {
+    try {
+      print('🔍 Obteniendo tiendas con ubicación para el mapa...');
+
+      final response = await _supabase
+          .from('app_dat_tienda')
+          .select('id, denominacion, ubicacion, imagen_url, direccion')
+          .not('ubicacion', 'is', null);
+
+      print('✅ ${response.length} tiendas con ubicación encontradas');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ Error obteniendo tiendas para el mapa: $e');
       return [];
     }
   }
@@ -116,7 +131,9 @@ class StoreService {
       );
       final avgRating = totalRating / ratings.length;
 
-      print('✅ Rating obtenido: ${avgRating.toStringAsFixed(1)} (${ratings.length} reviews)');
+      print(
+        '✅ Rating obtenido: ${avgRating.toStringAsFixed(1)} (${ratings.length} reviews)',
+      );
 
       return {
         'rating': double.parse(avgRating.toStringAsFixed(1)),
@@ -198,7 +215,7 @@ class StoreService {
           .select('id')
           .eq('id_tienda', storeId)
           .isFilter('deleted_at', null);
-      
+
       final productsCount = productsResponse.length;
 
       // Obtener rating
@@ -212,11 +229,7 @@ class StoreService {
       };
     } catch (e) {
       print('❌ Error obteniendo estadísticas: $e');
-      return {
-        'total_productos': 0,
-        'rating_promedio': 0.0,
-        'total_ratings': 0,
-      };
+      return {'total_productos': 0, 'rating_promedio': 0.0, 'total_ratings': 0};
     }
   }
 }
