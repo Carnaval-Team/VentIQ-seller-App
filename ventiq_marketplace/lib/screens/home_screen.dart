@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../widgets/product_card.dart';
 import '../widgets/store_card.dart';
-import '../widgets/search_bar_widget.dart';
+import '../widgets/product_list_card.dart';
+import '../widgets/store_list_card.dart';
 import 'product_detail_screen.dart';
 import 'store_detail_screen.dart';
+import 'map_screen.dart';
 import '../services/product_service.dart';
 import '../services/store_service.dart';
+import '../services/marketplace_service.dart'; // Added for searchProducts
 
 /// Pantalla principal del marketplace
 class HomeScreen extends StatefulWidget {
@@ -22,11 +26,20 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ProductService _productService = ProductService();
   final StoreService _storeService = StoreService();
-  
+  final MarketplaceService _marketplaceService =
+      MarketplaceService(); // Instance for searching products
+
   List<Map<String, dynamic>> _bestSellingProducts = [];
   List<Map<String, dynamic>> _featuredStores = [];
+
+  // Search state
   bool _isLoadingProducts = true;
   bool _isLoadingStores = true;
+  bool _isSearching = false;
+  bool _isLoadingSearch = false;
+  List<Map<String, dynamic>> _searchResultsStores = [];
+  List<Map<String, dynamic>> _searchResultsProducts = [];
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -37,15 +50,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
   /// Cargar datos desde Supabase
   Future<void> _loadData() async {
-    await Future.wait([
-      _loadBestSellingProducts(),
-      _loadFeaturedStores(),
-    ]);
+    await Future.wait([_loadBestSellingProducts(), _loadFeaturedStores()]);
   }
 
   /// Cargar productos más vendidos
@@ -88,6 +99,100 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _onSearchChanged(String query) {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _performSearch(query);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty) {
+      setState(() {
+        _isSearching = false;
+        _searchResultsStores = [];
+        _searchResultsProducts = [];
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _isLoadingSearch = true;
+    });
+
+    try {
+      // Parallel execution for better performance
+      final results = await Future.wait([
+        _storeService.searchStores(query, limit: 10),
+        _marketplaceService.searchProducts(query, limit: 20),
+      ]);
+
+      setState(() {
+        _searchResultsStores = results[0];
+        _searchResultsProducts = results[1];
+        _isLoadingSearch = false;
+      });
+    } catch (e) {
+      print('Error searching: $e');
+      setState(() {
+        _isLoadingSearch = false;
+      });
+    }
+  }
+
+  /// Navegar a la pantalla del mapa
+  Future<void> _navigateToMap() async {
+    // Mostrar loading si es necesario, o navegar directamente y cargar allá
+    // Aquí cargamos antes para pasar la lista filtrada
+    try {
+      // Mostrar indicador de carga rápido (opcional, o usar un overlay)
+      if (!mounted) return;
+
+      // Mostrar diálogo de carga simple
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: AppTheme.primaryColor),
+        ),
+      );
+
+      final stores = await _storeService.getStoresWithLocation();
+
+      if (!mounted) return;
+
+      // Cerrar diálogo de carga
+      Navigator.of(context).pop();
+
+      if (stores.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No hay tiendas con ubicación disponible'),
+          ),
+        );
+        return;
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => MapScreen(stores: stores)),
+      );
+    } catch (e) {
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop(); // Cerrar diálogo solo si está abierto
+      }
+      print('❌ Error navegando al mapa: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al cargar el mapa')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -101,37 +206,175 @@ class _HomeScreenState extends State<HomeScreen> {
             // AppBar con efecto moderno
             _buildModernAppBar(),
 
-            // Contenido principal
+            // Buscador fijo (aunque scrollea con el contenido, visualmente es el primer elemento)
             SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-                  // Buscador con diseño mejorado
-                  _buildSearchSection(),
-
-                  const SizedBox(height: AppTheme.paddingL),
-
-                  // Banner promocional
-                  // _buildPromoBanner(),
-
-                  const SizedBox(height: AppTheme.paddingL),
-
-                  // Productos más vendidos
-                  _buildBestSellingProducts(),
-
-                  const SizedBox(height: AppTheme.paddingXL),
-
-                  // Tiendas destacadas
-                  _buildTopStores(),
-
-                  const SizedBox(height: AppTheme.paddingXL),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: _buildSearchSection(),
               ),
             ),
+
+            if (_isSearching) _buildSearchResults() else _buildHomeContent(),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHomeContent() {
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: AppTheme.paddingL),
+
+          // Banner promocional
+          // _buildPromoBanner(),
+          const SizedBox(height: AppTheme.paddingL),
+
+          // Productos más vendidos
+          _buildBestSellingProducts(),
+
+          const SizedBox(height: AppTheme.paddingXL),
+
+          // Tiendas destacadas
+          _buildTopStores(),
+
+          const SizedBox(height: AppTheme.paddingXL),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    if (_isLoadingSearch) {
+      return const SliverFillRemaining(
+        child: Center(
+          child: CircularProgressIndicator(color: AppTheme.primaryColor),
+        ),
+      );
+    }
+
+    if (_searchResultsStores.isEmpty && _searchResultsProducts.isEmpty) {
+      return SliverFillRemaining(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                'No se encontraron resultados',
+                style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SliverList(
+      delegate: SliverChildListDelegate([
+        if (_searchResultsStores.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Text(
+              'Tiendas (${_searchResultsStores.length})',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+          ),
+          ..._searchResultsStores.map(
+            (store) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: StoreListCard(
+                storeName: store['denominacion'] ?? store['nombre'] ?? 'Tienda',
+                logoUrl: store['imagen_url'],
+                ubicacion: store['ubicacion'] ?? 'Sin ubicación',
+                direccion: store['direccion'] ?? 'Sin dirección',
+                productCount: (store['total_productos'] as num?)?.toInt() ?? 0,
+                // Add dummy values for required fields if missing
+                provincia: store['provincia'] ?? '',
+                municipio: store['municipio'] ?? '',
+                latitude: null,
+                longitude: null,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => StoreDetailScreen(
+                        store: {
+                          'id': store['id'] ?? store['id_tienda'],
+                          'nombre': store['denominacion'] ?? store['nombre'],
+                          'logoUrl': store['imagen_url'],
+                          'ubicacion': store['ubicacion'],
+                          'direccion': store['direccion'],
+                        },
+                      ),
+                    ),
+                  );
+                },
+                onMapTap: () {}, // Optional
+              ),
+            ),
+          ),
+        ],
+
+        if (_searchResultsProducts.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Text(
+              'Productos (${_searchResultsProducts.length})',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+          ),
+          ..._searchResultsProducts.map(
+            (product) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: ProductListCard(
+                productName: product['denominacion'] ?? 'Producto',
+                price:
+                    (product['app_dat_precio_venta']?[0]?['precio_venta'] ??
+                            product['precio_venta'] ??
+                            0)
+                        .toDouble(),
+                imageUrl: product['imagen'],
+                storeName: 'Ver detalle', // Simplify for search result
+                availableStock: 10, // Dummy or fetch if available
+                rating: 0,
+                presentations: const [], // Detailed view handles this
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProductDetailScreen(
+                        product: {
+                          'id': product['id'],
+                          'nombre': product['denominacion'],
+                          'precio':
+                              (product['app_dat_precio_venta']?[0]?['precio_venta'] ??
+                              product['precio_venta'] ??
+                              0),
+                          'imageUrl': product['imagen'],
+                          // Add other necessary fields
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 40),
+      ]),
     );
   }
 
@@ -174,13 +417,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Image.asset(
-                            'assets/logo_app_no_background.png',
-                            width: 58,
-                            height: 58,
-                            fit: BoxFit.contain,
-                          ),
+                          'assets/logo_app_no_background.png',
+                          width: 58,
+                          height: 58,
+                          fit: BoxFit.contain,
+                        ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       const Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -205,6 +448,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
+                      // Notification Button
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.2),
@@ -217,6 +461,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      // Map Button
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.map_outlined),
+                          color: Colors.white,
+                          onPressed: _navigateToMap,
+                          tooltip: 'Ver Mapa',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Profile Button
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.2),
@@ -255,12 +514,45 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        child: SearchBarWidget(
+        child: TextField(
           controller: _searchController,
-          onSearch: (query) {
-            // TODO: Implementar búsqueda
-            print('Buscando: $query');
-          },
+          onChanged: _onSearchChanged,
+          decoration: InputDecoration(
+            hintText: 'Buscar productos o tiendas...',
+            hintStyle: TextStyle(
+              color: AppTheme.textSecondary.withOpacity(0.6),
+              fontSize: 15,
+            ),
+            prefixIcon: Container(
+              padding: const EdgeInsets.all(12),
+              child: const Icon(
+                Icons.search_rounded,
+                color: AppTheme.primaryColor,
+                size: 24,
+              ),
+            ),
+            suffixIcon: _searchController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(
+                      Icons.clear_rounded,
+                      color: AppTheme.textSecondary,
+                    ),
+                    onPressed: () {
+                      _searchController.clear();
+                      _onSearchChanged('');
+                    },
+                  )
+                : null,
+            filled: false,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusL),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 16,
+            ),
+          ),
         ),
       ),
     );
@@ -355,10 +647,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 8),
                   const Text(
                     'Aprovecha las mejores ofertas',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
               ),
@@ -460,9 +749,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(
-                        color: AppTheme.primaryColor,
-                      ),
+                      CircularProgressIndicator(color: AppTheme.primaryColor),
                       const SizedBox(height: 12),
                       const Text(
                         'Cargando productos...',
@@ -475,83 +762,92 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 )
               : _bestSellingProducts.isEmpty
-                  ? Center(
-                      child: Container(
-                        margin: const EdgeInsets.all(AppTheme.paddingM),
-                        padding: const EdgeInsets.all(AppTheme.paddingL),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(AppTheme.radiusL),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+              ? Center(
+                  child: Container(
+                    margin: const EdgeInsets.all(AppTheme.paddingM),
+                    padding: const EdgeInsets.all(AppTheme.paddingL),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusL),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
                         ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.inventory_2_outlined,
-                              size: 48,
-                              color: AppTheme.textSecondary.withOpacity(0.5),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'No hay productos disponibles',
-                              style: TextStyle(
-                                color: AppTheme.textSecondary,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.inventory_2_outlined,
+                          size: 48,
+                          color: AppTheme.textSecondary.withOpacity(0.5),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No hay productos disponibles',
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.paddingM,
+                  ),
+                  itemCount: _bestSellingProducts.length,
+                  itemBuilder: (context, index) {
+                    final product = _bestSellingProducts[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: AppTheme.paddingM),
+                      child: ProductCard(
+                        productName:
+                            product['nombre'] as String? ?? 'Sin nombre',
+                        price:
+                            (product['precio_venta'] as num?)?.toDouble() ??
+                            0.0,
+                        category:
+                            product['categoria_nombre'] as String? ??
+                            'Sin categoría',
+                        imageUrl: product['imagen'] as String?,
+                        storeName:
+                            product['tienda_nombre'] as String? ?? 'Tienda',
+                        rating:
+                            (product['rating_promedio'] as num?)?.toDouble() ??
+                            0.0,
+                        salesCount:
+                            (product['total_vendido'] as num?)?.toInt() ?? 0,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ProductDetailScreen(
+                                product: {
+                                  'id': product['id_producto'],
+                                  'nombre': product['nombre'],
+                                  'precio': product['precio_venta'],
+                                  'categoria': product['categoria_nombre'],
+                                  'imageUrl': product['imagen'],
+                                  'tienda': product['tienda_nombre'],
+                                  'rating': product['rating_promedio'],
+                                  'stock': product['stock_disponible'],
+                                },
                               ),
                             ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    )
-                  : ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.paddingM,
-                      ),
-                      itemCount: _bestSellingProducts.length,
-                      itemBuilder: (context, index) {
-                        final product = _bestSellingProducts[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(right: AppTheme.paddingM),
-                          child: ProductCard(
-                            productName: product['nombre'] as String? ?? 'Sin nombre',
-                            price: (product['precio_venta'] as num?)?.toDouble() ?? 0.0,
-                            category: product['categoria_nombre'] as String? ?? 'Sin categoría',
-                            imageUrl: product['imagen'] as String?,
-                            storeName: product['tienda_nombre'] as String? ?? 'Tienda',
-                            rating: (product['rating_promedio'] as num?)?.toDouble() ?? 0.0,
-                            salesCount: (product['total_vendido'] as num?)?.toInt() ?? 0,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ProductDetailScreen(
-                                    product: {
-                                      'id': product['id_producto'],
-                                      'nombre': product['nombre'],
-                                      'precio': product['precio_venta'],
-                                      'categoria': product['categoria_nombre'],
-                                      'imageUrl': product['imagen'],
-                                      'tienda': product['tienda_nombre'],
-                                      'rating': product['rating_promedio'],
-                                      'stock': product['stock_disponible'],
-                                    },
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      },
-                    ),
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -648,9 +944,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(
-                        color: AppTheme.primaryColor,
-                      ),
+                      CircularProgressIndicator(color: AppTheme.primaryColor),
                       const SizedBox(height: 12),
                       const Text(
                         'Cargando tiendas...',
@@ -663,87 +957,91 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 )
               : _featuredStores.isEmpty
-                  ? Center(
-                      child: Container(
-                        margin: const EdgeInsets.all(AppTheme.paddingM),
-                        padding: const EdgeInsets.all(AppTheme.paddingL),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(AppTheme.radiusL),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+              ? Center(
+                  child: Container(
+                    margin: const EdgeInsets.all(AppTheme.paddingM),
+                    padding: const EdgeInsets.all(AppTheme.paddingL),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusL),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
                         ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.store_mall_directory_outlined,
-                              size: 48,
-                              color: AppTheme.textSecondary.withOpacity(0.5),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'No hay tiendas disponibles',
-                              style: TextStyle(
-                                color: AppTheme.textSecondary,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.store_mall_directory_outlined,
+                          size: 48,
+                          color: AppTheme.textSecondary.withOpacity(0.5),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No hay tiendas disponibles',
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTheme.paddingM,
+                  ),
+                  itemCount: _featuredStores.length,
+                  itemBuilder: (context, index) {
+                    final store = _featuredStores[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: AppTheme.paddingM),
+                      child: StoreCard(
+                        storeName: store['nombre'] as String? ?? 'Tienda',
+                        productCount:
+                            (store['total_productos'] as num?)?.toInt() ?? 0,
+                        salesCount:
+                            (store['total_ventas'] as num?)?.toInt() ?? 0,
+                        rating:
+                            (store['rating_promedio'] as num?)?.toDouble() ??
+                            0.0,
+                        logoUrl: store['imagen_url'] as String?,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => StoreDetailScreen(
+                                store: {
+                                  'id': store['id_tienda'],
+                                  'nombre': store['nombre'],
+                                  'logoUrl': store['imagen_url'],
+                                  'ubicacion':
+                                      store['ubicacion'] ?? 'Sin ubicación',
+                                  'provincia': 'Santo Domingo',
+                                  'municipio': 'Santo Domingo Este',
+                                  'direccion':
+                                      store['direccion'] ?? 'Sin dirección',
+                                  'productCount': store['total_productos'],
+                                  'latitude': 18.4861,
+                                  'longitude': -69.9312,
+                                },
                               ),
                             ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
-                    )
-                  : ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTheme.paddingM,
-                      ),
-                      itemCount: _featuredStores.length,
-                      itemBuilder: (context, index) {
-                        final store = _featuredStores[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(right: AppTheme.paddingM),
-                          child: StoreCard(
-                            storeName: store['nombre'] as String? ?? 'Tienda',
-                            productCount: (store['total_productos'] as num?)?.toInt() ?? 0,
-                            salesCount: (store['total_ventas'] as num?)?.toInt() ?? 0,
-                            rating: (store['rating_promedio'] as num?)?.toDouble() ?? 0.0,
-                            logoUrl: store['imagen_url'] as String?,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => StoreDetailScreen(
-                                    store: {
-                                      'id': store['id_tienda'],
-                                      'nombre': store['nombre'],
-                                      'logoUrl': store['imagen_url'],
-                                      'ubicacion': store['ubicacion'] ?? 'Sin ubicación',
-                                      'provincia': 'Santo Domingo',
-                                      'municipio': 'Santo Domingo Este',
-                                      'direccion': store['direccion'] ?? 'Sin dirección',
-                                      'productCount': store['total_productos'],
-                                      'latitude': 18.4861,
-                                      'longitude': -69.9312,
-                                    },
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      },
-                    ),
+                    );
+                  },
+                ),
         ),
       ],
     );
   }
 }
-  
-
