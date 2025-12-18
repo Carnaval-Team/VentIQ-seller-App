@@ -305,7 +305,7 @@ class _OperacionesVentaConsignacionScreenState
                   style: TextStyle(fontSize: 11, color: Colors.grey),
                 ),
                 Text(
-                  '\$${_totalMontoFiltrado.toStringAsFixed(2)} USD',
+                  '\$${_totalMontoFiltrado.toStringAsFixed(2)} CUP',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -394,7 +394,7 @@ class _OperacionesVentaConsignacionScreenState
             ),
           ],
         ),
-        trailing: const Icon(Icons.chevron_right),
+        /* trailing: const Icon(Icons.chevron_right),
         onTap: () {
           Navigator.push(
             context,
@@ -405,7 +405,7 @@ class _OperacionesVentaConsignacionScreenState
               ),
             ),
           );
-        },
+        }, */
       ),
     );
   }

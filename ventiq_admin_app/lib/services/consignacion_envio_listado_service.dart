@@ -260,7 +260,37 @@ class ConsignacionEnvioListadoService {
       return response.first as Map<String, dynamic>;
     } catch (e) {
       print('❌ Error cancelando envío: $e');
-      return {'success': false, 'mensaje': 'Error: $e'};
+      return {'success': false, 'mensaje': e.toString()};
+    }
+  }
+
+  /// Rechaza un producto individualmente dentro de un envío.
+  /// Devuelve stock, remueve el producto del envío y de la extracción asociada.
+  static Future<Map<String, dynamic>> rechazarProductoEnvio(
+    int idEnvio,
+    int idEnvioProducto,
+    String idUsuario,
+    String motivoRechazo,
+  ) async {
+    try {
+      final response = await _supabase.rpc(
+        'rechazar_producto_envio_consignacion',
+        params: {
+          'p_id_envio': idEnvio,
+          'p_id_envio_producto': idEnvioProducto,
+          'p_id_usuario': idUsuario,
+          'p_motivo_rechazo': motivoRechazo,
+        },
+      );
+
+      if (response == null || (response as List).isEmpty) {
+        return {'success': false, 'mensaje': 'Error desconocido'};
+      }
+
+      return response.first as Map<String, dynamic>;
+    } catch (e) {
+      print('❌ Error rechazando producto del envío: $e');
+      return {'success': false, 'mensaje': e.toString()};
     }
   }
 }

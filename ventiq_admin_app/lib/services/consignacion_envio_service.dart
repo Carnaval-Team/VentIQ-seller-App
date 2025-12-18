@@ -189,13 +189,9 @@ class ConsignacionEnvioService {
 
       if (response != null && response is List && response.isNotEmpty) {
         final resultado = response[0] as Map<String, dynamic>;
-        final success = resultado['success'] as bool;
-        
-        if (success) {
-          debugPrint('✅ Envío aceptado exitosamente');
-          debugPrint('   ID Operación Recepción: ${resultado['id_operacion_recepcion']}');
-          return resultado;
-        }
+        // Devolvemos el resultado completo sea success true o false
+        // para que la UI pueda mostrar el mensaje de error si existe.
+        return resultado;
       }
 
       return null;
