@@ -43,16 +43,30 @@ class AuthService {
   // Sign out
   Future<void> signOut() async {
     try {
-      await _supabase.auth.signOut();
+      // Intentar cerrar sesión en Supabase (puede fallar por red o sesión ya expirada)
+      try {
+        await _supabase.auth.signOut();
+      } catch (authError) {
+        print('⚠️ Supabase auth signOut warning: $authError');
+        // Continuamos con la limpieza local sin rethrow
+      }
+
       // Limpiar TODO el caché de permisos (incluyendo roles por tienda)
       PermissionsService().clearAllCache();
+      
       // Limpiar caché de suscripción
       await SubscriptionGuardService().clearCache();
+      
       // Limpiar TODOS los datos del usuario (tienda, roles, etc.)
       await UserPreferencesService().clearUserData();
-      print('👋 Admin signed out successfully');
+      
+      print('👋 Admin signed out successfully (local cleanup complete)');
     } catch (e) {
-      print('❌ Admin sign out error: $e');
+      print('❌ Admin sign out error during cleanup: $e');
+      // Intentar limpiar preferencias al menos si algo falla catastróficamente
+      try {
+        await UserPreferencesService().clearUserData();
+      } catch (_) {}
       rethrow;
     }
   }

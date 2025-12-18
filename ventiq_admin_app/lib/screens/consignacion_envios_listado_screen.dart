@@ -5,17 +5,22 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/consignacion_envio_listado_service.dart';
 import '../services/user_preferences_service.dart';
 import 'consignacion_envio_detalles_screen.dart';
+import 'asignar_productos_consignacion_screen.dart';
+import '../services/consignacion_service.dart';
+import '../config/app_colors.dart';
 
 class ConsignacionEnviosListadoScreen extends StatefulWidget {
   final int? idContrato;
   final int? estadoFiltro;
   final String? rol; // 'consignador' o 'consignatario'
+  final Map<String, dynamic>? contrato;
 
   const ConsignacionEnviosListadoScreen({
     Key? key,
     this.idContrato,
     this.estadoFiltro,
     this.rol,
+    this.contrato,
   }) : super(key: key);
 
   @override
@@ -134,6 +139,31 @@ class _ConsignacionEnviosListadoScreenState
           ),
         ],
       ),
+      floatingActionButton: (widget.rol == 'consignador' && widget.idContrato != null && widget.contrato != null)
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AsignarProductosConsignacionScreen(
+                      idContrato: widget.idContrato!,
+                      contrato: widget.contrato!,
+                    ),
+                  ),
+                );
+                if (result == true) {
+                  _cargarEnvios();
+                }
+              },
+              backgroundColor: AppColors.primary,
+              icon: const Icon(Icons.add_box, color: Colors.white),
+              label: const Text(
+                'Crear envío',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              tooltip: 'Crear nuevo envío de productos',
+            )
+          : null,
     );
   }
 
@@ -453,8 +483,8 @@ class _ConsignacionEnviosListadoScreenState
     }
   }
 
-  void _mostrarDetalles(int idEnvio) {
-    Navigator.of(context).push(
+  void _mostrarDetalles(int idEnvio) async {
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => ConsignacionEnvioDetallesScreen(
           idEnvio: idEnvio,
@@ -462,6 +492,10 @@ class _ConsignacionEnviosListadoScreenState
         ),
       ),
     );
+
+    if (result == true) {
+      _cargarEnvios();
+    }
   }
 
   void _aceptarEnvio(int idEnvio) {

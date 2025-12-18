@@ -636,23 +636,48 @@ class _ConsignacionEnvioDetallesScreenState
   
   // Botones flotantes o al final
   Widget _buildBotonesAccionGlobal() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: _isAccepting ? null : _aceptarEnvioCompleto,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _isAccepting ? null : _aceptarEnvioCompleto,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            icon: _isAccepting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.check_circle),
+            label: Text(
+              _isAccepting ? 'Procesando...' : 'Aceptar Envío',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
         ),
-        icon: _isAccepting 
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-            : const Icon(Icons.check_circle),
-        label: Text(
-          _isAccepting ? 'Procesando...' : 'Aceptar Envío',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _isAccepting ? null : _rechazarEnvioGlobal,
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.red),
+              foregroundColor: Colors.red,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            icon: const Icon(Icons.cancel),
+            label: const Text(
+              'Rechazar Envío Completo',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -819,6 +844,103 @@ class _ConsignacionEnvioDetallesScreenState
       }
     } catch(e) {
       debugPrint(e.toString());
+    }
+  }
+
+  Future<void> _rechazarEnvioGlobal() async {
+    final motivoController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rechazar Envío Completo'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '¿Estás seguro de que deseas rechazar este envío por completo? '
+              'Esta acción devolverá los productos al stock del consignador.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: motivoController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo del rechazo',
+                border: OutlineInputBorder(),
+                hintText: 'Ej: Diferencia en cantidades, mal estado, etc.',
+              ),
+              minLines: 2,
+              maxLines: 4,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmar Rechazo'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final motivo = motivoController.text.trim();
+    if (motivo.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Por favor, indica un motivo de rechazo')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isAccepting = true);
+
+    try {
+      final userId = await UserPreferencesService().getUserId();
+      if (userId == null) throw Exception('Usuario no identificado');
+
+      final success = await ConsignacionEnvioService.rechazarEnvio(
+        idEnvio: widget.idEnvio,
+        idUsuario: userId,
+        motivoRechazo: motivo,
+      );
+
+      if (success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Envío rechazado correctamente'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true); // Retornar true para refrescar lista
+        }
+      } else {
+        throw Exception('No se pudo rechazar el envío');
+      }
+    } catch (e) {
+      debugPrint('❌ Error rechazando envío: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAccepting = false);
     }
   }
 }

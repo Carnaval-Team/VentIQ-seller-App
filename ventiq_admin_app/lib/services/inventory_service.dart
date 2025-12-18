@@ -2385,7 +2385,7 @@ class InventoryService {
             
             print('❌ Validación de consignación fallida: $mensaje');
             print('   - ID Operación Extracción: $idOperacionExtraccion');
-            print('   - Estado Extracción: $estadoExtraccion (debe ser 3 = Completada)');
+            print('   - Estado Extracción: $estadoExtraccion (debe ser 2 = Completada)');
             
             // Mensaje claro para el usuario
             String mensajeUsuario = '⚠️ No se puede completar la recepción\n\n';

@@ -23,6 +23,7 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
   final _supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _almacenes = [];
   Map<int, Map<String, dynamic>> _productosSeleccionados = {}; // id_inventario -> {seleccionado, cantidad}
+  bool _procediendo = false; // ✅ Estado de carga para la reserva
   
   // Estados de expansión
   Map<String, bool> _expandedAlmacenes = {}; // almacen_id -> expandido
@@ -216,13 +217,37 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
         return nombreA.toString().toLowerCase().compareTo(nombreB.toString().toLowerCase());
       });
 
+      setState(() => _procediendo = true);
+
+      // Obtener datos del almacén origen para la reserva
+      final idTiendaConsignadora = widget.contrato['id_tienda_consignadora'] as int;
+      
+      // Crear la reserva de stock INMEDIATAMENTE para bloquear inventario
+      final idOperacionReserva = await ConsignacionService.crearReservaStock(
+        idContrato: widget.idContrato,
+        productos: productosData.map((p) => {
+          'id_producto': p['id_producto'],
+          'cantidad': p['cantidad_seleccionada'],
+          'id_presentacion': p['id_presentacion'],
+          'id_ubicacion': p['id_ubicacion'], // ID de inventario origen
+          'id_variante': p['id_variante'],
+          'id_opcion_variante': p['id_opcion_variante'],
+          'precio_costo_unitario': p['precio_costo_cup'] / p['tasa_cambio'],
+        }).toList(),
+        idTiendaOrigen: idTiendaConsignadora,
+      );
+
+      if (!mounted) return;
+      setState(() => _procediendo = false);
+
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => ConsignacionProductosConfigScreen(
             productos: productosData,
             contrato: widget.contrato,
-            onConfirm: (productosConfigurados) async {
+            idOperacionExtraccion: idOperacionReserva, // ✅ Pasar la reserva creada
+            onConfirm: (productosConfigurados, idOpExtraccion) async {
               // Obtener datos del contrato para la auditoría
               final idTiendaConsignadora = widget.contrato['id_tienda_consignadora'] as int;
               final idTiendaConsignataria = widget.contrato['id_tienda_consignataria'] as int;
@@ -305,6 +330,9 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
                   idTiendaDestino: idTiendaConsignataria,
                   nombreTiendaConsignadora: nombreTiendaConsignadora,
                   idAlmacenDestino: idAlmacenDestino,
+                  idEnvio: envioResult['id_envio'], // ✅ Vincular al envío
+                  numeroEnvio: envioResult['numero_envio'], // ✅ Usar para descripción
+                  idOperacionExtraccion: idOpExtraccion, // ✅ Pasar la reserva pre-creada
                 );
 
                 if (!mounted) return;
@@ -347,9 +375,12 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
       );
     } catch (e) {
       debugPrint('Error cargando productos: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        setState(() => _procediendo = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al reservar stock: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -457,15 +488,21 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
                     child: SizedBox(
                       width: double.infinity,
                       height: 50,
-                      child: ElevatedButton.icon(
-                        onPressed: _procederConConfiguracion,
-                        icon: const Icon(Icons.arrow_forward),
-                        label: const Text('Configurar Productos'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
+                    child: ElevatedButton.icon(
+                      onPressed: _procediendo ? null : _procederConConfiguracion,
+                      icon: _procediendo 
+                        ? const SizedBox(
+                            width: 20, 
+                            height: 20, 
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                          )
+                        : const Icon(Icons.arrow_forward),
+                      label: Text(_procediendo ? 'Reservando Stock...' : 'Configurar Productos'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
                       ),
+                    ),
                     ),
                   ),
               ],
@@ -913,12 +950,14 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
 class ConsignacionProductosConfigScreen extends StatefulWidget {
   final List<Map<String, dynamic>> productos;
   final Map<String, dynamic> contrato;
-  final Function(List<Map<String, dynamic>>) onConfirm;
+  final int? idOperacionExtraccion; // ✅ NUEVO
+  final Function(List<Map<String, dynamic>>, int?) onConfirm; // ✅ ACTUALIZADO
 
   const ConsignacionProductosConfigScreen({
     Key? key,
     required this.productos,
     required this.contrato,
+    this.idOperacionExtraccion,
     required this.onConfirm,
   }) : super(key: key);
 
@@ -1037,7 +1076,7 @@ class _ConsignacionProductosConfigScreenState
       });
     }
 
-    widget.onConfirm(productosConfigurados);
+    widget.onConfirm(productosConfigurados, widget.idOperacionExtraccion);
   }
 
   /// Mostrar diálogo de guardando
