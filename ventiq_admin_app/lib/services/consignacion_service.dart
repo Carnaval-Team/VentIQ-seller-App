@@ -1188,6 +1188,52 @@ class ConsignacionService {
     }
   }
 
+  /// ✅ NUEVO: Validar estado del envío antes de completar una extracción
+  /// Retorna: {valido: bool, mensaje: string, id_envio: int?, estado_envio: int?}
+  static Future<Map<String, dynamic>> validarEstadoEnvioParaExtraccion(int idOperacionExtraccion) async {
+    try {
+      debugPrint('🔍 Validando estado de envío para extracción: $idOperacionExtraccion');
+
+      // Buscar envío vinculado a esta operación de extracción
+      final dataEnvio = await Supabase.instance.client
+          .from('app_dat_consignacion_envio')
+          .select('id, numero_envio, estado_envio')
+          .eq('id_operacion_extraccion', idOperacionExtraccion)
+          .maybeSingle();
+
+      if (dataEnvio == null) {
+        // No es una operación vinculada a un envío de consignación (o al menos no por id_operacion_extraccion)
+        return {'valido': true, 'id_envio': null};
+      }
+
+      final idEnvio = dataEnvio['id'] as int;
+      final estadoEnvio = dataEnvio['estado_envio'] as int;
+      final numeroEnvio = dataEnvio['numero_envio'] as String;
+
+      // El envío debe estar en estado CONFIGURADO (2) para ser enviado (en tránsito)
+      // Si está en estado PROPUESTO (1), significa que aún no se le han asignado precios.
+      if (estadoEnvio == 1) { // ESTADO_PROPUESTO
+        return {
+          'valido': false,
+          'id_envio': idEnvio,
+          'estado_envio': estadoEnvio,
+          'mensaje': '⚠️ No se puede completar la extracción\n\n'
+              'El envío $numeroEnvio aún no tiene precios configurados.\n\n'
+              'Por favor, ve a la sección de "Envíos", selecciona este envío y completa la configuración de precios antes de extraer el stock físicamente.',
+        };
+      }
+
+      return {
+        'valido': true,
+        'id_envio': idEnvio,
+        'estado_envio': estadoEnvio,
+      };
+    } catch (e) {
+      debugPrint('❌ Error validando estado de envío: $e');
+      return {'valido': true, 'id_envio': null}; // En caso de duda, permitimos continuar
+    }
+  }
+
   /// ✅ NUEVO: Obtener información de operaciones relacionadas en consignación
   static Future<Map<String, dynamic>?> getOperacionesConsignacionRelacionadas(int idOperacionRecepcion) async {
     try {
