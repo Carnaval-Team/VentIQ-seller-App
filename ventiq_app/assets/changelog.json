@@ -1,8 +1,40 @@
 {
-  "current_version": "1.8.0",
-  "build": 710,
+  "current_version": "1.8.1",
+  "build": 711,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.8.1",
+      "date": "2025-12-22",
+      "title": "📬 Gestión de Notificaciones y Control de Inventario Flexible",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Recepción de Órdenes desde Notificaciones",
+          "description": "Ahora puedes recibir órdenes de venta directamente desde las notificaciones. Con un solo clic en 'Recibir Orden', la app valida tu turno activo y actualiza automáticamente la fecha de la operación."
+        },
+        {
+          "type": "feature",
+          "title": "Control de Inventario Configurable por Trabajador",
+          "description": "El administrador ahora puede configurar qué trabajadores deben contar inventario al abrir o cerrar turno. Esto es ideal para roles que no manejan productos físicos, agilizando su trabajo diario."
+        },
+        {
+          "type": "improvement",
+          "title": "Validación Inteligente de Turnos",
+          "description": "Al recibir una orden, la app verifica automáticamente que tengas un turno abierto y que la operación sea válida antes de procesarla. Todo más seguro y sin errores."
+        },
+        {
+          "type": "improvement",
+          "title": "Actualización Visual de Notificaciones",
+          "description": "Cuando marcas una notificación como leída al recibir una orden, la vista se actualiza instantáneamente para reflejar el cambio. Siempre sabrás qué notificaciones ya procesaste."
+        },
+        {
+          "type": "improvement",
+          "title": "Flexibilidad en el Manejo de Turnos",
+          "description": "Los trabajadores configurados para no manejar inventario pueden abrir y cerrar turnos sin necesidad de contar productos, ahorrando tiempo en roles administrativos o de caja."
+        }
+      ]
+    },
     {
       "version": "1.8.0",
       "date": "2025-12-15",

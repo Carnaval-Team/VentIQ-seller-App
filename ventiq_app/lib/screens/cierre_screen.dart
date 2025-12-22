@@ -32,7 +32,8 @@ class _CierreScreenState extends State<CierreScreen> {
   // Inventory data
   List<InventoryProduct> _inventoryProducts = [];
   Map<int, TextEditingController> _inventoryControllers = {};
-  Map<int, Future<List<Map<String, dynamic>>>> _productLocationsFutures = {}; // Cache for futures
+  Map<int, Future<List<Map<String, dynamic>>>> _productLocationsFutures =
+      {}; // Cache for futures
   bool _inventorySet = false;
 
   // New state variables for conditional inventory
@@ -74,11 +75,16 @@ class _CierreScreenState extends State<CierreScreen> {
   bool _manejaInventario =
       false; // Nueva variable para controlar si mostrar inventario
 
+  // Worker configuration for inventory control
+  bool _trabajadorManejaAperturaControl =
+      true; // Default to true (safe behavior)
+
   @override
   void initState() {
     super.initState();
     _loadUserData();
     _loadStoreConfiguration();
+    _loadWorkerConfig(); // Load worker inventory control settings
     _loadDailySummary();
     _calcularDatosCierre();
     _loadExpenses();
@@ -216,6 +222,27 @@ class _CierreScreenState extends State<CierreScreen> {
       setState(() {
         _userName = 'Usuario';
       });
+    }
+  }
+
+  /// Cargar configuración del trabajador para control de inventario
+  Future<void> _loadWorkerConfig() async {
+    try {
+      final manejaAperturaControl =
+          await _userPrefs.loadWorkerManejaAperturaControl();
+
+      if (mounted) {
+        setState(() {
+          _trabajadorManejaAperturaControl = manejaAperturaControl;
+        });
+
+        print(
+          '👤 Trabajador maneja apertura control (cierre): $_trabajadorManejaAperturaControl',
+        );
+      }
+    } catch (e) {
+      print('❌ Error cargando configuración de trabajador: $e');
+      // Mantener valor por defecto (true) en caso de error
     }
   }
 
@@ -554,7 +581,9 @@ class _CierreScreenState extends State<CierreScreen> {
       }
       final idAlmacen = await _userPrefs.getIdAlmacen();
 
-      print('🔄 Llamando a fn_listar_inventario_productos_paged... ${idAlmacen}');
+      print(
+        '🔄 Llamando a fn_listar_inventario_productos_paged... ${idAlmacen}',
+      );
       final response = await Supabase.instance.client.rpc(
         'fn_listar_inventario_productos_paged2',
         params: {
@@ -574,23 +603,23 @@ class _CierreScreenState extends State<CierreScreen> {
         for (var item in response) {
           // print(item);
           if (!item['es_elaborado'] && !item['es_servicio']) {
-          try {
-            final product = InventoryProduct.fromSupabaseRpc(item);
+            try {
+              final product = InventoryProduct.fromSupabaseRpc(item);
 
-            // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
-            if (!productsByIdMap.containsKey(product.id)) {
-              productsByIdMap[product.id] = product;
-              print(
-                '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
-              );
-            } else {
-              print(
-                '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
-              );
+              // Solo agregar el primer producto de cada ID (ignorar duplicados por presentación/ubicación)
+              if (!productsByIdMap.containsKey(product.id)) {
+                productsByIdMap[product.id] = product;
+                print(
+                  '📦 Producto agregado: ${product.nombreProducto} (ID: ${product.id})',
+                );
+              } else {
+                print(
+                  '⏭️ Omitiendo duplicado: ${product.nombreProducto} (ID: ${product.id})',
+                );
+              }
+            } catch (e) {
+              print('❌ Error procesando producto: $e');
             }
-          } catch (e) {
-            print('❌ Error procesando producto: $e');
-          }
           }
         }
 
@@ -734,16 +763,18 @@ class _CierreScreenState extends State<CierreScreen> {
                                 _inventoryControllers[product.id]!;
 
                             // Use cached Future or create new one
-                            final locationsFuture = _productLocationsFutures.putIfAbsent(
-                              product.id,
-                              () => _getProductLocations(product.id),
-                            );
+                            final locationsFuture = _productLocationsFutures
+                                .putIfAbsent(
+                                  product.id,
+                                  () => _getProductLocations(product.id),
+                                );
 
                             return FutureBuilder<List<Map<String, dynamic>>>(
                               future: locationsFuture,
                               builder: (context, snapshot) {
                                 // Show loading state while fetching quantities
-                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
                                   return Container(
                                     margin: const EdgeInsets.only(bottom: 12),
                                     padding: const EdgeInsets.all(12),
@@ -1980,7 +2011,11 @@ class _CierreScreenState extends State<CierreScreen> {
     try {
       // Validar que si maneja inventario y es el último turno, se haya establecido
       // Si NO es el último turno, el inventario es opcional
-      if (_manejaInventario && _isLastOpenShift && !_inventorySet) {
+      // NUEVO: También es opcional si el trabajador tiene maneja_apertura_control = false
+      if (_manejaInventario &&
+          _isLastOpenShift &&
+          !_inventorySet &&
+          _trabajadorManejaAperturaControl) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(

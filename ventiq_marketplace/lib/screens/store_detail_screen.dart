@@ -2,8 +2,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../widgets/product_list_card.dart';
+import '../widgets/carnaval_fab.dart';
 import 'product_detail_screen.dart';
 import '../services/marketplace_service.dart';
+import '../services/rating_service.dart';
+import '../widgets/rating_input_dialog.dart';
 
 /// Pantalla de detalles de la tienda
 class StoreDetailScreen extends StatefulWidget {
@@ -17,6 +20,7 @@ class StoreDetailScreen extends StatefulWidget {
 
 class _StoreDetailScreenState extends State<StoreDetailScreen> {
   final MarketplaceService _marketplaceService = MarketplaceService();
+  final RatingService _ratingService = RatingService();
   final ScrollController _scrollController = ScrollController();
 
   List<Map<String, dynamic>> _storeProducts = [];
@@ -192,9 +196,45 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     );
   }
 
+  Future<void> _showRatingDialog({
+    required String title,
+    required Function(double, String?) onSubmit,
+  }) async {
+    await showDialog(
+      context: context,
+      builder: (context) => RatingInputDialog(title: title, onSubmit: onSubmit),
+    );
+  }
+
+  void _rateStore() {
+    final storeId = widget.store['id'] as int?;
+    if (storeId == null) return;
+
+    _showRatingDialog(
+      title: 'Calificar Tienda',
+      onSubmit: (rating, comment) async {
+        await _ratingService.submitStoreRating(
+          storeId: storeId,
+          rating: rating,
+          comentario: comment,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('¡Gracias por calificar la tienda!'),
+              backgroundColor: AppTheme.successColor,
+            ),
+          );
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.backgroundColor,
+      floatingActionButton: const CarnavalFab(),
       body: RefreshIndicator(
         onRefresh: _refreshProducts,
         child: CustomScrollView(
@@ -244,6 +284,13 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     return SliverAppBar(
       expandedHeight: 250,
       pinned: true,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.star_rate_rounded, color: Colors.white),
+          tooltip: 'Calificar Tienda',
+          onPressed: _rateStore,
+        ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         centerTitle: false,
         titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
@@ -294,7 +341,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                     },
                   )
                 : _buildGradientBackground(),
-            
+
             // Overlay oscuro para mejor contraste
             Container(
               decoration: BoxDecoration(

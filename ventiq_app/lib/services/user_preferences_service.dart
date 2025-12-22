@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'order_service.dart';
 
 class UserPreferencesService {
@@ -185,6 +186,49 @@ class UserPreferencesService {
       'idTrabajador': prefs.getInt(_idTrabajadorKey),
       'idSeller': prefs.getInt(_idSellerKey),
     };
+  }
+
+  /// Cargar configuración de maneja_apertura_control del trabajador desde la base de datos
+  /// Retorna true si el trabajador debe manejar inventario en apertura/cierre
+  /// Retorna true por defecto si no se encuentra el trabajador (comportamiento seguro)
+  Future<bool> loadWorkerManejaAperturaControl() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final idTrabajador = prefs.getInt(_idTrabajadorKey);
+
+      if (idTrabajador == null) {
+        print(
+          '⚠️ No se encontró ID de trabajador, usando valor por defecto (true)',
+        );
+        return true; // Comportamiento seguro por defecto
+      }
+
+      print(
+        '🔍 Consultando maneja_apertura_control para trabajador ID: $idTrabajador',
+      );
+
+      final supabase = Supabase.instance.client;
+      final response =
+          await supabase
+              .from('app_dat_trabajadores')
+              .select('maneja_apertura_control')
+              .eq('id', idTrabajador)
+              .maybeSingle();
+
+      if (response == null) {
+        print('⚠️ Trabajador no encontrado, usando valor por defecto (true)');
+        return true; // Comportamiento seguro si no se encuentra
+      }
+
+      final manejaAperturaControl =
+          response['maneja_apertura_control'] as bool? ?? true;
+      print('✅ maneja_apertura_control cargado: $manejaAperturaControl');
+
+      return manejaAperturaControl;
+    } catch (e) {
+      print('❌ Error cargando maneja_apertura_control: $e');
+      return true; // Comportamiento seguro en caso de error
+    }
   }
 
   // Verificar si el usuario está logueado

@@ -5,6 +5,8 @@ import '../widgets/product_list_card.dart';
 import 'product_detail_screen.dart';
 import '../services/marketplace_service.dart';
 import '../services/category_service.dart';
+import '../services/rating_service.dart';
+import '../widgets/rating_input_dialog.dart';
 
 /// Pantalla de productos con paginación y filtros
 class ProductsScreen extends StatefulWidget {
@@ -18,19 +20,20 @@ class _ProductsScreenState extends State<ProductsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final MarketplaceService _marketplaceService = MarketplaceService();
   final CategoryService _categoryService = CategoryService();
-  
+  final RatingService _ratingService = RatingService();
+
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _categories = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
   int? _selectedCategoryId;
-  
+
   // Paginación
   final int _pageSize = 20;
   int _currentOffset = 0;
   bool _hasMoreProducts = true;
   final ScrollController _scrollController = ScrollController();
-  
+
   // Debounce para búsqueda
   Timer? _debounceTimer;
 
@@ -79,7 +82,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     try {
       // Obtener query de búsqueda
       final searchQuery = _searchController.text.trim();
-      
+
       final newProducts = await _marketplaceService.getProducts(
         idTienda: null, // Siempre null para marketplace
         idCategoria: _selectedCategoryId,
@@ -95,7 +98,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         } else {
           _products.addAll(newProducts);
         }
-        
+
         _currentOffset += newProducts.length;
         _hasMoreProducts = newProducts.length == _pageSize;
         _isLoading = false;
@@ -107,7 +110,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         _isLoading = false;
         _isLoadingMore = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -136,7 +139,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   void _onSearchChanged(String query) {
     // Cancelar el timer anterior si existe
     _debounceTimer?.cancel();
-    
+
     // Crear nuevo timer de 500ms
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
       // Recargar productos con la nueva búsqueda
@@ -167,6 +170,36 @@ class _ProductsScreenState extends State<ProductsScreen> {
     await _loadProducts(reset: true);
   }
 
+  Future<void> _showRatingDialog({
+    required String title,
+    required Function(double, String?) onSubmit,
+  }) async {
+    await showDialog(
+      context: context,
+      builder: (context) => RatingInputDialog(title: title, onSubmit: onSubmit),
+    );
+  }
+
+  void _rateApp() {
+    _showRatingDialog(
+      title: 'Calificar Aplicación',
+      onSubmit: (rating, comment) async {
+        await _ratingService.submitAppRating(
+          rating: rating,
+          comentario: comment,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('¡Gracias por calificar la app!'),
+              backgroundColor: AppTheme.successColor,
+            ),
+          );
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -180,32 +213,30 @@ class _ProductsScreenState extends State<ProductsScreen> {
           slivers: [
             // AppBar moderno con gradiente
             _buildModernAppBar(),
-            
+
             // Barra de búsqueda
             SliverToBoxAdapter(child: _buildSearchSection()),
-            
+
             // Filtro de categorías
             SliverToBoxAdapter(child: _buildCategoryFilter()),
-            
+
             // Contador de resultados
             if (!_isLoading && _products.isNotEmpty)
               SliverToBoxAdapter(child: _buildResultsCounter()),
-            
+
             // Contenido principal
             _isLoading
                 ? SliverToBoxAdapter(child: _buildLoadingState())
                 : _products.isEmpty
-                    ? SliverToBoxAdapter(child: _buildEmptyState())
-                    : _buildProductsList(),
-            
+                ? SliverToBoxAdapter(child: _buildEmptyState())
+                : _buildProductsList(),
+
             // Indicador de carga al final
             if (_isLoadingMore)
               SliverToBoxAdapter(
                 child: Container(
                   padding: const EdgeInsets.all(AppTheme.paddingM),
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
+                  child: const Center(child: CircularProgressIndicator()),
                 ),
               ),
           ],
@@ -293,6 +324,30 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      Container(
+                        margin: const EdgeInsets.only(left: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.3),
+                          ),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.thumb_up_alt_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                          tooltip: 'Calificar App',
+                          onPressed: _rateApp,
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
+                          padding: EdgeInsets.zero,
                         ),
                       ),
                     ],
@@ -416,12 +471,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     onTap: () => _onCategoryChanged(null),
                     borderRadius: BorderRadius.circular(20),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       child: Text(
                         'Todos',
                         style: TextStyle(
-                          color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                          color: isSelected
+                              ? AppTheme.primaryColor
+                              : AppTheme.textSecondary,
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
                           fontSize: 13,
                           letterSpacing: -0.2,
                         ),
@@ -432,13 +494,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
               ),
             );
           }
-          
+
           // Resto de categorías
           final category = _categories[index - 1];
           final categoryId = category['id'] as int;
           final categoryName = category['denominacion'] as String;
           final isSelected = _selectedCategoryId == categoryId;
-          
+
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Container(
@@ -466,12 +528,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   onTap: () => _onCategoryChanged(categoryId),
                   borderRadius: BorderRadius.circular(20),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Text(
                       categoryName,
                       style: TextStyle(
-                        color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                        color: isSelected
+                            ? AppTheme.primaryColor
+                            : AppTheme.textSecondary,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                         fontSize: 13,
                         letterSpacing: -0.2,
                       ),
@@ -487,17 +556,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Widget _buildResultsCounter() {
-    final isFiltering = _searchController.text.isNotEmpty || _selectedCategoryId != null;
-    
+    final isFiltering =
+        _searchController.text.isNotEmpty || _selectedCategoryId != null;
+
     return Container(
       margin: const EdgeInsets.symmetric(
         horizontal: AppTheme.paddingM,
         vertical: 8,
       ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 12,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -528,9 +595,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
-              isFiltering ? Icons.filter_list_rounded : Icons.shopping_bag_rounded,
+              isFiltering
+                  ? Icons.filter_list_rounded
+                  : Icons.shopping_bag_rounded,
               size: 18,
-              color: isFiltering ? AppTheme.accentColor : AppTheme.secondaryColor,
+              color: isFiltering
+                  ? AppTheme.accentColor
+                  : AppTheme.secondaryColor,
             ),
           ),
           const SizedBox(width: 12),
@@ -540,7 +611,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: isFiltering ? AppTheme.accentColor : AppTheme.textPrimary,
+                color: isFiltering
+                    ? AppTheme.accentColor
+                    : AppTheme.textPrimary,
                 letterSpacing: -0.2,
               ),
             ),
@@ -570,7 +643,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
               ),
               child: const CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  AppTheme.primaryColor,
+                ),
               ),
             ),
             const SizedBox(height: 24),
@@ -602,11 +677,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.shopping_bag_outlined,
-            size: 80,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.shopping_bag_outlined, size: 80, color: Colors.grey[400]),
           const SizedBox(height: AppTheme.paddingM),
           const Text(
             'No se encontraron productos',
@@ -619,10 +690,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
           const SizedBox(height: AppTheme.paddingS),
           const Text(
             'Intenta con otros términos de búsqueda',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppTheme.textSecondary,
-            ),
+            style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
           ),
         ],
       ),
@@ -631,46 +699,45 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   Widget _buildProductsList() {
     return SliverPadding(
-      padding: const EdgeInsets.only(
-        top: 8,
-        bottom: AppTheme.paddingXL,
-      ),
+      padding: const EdgeInsets.only(top: 8, bottom: AppTheme.paddingXL),
       sliver: SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-        
-        final product = _products[index];
-        final metadata = product['metadata'] as Map<String, dynamic>?;
-        
-        // Extraer presentaciones del metadata
-        final presentacionesData = metadata?['presentaciones'] as List<dynamic>?;
-        final presentaciones = presentacionesData?.map((p) {
-          final presentacion = p as Map<String, dynamic>;
-          final denominacion = presentacion['denominacion'] as String? ?? '';
-          final cantidad = presentacion['cantidad'] ?? 1;
-          final esBase = presentacion['es_base'] as bool? ?? false;
-          
-          // Formato: "Unidad" o "Caja x24" con indicador de base
-          if (cantidad == 1) {
-            return esBase ? '$denominacion ⭐' : denominacion;
-          } else {
-            return esBase ? '$denominacion x$cantidad ⭐' : '$denominacion x$cantidad';
-          }
-        }).toList() ?? [];
-        
-        return ProductListCard(
-          productName: product['denominacion'] ?? 'Sin nombre',
-          price: (product['precio_venta'] ?? 0).toDouble(),
-          imageUrl: product['imagen'],
-          storeName: metadata?['denominacion_tienda'] ?? 'Sin tienda',
-          availableStock: (product['stock_disponible'] ?? 0).toInt(),
-          rating: (metadata?['rating_promedio'] ?? 0.0).toDouble(),
-          presentations: presentaciones,
-          onTap: () => _openProductDetails(product),
-        );
-          },
-          childCount: _products.length,
-        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final product = _products[index];
+          final metadata = product['metadata'] as Map<String, dynamic>?;
+
+          // Extraer presentaciones del metadata
+          final presentacionesData =
+              metadata?['presentaciones'] as List<dynamic>?;
+          final presentaciones =
+              presentacionesData?.map((p) {
+                final presentacion = p as Map<String, dynamic>;
+                final denominacion =
+                    presentacion['denominacion'] as String? ?? '';
+                final cantidad = presentacion['cantidad'] ?? 1;
+                final esBase = presentacion['es_base'] as bool? ?? false;
+
+                // Formato: "Unidad" o "Caja x24" con indicador de base
+                if (cantidad == 1) {
+                  return esBase ? '$denominacion ⭐' : denominacion;
+                } else {
+                  return esBase
+                      ? '$denominacion x$cantidad ⭐'
+                      : '$denominacion x$cantidad';
+                }
+              }).toList() ??
+              [];
+
+          return ProductListCard(
+            productName: product['denominacion'] ?? 'Sin nombre',
+            price: (product['precio_venta'] ?? 0).toDouble(),
+            imageUrl: product['imagen'],
+            storeName: metadata?['denominacion_tienda'] ?? 'Sin tienda',
+            availableStock: (product['stock_disponible'] ?? 0).toInt(),
+            rating: (metadata?['rating_promedio'] ?? 0.0).toDouble(),
+            presentations: presentaciones,
+            onTap: () => _openProductDetails(product),
+          );
+        }, childCount: _products.length),
       ),
     );
   }

@@ -46,6 +46,9 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
 
   bool _isLoading = false;
 
+  // Control de inventario
+  bool _manejaAperturaControl = true; // Default to true (safe behavior)
+
   @override
   void initState() {
     super.initState();
@@ -71,15 +74,21 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     print('  - tpvId: ${widget.worker.tpvId}');
     print('  - numeroConfirmacion: ${widget.worker.numeroConfirmacion}');
     print('  - almacenId: ${widget.worker.almacenId}');
-    print('  - 💰 salarioHoras: ${widget.worker.salarioHoras}'); // 💰 NUEVO DEBUG
+    print(
+      '  - 💰 salarioHoras: ${widget.worker.salarioHoras}',
+    ); // 💰 NUEVO DEBUG
 
     // Inicializar datos específicos
     _vendedorTpvId = widget.worker.tpvId;
     _vendedorNumeroConfirmacion = widget.worker.numeroConfirmacion;
     _almaceneroAlmacenId = widget.worker.almacenId;
 
+    // Inicializar maneja_apertura_control
+    _manejaAperturaControl = widget.worker.manejaAperturaControl ?? true;
+
     print('  - _vendedorTpvId inicializado: $_vendedorTpvId');
     print('  - _almaceneroAlmacenId inicializado: $_almaceneroAlmacenId');
+    print('  - 📋 manejaAperturaControl: $_manejaAperturaControl');
   }
 
   @override
@@ -168,6 +177,45 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
               helperText: 'Salario en moneda local por hora trabajada',
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Configuración de Turnos',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: SwitchListTile(
+              value: _manejaAperturaControl,
+              onChanged: (value) {
+                setState(() {
+                  _manejaAperturaControl = value;
+                });
+              },
+              title: const Text(
+                'Debe contar inventario en turnos',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                _manejaAperturaControl
+                    ? 'Este trabajador DEBE contar inventario al abrir y cerrar turnos'
+                    : 'Este trabajador PUEDE omitir el conteo de inventario (opcional)',
+                style: TextStyle(
+                  fontSize: 13,
+                  color:
+                      _manejaAperturaControl
+                          ? Colors.green.shade700
+                          : Colors.orange.shade700,
+                ),
+              ),
+              secondary: Icon(
+                _manejaAperturaControl
+                    ? Icons.inventory
+                    : Icons.inventory_2_outlined,
+                color: _manejaAperturaControl ? Colors.green : Colors.orange,
+              ),
+              activeColor: Colors.green,
+            ),
           ),
           const SizedBox(height: 24),
           const Text(
@@ -496,7 +544,9 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
     // ✅ CORREGIDO: Permitir guardar sin roles si no tiene UUID
     // Solo validar roles si tiene UUID
     if (_uuidController.text.trim().isNotEmpty && _activeRoles.isEmpty) {
-      _showError('Si el trabajador tiene cuenta de usuario, debe tener al menos un rol');
+      _showError(
+        'Si el trabajador tiene cuenta de usuario, debe tener al menos un rol',
+      );
       return;
     }
 
@@ -523,7 +573,10 @@ class _EditWorkerMultiRoleScreenState extends State<EditWorkerMultiRoleScreen>
         apellidos: _apellidosController.text.trim(),
         tipoRol: widget.worker.tipoRol, // Mantener el rol principal
         usuarioUuid: _uuidController.text.isEmpty ? null : _uuidController.text,
-        salarioHoras: double.tryParse(_salarioHorasController.text) ?? 0.0, // 💰 NUEVO
+        salarioHoras:
+            double.tryParse(_salarioHorasController.text) ?? 0.0, // 💰 NUEVO
+        manejaAperturaControl:
+            _manejaAperturaControl, // 📋 NUEVO: Control de inventario
       );
 
       // 2. Gestionar roles: agregar nuevos y eliminar desactivados

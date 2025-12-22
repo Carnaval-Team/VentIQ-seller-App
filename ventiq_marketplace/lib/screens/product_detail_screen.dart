@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../services/product_detail_service.dart';
 import '../services/cart_service.dart';
+import '../widgets/carnaval_fab.dart';
+import '../services/rating_service.dart';
+import '../widgets/rating_input_dialog.dart';
 
 /// Pantalla de detalles del producto del marketplace
 class ProductDetailScreen extends StatefulWidget {
@@ -16,6 +19,7 @@ class ProductDetailScreen extends StatefulWidget {
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   final ProductDetailService _productDetailService = ProductDetailService();
   final CartService _cartService = CartService();
+  final RatingService _ratingService = RatingService();
 
   Map<String, dynamic>? _productDetails;
   List<Map<String, dynamic>> _variants = [];
@@ -24,7 +28,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   // Selecciones múltiples: Key = variant id, Value = cantidad
   Map<String, int> _selectedQuantities = {};
-  
+
   // Variante seleccionada en el dropdown
   Map<String, dynamic>? _selectedVariant;
 
@@ -44,12 +48,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     try {
       // ✅ Manejo seguro de tipos para id_producto
       // Puede venir como 'id_producto' o 'id' dependiendo de la fuente
-      final dynamic productIdValue = widget.product['id_producto'] ?? widget.product['id'];
-      
+      final dynamic productIdValue =
+          widget.product['id_producto'] ?? widget.product['id'];
+
       if (productIdValue == null) {
         throw Exception('ID del producto no disponible en los datos');
       }
-      
+
       // Convertir a int de forma segura
       final int productId;
       if (productIdValue is int) {
@@ -73,7 +78,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         }
         _isLoading = false;
       });
-      
+
       print('✅ Detalles cargados: ${_variants.length} variantes disponibles');
     } catch (e, stackTrace) {
       print('❌ Error cargando detalles: $e');
@@ -112,11 +117,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     try {
       // ✅ Obtener TODOS los datos de la tienda desde metadata del RPC
       final metadata = widget.product['metadata'] as Map<String, dynamic>?;
-      
+
       if (metadata == null) {
         throw Exception('Metadata del producto no disponible');
       }
-      
+
       // Extraer datos de la tienda desde metadata (según get_productos_marketplace.sql líneas 94-132)
       final storeId = metadata['id_tienda'] as int? ?? 0;
       final storeName = metadata['denominacion_tienda'] as String? ?? 'Tienda';
@@ -135,7 +140,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       print('  📍 Provincia: $storeProvincia');
 
       if (storeId == 0) {
-        throw Exception('ID de tienda inválido (0). Verifica los datos del producto.');
+        throw Exception(
+          'ID de tienda inválido (0). Verifica los datos del producto.',
+        );
       }
 
       // Agregar cada variante seleccionada al carrito
@@ -147,10 +154,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         final variant = _variants.firstWhere((v) => v['id'] == variantId);
 
         // ✅ Obtener productId de forma segura
-        final dynamic productIdValue = widget.product['id_producto'] ?? widget.product['id'];
-        final int productId = productIdValue is int 
-            ? productIdValue 
-            : (productIdValue is String ? int.parse(productIdValue) : (productIdValue as num).toInt());
+        final dynamic productIdValue =
+            widget.product['id_producto'] ?? widget.product['id'];
+        final int productId = productIdValue is int
+            ? productIdValue
+            : (productIdValue is String
+                  ? int.parse(productIdValue)
+                  : (productIdValue as num).toInt());
 
         await _cartService.addItem(
           productId: productId,
@@ -171,8 +181,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           storeProvincia: storeProvincia,
           storeMunicipio: storeMunicipio,
         );
-        
-        print('  ✅ Agregado: ${variant['nombre']} x$quantity a tienda "$storeName" (ID: $storeId)');
+
+        print(
+          '  ✅ Agregado: ${variant['nombre']} x$quantity a tienda "$storeName" (ID: $storeId)',
+        );
       }
 
       final totalItems = _selectedQuantities.values.fold<int>(
@@ -220,10 +232,51 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
+  Future<void> _showRatingDialog({
+    required String title,
+    required Function(double, String?) onSubmit,
+  }) async {
+    await showDialog(
+      context: context,
+      builder: (context) => RatingInputDialog(title: title, onSubmit: onSubmit),
+    );
+  }
+
+  void _rateProduct() {
+    // ✅ Obtener ID del producto de forma segura
+    final dynamic productIdValue =
+        widget.product['id_producto'] ?? widget.product['id'];
+    final int productId = productIdValue is int
+        ? productIdValue
+        : (productIdValue is String
+              ? int.parse(productIdValue)
+              : (productIdValue as num).toInt());
+
+    _showRatingDialog(
+      title: 'Calificar Producto',
+      onSubmit: (rating, comment) async {
+        await _ratingService.submitProductRating(
+          productId: productId,
+          rating: rating,
+          comentario: comment,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('¡Gracias por calificar el producto!'),
+              backgroundColor: AppTheme.successColor,
+            ),
+          );
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
+      floatingActionButton: const CarnavalFab(),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -247,6 +300,28 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ),
         ),
         actions: [
+          Container(
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: const Icon(
+                Icons.star_rate_rounded,
+                color: AppTheme.warningColor,
+              ),
+              onPressed: _rateProduct,
+              tooltip: 'Calificar Producto',
+            ),
+          ),
           Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -318,8 +393,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   _buildVariantsSection(),
 
                   // Botón fijo de agregar al carrito
-                  if (_selectedQuantities.isNotEmpty)
-                    _buildFixedCartButton(),
+                  if (_selectedQuantities.isNotEmpty) _buildFixedCartButton(),
 
                   // Espacio final
                   const SizedBox(height: 16),
@@ -353,6 +427,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   /// Hero Image con gradiente y badges flotantes
   Widget _buildHeroImage() {
+    final imageUrl = _productDetails?['imagen'] ?? widget.product['imagen'];
+
     return Stack(
       children: [
         // Imagen principal
@@ -369,9 +445,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ],
             ),
           ),
-          child: _productDetails?['imagen'] != null
+          child: imageUrl != null
               ? Image.network(
-                  _productDetails!['imagen'],
+                  imageUrl,
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) {
                     return Center(
@@ -877,7 +953,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   Widget _buildSingleVariantCard() {
     if (_selectedVariant == null) return const SizedBox.shrink();
-    
+
     final variantId = _selectedVariant!['id'] as String;
     final descripcion = _selectedVariant!['descripcion'] as String?;
     final precio = (_selectedVariant!['precio'] as num?)?.toDouble() ?? 0.0;
@@ -1293,61 +1369,61 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           const SizedBox(width: 12),
           // Botón de agregar
           Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppTheme.primaryColor,
-                    AppTheme.primaryColor.withOpacity(0.8),
-                  ],
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppTheme.primaryColor,
+                  AppTheme.primaryColor.withOpacity(0.8),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withOpacity(0.4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.primaryColor.withOpacity(0.4),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+              ],
+            ),
+            child: ElevatedButton(
+              onPressed: _addToCart,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.shopping_cart_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    'Agregar',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: 0.2,
+                    ),
                   ),
                 ],
               ),
-              child: ElevatedButton(
-                onPressed: _addToCart,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.shopping_cart_rounded,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                    SizedBox(width: 6),
-                    Text(
-                      'Agregar',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/worker_models.dart';
 import 'permissions_service.dart';
+
 class WorkerService {
   static final _supabase = Supabase.instance.client;
 
@@ -46,7 +47,9 @@ class WorkerService {
             print('   - datos_especificos: ${workerJson['datos_especificos']}');
             print('   - es_vendedor: ${workerJson['es_vendedor']}');
             print('   - es_almacenero: ${workerJson['es_almacenero']}');
-            print('   - 💰 salario_horas: ${workerJson['salario_horas']}'); // 💰 DEBUG
+            print(
+              '   - 💰 salario_horas: ${workerJson['salario_horas']}',
+            ); // 💰 DEBUG
 
             final worker = WorkerData.fromJson(workerJson);
             workers.add(worker);
@@ -134,7 +137,9 @@ class WorkerService {
       // 2. 💰 Actualizar salario_horas si es mayor a 0
       if (salarioHoras > 0 && response['trabajador_id'] != null) {
         final trabajadorId = response['trabajador_id'] as int;
-        print('💰 Actualizando salario_horas: $salarioHoras para trabajador $trabajadorId');
+        print(
+          '💰 Actualizando salario_horas: $salarioHoras para trabajador $trabajadorId',
+        );
         await _supabase
             .from('app_dat_trabajadores')
             .update({'salario_horas': salarioHoras})
@@ -184,7 +189,9 @@ class WorkerService {
       // 2. 💰 Actualizar salario_horas si es mayor a 0
       if (salarioHoras > 0 && response['trabajador_id'] != null) {
         final trabajadorId = response['trabajador_id'] as int;
-        print('💰 Actualizando salario_horas: $salarioHoras para trabajador $trabajadorId');
+        print(
+          '💰 Actualizando salario_horas: $salarioHoras para trabajador $trabajadorId',
+        );
         await _supabase
             .from('app_dat_trabajadores')
             .update({'salario_horas': salarioHoras})
@@ -209,6 +216,8 @@ class WorkerService {
     String? tipoRol, // Deprecated - mantenido por compatibilidad
     String? usuarioUuid,
     double? salarioHoras, // 💰 NUEVO: Salario por hora (opcional para edición)
+    bool?
+    manejaAperturaControl, // 📋 NUEVO: Control de inventario (opcional para edición)
     int? tpvId, // Deprecated - usar updateRoleSpecificData
     int? almacenId, // Deprecated - usar updateRoleSpecificData
     String? numeroConfirmacion, // Deprecated - usar updateRoleSpecificData
@@ -219,6 +228,9 @@ class WorkerService {
       print('  - Apellidos: $apellidos');
       print('  - UUID: $usuarioUuid');
       print('  - Salario/Hora: ${salarioHoras ?? "sin cambios"}'); // 💰 NUEVO
+      print(
+        '  - Maneja Apertura Control: ${manejaAperturaControl ?? "sin cambios"}',
+      ); // 📋 NUEVO
 
       // 1. Editar datos básicos con RPC existente
       final response = await _supabase.rpc(
@@ -237,14 +249,30 @@ class WorkerService {
         throw Exception(response['message'] ?? 'Error al editar trabajador');
       }
 
-      // 2. 💰 Actualizar salario_horas directamente si se proporcionó
+      // 2. Actualizar campos adicionales directamente si se proporcionaron
+      Map<String, dynamic> updateData = {};
+
+      // 💰 Actualizar salario_horas si se proporcionó
       if (salarioHoras != null) {
+        updateData['salario_horas'] = salarioHoras;
         print('💰 Actualizando salario_horas: $salarioHoras');
+      }
+
+      // 📋 Actualizar maneja_apertura_control si se proporcionó
+      if (manejaAperturaControl != null) {
+        updateData['maneja_apertura_control'] = manejaAperturaControl;
+        print(
+          '📋 Actualizando maneja_apertura_control: $manejaAperturaControl',
+        );
+      }
+
+      // Aplicar updates si hay cambios
+      if (updateData.isNotEmpty) {
         await _supabase
             .from('app_dat_trabajadores')
-            .update({'salario_horas': salarioHoras})
+            .update(updateData)
             .eq('id', workerId);
-        print('✅ Salario actualizado correctamente');
+        print('✅ Campos adicionales actualizados correctamente');
       }
 
       return true;
