@@ -30,6 +30,10 @@ class ConsignacionEnvioService {
   static const int MOVIMIENTO_MODIFICACION = 7;
   static const int MOVIMIENTO_CANCELACION = 8;
 
+  /// Tipos de envío
+  static const int TIPO_ENVIO_DIRECTO = 1;
+  static const int TIPO_ENVIO_DEVOLUCION = 2;
+
   // ============================================================================
   // CREAR ENVÍO CON OPERACIÓN DE EXTRACCIÓN
   // ============================================================================
@@ -42,12 +46,14 @@ class ConsignacionEnvioService {
     required int idAlmacenDestino,
     required String idUsuario,
     required List<Map<String, dynamic>> productos,
+    int? idOperacionExtraccion,
     String? descripcion,
   }) async {
     try {
       debugPrint('📦 Creando envío de consignación...');
       debugPrint('   Contrato: $idContrato');
       debugPrint('   Productos: ${productos.length}');
+      debugPrint('   Operación Extracción: $idOperacionExtraccion');
 
       // Preparar productos en formato JSONB
       final productosJson = productos.map((p) => {
@@ -69,6 +75,7 @@ class ConsignacionEnvioService {
           'p_id_usuario': idUsuario,
           'p_productos': productosJson,
           'p_descripcion': descripcion,
+          'p_id_operacion_extraccion': idOperacionExtraccion,
         },
       );
 
@@ -85,6 +92,84 @@ class ConsignacionEnvioService {
       return null;
     } catch (e) {
       debugPrint('❌ Error creando envío: $e');
+      return null;
+    }
+  }
+
+  // ============================================================================
+  // CREAR DEVOLUCIÓN (CONSIGNATARIO -> CONSIGNADOR)
+  // ============================================================================
+
+  /// Crea una solicitud de devolución de consignación
+  static Future<Map<String, dynamic>?> crearDevolucion({
+    required int idContrato,
+    required int idAlmacenOrigen,
+    required String idUsuario,
+    required List<Map<String, dynamic>> productos,
+    String? descripcion,
+  }) async {
+    try {
+      debugPrint('🔄 Creando solicitud de devolución...');
+      
+      // Preparar productos en formato JSONB
+      final productosJson = productos.map((p) => {
+        'id_inventario': p['id_inventario'],
+        'id_producto': p['id_producto'],
+        'cantidad': p['cantidad'],
+        'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
+        'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
+        'tasa_cambio': p['tasa_cambio'] ?? 440.0,
+      }).toList();
+
+      final response = await _supabase.rpc(
+        'crear_devolucion_consignacion',
+        params: {
+          'p_id_contrato': idContrato,
+          'p_id_almacen_origen': idAlmacenOrigen,
+          'p_id_usuario': idUsuario,
+          'p_productos': productosJson,
+          'p_descripcion': descripcion,
+        },
+      );
+
+      if (response != null && response is List && response.isNotEmpty) {
+        return response[0] as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ Error creando devolución: $e');
+      return null;
+    }
+  }
+
+  // ============================================================================
+  // APROBAR DEVOLUCIÓN (POR EL CONSIGNADOR)
+  // ============================================================================
+
+  /// Aprueba una devolución y define el almacén donde se recibirá
+  static Future<Map<String, dynamic>?> aprobarDevolucion({
+    required int idEnvio,
+    required int idAlmacenRecepcion,
+    required String idUsuario,
+  }) async {
+    try {
+      debugPrint('✅ Aprobando devolución $idEnvio...');
+
+      final response = await _supabase.rpc(
+        'aprobar_devolucion_consignacion',
+        params: {
+          'p_id_envio': idEnvio,
+          'p_id_almacen_recepcion': idAlmacenRecepcion,
+          'p_id_usuario': idUsuario,
+        },
+      );
+
+      if (response != null && response is List && response.isNotEmpty) {
+        return response[0] as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ Error aprobando devolución: $e');
       return null;
     }
   }
@@ -212,7 +297,8 @@ class ConsignacionEnvioService {
   // ACEPTAR ENVÍO
   // ============================================================================
 
-  /// Acepta el envío completo y crea la operación de recepción
+  /// Acepta el envío completo y crea operaciones de extracción y recepción
+  /// Retorna IDs de operaciones guardados ANTES de procesarlas (estado PENDIENTE)
   static Future<Map<String, dynamic>?> aceptarEnvio({
     required int idEnvio,
     required String idUsuario,
@@ -230,6 +316,23 @@ class ConsignacionEnvioService {
 
       if (response != null && response is List && response.isNotEmpty) {
         final resultado = response[0] as Map<String, dynamic>;
+        final success = resultado['success'] as bool?;
+        
+        if (success == true) {
+          final idOperacionExtraccion = resultado['id_operacion_extraccion'] as int?;
+          final idOperacionRecepcion = resultado['id_operacion_recepcion'] as int?;
+          final mensaje = resultado['mensaje'] as String?;
+          
+          debugPrint('✅ Envío aceptado exitosamente');
+          debugPrint('   ID Operación Extracción: $idOperacionExtraccion (estado: PENDIENTE)');
+          debugPrint('   ID Operación Recepción: $idOperacionRecepcion (estado: PENDIENTE)');
+          debugPrint('   Mensaje: $mensaje');
+          debugPrint('   ℹ️ Operaciones creadas con estado PENDIENTE');
+          debugPrint('   ℹ️ La recepción NO se puede completar hasta que la extracción esté completada');
+        } else {
+          debugPrint('❌ Error: ${resultado['mensaje']}');
+        }
+        
         // Devolvemos el resultado completo sea success true o false
         // para que la UI pueda mostrar el mensaje de error si existe.
         return resultado;

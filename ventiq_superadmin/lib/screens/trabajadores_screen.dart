@@ -81,6 +81,7 @@ class _TrabajadoresScreenState extends State<TrabajadoresScreen> {
             .from('app_dat_gerente')
             .select('uuid')
             .eq('id_trabajador', trabajador['id'])
+            .limit(1)
             .maybeSingle();
         
         if (gerenteResponse != null) {
@@ -94,6 +95,7 @@ class _TrabajadoresScreenState extends State<TrabajadoresScreen> {
               .from('app_dat_supervisor')
               .select('uuid')
               .eq('id_trabajador', trabajador['id'])
+              .limit(1)
               .maybeSingle();
           
           if (supervisorResponse != null) {
@@ -104,49 +106,59 @@ class _TrabajadoresScreenState extends State<TrabajadoresScreen> {
         
         // Verificar si es vendedor
         if (infoAdicional == null) {
-          final vendedorResponse = await _supabase
-              .from('app_dat_vendedor')
-              .select('''
-                uuid,
-                numero_confirmacion,
-                app_dat_tpv!inner(
-                  denominacion
-                )
-              ''')
-              .eq('id_trabajador', trabajador['id'])
-              .maybeSingle();
-          
-          if (vendedorResponse != null) {
-            tipoTrabajador = 'Vendedor';
-            infoAdicional = {
-              'uuid': vendedorResponse['uuid'],
-              'tipo': 'Vendedor',
-              'tpv': vendedorResponse['app_dat_tpv']?['denominacion'],
-              'numero_confirmacion': vendedorResponse['numero_confirmacion'],
-            };
+          try {
+            final vendedorResponse = await _supabase
+                .from('app_dat_vendedor')
+                .select('''
+                  uuid,
+                  numero_confirmacion,
+                  app_dat_tpv (
+                    denominacion
+                  )
+                ''')
+                .eq('id_trabajador', trabajador['id'])
+                .limit(1)
+                .maybeSingle();
+            
+            if (vendedorResponse != null) {
+              tipoTrabajador = 'Vendedor';
+              infoAdicional = {
+                'uuid': vendedorResponse['uuid'],
+                'tipo': 'Vendedor',
+                'tpv': vendedorResponse['app_dat_tpv']?['denominacion'],
+                'numero_confirmacion': vendedorResponse['numero_confirmacion'],
+              };
+            }
+          } catch (e) {
+            debugPrint('Error obteniendo datos vendedor: $e');
           }
         }
         
         // Verificar si es almacenero
         if (infoAdicional == null) {
-          final almaceneroResponse = await _supabase
-              .from('app_dat_almacenero')
-              .select('''
-                uuid,
-                app_dat_almacen!inner(
-                  denominacion
-                )
-              ''')
-              .eq('id_trabajador', trabajador['id'])
-              .maybeSingle();
-          
-          if (almaceneroResponse != null) {
-            tipoTrabajador = 'Almacenero';
-            infoAdicional = {
-              'uuid': almaceneroResponse['uuid'],
-              'tipo': 'Almacenero',
-              'almacen': almaceneroResponse['app_dat_almacen']?['denominacion'],
-            };
+          try {
+            final almaceneroResponse = await _supabase
+                .from('app_dat_almacenero')
+                .select('''
+                  uuid,
+                  app_dat_almacen (
+                    denominacion
+                  )
+                ''')
+                .eq('id_trabajador', trabajador['id'])
+                .limit(1)
+                .maybeSingle();
+            
+            if (almaceneroResponse != null) {
+              tipoTrabajador = 'Almacenero';
+              infoAdicional = {
+                'uuid': almaceneroResponse['uuid'],
+                'tipo': 'Almacenero',
+                'almacen': almaceneroResponse['app_dat_almacen']?['denominacion'],
+              };
+            }
+          } catch (e) {
+             debugPrint('Error obteniendo datos almacenero: $e');
           }
         }
         

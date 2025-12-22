@@ -59,6 +59,14 @@ dependencies:
   esc_pos_utils_plus: ^2.0.1
   permission_handler: ^11.3.1
 
+  # Dropdown searchable con banderas
+  dropdown_search: ^5.0.5
+  country_flags: ^2.0.2
+
+  # OpenStreetMap para localización
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

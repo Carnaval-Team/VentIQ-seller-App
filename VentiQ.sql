@@ -359,6 +359,8 @@ CREATE TABLE public.app_dat_consignacion_envio (
   estado integer NOT NULL DEFAULT 1,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  tipo_envio integer DEFAULT 1,
+  id_almacen_recepcion_devolucion bigint,
   CONSTRAINT app_dat_consignacion_envio_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_consignacion_envio_id_contrato_consignacion_fkey FOREIGN KEY (id_contrato_consignacion) REFERENCES public.app_dat_contrato_consignacion(id),
   CONSTRAINT app_dat_consignacion_envio_id_operacion_extraccion_fkey FOREIGN KEY (id_operacion_extraccion) REFERENCES public.app_dat_operaciones(id),
@@ -368,7 +370,8 @@ CREATE TABLE public.app_dat_consignacion_envio (
   CONSTRAINT app_dat_consignacion_envio_id_usuario_creador_fkey FOREIGN KEY (id_usuario_creador) REFERENCES auth.users(id),
   CONSTRAINT app_dat_consignacion_envio_id_usuario_configurador_fkey FOREIGN KEY (id_usuario_configurador) REFERENCES auth.users(id),
   CONSTRAINT app_dat_consignacion_envio_id_usuario_aceptador_fkey FOREIGN KEY (id_usuario_aceptador) REFERENCES auth.users(id),
-  CONSTRAINT app_dat_consignacion_envio_id_usuario_rechazador_fkey FOREIGN KEY (id_usuario_rechazador) REFERENCES auth.users(id)
+  CONSTRAINT app_dat_consignacion_envio_id_usuario_rechazador_fkey FOREIGN KEY (id_usuario_rechazador) REFERENCES auth.users(id),
+  CONSTRAINT app_dat_consignacion_envio_id_almacen_recepcion_devolucion_fkey FOREIGN KEY (id_almacen_recepcion_devolucion) REFERENCES public.app_dat_almacen(id)
 );
 CREATE TABLE public.app_dat_consignacion_envio_movimiento (
   id bigint NOT NULL DEFAULT nextval('app_dat_consignacion_envio_movimiento_id_seq'::regclass),
@@ -1142,6 +1145,12 @@ CREATE TABLE public.app_dat_tienda (
   phone text,
   admin_carnaval boolean DEFAULT false,
   id_tienda_carnaval bigint,
+  pais character varying,
+  estado character varying,
+  nombre_pais character varying,
+  nombre_estado character varying,
+  latitude numeric(10, 8),
+  longitude numeric(11, 8),
   CONSTRAINT app_dat_tienda_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.app_dat_tienda_rating (
@@ -1186,6 +1195,7 @@ CREATE TABLE public.app_dat_trabajadores (
   uuid uuid,
   deleted_at timestamp with time zone,
   salario_horas numeric NOT NULL DEFAULT 0,
+  maneja_apertura_control boolean DEFAULT true,
   CONSTRAINT app_dat_trabajadores_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_trabajadores_id_roll_fkey FOREIGN KEY (id_roll) REFERENCES public.seg_roll(id),
   CONSTRAINT app_dat_trabajadores_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),

@@ -21,7 +21,8 @@ class LocalNotificationService {
       print('📱 Inicializando LocalNotificationService...');
 
       // Configuración para Android
-      const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      // Usar icono específico para notificaciones (debe ser monocromático)
+      const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@drawable/ic_notification');
 
       // Configuración de inicialización
       const InitializationSettings initSettings = InitializationSettings(
@@ -107,7 +108,7 @@ class LocalNotificationService {
         color: color,
         enableVibration: true,
         playSound: true,
-        icon: '@mipmap/ic_launcher',
+        icon: '@drawable/ic_notification', // Usar icono específico para notificaciones (monocromático)
         styleInformation: BigTextStyleInformation(
           notification.mensaje,
           contentTitle: notification.titulo,

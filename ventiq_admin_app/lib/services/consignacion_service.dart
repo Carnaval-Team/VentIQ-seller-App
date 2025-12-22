@@ -285,6 +285,7 @@ class ConsignacionService {
   }
 
   /// Registrar devolución de producto en consignación
+  /// ✅ NUEVO: Descuenta automáticamente del monto_total del contrato
   static Future<bool> registrarDevolucion({
     required int idProductoConsignacion,
     required double cantidad,
@@ -296,13 +297,16 @@ class ConsignacionService {
       // Obtener datos actuales del producto en consignación
       final prodConsig = await _supabase
           .from('app_dat_producto_consignacion')
-          .select('cantidad_enviada, cantidad_vendida, cantidad_devuelta')
+          .select('id_contrato, id_presentacion, id_producto, cantidad_enviada, cantidad_vendida, cantidad_devuelta')
           .eq('id', idProductoConsignacion)
           .single();
 
       final cantidadEnviada = (prodConsig['cantidad_enviada'] as num).toDouble();
       final cantidadVendida = (prodConsig['cantidad_vendida'] as num).toDouble();
       final cantidadDevuelta = (prodConsig['cantidad_devuelta'] as num).toDouble();
+      final idContrato = prodConsig['id_contrato'] as int;
+      final idPresentacion = prodConsig['id_presentacion'] as int;
+      final idProducto = prodConsig['id_producto'] as int;
 
       // Validar que haya stock disponible para devolver
       final stockDisponible = cantidadEnviada - cantidadVendida - cantidadDevuelta;
@@ -327,6 +331,61 @@ class ConsignacionService {
             'updated_at': DateTime.now().toIso8601String(),
           })
           .eq('id', idProductoConsignacion);
+
+      // ✅ NUEVO: Descontar del monto_total del contrato
+      debugPrint('💰 Descontando devolución del monto total del contrato...');
+      try {
+        // Obtener precio promedio de la presentación desde recepción
+        final preciosResponse = await _supabase
+            .from('app_dat_recepcion_productos')
+            .select('precio_unitario')
+            .eq('id_presentacion', idPresentacion)
+            .eq('id_producto', idProducto);
+
+        double precioPromedio = 0.0;
+        if ((preciosResponse as List).isNotEmpty) {
+          // Calcular promedio de precios
+          double sumaPrecio = 0.0;
+          for (final precio in preciosResponse) {
+            sumaPrecio += (precio['precio_unitario'] as num).toDouble();
+          }
+          precioPromedio = sumaPrecio / preciosResponse.length;
+        }
+
+        debugPrint('📊 Precio promedio de presentación $idPresentacion: \$$precioPromedio');
+
+        // Calcular monto a descontar
+        final montoDescuento = precioPromedio * cantidad;
+        debugPrint('💰 Monto a descontar: \$$precioPromedio × $cantidad = \$$montoDescuento');
+
+        // Obtener monto actual del contrato
+        final contratoData = await _supabase
+            .from('app_dat_contrato_consignacion')
+            .select('monto_total')
+            .eq('id', idContrato)
+            .single();
+
+        final montoActual = (contratoData['monto_total'] as num?)?.toDouble() ?? 0.0;
+        final nuevoMonto = (montoActual - montoDescuento).clamp(0.0, double.infinity);
+
+        debugPrint('📊 Monto actual del contrato: \$$montoActual');
+        debugPrint('📊 Nuevo monto total: \$$nuevoMonto');
+
+        // Actualizar monto_total del contrato
+        await _supabase
+            .from('app_dat_contrato_consignacion')
+            .update({
+              'monto_total': nuevoMonto,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('id', idContrato);
+
+        debugPrint('✅ Monto total del contrato actualizado exitosamente');
+      } catch (e) {
+        debugPrint('⚠️ Error descontando del contrato: $e');
+        // No retornar false aquí, la devolución ya se registró
+        // Solo loguear el error del descuento
+      }
 
       debugPrint('✅ Devolución registrada exitosamente');
       return true;

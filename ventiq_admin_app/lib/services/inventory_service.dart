@@ -2437,7 +2437,10 @@ class InventoryService {
           await ConsignacionEnvioService.marcarEnTransito(idEnvio: idEnvio, idUsuario: idUsuario);
         }
 
-        // B. Si fue una recepción -> Mover envío a ENTREGADO
+        // B. Si fue una recepción -> NO completar automáticamente
+        // Las operaciones de recepción deben quedar en PENDIENTE hasta que se completen manualmente
+        // NOTA: Las operaciones de consignación tienen dependencias (extracción debe estar completada)
+        // por lo que NO se deben completar automáticamente
         final dataEnvioRecepcion = await _supabase
             .from('app_dat_consignacion_envio')
             .select('id')
@@ -2446,8 +2449,10 @@ class InventoryService {
             
         if (dataEnvioRecepcion != null) {
           final idEnvio = dataEnvioRecepcion['id'] as int;
-          print('🏁 Operación de recepción completada. Finalizando envío $idEnvio como ENTREGADO...');
-          await ConsignacionEnvioService.marcarEntregado(idEnvio: idEnvio, idUsuario: idUsuario);
+          print('ℹ️ Operación de recepción creada. Envío $idEnvio permanece en estado PENDIENTE');
+          print('   Las operaciones de consignación deben completarse manualmente respetando dependencias');
+          // COMENTADO: No completar automáticamente
+          // await ConsignacionEnvioService.marcarEntregado(idEnvio: idEnvio, idUsuario: idUsuario);
         }
       } catch (e) {
         print('⚠️ Error sincronizando estado de envío: $e');
