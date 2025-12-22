@@ -121,17 +121,35 @@ class _ConsignacionEnvioDetallesScreenState
           final estadoEnvio = estadoEnvioRaw is num
               ? estadoEnvioRaw.toInt()
               : int.tryParse(estadoEnvioRaw?.toString() ?? '');
+          
+          final tipoEnvioRaw = detalles['tipo_envio'];
+          final tipoEnvio = tipoEnvioRaw is num
+              ? tipoEnvioRaw.toInt()
+              : int.tryParse(tipoEnvioRaw?.toString() ?? '') ?? 1;
 
           // Lógica de permisos de edición
           // El consignatario revisa y configura el envío cuando está PROPUESTO
-          // (Antes de que salga, valida lo que va a recibir)
+          // SIEMPRE que sea un envío DIRECTO (tipo 1).
+          // Si es DEVOLUCIÓN (tipo 2), el consignatario NO configura precios.
           
           bool puedeEditar = false;
-          if (widget.rol == 'consignatario' && 
+          if (tipoEnvio == 1 && widget.rol == 'consignatario' && 
               (estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO || 
                estadoEnvio == ConsignacionEnvioListadoService.ESTADO_EN_TRANSITO)) {
             puedeEditar = true;
           }
+
+          // Acciones para que el CONSIGNADOR gestione la devolución desde el detalle
+          bool puedeGestionarDevolucionConsignador = (tipoEnvio == 2 && widget.rol == 'consignador' && estadoEnvio == 1);
+          
+          // Acciones para que el CONSIGNATARIO acepte/rechace el envío directo
+          bool puedeGestionarEnvioConsignatario = (tipoEnvio == 1 && widget.rol == 'consignatario' && estadoEnvio == 3);
+
+          // Acciones de CANCELACIÓN (quien crea, puede cancelar antes de avanzar)
+          bool puedeCancelar = (
+            (tipoEnvio == 1 && widget.rol == 'consignador' && estadoEnvio == 1) || // Consignador cancela envío propuesto
+            (tipoEnvio == 2 && widget.rol == 'consignatario' && estadoEnvio == 1)    // Consignatario cancela devolución propuesta
+          );
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -141,9 +159,25 @@ class _ConsignacionEnvioDetallesScreenState
                 _buildSeccionDetalles(detalles),
                 const SizedBox(height: 24),
                 _buildSeccionProductos(puedeEditar: puedeEditar),
+                
                 if (puedeEditar) ...[
                   const SizedBox(height: 24),
-                  _buildBotonesAccionGlobal(),
+                  _buildBotonesEdicionPrecios(),
+                ],
+                
+                if (puedeGestionarEnvioConsignatario) ...[
+                  const SizedBox(height: 24),
+                   _buildBotonesAccionGlobal(),
+                ],
+
+                if (puedeGestionarDevolucionConsignador) ...[
+                  const SizedBox(height: 24),
+                  _buildAccionesDevolucionConsignador(detalles),
+                ],
+
+                if (puedeCancelar) ...[
+                  const SizedBox(height: 24),
+                  _buildBotonCancelar(),
                 ],
               ],
             ),
@@ -311,6 +345,13 @@ class _ConsignacionEnvioDetallesScreenState
     final nombreProducto = producto['nombre_producto'] as String? ?? 'N/A';
     final sku = producto['sku'] as String? ?? 'N/A';
     final cantidad = producto['cantidad_propuesta'] ?? 0;
+    
+    // Obtener tipo de envío para determinar si es devolución
+    final tipoEnvioRaw = producto['tipo_envio'];
+    final tipoEnvio = tipoEnvioRaw is num
+        ? tipoEnvioRaw.toInt()
+        : int.tryParse(tipoEnvioRaw?.toString() ?? '') ?? 1;
+    final esDevolucion = tipoEnvio == 2;
 
     // Inicialización de controladores si es editable
     if (puedeEditar && idEnvioProducto != 0) {
@@ -400,138 +441,165 @@ class _ConsignacionEnvioDetallesScreenState
             
             const SizedBox(height: 12),
             
-            // Fila 2: Precios y controles
-            if (puedeEditar)
-              Row(
-                children: [
-                  // Col 1: Costo Consignador
-                  Expanded(
-                    flex: 3,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Costo (Consignador)',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey[700],
+            // Fila 2: Precios y controles (NO mostrar en devoluciones)
+            if (!esDevolucion) ...[
+              if (puedeEditar)
+                Row(
+                  children: [
+                    // Col 1: Costo Consignador
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Costo (Consignador)',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[700],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '\$${precioCostoUsd.toStringAsFixed(2)} USD',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue,
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue[50],
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '\$${precioCostoUsd.toStringAsFixed(2)} USD',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                '≈ \$${(precioCostoUsd * tasaCambioProd).toStringAsFixed(0)} CUP',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.blue[800],
-                                  fontStyle: FontStyle.italic,
+                                Text(
+                                  '≈ \$${(precioCostoUsd * tasaCambioProd).toStringAsFixed(0)} CUP',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.blue[800],
+                                    fontStyle: FontStyle.italic,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  
-                  // Col 2: Margen %
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Margen %',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                         _buildMargenTextField(idEnvioProducto, precioCostoUsd, tasaCambioProd),
-                      ],
-                    ),
-                  ),
-                  
-                  const SizedBox(width: 8),
-                  
-                  // Col 3: Precio Venta
-                  Expanded(
-                    flex: 3,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Precio Venta * CUP',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        _buildPrecioTextField(idEnvioProducto),
-                      ],
-                    ),
-                  ),
-                  
-                  // Col 4: Botón Rechazar (Guardar es implícito/global ahora)
-                  Column(
-                    children: [
-                       // Podríamos dejar el botón de guardar individual opcional
-                      IconButton(
-                        icon: const Icon(Icons.cancel_outlined, color: Colors.red),
-                        onPressed: () => _rechazarProducto(idEnvioProducto: idEnvioProducto),
-                        tooltip: 'Rechazar Producto',
-                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        ],
                       ),
-                    ],
-                  )
-                ],
-              )
-            else
-              // Vista Solo Lectura (sin edición)
-               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                   _buildProductoInfo(
-                    'Costo USD',
-                    '\$${precioCostoUsd.toStringAsFixed(2)}',
-                  ),
-                  _buildProductoInfo(
-                    'Costo CUP',
-                    '\$${(precioCostoUsd * tasaCambioProd).toStringAsFixed(2)}',
-                  ),
-                  _buildProductoInfo(
-                    'Precio Venta',
-                    precioVentaCupGuardado > 0 ? '\$${precioVentaCupGuardado.toStringAsFixed(2)}' : '-',
-                  ),
-                  _buildProductoInfo(
-                    'Estado',
-                    producto['estado_producto_texto'] ?? 'N/A',
-                  ),
-                ],
+                    ),
+                    const SizedBox(width: 8),
+                    
+                    // Col 2: Margen %
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Margen %',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                           _buildMargenTextField(idEnvioProducto, precioCostoUsd, tasaCambioProd),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(width: 8),
+                    
+                    // Col 3: Precio Venta
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Precio Venta * CUP',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _buildPrecioTextField(idEnvioProducto),
+                        ],
+                      ),
+                    ),
+                    
+                    // Col 4: Botón Rechazar (Guardar es implícito/global ahora)
+                    Column(
+                      children: [
+                         // Podríamos dejar el botón de guardar individual opcional
+                        IconButton(
+                          icon: const Icon(Icons.cancel_outlined, color: Colors.red),
+                          onPressed: () => _rechazarProducto(idEnvioProducto: idEnvioProducto),
+                          tooltip: 'Rechazar Producto',
+                           padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    )
+                  ],
+                )
+              else
+                // Vista Solo Lectura (sin edición) - NO mostrar costos en devoluciones
+                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                     _buildProductoInfo(
+                      'Costo USD',
+                      '\$${precioCostoUsd.toStringAsFixed(2)}',
+                    ),
+                    _buildProductoInfo(
+                      'Costo CUP',
+                      '\$${(precioCostoUsd * tasaCambioProd).toStringAsFixed(2)}',
+                    ),
+                    _buildProductoInfo(
+                      'Precio Venta',
+                      precioVentaCupGuardado > 0 ? '\$${precioVentaCupGuardado.toStringAsFixed(2)}' : '-',
+                    ),
+                    _buildProductoInfo(
+                      'Estado',
+                      producto['estado_producto_texto'] ?? 'N/A',
+                    ),
+                  ],
+                ),
+            ] else
+              // Devolución: Solo mostrar cantidad, sin costos ni precios
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.orange[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange[700], size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Devolución - No requiere configuración de precios',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange[800],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),
@@ -583,6 +651,59 @@ class _ConsignacionEnvioDetallesScreenState
         }
       },
     );
+  }
+
+  Widget _buildBotonesEdicionPrecios() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _isAccepting ? null : _guardarPreciosSolo,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+        ),
+        icon: const Icon(Icons.save),
+        label: const Text(
+          'Guardar Configuración de Precios',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _guardarPreciosSolo() async {
+    if (_preciosVentaConfigurables.isEmpty) return;
+    
+    setState(() => _isAccepting = true);
+    try {
+      final userId = await UserPreferencesService().getUserId();
+      if (userId == null) return;
+
+      final productosParaActualizar = _preciosVentaConfigurables.entries.map((entry) {
+        return {
+          'id_envio_producto': entry.key,
+          'precio_venta_cup': entry.value,
+        };
+      }).toList();
+
+      final updated = await ConsignacionEnvioService.actualizarPrecios(
+        idEnvio: widget.idEnvio,
+        idUsuario: userId,
+        productos: productosParaActualizar,
+      );
+
+      if (updated && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Precios guardados'), backgroundColor: Colors.green),
+        );
+        _refrescar();
+      }
+    } catch (e) {
+      debugPrint(e.toString());
+    } finally {
+      if (mounted) setState(() => _isAccepting = false);
+    }
   }
   
   Widget _buildProductoInfo(String label, String valor) {
@@ -941,6 +1062,233 @@ class _ConsignacionEnvioDetallesScreenState
       }
     } finally {
       if (mounted) setState(() => _isAccepting = false);
+    }
+  }
+
+  Widget _buildAccionesDevolucionConsignador(Map<String, dynamic> detalles) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => _mostrarDialogoAprobarDevolucion(detalles),
+            icon: const Icon(Icons.check_circle_outline),
+            label: const Text(
+              'Aprobar y Recibir Devolución',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _rechazarEnvioGlobal(),
+            icon: const Icon(Icons.close),
+            label: const Text(
+              'Rechazar Solicitud de Devolución',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.red),
+              foregroundColor: Colors.red,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _mostrarDialogoAprobarDevolucion(Map<String, dynamic> envio) async {
+    int? idAlmacenSeleccionado;
+    bool cargandoAlmacenes = true;
+    List<Map<String, dynamic>> almacenes = [];
+
+    // Cargar almacenes del consignador (tienda consignadora)
+    try {
+      final idTiendaConsignadora = envio['id_tienda_consignadora'];
+      if (idTiendaConsignadora != null) {
+        final response = await Supabase.instance.client
+            .from('app_dat_almacen')
+            .select('id, denominacion')
+            .eq('id_tienda', idTiendaConsignadora);
+        almacenes = List<Map<String, dynamic>>.from(response);
+        if (almacenes.isNotEmpty) idAlmacenSeleccionado = almacenes[0]['id'];
+      }
+      cargandoAlmacenes = false;
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('Error cargando almacenes: $e');
+    }
+
+    if (!mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Aprobar Devolución'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Al aprobar la devolución se reintegrarán los productos a tu inventario. Selecciona el almacén de recepción:'),
+              const SizedBox(height: 16),
+              if (cargandoAlmacenes)
+                const Center(child: CircularProgressIndicator())
+              else if (almacenes.isEmpty)
+                const Text('No tienes almacenes configurados', style: TextStyle(color: Colors.red))
+              else
+                DropdownButtonFormField<int>(
+                  value: idAlmacenSeleccionado,
+                  items: almacenes.map((a) => DropdownMenuItem<int>(
+                    value: a['id'],
+                    child: Text(a['denominacion']),
+                  )).toList(),
+                  onChanged: (val) => setDialogState(() => idAlmacenSeleccionado = val),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Almacén de Recepción',
+                    border: OutlineInputBorder()
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('CANCELAR')
+            ),
+            ElevatedButton(
+              onPressed: idAlmacenSeleccionado == null ? null : () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+              child: const Text('APROBAR Y RECIBIR'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirm == true && idAlmacenSeleccionado != null) {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      setState(() => _isAccepting = true);
+
+      final result = await ConsignacionEnvioService.aprobarDevolucion(
+        idEnvio: widget.idEnvio,
+        idAlmacenRecepcion: idAlmacenSeleccionado!,
+        idUsuario: user.id,
+      );
+
+      if (mounted) setState(() => _isAccepting = false);
+
+      if (result != null && result['success'] == true) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('✅ Devolución procesada y stock reintegrado exitosamente'),
+          backgroundColor: Colors.green
+        ));
+        Navigator.pop(context, true); // Volver avisando que hubo cambios
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('❌ Error: ${result?['mensaje'] ?? 'Error desconocido'}'),
+          backgroundColor: Colors.red
+        ));
+      }
+    }
+  }
+
+  Widget _buildBotonCancelar() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _isAccepting ? null : _mostrarDialogoCancelar,
+        icon: const Icon(Icons.cancel_outlined),
+        label: const Text(
+          'Cancelar Solicitud',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.orange,
+          side: const BorderSide(color: Colors.orange),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _mostrarDialogoCancelar() async {
+    final motivoController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancelar Solicitud'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('¿Estás seguro de que deseas cancelar esta solicitud? Los productos reservados volverán al inventario.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: motivoController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo (opcional)',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('NO, VOLVER')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+            child: const Text('SÍ, CANCELAR'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() => _isAccepting = true);
+      try {
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user == null) return;
+
+        final result = await ConsignacionEnvioListadoService.cancelarEnvio(
+          widget.idEnvio,
+          user.id,
+          motivoController.text.trim().isEmpty ? null : motivoController.text.trim(),
+        );
+
+        if (mounted) {
+          if (result['success'] == true) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('✅ Solicitud cancelada exitosamente'),
+              backgroundColor: Colors.green
+            ));
+            Navigator.pop(context, true);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('❌ Error: ${result['mensaje']}'),
+              backgroundColor: Colors.red
+            ));
+          }
+        }
+      } catch (e) {
+        debugPrint(e.toString());
+      } finally {
+        if (mounted) setState(() => _isAccepting = false);
+      }
     }
   }
 }

@@ -3,10 +3,9 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/consignacion_envio_listado_service.dart';
-import '../services/user_preferences_service.dart';
+import '../services/consignacion_envio_service.dart';
 import 'consignacion_envio_detalles_screen.dart';
 import 'asignar_productos_consignacion_screen.dart';
-import '../services/consignacion_service.dart';
 import '../config/app_colors.dart';
 
 class ConsignacionEnviosListadoScreen extends StatefulWidget {
@@ -71,6 +70,8 @@ class _ConsignacionEnviosListadoScreenState
       appBar: AppBar(
         title: const Text('Envíos de Consignación'),
         elevation: 0,
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
@@ -82,9 +83,7 @@ class _ConsignacionEnviosListadoScreenState
               future: _enviosFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
+                  return const Center(child: CircularProgressIndicator());
                 }
 
                 if (snapshot.hasError) {
@@ -112,11 +111,7 @@ class _ConsignacionEnviosListadoScreenState
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(
-                          Icons.inbox_outlined,
-                          size: 48,
-                          color: Colors.grey,
-                        ),
+                        const Icon(Icons.inbox_outlined, size: 48, color: Colors.grey),
                         const SizedBox(height: 16),
                         const Text(
                           'No hay envíos',
@@ -127,43 +122,82 @@ class _ConsignacionEnviosListadoScreenState
                   );
                 }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(8),
-                  itemCount: envios.length,
-                  itemBuilder: (context, index) {
-                    return _buildEnvioCard(envios[index]);
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    _cargarEnvios();
+                    await _enviosFuture;
                   },
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(8),
+                    itemCount: envios.length,
+                    itemBuilder: (context, index) {
+                      return _buildEnvioCard(envios[index]);
+                    },
+                  ),
                 );
               },
             ),
           ),
         ],
       ),
-      floatingActionButton: (widget.rol == 'consignador' && widget.idContrato != null && widget.contrato != null)
-          ? FloatingActionButton.extended(
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AsignarProductosConsignacionScreen(
-                      idContrato: widget.idContrato!,
-                      contrato: widget.contrato!,
-                    ),
+      floatingActionButton: _buildFABMenu(),
+    );
+  }
+
+  Widget _buildFABMenu() {
+    final bool canCreate = widget.idContrato != null && widget.contrato != null;
+    if (!canCreate) return const SizedBox.shrink();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (widget.rol == 'consignador')
+          FloatingActionButton.extended(
+            heroTag: 'new_envio',
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AsignarProductosConsignacionScreen(
+                    idContrato: widget.idContrato!,
+                    contrato: widget.contrato!,
                   ),
-                );
-                if (result == true) {
-                  _cargarEnvios();
-                }
-              },
-              backgroundColor: AppColors.primary,
-              icon: const Icon(Icons.add_box, color: Colors.white),
-              label: const Text(
-                'Crear envío',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-              tooltip: 'Crear nuevo envío de productos',
-            )
-          : null,
+                ),
+              );
+              if (result == true) _cargarEnvios();
+            },
+            backgroundColor: AppColors.primary,
+            icon: const Icon(Icons.add_box, color: Colors.white),
+            label: const Text(
+              'CREAR ENVÍO',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        if (widget.rol == 'consignatario')
+          FloatingActionButton.extended(
+            heroTag: 'new_devolucion',
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AsignarProductosConsignacionScreen(
+                    idContrato: widget.idContrato!,
+                    contrato: widget.contrato!,
+                    isDevolucion: true,
+                  ),
+                ),
+              );
+              if (result == true) _cargarEnvios();
+            },
+            backgroundColor: Colors.deepOrange,
+            icon: const Icon(Icons.replay, color: Colors.white),
+            label: const Text(
+              'CREAR DEVOLUCIÓN',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+      ],
     );
   }
 
@@ -175,11 +209,7 @@ class _ConsignacionEnviosListadoScreenState
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            _buildFiltroBoton(
-              'Todos',
-              null,
-              _estadoSeleccionado == null,
-            ),
+            _buildFiltroBoton('Todos', null, _estadoSeleccionado == null),
             const SizedBox(width: 8),
             _buildFiltroBoton(
               'Propuesto',
@@ -220,9 +250,7 @@ class _ConsignacionEnviosListadoScreenState
       style: ElevatedButton.styleFrom(
         backgroundColor: isSelected ? Colors.blue : Colors.white,
         foregroundColor: isSelected ? Colors.white : Colors.blue,
-        side: BorderSide(
-          color: isSelected ? Colors.blue : Colors.grey[300]!,
-        ),
+        side: BorderSide(color: isSelected ? Colors.blue : Colors.grey[300]!),
       ),
       child: Text(label),
     );
@@ -230,29 +258,36 @@ class _ConsignacionEnviosListadoScreenState
 
   Widget _buildEnvioCard(Map<String, dynamic> envio) {
     final estado = (envio['estado_envio'] as num?)?.toInt() ?? 0;
-    final estadoTexto = envio['estado_envio_texto'] as String? ?? 'DESCONOCIDO';
+    final estadoTexto = (envio['estado_envio_texto'] as String?) ??
+        ConsignacionEnvioListadoService.obtenerTextoEstado(estado);
     final numeroEnvio = envio['numero_envio'] as String? ?? 'N/A';
     final tiendaConsignadora = envio['tienda_consignadora'] as String? ?? 'N/A';
-    final tiendaConsignataria = envio['tienda_consignataria'] as String? ?? 'N/A';
-    final cantidadProductos = (envio['cantidad_productos'] as num?)?.toInt() ?? 0;
+    final tiendaConsignataria =
+        envio['tienda_consignataria'] as String? ?? 'N/A';
+    final cantidadProductos =
+        (envio['cantidad_productos'] as num?)?.toInt() ?? 0;
     final cantidadTotal = (envio['cantidad_total_unidades'] as num?) ?? 0;
     final valorTotal = (envio['valor_total_costo'] as num?) ?? 0;
     final fechaPropuestaRaw = envio['fecha_propuesta'];
-    final fechaPropuesta = fechaPropuestaRaw is String 
-        ? DateTime.parse(fechaPropuestaRaw) 
+    final fechaPropuesta = fechaPropuestaRaw is String
+        ? DateTime.parse(fechaPropuestaRaw)
         : (fechaPropuestaRaw is DateTime ? fechaPropuestaRaw : DateTime.now());
-    final productosAceptados = (envio['productos_aceptados'] as num?)?.toInt() ?? 0;
-    final productosRechazados = (envio['productos_rechazados'] as num?)?.toInt() ?? 0;
+    final productosAceptados =
+        (envio['productos_aceptados'] as num?)?.toInt() ?? 0;
+    final productosRechazados =
+        (envio['productos_rechazados'] as num?)?.toInt() ?? 0;
     final idEnvio = (envio['id_envio'] as num?)?.toInt() ?? 0;
+    final tipoEnvio = (envio['tipo_envio'] as num?)?.toInt() ?? 1;
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Encabezado: Número y Estado
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -260,223 +295,155 @@ class _ConsignacionEnviosListadoScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Envío $numeroEnvio',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        children: [
+                          Text(numeroEnvio,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          if (tipoEnvio == 2) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.deepOrange.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'DEVOLUCIÓN',
+                                style: TextStyle(
+                                    color: Colors.deepOrange,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
-                        '$tiendaConsignadora → $tiendaConsignataria',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
+                        tipoEnvio == 2
+                            ? '$tiendaConsignataria → $tiendaConsignadora'
+                            : '$tiendaConsignadora → $tiendaConsignataria',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                       ),
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _obtenerColorEstado(estado),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    estadoTexto,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+                _buildBadgeEstado(estado, estadoTexto),
               ],
             ),
-            const SizedBox(height: 12),
-            // Información: Productos y Cantidades
+            const Divider(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildInfoItem(
-                  '📦',
-                  '$cantidadProductos productos',
-                ),
-                _buildInfoItem(
-                  '📊',
-                  '${cantidadTotal.toStringAsFixed(0)} unidades',
-                ),
-                _buildInfoItem(
-                  '💰',
-                  '\$${valorTotal.toStringAsFixed(2)}',
-                ),
+                _buildInfoItem('📦', '$cantidadProductos prod.'),
+                _buildInfoItem('📊', '${cantidadTotal.toStringAsFixed(0)} u.'),
+                _buildInfoItem('💰', '\$${valorTotal.toStringAsFixed(2)}'),
               ],
             ),
             const SizedBox(height: 12),
-            // Fecha
             Text(
-              'Creado: ${DateFormat('dd/MM/yyyy HH:mm').format(fechaPropuesta)}',
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey[500],
-              ),
+              'Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(fechaPropuesta)}',
+              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
             ),
-            // Productos aceptados/rechazados (si aplica)
             if (productosAceptados > 0 || productosRechazados > 0) ...[
               const SizedBox(height: 8),
               Row(
                 children: [
-                  if (productosAceptados > 0) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.green[100],
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '✓ $productosAceptados aceptados',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.green[700],
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
+                  if (productosAceptados > 0)
+                    _buildPill('✓ $productosAceptados', Colors.green),
                   if (productosRechazados > 0) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.red[100],
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '✗ $productosRechazados rechazados',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.red[700],
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                    const SizedBox(width: 8),
+                    _buildPill('✗ $productosRechazados', Colors.red),
                   ],
                 ],
               ),
             ],
-            // Botones de acción según rol
             const SizedBox(height: 12),
-            _buildBotonesAccion(idEnvio, estado),
+            _buildBotonesAccion(envio),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildBotonesAccion(int idEnvio, int estado) {
-    final esConsignatario = widget.rol == 'consignatario';
-    final esConsignador = widget.rol == 'consignador';
+  Widget _buildBadgeEstado(int estado, String texto) {
+    final color = _obtenerColorEstado(estado);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        texto,
+        style:
+            TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        // Botón Ver Detalles (ambos pueden ver)
-        Expanded(
-          child: ElevatedButton.icon(
-            onPressed: () => _mostrarDetalles(idEnvio),
-            icon: const Icon(Icons.info_outline, size: 16),
-            label: const Text('Detalles'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              backgroundColor: Colors.blue,
-            ),
-          ),
+  Widget _buildPill(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4)),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildBotonesAccion(Map<String, dynamic> envio) {
+    final idEnvio = (envio['id_envio'] as num?)?.toInt() ?? 0;
+
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () => _mostrarDetalles(idEnvio),
+        icon: const Icon(Icons.info_outline, size: 18),
+        label: const Text(
+          'VER DETALLES',
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1),
         ),
-        const SizedBox(width: 8),
-        // Botones específicos según rol
-        if (esConsignatario && estado == 3) ...[
-          // Consignatario puede aceptar/rechazar envío EN_TRANSITO
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () => _aceptarEnvio(idEnvio),
-              icon: const Icon(Icons.check_circle_outline, size: 16),
-              label: const Text('Aceptar'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                backgroundColor: Colors.green,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () => _rechazarEnvio(idEnvio),
-              icon: const Icon(Icons.cancel_outlined, size: 16),
-              label: const Text('Rechazar'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                backgroundColor: Colors.red,
-              ),
-            ),
-          ),
-        ] else if (esConsignador && estado == 1) ...[
-          // Consignador solo puede cancelar envío PROPUESTO
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () => _cancelarEnvio(idEnvio),
-              icon: const Icon(Icons.close_outlined, size: 16),
-              label: const Text('Cancelar'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                backgroundColor: Colors.orange,
-              ),
-            ),
-          ),
-        ],
-      ],
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          backgroundColor: Colors.blue.shade700,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          elevation: 2,
+        ),
+      ),
     );
   }
 
   Widget _buildInfoItem(String icono, String texto) {
     return Column(
       children: [
-        Text(icono, style: const TextStyle(fontSize: 16)),
-        const SizedBox(height: 4),
-        Text(
-          texto,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        Text(icono, style: const TextStyle(fontSize: 14)),
+        const SizedBox(height: 2),
+        Text(texto,
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
       ],
     );
   }
 
   Color _obtenerColorEstado(int estado) {
     switch (estado) {
-      case 1: // PROPUESTO
+      case 1:
         return Colors.orange;
-      case 2: // CONFIGURADO
+      case 2:
         return Colors.blue;
-      case 3: // EN_TRANSITO
-        return Colors.amber;
-      case 4: // ACEPTADO
+      case 3:
+        return Colors.amber.shade700;
+      case 4:
         return Colors.green;
-      case 5: // RECHAZADO
+      case 5:
         return Colors.red;
-      case 6: // PARCIALMENTE_ACEPTADO
+      case 6:
         return Colors.deepOrange;
       default:
         return Colors.grey;
@@ -486,183 +453,10 @@ class _ConsignacionEnviosListadoScreenState
   void _mostrarDetalles(int idEnvio) async {
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => ConsignacionEnvioDetallesScreen(
-          idEnvio: idEnvio,
-          rol: widget.rol,
-        ),
+        builder: (context) =>
+            ConsignacionEnvioDetallesScreen(idEnvio: idEnvio, rol: widget.rol),
       ),
     );
-
-    if (result == true) {
-      _cargarEnvios();
-    }
-  }
-
-  void _aceptarEnvio(int idEnvio) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Aceptar Envío'),
-        content: const Text('¿Deseas aceptar este envío de consignación?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('✅ Envío aceptado exitosamente'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-              if (!mounted) return;
-              _cargarEnvios();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-            ),
-            child: const Text('Aceptar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _rechazarEnvio(int idEnvio) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        final motivoController = TextEditingController();
-        return AlertDialog(
-          title: const Text('Rechazar Envío'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('¿Por qué deseas rechazar este envío?'),
-              const SizedBox(height: 16),
-              TextField(
-                controller: motivoController,
-                decoration: const InputDecoration(
-                  labelText: 'Motivo del rechazo',
-                  border: OutlineInputBorder(),
-                  hintText: 'Ej: Productos dañados, cantidad incorrecta, etc.',
-                ),
-                maxLines: 3,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('✅ Envío rechazado: ${motivoController.text}'),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-                if (!mounted) return;
-                _cargarEnvios();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              child: const Text('Rechazar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _cancelarEnvio(int idEnvio) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        final motivoController = TextEditingController();
-        return AlertDialog(
-          title: const Text('Cancelar Envío'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('¿Por qué deseas cancelar este envío?'),
-              const SizedBox(height: 16),
-              TextField(
-                controller: motivoController,
-                decoration: const InputDecoration(
-                  labelText: 'Motivo de la cancelación',
-                  border: OutlineInputBorder(),
-                  hintText: 'Ej: Cambio de planes, error en asignación, etc.',
-                ),
-                maxLines: 3,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cerrar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                try {
-                  final result = await ConsignacionEnvioListadoService.cancelarEnvio(
-                    idEnvio,
-                    'uuid-usuario-actual', // TODO: Obtener UUID del usuario actual
-                    motivoController.text.isNotEmpty ? motivoController.text : null,
-                  );
-
-                  if (!mounted) return;
-
-                  if (result['success'] as bool) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('✅ Envío cancelado exitosamente'),
-                        duration: Duration(seconds: 2),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    _cargarEnvios();
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('❌ ${result['mensaje']}'),
-                        duration: const Duration(seconds: 2),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('❌ Error cancelando envío: $e'),
-                        duration: const Duration(seconds: 2),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-              ),
-              child: const Text('Cancelar Envío'),
-            ),
-          ],
-        );
-      },
-    );
+    if (result == true) _cargarEnvios();
   }
 }
-
-// La pantalla ConsignacionEnvioDetallesScreen se ha movido a su propio archivo:
-// consignacion_envio_detalles_screen.dart
