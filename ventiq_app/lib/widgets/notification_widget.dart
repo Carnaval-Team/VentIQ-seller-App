@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/notification_model.dart';
 import '../services/notification_service.dart';
+import '../services/turno_service.dart';
 
 /// Widget de notificaciones que se muestra en la parte superior
 class NotificationWidget extends StatefulWidget {
@@ -153,7 +155,8 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
 
                     // Filtrar por no leídas si está activado
                     if (_showOnlyUnread) {
-                      notifications = notifications.where((n) => !n.leida).toList();
+                      notifications =
+                          notifications.where((n) => !n.leida).toList();
                     }
 
                     if (notifications.isEmpty) {
@@ -164,12 +167,19 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
                       controller: scrollController,
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: notifications.length,
-                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      separatorBuilder:
+                          (context, index) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         return NotificationItem(
                           notification: notifications[index],
-                          onTap: () => _handleNotificationTap(notifications[index]),
-                          onDismiss: () => _handleNotificationDismiss(notifications[index]),
+                          notificationService: _notificationService,
+                          onTap:
+                              () =>
+                                  _handleNotificationTap(notifications[index]),
+                          onDismiss:
+                              () => _handleNotificationDismiss(
+                                notifications[index],
+                              ),
                         );
                       },
                     );
@@ -235,7 +245,9 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('✅ Todas las notificaciones marcadas como leídas'),
+                    content: Text(
+                      '✅ Todas las notificaciones marcadas como leídas',
+                    ),
                     backgroundColor: Color(0xFF4CAF50),
                     duration: Duration(seconds: 2),
                   ),
@@ -277,10 +289,7 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
             _showOnlyUnread
                 ? 'Todas tus notificaciones están al día'
                 : 'Aquí aparecerán tus notificaciones',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
         ],
       ),
@@ -327,12 +336,14 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
 /// Item individual de notificación con funcionalidad de acordeón
 class NotificationItem extends StatefulWidget {
   final NotificationModel notification;
+  final NotificationService notificationService;
   final VoidCallback onTap;
   final VoidCallback onDismiss;
 
   const NotificationItem({
     Key? key,
     required this.notification,
+    required this.notificationService,
     required this.onTap,
     required this.onDismiss,
   }) : super(key: key);
@@ -357,11 +368,7 @@ class _NotificationItemState extends State<NotificationItem> {
         color: const Color(0xFFF44336), // Rojo
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
-        child: const Icon(
-          Icons.delete_outline,
-          color: Colors.white,
-          size: 28,
-        ),
+        child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
       ),
       child: InkWell(
         onTap: () {
@@ -377,9 +384,10 @@ class _NotificationItemState extends State<NotificationItem> {
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          color: widget.notification.leida
-              ? Colors.white
-              : color.withOpacity(0.05),
+          color:
+              widget.notification.leida
+                  ? Colors.white
+                  : color.withOpacity(0.05),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -391,11 +399,7 @@ class _NotificationItemState extends State<NotificationItem> {
                   color: color.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  icon,
-                  color: color,
-                  size: 24,
-                ),
+                child: Icon(icon, color: color, size: 24),
               ),
               const SizedBox(width: 12),
               // Contenido
@@ -411,13 +415,15 @@ class _NotificationItemState extends State<NotificationItem> {
                             widget.notification.titulo,
                             style: TextStyle(
                               fontSize: 15,
-                              fontWeight: widget.notification.leida
-                                  ? FontWeight.w500
-                                  : FontWeight.bold,
+                              fontWeight:
+                                  widget.notification.leida
+                                      ? FontWeight.w500
+                                      : FontWeight.bold,
                               color: const Color(0xFF212121),
                             ),
                             maxLines: _isExpanded ? null : 2,
-                            overflow: _isExpanded ? null : TextOverflow.ellipsis,
+                            overflow:
+                                _isExpanded ? null : TextOverflow.ellipsis,
                           ),
                         ),
                         if (widget.notification.isUrgent)
@@ -463,9 +469,10 @@ class _NotificationItemState extends State<NotificationItem> {
                           height: 1.3,
                         ),
                       ),
-                      crossFadeState: _isExpanded
-                          ? CrossFadeState.showSecond
-                          : CrossFadeState.showFirst,
+                      crossFadeState:
+                          _isExpanded
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
                       duration: const Duration(milliseconds: 300),
                     ),
                     const SizedBox(height: 6),
@@ -479,7 +486,10 @@ class _NotificationItemState extends State<NotificationItem> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          timeago.format(widget.notification.createdAt, locale: 'es'),
+                          timeago.format(
+                            widget.notification.createdAt,
+                            locale: 'es',
+                          ),
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],
@@ -512,12 +522,173 @@ class _NotificationItemState extends State<NotificationItem> {
                           ),
                       ],
                     ),
+                    // Botón "Recibir Orden" para notificaciones tipo venta
+                    if (_isExpanded && _shouldShowReceiveOrderButton())
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _handleReceiveOrder,
+                            icon: const Icon(
+                              Icons.check_circle_outline,
+                              size: 20,
+                            ),
+                            label: const Text(
+                              'Recibir Orden',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF4CAF50), // Verde
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Determinar si se debe mostrar el botón "Recibir Orden"
+  bool _shouldShowReceiveOrderButton() {
+    // Solo para notificaciones tipo "venta" y no leídas
+    if (widget.notification.tipo != NotificationType.venta ||
+        widget.notification.leida) {
+      return false;
+    }
+
+    // Verificar que tenga data con orden_id y operacion_id
+    final data = widget.notification.data;
+    if (data == null) return false;
+
+    final ordenId = data['orden_id'];
+    final operacionId = data['operacion_id'];
+
+    return ordenId != null && operacionId != null;
+  }
+
+  /// Manejar acción de "Recibir Orden"
+  Future<void> _handleReceiveOrder() async {
+    try {
+      final data = widget.notification.data;
+      if (data == null) return;
+
+      final operacionId = data['operacion_id'];
+      if (operacionId == null) {
+        _showErrorMessage('No se encontró el ID de operación');
+        return;
+      }
+
+      // Mostrar indicador de carga
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (context) => const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+              ),
+            ),
+      );
+
+      // 1. Verificar si el usuario tiene un turno abierto
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+
+      if (turnoAbierto == null) {
+        if (mounted) Navigator.pop(context); // Cerrar loading
+        _showErrorMessage('No tienes un turno abierto');
+        return;
+      }
+
+      final fechaTurno = DateTime.parse(
+        turnoAbierto['fecha_apertura'] as String,
+      );
+
+      // 2. Obtener la operación y verificar su fecha de creación
+      final supabase = Supabase.instance.client;
+      final operacionResponse =
+          await supabase
+              .from('app_dat_operaciones')
+              .select('created_at')
+              .eq('id', operacionId)
+              .single();
+
+      final fechaOperacion = DateTime.parse(
+        operacionResponse['created_at'] as String,
+      );
+
+      // 3. Validar que la fecha de creación de la operación sea menor que la del turno
+      if (!fechaOperacion.isBefore(fechaTurno)) {
+        // if (mounted) Navigator.pop(context); // Cerrar loading
+        print(
+          'La operación fue creada después del turno actual. No se puede recibir.',
+        );
+      } else {
+        // 4. Actualizar la fecha de creación de la operación a now()
+        await supabase
+            .from('app_dat_operaciones')
+            .update({'created_at': DateTime.now().toIso8601String()})
+            .eq('id', operacionId);
+      }
+      // 5. Marcar la notificación como leída
+      await widget.notificationService.markAsRead(widget.notification.id);
+
+      // Refrescar la lista de notificaciones para actualizar la vista
+
+      if (mounted) {
+        Navigator.pop(context); // Cerrar loading
+
+        // Mostrar mensaje de éxito
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Orden recibida exitosamente'),
+            backgroundColor: Color(0xFF4CAF50),
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        await widget.notificationService.loadNotifications();
+        // Colapsar el item
+        setState(() {
+          _isExpanded = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error recibiendo orden: $e');
+      if (mounted) {
+        Navigator.pop(context); // Cerrar loading si está abierto
+        _showErrorMessage('Error al recibir la orden: ${e.toString()}');
+      }
+    }
+  }
+
+  /// Mostrar mensaje de error
+  void _showErrorMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('❌ $message'),
+        backgroundColor: const Color(0xFFF44336),
+        duration: const Duration(seconds: 4),
       ),
     );
   }

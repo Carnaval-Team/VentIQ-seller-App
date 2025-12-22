@@ -29,10 +29,14 @@ class _AperturaScreenState extends State<AperturaScreen> {
   Map<int, TextEditingController> _inventoryControllers = {};
   bool _isLoadingInventory = false;
   bool _inventorySet = false;
-  
+
   // New state variables for conditional inventory
   bool _inventoryAlreadyDone = false;
   bool _checkingInventoryStatus = true;
+
+  // Worker configuration for inventory control
+  bool _trabajadorManejaAperturaControl =
+      true; // Default to true (safe behavior)
 
   // Previous shift data
   double _previousShiftSales = 0.0;
@@ -45,6 +49,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
     super.initState();
     _checkExistingShift();
     _loadStoreConfig();
+    _loadWorkerConfig(); // Load worker inventory control settings
   }
 
   /// Check if inventory has already been done for the current warehouse in an active shift
@@ -74,7 +79,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
           .eq('app_dat_tpv.id_almacen', idAlmacen);
 
       final activeShifts = activeShiftsResponse as List<dynamic>;
-      
+
       if (activeShifts.isEmpty) {
         print('ℹ️ No active shifts found for warehouse $idAlmacen');
         setState(() {
@@ -84,11 +89,13 @@ class _AperturaScreenState extends State<AperturaScreen> {
         return;
       }
 
-      print('ℹ️ Found ${activeShifts.length} active shifts for warehouse $idAlmacen');
+      print(
+        'ℹ️ Found ${activeShifts.length} active shifts for warehouse $idAlmacen',
+      );
 
       // 2. Check if any of these shifts has an associated inventory control record
       bool inventoryFound = false;
-      
+
       for (var shift in activeShifts) {
         final operationId = shift['id_operacion_apertura'];
         if (operationId != null) {
@@ -97,7 +104,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
               .select('id')
               .eq('id_operacion', operationId)
               .limit(1);
-          
+
           if (controlResponse != null && controlResponse.isNotEmpty) {
             inventoryFound = true;
             print('✅ Inventory control found for operation $operationId');
@@ -111,9 +118,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
           _inventoryAlreadyDone = inventoryFound;
           _checkingInventoryStatus = false;
         });
-        
+
         if (inventoryFound) {
-          print('✅ Inventory already done for this warehouse. Optional for this shift.');
+          print(
+            '✅ Inventory already done for this warehouse. Optional for this shift.',
+          );
         } else {
           print('⚠️ Inventory required for this shift.');
         }
@@ -295,7 +304,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
             _manejaInventario = manejaInventario;
             _isLoadingStoreConfig = false;
           });
-          
+
           // If inventory is managed, load products immediately and check warehouse status
           if (_manejaInventario) {
             _loadInventoryProducts();
@@ -321,6 +330,27 @@ class _AperturaScreenState extends State<AperturaScreen> {
         _isLoadingStoreConfig = false;
         _checkingInventoryStatus = false;
       });
+    }
+  }
+
+  /// Cargar configuración del trabajador para control de inventario
+  Future<void> _loadWorkerConfig() async {
+    try {
+      final manejaAperturaControl =
+          await _userPrefs.loadWorkerManejaAperturaControl();
+
+      if (mounted) {
+        setState(() {
+          _trabajadorManejaAperturaControl = manejaAperturaControl;
+        });
+
+        print(
+          '👤 Trabajador maneja apertura control: $_trabajadorManejaAperturaControl',
+        );
+      }
+    } catch (e) {
+      print('❌ Error cargando configuración de trabajador: $e');
+      // Mantener valor por defecto (true) en caso de error
     }
   }
 
@@ -353,7 +383,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
           'p_limite': 9999,
           'p_mostrar_sin_stock': true,
           'p_pagina': 1,
-          'p_id_almacen': idAlmacen
+          'p_id_almacen': idAlmacen,
         },
       );
 
@@ -985,7 +1015,11 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
     // Validar que si maneja inventario y NO se ha hecho ya, se haya establecido
     // Si ya se hizo (_inventoryAlreadyDone), es opcional, así que permitimos continuar sin _inventorySet
-    if (_manejaInventario && !_inventoryAlreadyDone && !_inventorySet) {
+    // NUEVO: También es opcional si el trabajador tiene maneja_apertura_control = false
+    if (_manejaInventario &&
+        !_inventoryAlreadyDone &&
+        !_inventorySet &&
+        _trabajadorManejaAperturaControl) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
