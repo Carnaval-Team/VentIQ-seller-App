@@ -91,6 +91,12 @@ class StoreRegistrationService {
     required String denominacionTienda,
     required String direccionTienda,
     required String ubicacionTienda,
+    String? pais,
+    String? estado,
+    String? nombrePais,
+    String? nombreEstado,
+    double? latitude,
+    double? longitude,
     List<Map<String, dynamic>>? tpvData,
     List<Map<String, dynamic>>? almacenesData,
     List<Map<String, dynamic>>? layoutsData,
@@ -102,6 +108,9 @@ class StoreRegistrationService {
       print('  - Denominación: $denominacionTienda');
       print('  - Dirección: $direccionTienda');
       print('  - Ubicación: $ubicacionTienda');
+      print('  - País: $pais ($nombrePais)');
+      print('  - Estado: $estado ($nombreEstado)');
+      print('  - Coordenadas: Lat $latitude, Lng $longitude');
 
       // Preparar parámetros para la función RPC (orden correcto: almacenes primero)
       final params = {
@@ -109,6 +118,12 @@ class StoreRegistrationService {
         'denominacion_tienda': denominacionTienda,
         'direccion_tienda': direccionTienda,
         'ubicacion_tienda': ubicacionTienda,
+        'pais': pais,
+        'estado': estado,
+        'nombre_pais': nombrePais,
+        'nombre_estado': nombreEstado,
+        'latitude': latitude,
+        'longitude': longitude,
         'almacenes_data': almacenesData, // Almacenes PRIMERO
         'tpv_data': tpvData,             // TPVs después (necesitan id_almacen)
         'personal_data': personalData,   // Personal después (necesitan id_almacen/id_tpv)
@@ -186,6 +201,12 @@ class StoreRegistrationService {
     required String denominacionTienda,
     required String direccionTienda,
     required String ubicacionTienda,
+    String? pais,
+    String? estado,
+    String? nombrePais,
+    String? nombreEstado,
+    double? latitude,
+    double? longitude,
     List<Map<String, dynamic>>? tpvData,
     List<Map<String, dynamic>>? almacenesData,
     List<Map<String, dynamic>>? layoutsData,
@@ -238,6 +259,12 @@ class StoreRegistrationService {
         denominacionTienda: denominacionTienda,
         direccionTienda: direccionTienda,
         ubicacionTienda: ubicacionTienda,
+        pais: pais,
+        estado: estado,
+        nombrePais: nombrePais,
+        nombreEstado: nombreEstado,
+        latitude: latitude,
+        longitude: longitude,
         tpvData: tpvData,
         almacenesData: almacenesData,
         layoutsData: layoutsData,

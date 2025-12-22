@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:dropdown_search/dropdown_search.dart';
+import 'package:country_flags/country_flags.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../config/app_colors.dart';
 import '../services/store_registration_service.dart';
 import '../services/warehouse_service.dart';
+import '../services/geonames_service.dart';
 
 class StoreRegistrationScreen extends StatefulWidget {
   const StoreRegistrationScreen({super.key});
@@ -34,6 +39,22 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   final _storeAddressController = TextEditingController();
   final _storeLocationController = TextEditingController();
   
+  // Datos de país, estado y ciudad
+  List<Map<String, dynamic>> _countries = [];
+  List<Map<String, dynamic>> _states = [];
+  List<Map<String, dynamic>> _cities = [];
+  Map<String, dynamic>? _selectedCountry;
+  Map<String, dynamic>? _selectedState;
+  Map<String, dynamic>? _selectedCity;
+  bool _loadingCountries = false;
+  bool _loadingStates = false;
+  bool _loadingCities = false;
+
+  // Datos de localización
+  double? _storeLatitude;
+  double? _storeLogitude;
+  bool _showMapPicker = false;
+  
   // Datos obligatorios
   List<Map<String, dynamic>> _tpvData = [];
   List<Map<String, dynamic>> _almacenesData = [];
@@ -41,6 +62,429 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
   List<Map<String, dynamic>> _personalData = [];
   
   // Los roles y layout types se manejan directamente en los métodos
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCountries();
+  }
+
+  Future<void> _loadCountries() async {
+    setState(() {
+      _loadingCountries = true;
+    });
+    try {
+      final countries = await GeonamesService.getCountries();
+      if (mounted) {
+        setState(() {
+          _countries = countries;
+          _loadingCountries = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingCountries = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar países: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadStates(String countryCode) async {
+    setState(() {
+      _loadingStates = true;
+      _states = [];
+      _selectedState = null;
+      _cities = [];
+      _selectedCity = null;
+    });
+    try {
+      final states = await GeonamesService.getStates(countryCode);
+      if (mounted) {
+        setState(() {
+          _states = states;
+          _loadingStates = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingStates = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar estados: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadCities(String countryCode, String adminCode) async {
+    setState(() {
+      _loadingCities = true;
+      _cities = [];
+      _selectedCity = null;
+    });
+    try {
+      final cities = await GeonamesService.getCities(countryCode, adminCode);
+      if (mounted) {
+        setState(() {
+          _cities = cities;
+          _loadingCities = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingCities = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar ciudades: $e')),
+        );
+      }
+    }
+  }
+
+  String _formatPopulation(int population) {
+    if (population >= 1000000) {
+      return '${(population / 1000000).toStringAsFixed(1)}M';
+    } else if (population >= 1000) {
+      return '${(population / 1000).toStringAsFixed(1)}K';
+    } else {
+      return population.toString();
+    }
+  }
+
+  Widget _buildLocationSummaryRow(String label, String value, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: AppColors.primary, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMapPreview() {
+    // Si no hay coordenadas, mostrar placeholder
+    if (_storeLatitude == null || _storeLogitude == null) {
+      return Container(
+        color: Colors.grey.shade100,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.map, size: 48, color: Colors.grey.shade400),
+              const SizedBox(height: 12),
+              Text(
+                'Selecciona una ciudad para mostrar el mapa',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Mostrar mapa interactivo de flutter_map
+    return Column(
+      children: [
+        Expanded(
+          child: FlutterMap(
+            options: MapOptions(
+              center: LatLng(_storeLatitude!, _storeLogitude!),
+              zoom: 13.0,
+              interactiveFlags: InteractiveFlag.all,
+              onTap: (tapPosition, point) {
+                // Al hacer clic en el mapa, actualizar la ubicación
+                setState(() {
+                  _storeLatitude = point.latitude;
+                  _storeLogitude = point.longitude;
+                });
+              },
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                subdomains: const ['a', 'b', 'c'],
+                userAgentPackageName: 'com.example.ventiq_admin_app',
+              ),
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    width: 40.0,
+                    height: 40.0,
+                    point: LatLng(_storeLatitude!, _storeLogitude!),
+                    child: GestureDetector(
+                      onPanUpdate: (details) {
+                        // Permitir arrastrar el marcador
+                        // Nota: Esta es una aproximación simple
+                        // Para un arrastre más preciso, se necesitaría calcular las coordenadas
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.location_on,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        // Mostrar coordenadas actuales
+        Container(
+          padding: const EdgeInsets.all(12),
+          color: Colors.grey.shade100,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Latitud',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  Text(
+                    _storeLatitude?.toStringAsFixed(6) ?? '0.0',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Longitud',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  Text(
+                    _storeLogitude?.toStringAsFixed(6) ?? '0.0',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  // Resetear a la ubicación de la ciudad seleccionada
+                  if (_selectedCity != null) {
+                    setState(() {
+                      _storeLatitude = double.tryParse(_selectedCity!['lat'].toString()) ?? 0.0;
+                      _storeLogitude = double.tryParse(_selectedCity!['lng'].toString()) ?? 0.0;
+                    });
+                  }
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Resetear'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showMapPickerDialog() {
+    double tempLat = _storeLatitude ?? 0.0;
+    double tempLng = _storeLogitude ?? 0.0;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Ajustar Localización'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 450,
+            child: Column(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.map, size: 64, color: AppColors.primary),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'OpenStreetMap',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Coordenadas Actuales:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  const Icon(Icons.location_on, color: AppColors.primary, size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Latitud: ${tempLat.toStringAsFixed(6)}',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Icon(Icons.location_on, color: AppColors.primary, size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Longitud: ${tempLng.toStringAsFixed(6)}',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.info, color: Colors.orange.shade700, size: 20),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Ejecuta: flutter pub get\npara activar el mapa interactivo',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        // Guardar coordenadas temporales
+                        this._storeLatitude = tempLat;
+                        this._storeLogitude = tempLng;
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Coordenadas guardadas: ${tempLat.toStringAsFixed(4)}, ${tempLng.toStringAsFixed(4)}',
+                            ),
+                            duration: const Duration(seconds: 2),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.check),
+                      label: const Text('Guardar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -127,30 +571,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     ];
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         children: [
-          // Título del paso actual
-          // Text(
-          //   'Paso ${_currentStep + 1} de ${steps.length}',
-          //   style: const TextStyle(
-          //     color: Colors.white70,
-          //     fontSize: 14,
-          //     fontWeight: FontWeight.w500,
-          //   ),
-          // ),
-          // const SizedBox(height: 8),
-          // Text(
-          //   steps[_currentStep]['title'] as String,
-          //   style: const TextStyle(
-          //     color: Colors.white,
-          //     fontSize: 20,
-          //     fontWeight: FontWeight.bold,
-          //   ),
-          // ),
-          // const SizedBox(height: 20),
-          
-          // Indicador de progreso centrado
+          // Indicador de progreso centrado - VERSIÓN COMPACTA
           Center(
             child: Container(
               constraints: const BoxConstraints(maxWidth: 400),
@@ -164,10 +588,10 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   return Expanded(
                     child: Row(
                       children: [
-                        // Círculo del paso
+                        // Círculo del paso - MÁS PEQUEÑO
                         Container(
-                          width: isCurrent ? 48 : 40,
-                          height: isCurrent ? 48 : 40,
+                          width: isCurrent ? 32 : 28,
+                          height: isCurrent ? 32 : 28,
                           decoration: BoxDecoration(
                             color: isCompleted 
                                 ? Colors.green 
@@ -177,13 +601,13 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                             shape: BoxShape.circle,
                             border: isCurrent ? Border.all(
                               color: Colors.white,
-                              width: 3,
+                              width: 2,
                             ) : null,
                             boxShadow: isCurrent ? [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.2),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1),
                               ),
                             ] : null,
                           ),
@@ -196,21 +620,21 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                                 : isActive 
                                     ? AppColors.primary 
                                     : Colors.white.withOpacity(0.6),
-                            size: isCurrent ? 24 : 20,
+                            size: isCurrent ? 16 : 14,
                           ),
                         ),
                         
-                        // Línea conectora
+                        // Línea conectora - MÁS DELGADA
                         if (index < steps.length - 1)
                           Expanded(
                             child: Container(
-                              height: 3,
-                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                              height: 2,
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
                               decoration: BoxDecoration(
                                 color: index < _currentStep 
                                     ? Colors.green 
                                     : Colors.white.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(2),
+                                borderRadius: BorderRadius.circular(1),
                               ),
                             ),
                           ),
@@ -468,20 +892,469 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
               },
             ),
             const SizedBox(height: 16),
-            
-            TextFormField(
-              controller: _storeLocationController,
-              decoration: const InputDecoration(
-                labelText: 'Ubicación (Ciudad, País)',
-                prefixIcon: Icon(Icons.place),
+
+            // Dropdown de País con búsqueda y bandera
+            _loadingCountries
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: CircularProgressIndicator(),
+                  )
+                : DropdownSearch<Map<String, dynamic>>(
+                    items: _countries,
+                    itemAsString: (item) => item['countryName'] ?? '',
+                    selectedItem: _selectedCountry,
+                    popupProps: PopupProps.menu(
+                      showSearchBox: true,
+                      searchFieldProps: const TextFieldProps(
+                        decoration: InputDecoration(
+                          hintText: 'Buscar país...',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                      itemBuilder: (context, item, isSelected) {
+                        final countryCode = item['countryCode'] ?? '';
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: Row(
+                            children: [
+                              CountryFlag.fromCountryCode(
+                                countryCode,
+                                height: 24,
+                                width: 32,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  item['countryName'] ?? '',
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      menuProps: const MenuProps(
+                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
+                        elevation: 8,
+                      ),
+                    ),
+                    dropdownDecoratorProps: DropDownDecoratorProps(
+                      dropdownSearchDecoration: InputDecoration(
+                        labelText: 'País',
+                        prefixIcon: _selectedCountry != null
+                            ? Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: CountryFlag.fromCountryCode(
+                                  _selectedCountry!['countryCode'] ?? '',
+                                  height: 24,
+                                  width: 32,
+                                ),
+                              )
+                            : const Icon(Icons.public),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          onPressed: _loadCountries,
+                          icon: const Icon(Icons.refresh),
+                          tooltip: 'Recargar países',
+                        ),
+                      ),
+                    ),
+                    onChanged: (country) {
+                      if (country != null) {
+                        setState(() {
+                          _selectedCountry = country;
+                        });
+                        _loadStates(country['countryCode']);
+                      }
+                    },
+                    validator: (value) {
+                      if (value == null) {
+                        return 'Selecciona un país';
+                      }
+                      return null;
+                    },
+                  ),
+            const SizedBox(height: 16),
+
+            // Dropdown de Estado con búsqueda
+            if (_selectedCountry == null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Selecciona un país primero',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else if (_loadingStates)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: CircularProgressIndicator(),
+              )
+            else if (_states.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Este país no tiene estados registrados',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else
+              DropdownSearch<Map<String, dynamic>>(
+                items: _states,
+                itemAsString: (item) => item['name'] ?? '',
+                selectedItem: _selectedState,
+                popupProps: PopupProps.menu(
+                  showSearchBox: true,
+                  searchFieldProps: const TextFieldProps(
+                    decoration: InputDecoration(
+                      hintText: 'Buscar estado...',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                  ),
+                  itemBuilder: (context, item, isSelected) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            item['name'] ?? '',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (item['adminName1'] != null && item['adminName1'] != item['name'])
+                            Text(
+                              item['adminName1'],
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                  menuProps: const MenuProps(
+                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
+                    elevation: 8,
+                  ),
+                ),
+                dropdownDecoratorProps: DropDownDecoratorProps(
+                  dropdownSearchDecoration: InputDecoration(
+                    labelText: 'Estado/Provincia',
+                    prefixIcon: const Icon(Icons.location_city),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _selectedCountry != null
+                        ? IconButton(
+                            onPressed: () => _loadStates(_selectedCountry!['countryCode']),
+                            icon: const Icon(Icons.refresh),
+                            tooltip: 'Recargar estados',
+                          )
+                        : null,
+                  ),
+                ),
+                validator: (value) {
+                  if (_states.isNotEmpty && value == null) {
+                    return 'Selecciona un estado';
+                  }
+                  return null;
+                },
+                onChanged: (state) {
+                  setState(() {
+                    _selectedState = state;
+                  });
+                  if (state != null && _selectedCountry != null) {
+                    _loadCities(
+                      _selectedCountry!['countryCode'],
+                      state['adminCode1'] ?? '',
+                    );
+                  }
+                },
               ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Ingresa la ubicación';
-                }
-                return null;
-              },
-            ),
+            const SizedBox(height: 16),
+
+            // Dropdown de Ciudad con búsqueda
+            if (_selectedState == null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Selecciona un estado primero',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else if (_loadingCities)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: CircularProgressIndicator(),
+              )
+            else if (_cities.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'No hay ciudades disponibles para este estado',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else
+              DropdownSearch<Map<String, dynamic>>(
+                items: _cities,
+                itemAsString: (item) {
+                  final name = item['name'] ?? '';
+                  final population = item['population'] ?? 0;
+                  return population > 0 ? '$name (${_formatPopulation(population)})' : name;
+                },
+                selectedItem: _selectedCity,
+                popupProps: PopupProps.menu(
+                  showSearchBox: true,
+                  searchFieldProps: const TextFieldProps(
+                    decoration: InputDecoration(
+                      hintText: 'Buscar ciudad...',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                  ),
+                  itemBuilder: (context, item, isSelected) {
+                    final name = item['name'] ?? '';
+                    final population = item['population'] ?? 0;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (population > 0)
+                            Text(
+                              'Población: ${_formatPopulation(population)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                  menuProps: const MenuProps(
+                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
+                    elevation: 8,
+                  ),
+                ),
+                dropdownDecoratorProps: DropDownDecoratorProps(
+                  dropdownSearchDecoration: InputDecoration(
+                    labelText: 'Ciudad',
+                    prefixIcon: const Icon(Icons.location_on),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _selectedState != null
+                        ? IconButton(
+                            onPressed: () => _loadCities(
+                              _selectedCountry!['countryCode'],
+                              _selectedState!['adminCode1'] ?? '',
+                            ),
+                            icon: const Icon(Icons.refresh),
+                            tooltip: 'Recargar ciudades',
+                          )
+                        : null,
+                  ),
+                ),
+                onChanged: (city) {
+                  setState(() {
+                    _selectedCity = city;
+                    if (city != null) {
+                      // Solo usar las coordenadas de la ciudad como punto inicial del mapa
+                      // El usuario puede cambiar la ubicación en el mapa interactivo
+                      try {
+                        _storeLatitude = double.tryParse(city['lat'].toString()) ?? 0.0;
+                        _storeLogitude = double.tryParse(city['lng'].toString()) ?? 0.0;
+                      } catch (e) {
+                        print('Error al convertir coordenadas: $e');
+                        _storeLatitude = 0.0;
+                        _storeLogitude = 0.0;
+                      }
+                    }
+                  });
+                },
+                validator: (value) {
+                  if (_cities.isNotEmpty && value == null) {
+                    return 'Selecciona una ciudad';
+                  }
+                  return null;
+                },
+              ),
+            const SizedBox(height: 24),
+
+            // Sección de localización en mapa
+            if (_selectedCity != null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Localización en Mapa',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Mapa interactivo
+                        Container(
+                          height: 350,
+                          decoration: const BoxDecoration(
+                            borderRadius: BorderRadius.only(
+                              topLeft: Radius.circular(8),
+                              topRight: Radius.circular(8),
+                            ),
+                            color: Colors.grey,
+                          ),
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(8),
+                              topRight: Radius.circular(8),
+                            ),
+                            child: _buildMapPreview(),
+                          ),
+                        ),
+                        // Información de la localización
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: const BorderRadius.only(
+                              bottomLeft: Radius.circular(0),
+                              bottomRight: Radius.circular(0),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.location_on, color: AppColors.primary, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _selectedCity?['name'] ?? 'Ciudad',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Lat: ${_storeLatitude?.toStringAsFixed(6) ?? "N/A"} | Lng: ${_storeLogitude?.toStringAsFixed(6) ?? "N/A"}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Resumen de datos
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildLocationSummaryRow(
+                                'País',
+                                _selectedCountry?['countryName'] ?? 'No seleccionado',
+                                Icons.public,
+                              ),
+                              const SizedBox(height: 8),
+                              _buildLocationSummaryRow(
+                                'Estado',
+                                _selectedState?['name'] ?? 'No seleccionado',
+                                Icons.location_city,
+                              ),
+                              const SizedBox(height: 8),
+                              _buildLocationSummaryRow(
+                                'Ciudad',
+                                _selectedCity?['name'] ?? 'No seleccionado',
+                                Icons.location_on,
+                              ),
+                              const SizedBox(height: 8),
+                              _buildLocationSummaryRow(
+                                'Dirección',
+                                _storeAddressController.text.isNotEmpty
+                                    ? _storeAddressController.text
+                                    : 'No ingresada',
+                                Icons.home,
+                              ),
+                              /* const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    _showMapPicker = true;
+                                    setState(() {});
+                                    _showMapPickerDialog();
+                                  },
+                                  icon: const Icon(Icons.map),
+                                  label: const Text('Ajustar Localización en Mapa'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                  ),
+                                ),
+                              ), */
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               ],
             ),
           ),
@@ -920,7 +1793,20 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
                   const SizedBox(height: 8),
                   Text('Nombre: ${_storeNameController.text}'),
                   Text('Dirección: ${_storeAddressController.text}'),
-                  Text('Ubicación: ${_storeLocationController.text}'),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Ubicación Geográfica',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                  const SizedBox(height: 6),
+                  Text('País: ${_selectedCountry?['countryName'] ?? 'No seleccionado'}'),
+                  Text('Provincia: ${_selectedState?['name'] ?? 'No seleccionada'}'),
+                  Text('Ciudad: ${_selectedCity?['name'] ?? 'No seleccionada'}'),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Coordenadas: ${_storeLatitude?.toStringAsFixed(6) ?? 'N/A'}, ${_storeLogitude?.toStringAsFixed(6) ?? 'N/A'}',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
                 ],
               ),
             ),
@@ -1236,13 +2122,25 @@ class _StoreRegistrationScreenState extends State<StoreRegistrationScreen> {
     try {
       print('🚀 Iniciando creación de tienda...');
       
+      // Formatear coordenadas como "latitud,longitud"
+      String? coordinatesString;
+      if (_storeLatitude != null && _storeLogitude != null) {
+        coordinatesString = '${_storeLatitude!.toStringAsFixed(6)},${_storeLogitude!.toStringAsFixed(6)}';
+      }
+      
       final result = await _registrationService.registerUserAndCreateStore(
         email: _emailController.text.trim(),
         password: _passwordController.text,
         fullName: _fullNameController.text.trim(),
         denominacionTienda: _storeNameController.text.trim(),
         direccionTienda: _storeAddressController.text.trim(),
-        ubicacionTienda: _storeLocationController.text.trim(),
+        ubicacionTienda: coordinatesString ?? _storeLocationController.text.trim(),
+        pais: _selectedCountry?['countryCode'],
+        estado: _selectedState?['adminCode1'],
+        nombrePais: _selectedCountry?['countryName'],
+        nombreEstado: _selectedState?['name'],
+        latitude: _storeLatitude,
+        longitude: _storeLogitude,
         tpvData: _tpvData.isEmpty ? null : _tpvData,
         almacenesData: _almacenesData.isEmpty ? null : _almacenesData,
         layoutsData: _layoutsData.isEmpty ? null : _layoutsData,
