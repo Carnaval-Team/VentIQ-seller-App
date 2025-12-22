@@ -38,6 +38,7 @@ dependencies:
   latlong2: ^0.9.1
   geolocator: ^14.0.2
   permission_handler: ^12.0.1
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -75,6 +76,7 @@ flutter:
     - assets/launcher.png
     - assets/logo_app.png
     - assets/logo_app_no_background.png
+    - assets/logoapp25.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

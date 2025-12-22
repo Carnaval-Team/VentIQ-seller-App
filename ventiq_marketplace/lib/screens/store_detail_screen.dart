@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../widgets/product_list_card.dart';
+import '../widgets/carnaval_fab.dart';
 import 'product_detail_screen.dart';
 import '../services/marketplace_service.dart';
 
@@ -195,6 +196,8 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.backgroundColor,
+      floatingActionButton: const CarnavalFab(),
       body: RefreshIndicator(
         onRefresh: _refreshProducts,
         child: CustomScrollView(
@@ -294,7 +297,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
                     },
                   )
                 : _buildGradientBackground(),
-            
+
             // Overlay oscuro para mejor contraste
             Container(
               decoration: BoxDecoration(

@@ -3,6 +3,7 @@ import 'home_screen.dart';
 import 'stores_screen.dart';
 import 'products_screen.dart';
 import 'cart_screen.dart';
+import '../widgets/carnaval_fab.dart';
 
 /// Pantalla principal con navegación inferior
 class MainScreen extends StatefulWidget {
@@ -31,10 +32,8 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      floatingActionButton: const CarnavalFab(),
+      body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {

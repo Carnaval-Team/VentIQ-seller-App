@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../services/product_detail_service.dart';
 import '../services/cart_service.dart';
+import '../widgets/carnaval_fab.dart';
 
 /// Pantalla de detalles del producto del marketplace
 class ProductDetailScreen extends StatefulWidget {
@@ -224,6 +225,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
+      floatingActionButton: const CarnavalFab(),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
