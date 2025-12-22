@@ -127,7 +127,14 @@ class ConsignacionService {
 
         return productos;
       } catch (rpcError) {
-        debugPrint('⚠️ RPC no disponible, usando query alternativa: $rpcError');
+        // Silenciar error de tipos si el RPC falla por desajuste bigint/integer en DB
+        // Pero loguear si es otro tipo de error
+        final errorStr = rpcError.toString();
+        if (!errorStr.contains('42804')) { 
+          debugPrint('⚠️ RPC error (no crítico, usando fallback): $rpcError');
+        } else {
+          debugPrint('ℹ️ Usando consulta optimizada (fallback automático por desajuste de tipos en RPC)');
+        }
 
         // Fallback a query manual
         final response = await _supabase
@@ -149,6 +156,31 @@ class ConsignacionService {
       }
     } catch (e) {
       debugPrint('❌ Error obteniendo productos en consignación: $e');
+      return [];
+    }
+  }
+
+  /// Obtener stock actual de productos en la zona de destino de un contrato
+  /// Fuente de verdad: app_dat_inventario_productos (cantidad_final)
+  static Future<List<Map<String, dynamic>>> getStockEnZonaDestino(int idContrato, int idZonaDestino) async {
+    try {
+      debugPrint('📊 Obteniendo stock real en zona de destino: $idZonaDestino para contrato: $idContrato');
+
+      final response = await _supabase
+          .from('app_dat_inventario_productos')
+          .select('''
+            id_producto,
+            id_presentacion,
+            cantidad_final,
+            app_dat_producto!id_producto(id, denominacion, sku)
+          ''')
+          .eq('id_ubicacion', idZonaDestino)
+          .order('id', ascending: false);
+
+      debugPrint('✅ Stock obtenido: ${response.length} registros');
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('❌ Error obteniendo stock en zona destino: $e');
       return [];
     }
   }
@@ -500,6 +532,7 @@ class ConsignacionService {
   }
 
   /// Asignar productos a un contrato de consignación (VERSIÓN COMPLETA CON AUDITORÍA)
+  /// Asignar productos a un contrato de consignación (VERSIÓN COMPLETA CON AUDITORÍA)
   static Future<bool> asignarProductos({
     required int idContrato,
     required List<Map<String, dynamic>> productos,
@@ -508,6 +541,9 @@ class ConsignacionService {
     int? idTiendaDestino,
     String? nombreTiendaConsignadora,
     int? idAlmacenDestino,
+    int? idEnvio, // ✅ ID del envío para vincular
+    String? numeroEnvio, // ✅ Número de envío para la descripción
+    int? idOperacionExtraccion, // ✅ NUEVO: Permitir reusar una operación existente
   }) async {
     try {
       debugPrint('📦 Asignando ${productos.length} productos al contrato $idContrato...');
@@ -526,19 +562,14 @@ class ConsignacionService {
         nombreTiendaConsignadora = contrato['app_dat_tienda']['denominacion'];
       }
 
-      // Obtener almacén destino y layout destino del contrato si no se proporcionó
-      int? idLayoutDestino;
-      if (idAlmacenDestino == null || contrato == null) {
+      // Obtener almacén destino del contrato si no se proporcionó
+      if (idAlmacenDestino == null) {
         final contratoDestino = await _supabase
             .from('app_dat_contrato_consignacion')
-            .select('id_almacen_destino, id_layout_destino')
+            .select('id_almacen_destino')
             .eq('id', idContrato)
             .single();
-
         idAlmacenDestino = contratoDestino['id_almacen_destino'] as int?;
-        idLayoutDestino = contratoDestino['id_layout_destino'] as int?;
-      } else {
-        idLayoutDestino = contrato['id_layout_destino'] as int?;
       }
 
       if (idAlmacenDestino == null) {
@@ -546,71 +577,76 @@ class ConsignacionService {
         return false;
       }
 
-      // Usar la zona de consignación ya creada en el contrato
-      int idZonaDestino;
-      if (idLayoutDestino != null) {
-        debugPrint('✅ Usando zona de consignación del contrato: $idLayoutDestino');
-        idZonaDestino = idLayoutDestino;
-      } else {
-        // Fallback: crear zona si no existe (para contratos antiguos)
-        debugPrint('⚠️ Contrato sin zona asignada, creando zona de consignación...');
-        final zona = await obtenerOCrearZonaConsignacion(
-          idContrato: idContrato,
-          idAlmacenDestino: idAlmacenDestino,
-          idTiendaConsignadora: idTiendaOrigen!,
-          idTiendaConsignataria: idTiendaDestino!,
-          nombreTiendaConsignadora: nombreTiendaConsignadora ?? 'Tienda',
-        );
+      // 1. Crear o actualizar operación de extracción para RESERVAR el stock (Estado 1 = Pendiente)
+      int? idExtraccion = idOperacionExtraccion;
+      
+      if (idExtraccion == null) {
+        final uuid = _supabase.auth.currentUser?.id;
+        final email = _supabase.auth.currentUser?.email ?? 'Sistema';
+        
+        if (uuid == null) throw Exception('Usuario no autenticado');
 
-        if (zona == null) {
-          debugPrint('❌ Error: No se pudo crear la zona de consignación');
-          return false;
+        final productosExtraccion = productos.map((p) => {
+          'id_producto': p['id_producto'],
+          'cantidad': p['cantidad'],
+          'id_presentacion': p['id_presentacion'],
+          'id_ubicacion': p['id_ubicacion'],
+          'id_variante': p['id_variante'],
+          'id_opcion_variante': p['id_opcion_variante'],
+          'precio_unitario': p['precio_costo_unitario'] ?? 0,
+        }).toList();
+
+        debugPrint('🔄 Creando operación de extracción (Reserva) para ${productos.length} productos...');
+        
+        String observaciones = 'Envío a consignación - Contrato #$idContrato';
+        if (numeroEnvio != null) {
+          observaciones += '. Extracción para envío $numeroEnvio';
         }
 
-        idZonaDestino = zona['id'] as int;
+        final extraccionResult = await _supabase.rpc(
+          'fn_insertar_extraccion_completa',
+          params: {
+            'p_autorizado_por': email,
+            'p_estado_inicial': 1, // 1 = Pendiente (Reserva)
+            'p_id_motivo_operacion': 5, // Transferencia a otra tienda
+            'p_id_tienda': idTiendaOrigen,
+            'p_observaciones': observaciones,
+            'p_productos': productosExtraccion,
+            'p_uuid': uuid,
+          },
+        );
+
+        if (extraccionResult['status'] != 'success') {
+          throw Exception('Error creando reserva: ${extraccionResult['message']}');
+        }
+
+        idExtraccion = extraccionResult['id_operacion'];
+        debugPrint('✅ Reserva creada con ID Operación: $idExtraccion');
+      } else {
+        debugPrint('🔗 Reusando operación de extracción existente: $idExtraccion');
         
-        // Guardar el ID de la zona en el contrato para futuras asignaciones
-        await actualizarLayoutDestino(idContrato, idZonaDestino);
+        // OPCIONAL: Actualizar observaciones con el número de envío si no se hizo antes
+        if (numeroEnvio != null) {
+          try {
+            await _supabase
+                .from('app_dat_operaciones')
+                .update({'observaciones': 'Envío a consignación - Contrato #$idContrato. Extracción para envío $numeroEnvio'})
+                .eq('id', idExtraccion);
+            debugPrint('✅ Observaciones de operación $idExtraccion actualizadas');
+          } catch (e) {
+            debugPrint('⚠️ No se pudo actualizar observaciones: $e');
+          }
+        }
       }
 
-      // 1. Crear operación de extracción para RESERVAR el stock (Estado 1 = Pendiente)
-      // Esto evitará que los productos se vendan en la tienda origen mientras están en consignación
-      final uuid = _supabase.auth.currentUser?.id;
-      final email = _supabase.auth.currentUser?.email ?? 'Sistema';
-      
-      if (uuid == null) throw Exception('Usuario no autenticado');
-
-      final productosExtraccion = productos.map((p) => {
-        'id_producto': p['id_producto'],
-        'cantidad': p['cantidad'],
-        'id_presentacion': p['id_presentacion'],
-        'id_ubicacion': p['id_ubicacion'],
-        'id_variante': p['id_variante'],
-        'id_opcion_variante': p['id_opcion_variante'],
-        'precio_unitario': p['precio_costo_unitario'] ?? 0,
-      }).toList();
-
-      debugPrint('🔄 Creando operación de extracción (Reserva) para ${productos.length} productos...');
-      
-      final extraccionResult = await _supabase.rpc(
-        'fn_insertar_extraccion_completa',
-        params: {
-          'p_autorizado_por': email,
-          'p_estado_inicial': 1, // 1 = Pendiente (Reserva)
-          'p_id_motivo_operacion': 5, // Transferencia a otra tienda
-          'p_id_tienda': idTiendaOrigen,
-          'p_observaciones': 'Envío a consignación - Contrato #$idContrato',
-          'p_productos': productosExtraccion,
-          'p_uuid': uuid,
-        },
-      );
-
-      if (extraccionResult['status'] != 'success') {
-        throw Exception('Error creando reserva: ${extraccionResult['message']}');
+      // ✅ Vincular operación al envío si se proporcionó idEnvio
+      if (idEnvio != null && idExtraccion != null) {
+        await _supabase
+            .from('app_dat_consignacion_envio')
+            .update({'id_operacion_extraccion': idExtraccion})
+            .eq('id', idEnvio);
+        debugPrint('✅ Operación $idExtraccion vinculada al envío $idEnvio');
       }
-
-      final idExtraccion = extraccionResult['id_operacion'];
-      debugPrint('✅ Reserva creada con ID Operación: $idExtraccion');
 
       // 2. Asignar productos al contrato con referencia a la extracción
       for (var producto in productos) {
@@ -635,6 +671,18 @@ class ConsignacionService {
             .single();
 
         debugPrint('✅ Producto consignación creado: ${prodConsig['id']}');
+
+        // ✅ Si tenemos idEnvio, también actualizar app_dat_consignacion_envio_producto para vincularlo
+        if (idEnvio != null) {
+          await _supabase
+              .from('app_dat_consignacion_envio_producto')
+              .update({'id_producto_consignacion': prodConsig['id']})
+              .match({
+                'id_envio': idEnvio,
+                'id_producto': producto['id_producto'],
+                'estado': 1
+              });
+        }
       }
 
       debugPrint('✅ Productos asignados y reservados exitosamente');
@@ -642,6 +690,56 @@ class ConsignacionService {
     } catch (e) {
       debugPrint('❌ Error asignando productos: $e');
       return false;
+    }
+  }
+
+  /// ✅ NUEVO: Crear reserva de stock (operación de extracción pendiente)
+  static Future<int?> crearReservaStock({
+    required int idContrato,
+    required List<Map<String, dynamic>> productos,
+    required int idTiendaOrigen,
+  }) async {
+    try {
+      final uuid = _supabase.auth.currentUser?.id;
+      final email = _supabase.auth.currentUser?.email ?? 'Sistema';
+      
+      if (uuid == null) throw Exception('Usuario no autenticado');
+
+      final productosExtraccion = productos.map((p) => {
+        'id_producto': p['id_producto'],
+        'cantidad': p['cantidad'],
+        'id_presentacion': p['id_presentacion'],
+        'id_ubicacion': p['id_ubicacion'],
+        'id_variante': p['id_variante'],
+        'id_opcion_variante': p['id_opcion_variante'],
+        'precio_unitario': p['precio_costo_unitario'] ?? 0,
+      }).toList();
+
+      debugPrint('🔄 Reservando stock para ${productos.length} productos...');
+      
+      final extraccionResult = await _supabase.rpc(
+        'fn_insertar_extraccion_completa',
+        params: {
+          'p_autorizado_por': email,
+          'p_estado_inicial': 1, // 1 = Pendiente (Reserva)
+          'p_id_motivo_operacion': 5, // Transferencia a otra tienda
+          'p_id_tienda': idTiendaOrigen,
+          'p_observaciones': 'Envío a consignación - Contrato #$idContrato (Reserva inicial)',
+          'p_productos': productosExtraccion,
+          'p_uuid': uuid,
+        },
+      );
+
+      if (extraccionResult['status'] != 'success') {
+        throw Exception('Error creando reserva: ${extraccionResult['message']}');
+      }
+
+      final idExtraccion = extraccionResult['id_operacion'] as int;
+      debugPrint('✅ Stock reservado con ID Operación: $idExtraccion');
+      return idExtraccion;
+    } catch (e) {
+      debugPrint('❌ Error reservando stock: $e');
+      rethrow;
     }
   }
 
@@ -1087,6 +1185,52 @@ class ConsignacionService {
         'id_operacion_extraccion': null,
         'estado_extraccion': null,
       };
+    }
+  }
+
+  /// ✅ NUEVO: Validar estado del envío antes de completar una extracción
+  /// Retorna: {valido: bool, mensaje: string, id_envio: int?, estado_envio: int?}
+  static Future<Map<String, dynamic>> validarEstadoEnvioParaExtraccion(int idOperacionExtraccion) async {
+    try {
+      debugPrint('🔍 Validando estado de envío para extracción: $idOperacionExtraccion');
+
+      // Buscar envío vinculado a esta operación de extracción
+      final dataEnvio = await Supabase.instance.client
+          .from('app_dat_consignacion_envio')
+          .select('id, numero_envio, estado_envio')
+          .eq('id_operacion_extraccion', idOperacionExtraccion)
+          .maybeSingle();
+
+      if (dataEnvio == null) {
+        // No es una operación vinculada a un envío de consignación (o al menos no por id_operacion_extraccion)
+        return {'valido': true, 'id_envio': null};
+      }
+
+      final idEnvio = dataEnvio['id'] as int;
+      final estadoEnvio = dataEnvio['estado_envio'] as int;
+      final numeroEnvio = dataEnvio['numero_envio'] as String;
+
+      // El envío debe estar en estado CONFIGURADO (2) para ser enviado (en tránsito)
+      // Si está en estado PROPUESTO (1), significa que aún no se le han asignado precios.
+      if (estadoEnvio == 1) { // ESTADO_PROPUESTO
+        return {
+          'valido': false,
+          'id_envio': idEnvio,
+          'estado_envio': estadoEnvio,
+          'mensaje': '⚠️ No se puede completar la extracción\n\n'
+              'El envío $numeroEnvio aún no tiene precios configurados.\n\n'
+              'Por favor, ve a la sección de "Envíos", selecciona este envío y completa la configuración de precios antes de extraer el stock físicamente.',
+        };
+      }
+
+      return {
+        'valido': true,
+        'id_envio': idEnvio,
+        'estado_envio': estadoEnvio,
+      };
+    } catch (e) {
+      debugPrint('❌ Error validando estado de envío: $e');
+      return {'valido': true, 'id_envio': null}; // En caso de duda, permitimos continuar
     }
   }
 

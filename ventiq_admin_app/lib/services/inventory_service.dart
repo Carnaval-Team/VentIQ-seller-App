@@ -5,6 +5,7 @@ import '../models/transfer_order.dart';
 import 'user_preferences_service.dart';
 import 'transfer_service.dart';
 import 'product_service.dart';
+import '../services/consignacion_envio_service.dart';
 import 'financial_service.dart';
 import 'restaurant_service.dart'; // Agregar import para conversión de unidades
 import 'permissions_service.dart';
@@ -2365,53 +2366,43 @@ class InventoryService {
       // =====================================================
       print('\n🔍 Verificando si es operación de consignación...');
       try {
-        // Verificar si esta operación de recepción está vinculada a productos de consignación
-        final productosConsignacion = await _supabase
+        // 1. CASO RECEPCIÓN: Validar que la extracción esté completada
+        final productosRecepcionConsignacion = await _supabase
             .from('app_dat_producto_consignacion')
-            .select('id, id_operacion_extraccion, id_operacion_recepcion')
+            .select('id')
             .eq('id_operacion_recepcion', idOperacion);
 
-        if (productosConsignacion.isNotEmpty) {
-          print('📦 Esta es una operación de recepción de consignación');
-          print('   - Productos de consignación encontrados: ${productosConsignacion.length}');
+        if (productosRecepcionConsignacion.isNotEmpty) {
+          print('📦 Esta es una operación de RECEPCIÓN de consignación');
           
-          // Validar que la operación de extracción esté completada
           final validacion = await ConsignacionService.validarOrdenOperacionesConsignacion(idOperacion);
           
           if (validacion['valido'] != true) {
             final mensaje = validacion['mensaje'] ?? 'La operación de extracción debe completarse primero';
-            final idOperacionExtraccion = validacion['id_operacion_extraccion'];
-            final estadoExtraccion = validacion['estado_extraccion'];
-            
-            print('❌ Validación de consignación fallida: $mensaje');
-            print('   - ID Operación Extracción: $idOperacionExtraccion');
-            print('   - Estado Extracción: $estadoExtraccion (debe ser 3 = Completada)');
-            
-            // Mensaje claro para el usuario
-            String mensajeUsuario = '⚠️ No se puede completar la recepción\n\n';
-            mensajeUsuario += 'Primero debes completar la operación de extracción en el almacén de origen.\n\n';
-            mensajeUsuario += 'Pasos:\n';
-            mensajeUsuario += '1. Ve al almacén de origen\n';
-            mensajeUsuario += '2. Abre la operación de extracción #$idOperacionExtraccion\n';
-            mensajeUsuario += '3. Haz clic en "Completar operación"\n';
-            mensajeUsuario += '4. Luego podrás completar la recepción aquí';
+            final idExp = validacion['id_operacion_extraccion'];
             
             return {
               'success': false,
-              'message': mensajeUsuario,
+              'message': validacion['mensaje'],
               'error': 'CONSIGNMENT_EXTRACTION_NOT_COMPLETED',
-              'id_operacion_extraccion': idOperacionExtraccion,
-              'estado_extraccion': estadoExtraccion,
+              'id_operacion_extraccion': idExp,
             };
           }
-          
-          print('✅ Validación de consignación exitosa: ${validacion['mensaje']}');
-        } else {
-          print('ℹ️ No es una operación de consignación, continuando normalmente');
+          print('✅ Validación de recepción exitosa');
+        }
+
+        // 2. CASO EXTRACCIÓN: Validar que el envío esté configurado
+        final validacionExtraccion = await ConsignacionService.validarEstadoEnvioParaExtraccion(idOperacion);
+        if (validacionExtraccion['valido'] != true) {
+          print('❌ Validación de extracción fallida: ${validacionExtraccion['mensaje']}');
+          return {
+            'success': false,
+            'message': validacionExtraccion['mensaje'],
+            'error': 'CONSIGNMENT_SHIPMENT_NOT_CONFIGURED',
+          };
         }
       } catch (e) {
         print('⚠️ Error validando operación de consignación: $e');
-        print('   - Continuando con la completación de operación');
       }
 
       final response = await _supabase.rpc(
@@ -2425,6 +2416,42 @@ class InventoryService {
 
       print('✅ Operación $idOperacion completada exitosamente');
       print('📦 Respuesta RPC: $response');
+
+      // =====================================================
+      // SINCRONIZAR ESTADO DE ENVÍO TRAS COMPLETAR OPERACIÓN
+      // =====================================================
+      try {
+        final userData = await _prefsService.getUserData();
+        final idUsuario = userData['id'];
+        
+        // A. Si fue una extracción -> Mover envío a EN TRÁNSITO
+        final dataEnvioExtraccion = await _supabase
+            .from('app_dat_consignacion_envio')
+            .select('id')
+            .eq('id_operacion_extraccion', idOperacion)
+            .maybeSingle();
+            
+        if (dataEnvioExtraccion != null) {
+          final idEnvio = dataEnvioExtraccion['id'] as int;
+          print('🚚 Operación de extracción completada. Moviendo envío $idEnvio a EN TRÁNSITO...');
+          await ConsignacionEnvioService.marcarEnTransito(idEnvio: idEnvio, idUsuario: idUsuario);
+        }
+
+        // B. Si fue una recepción -> Mover envío a ENTREGADO
+        final dataEnvioRecepcion = await _supabase
+            .from('app_dat_consignacion_envio')
+            .select('id')
+            .eq('id_operacion_recepcion', idOperacion)
+            .maybeSingle();
+            
+        if (dataEnvioRecepcion != null) {
+          final idEnvio = dataEnvioRecepcion['id'] as int;
+          print('🏁 Operación de recepción completada. Finalizando envío $idEnvio como ENTREGADO...');
+          await ConsignacionEnvioService.marcarEntregado(idEnvio: idEnvio, idUsuario: idUsuario);
+        }
+      } catch (e) {
+        print('⚠️ Error sincronizando estado de envío: $e');
+      }
 
       // =====================================================
       // ACTUALIZAR PRECIO PROMEDIO DE PRESENTACIONES RECIBIDAS

@@ -167,6 +167,47 @@ class ConsignacionEnvioService {
     }
   }
 
+  /// Marca el envío como entregado (recepción completada)
+  static Future<bool> marcarEntregado({
+    required int idEnvio,
+    required String idUsuario,
+  }) async {
+    try {
+      debugPrint('🏁 Finalizando envío $idEnvio (marcando como entregado)...');
+
+      // Actualizar estado del envío
+      final response = await _supabase
+          .from('app_dat_consignacion_envio')
+          .update({
+            'estado_envio': ESTADO_ENTREGADO,
+            'fecha_entrega': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', idEnvio)
+          .select();
+
+      if (response.isNotEmpty) {
+        // Registrar movimiento
+        await _supabase.from('app_dat_consignacion_envio_movimiento').insert({
+          'id_envio': idEnvio,
+          'id_usuario': idUsuario,
+          'tipo_movimiento': MOVIMIENTO_ENTREGA,
+          'estado_anterior': ESTADO_ACEPTADO,
+          'estado_nuevo': ESTADO_ENTREGADO,
+          'descripcion': 'Envío marcado como entregado automáticamente al completar recepción',
+        });
+
+        debugPrint('✅ Envío entregado exitosamente');
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('❌ Error finalizando envío: $e');
+      return false;
+    }
+  }
+
   // ============================================================================
   // ACEPTAR ENVÍO
   // ============================================================================
@@ -189,13 +230,9 @@ class ConsignacionEnvioService {
 
       if (response != null && response is List && response.isNotEmpty) {
         final resultado = response[0] as Map<String, dynamic>;
-        final success = resultado['success'] as bool;
-        
-        if (success) {
-          debugPrint('✅ Envío aceptado exitosamente');
-          debugPrint('   ID Operación Recepción: ${resultado['id_operacion_recepcion']}');
-          return resultado;
-        }
+        // Devolvemos el resultado completo sea success true o false
+        // para que la UI pueda mostrar el mensaje de error si existe.
+        return resultado;
       }
 
       return null;

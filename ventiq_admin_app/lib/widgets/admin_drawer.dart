@@ -655,14 +655,23 @@ class _AdminDrawerState extends State<AdminDrawer> {
         Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
       }
     } catch (e) {
-      // Mostrar error si algo falla
+      print('❌ Error durante logout: $e');
+      // A pesar del error, intentar navegar al login para forzar salida
       if (context.mounted) {
+        // Mostrar aviso de error pero navegar de todos modos
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al cerrar sesión: $e'),
-            backgroundColor: Colors.red,
+            content: Text('Cierre de sesión con advertencias. Redirigiendo...'),
+            backgroundColor: Colors.orange,
           ),
         );
+        
+        // Pequeña espera para que se vea el SnackBar un momento
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        }
       }
     }
   }

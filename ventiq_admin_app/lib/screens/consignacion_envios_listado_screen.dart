@@ -1,17 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../services/consignacion_envio_listado_service.dart';
+import '../services/user_preferences_service.dart';
+import 'consignacion_envio_detalles_screen.dart';
+import 'asignar_productos_consignacion_screen.dart';
+import '../services/consignacion_service.dart';
+import '../config/app_colors.dart';
 
 class ConsignacionEnviosListadoScreen extends StatefulWidget {
   final int? idContrato;
   final int? estadoFiltro;
   final String? rol; // 'consignador' o 'consignatario'
+  final Map<String, dynamic>? contrato;
 
   const ConsignacionEnviosListadoScreen({
     Key? key,
     this.idContrato,
     this.estadoFiltro,
     this.rol,
+    this.contrato,
   }) : super(key: key);
 
   @override
@@ -130,6 +139,31 @@ class _ConsignacionEnviosListadoScreenState
           ),
         ],
       ),
+      floatingActionButton: (widget.rol == 'consignador' && widget.idContrato != null && widget.contrato != null)
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AsignarProductosConsignacionScreen(
+                      idContrato: widget.idContrato!,
+                      contrato: widget.contrato!,
+                    ),
+                  ),
+                );
+                if (result == true) {
+                  _cargarEnvios();
+                }
+              },
+              backgroundColor: AppColors.primary,
+              icon: const Icon(Icons.add_box, color: Colors.white),
+              label: const Text(
+                'Crear envío',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              tooltip: 'Crear nuevo envío de productos',
+            )
+          : null,
     );
   }
 
@@ -449,14 +483,19 @@ class _ConsignacionEnviosListadoScreenState
     }
   }
 
-  void _mostrarDetalles(int idEnvio) {
-    Navigator.of(context).push(
+  void _mostrarDetalles(int idEnvio) async {
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => ConsignacionEnvioDetallesScreen(
           idEnvio: idEnvio,
+          rol: widget.rol,
         ),
       ),
     );
+
+    if (result == true) {
+      _cargarEnvios();
+    }
   }
 
   void _aceptarEnvio(int idEnvio) {
@@ -625,305 +664,5 @@ class _ConsignacionEnviosListadoScreenState
   }
 }
 
-// ============================================================================
-// PANTALLA DE DETALLES DEL ENVÍO
-// ============================================================================
-
-class ConsignacionEnvioDetallesScreen extends StatefulWidget {
-  final int idEnvio;
-
-  const ConsignacionEnvioDetallesScreen({
-    Key? key,
-    required this.idEnvio,
-  }) : super(key: key);
-
-  @override
-  State<ConsignacionEnvioDetallesScreen> createState() =>
-      _ConsignacionEnvioDetallesScreenState();
-}
-
-class _ConsignacionEnvioDetallesScreenState
-    extends State<ConsignacionEnvioDetallesScreen> {
-  late Future<Map<String, dynamic>?> _detallesFuture;
-  late Future<List<Map<String, dynamic>>> _productosFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _detallesFuture =
-        ConsignacionEnvioListadoService.obtenerDetallesEnvio(widget.idEnvio);
-    _productosFuture =
-        ConsignacionEnvioListadoService.obtenerProductosEnvio(widget.idEnvio);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detalles del Envío'),
-        elevation: 0,
-      ),
-      body: FutureBuilder<Map<String, dynamic>?>(
-        future: _detallesFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError || snapshot.data == null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 16),
-                  const Text('Error al cargar detalles'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Volver'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final detalles = snapshot.data!;
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSeccionDetalles(detalles),
-                const SizedBox(height: 24),
-                _buildSeccionProductos(),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildSeccionDetalles(Map<String, dynamic> detalles) {
-    final valorTotalCostoRaw = detalles['valor_total_costo'];
-    final valorTotalCosto = valorTotalCostoRaw is num
-        ? valorTotalCostoRaw.toDouble()
-        : double.tryParse(valorTotalCostoRaw?.toString() ?? '') ?? 0;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Información General',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            _buildFilaDetalle('Envío', detalles['numero_envio']),
-            _buildFilaDetalle('Estado', detalles['estado_envio_texto']),
-            _buildFilaDetalle('Consignadora', detalles['tienda_consignadora']),
-            _buildFilaDetalle('Consignataria', detalles['tienda_consignataria']),
-            _buildFilaDetalle('Almacén Origen', detalles['almacen_origen'] ?? 'N/A'),
-            _buildFilaDetalle('Almacén Destino', detalles['almacen_destino'] ?? 'N/A'),
-            _buildFilaDetalle(
-              'Cantidad Total',
-              '${detalles['cantidad_total_unidades']} unidades',
-            ),
-            _buildFilaDetalle(
-              'Valor Total',
-              '\$${valorTotalCosto.toStringAsFixed(2)}',
-            ),
-            _buildFilaDetalle(
-              'Comisión',
-              '${detalles['porcentaje_comision']}%',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Fechas',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            _buildFilaDetalle(
-              'Propuesto',
-              _formatearFecha(detalles['fecha_propuesta']),
-            ),
-            if (detalles['fecha_aceptacion'] != null)
-              _buildFilaDetalle(
-                'Aceptado',
-                _formatearFecha(detalles['fecha_aceptacion']),
-              ),
-            if (detalles['fecha_rechazo'] != null)
-              _buildFilaDetalle(
-                'Rechazado',
-                _formatearFecha(detalles['fecha_rechazo']),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSeccionProductos() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Productos',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        FutureBuilder<List<Map<String, dynamic>>>(
-          future: _productosFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            }
-
-            final productos = snapshot.data ?? [];
-
-            if (productos.isEmpty) {
-              return const Center(
-                child: Text('No hay productos en este envío'),
-              );
-            }
-
-            return ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: productos.length,
-              itemBuilder: (context, index) {
-                return _buildProductoItem(productos[index]);
-              },
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildProductoItem(Map<String, dynamic> producto) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        producto['nombre_producto'] as String? ?? 'N/A',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        'SKU: ${producto['sku']}',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blue[100],
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    producto['estado_producto_texto'] as String? ?? 'N/A',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.blue[700],
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildProductoInfo(
-                  'Propuesta',
-                  '${producto['cantidad_propuesta']}',
-                ),
-                _buildProductoInfo(
-                  'Aceptada',
-                  '${producto['cantidad_aceptada'] ?? 0}',
-                ),
-                _buildProductoInfo(
-                  'Rechazada',
-                  '${producto['cantidad_rechazada'] ?? 0}',
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProductoInfo(String label, String valor) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-        ),
-        Text(
-          valor,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilaDetalle(String label, dynamic valor) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-          Text(
-            valor.toString(),
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatearFecha(dynamic fecha) {
-    if (fecha == null) return 'N/A';
-    if (fecha is DateTime) {
-      return DateFormat('dd/MM/yyyy HH:mm').format(fecha);
-    }
-    if (fecha is String) {
-      final parsed = DateTime.tryParse(fecha);
-      if (parsed != null) {
-        return DateFormat('dd/MM/yyyy HH:mm').format(parsed);
-      }
-      return fecha;
-    }
-    return fecha.toString();
-  }
-}
+// La pantalla ConsignacionEnvioDetallesScreen se ha movido a su propio archivo:
+// consignacion_envio_detalles_screen.dart

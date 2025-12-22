@@ -27,7 +27,7 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _loadData();
   }
 
@@ -78,7 +78,6 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
           tabs: const [
             Tab(icon: Icon(Icons.dashboard), text: 'Resumen'),
             Tab(icon: Icon(Icons.handshake), text: 'Contratos'),
-            Tab(icon: Icon(Icons.inventory), text: 'Productos'),
           ],
         ),
       ),
@@ -90,7 +89,6 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
               children: [
                 _buildResumenTab(),
                 _buildContratosTab(),
-                _buildProductosTab(),
               ],
             ),
       floatingActionButton: FloatingActionButton.extended(
@@ -258,34 +256,6 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
     );
   }
 
-  // Tab 3: Productos
-  Widget _buildProductosTab() {
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: _contratos.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.inventory_outlined, size: 80, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No hay productos en consignación',
-                    style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _contratos.length,
-              itemBuilder: (context, index) {
-                final contrato = _contratos[index];
-                return _buildContratoProductosCard(contrato);
-              },
-            ),
-    );
-  }
 
   Widget _buildStatCard(String title, String value, IconData icon, Color color) {
     return Card(
@@ -486,53 +456,12 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => _verProductosContrato(contrato),
-                            icon: const Icon(Icons.inventory, size: 20),
-                            label: const Text('Ver Productos', style: TextStyle(fontSize: 13)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.grey,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                     if (esConsignadora) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          // Botón Asignar: solo si está confirmado
-                          if (estadoConfirmacion == 1)
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () async {
-                                  final result = await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => AsignarProductosConsignacionScreen(
-                                        idContrato: contrato['id'],
-                                        contrato: contrato,
-                                      ),
-                                    ),
-                                  );
-                                  if (result == true) {
-                                    _loadData();
-                                  }
-                                },
-                                icon: const Icon(Icons.add_box, size: 20),
-                                label: const Text('Asignar', style: TextStyle(fontSize: 13)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                ),
-                              ),
-                            ),
-                          if (estadoConfirmacion == 1) const SizedBox(width: 8),
                           // Botón Rescindir: siempre disponible si puede rescindirse
                           Expanded(
                             child: FutureBuilder<bool>(
@@ -643,132 +572,6 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
     );
   }
 
-  Widget _buildContratoProductosCard(Map<String, dynamic> contrato) {
-    final tiendaConsignadora = contrato['tienda_consignadora'];
-    final tiendaConsignataria = contrato['tienda_consignataria'];
-    final estadoConfirmacion = contrato['estado_confirmacion'] as int? ?? 0;
-
-    // Determinar color y texto del estado
-    String textoEstado = '';
-    Color colorEstado = Colors.grey;
-    IconData iconoEstado = Icons.help_outline;
-
-    switch (estadoConfirmacion) {
-      case 0:
-        textoEstado = 'Pendiente';
-        colorEstado = Colors.orange;
-        iconoEstado = Icons.schedule;
-        break;
-      case 1:
-        textoEstado = 'Confirmado';
-        colorEstado = Colors.green;
-        iconoEstado = Icons.check_circle;
-        break;
-      case 2:
-        textoEstado = 'Cancelado';
-        colorEstado = Colors.red;
-        iconoEstado = Icons.cancel;
-        break;
-    }
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ExpansionTile(
-        leading: const Icon(Icons.inventory, color: AppColors.primary),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                '${tiendaConsignadora['denominacion']} → ${tiendaConsignataria['denominacion']}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: colorEstado.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: colorEstado, width: 1),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(iconoEstado, size: 14, color: colorEstado),
-                  const SizedBox(width: 4),
-                  Text(
-                    textoEstado,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: colorEstado,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        children: [
-          FutureBuilder<List<Map<String, dynamic>>>(
-            future: ConsignacionService.getProductosConsignacion(contrato['id']),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('No hay productos en este contrato'),
-                );
-              }
-
-              return Column(
-                children: snapshot.data!.map((producto) {
-                  final prod = producto['producto'];
-                  final cantidadEnviada = (producto['cantidad_enviada'] as num).toDouble();
-                  final cantidadVendida = (producto['cantidad_vendida'] as num).toDouble();
-                  final cantidadDevuelta = (producto['cantidad_devuelta'] as num).toDouble();
-                  final stockDisponible = cantidadEnviada - cantidadVendida - cantidadDevuelta;
-
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: AppColors.primary.withOpacity(0.1),
-                      child: const Icon(Icons.inventory_2, color: AppColors.primary, size: 20),
-                    ),
-                    title: Text(prod['denominacion']),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('SKU: ${prod['sku'] ?? 'N/A'}'),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            _buildChip('Enviado: ${cantidadEnviada.toInt()}', Colors.blue),
-                            const SizedBox(width: 4),
-                            _buildChip('Vendido: ${cantidadVendida.toInt()}', Colors.green),
-                            const SizedBox(width: 4),
-                            _buildChip('Stock: ${stockDisponible.toInt()}', Colors.orange),
-                          ],
-                        ),
-                      ],
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.info_outline),
-                      onPressed: () => _verDetalleProducto(producto),
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildChip(String label, Color color) {
     return Container(
@@ -788,48 +591,6 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
     );
   }
 
-  void _verProductosContrato(Map<String, dynamic> contrato) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Productos en Consignación'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: FutureBuilder<List<Map<String, dynamic>>>(
-            future: ConsignacionService.getProductosConsignacion(contrato['id']),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Text('No hay productos en este contrato');
-              }
-
-              return ListView.builder(
-                shrinkWrap: true,
-                itemCount: snapshot.data!.length,
-                itemBuilder: (context, index) {
-                  final producto = snapshot.data![index];
-                  final prod = producto['producto'];
-                  return ListTile(
-                    title: Text(prod['denominacion']),
-                    subtitle: Text('Enviado: ${producto['cantidad_enviada']} | Vendido: ${producto['cantidad_vendida']}'),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _verEnviosConfirmados(Map<String, dynamic> contrato) async {
     try {
@@ -861,6 +622,7 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
           builder: (context) => ConsignacionEnviosListadoScreen(
             idContrato: contrato['id'],
             rol: rol,
+            contrato: contrato, // Pasar el contrato completo
           ),
         ),
       );

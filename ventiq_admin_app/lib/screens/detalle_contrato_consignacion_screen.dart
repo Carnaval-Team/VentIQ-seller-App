@@ -5,6 +5,7 @@ import '../services/consignacion_movimientos_service.dart';
 import '../services/liquidacion_service.dart';
 import 'liquidaciones_list_screen.dart';
 import 'operaciones_venta_consignacion_screen.dart';
+import 'productos_zona_destino_screen.dart';
 
 class DetalleContratoConsignacionScreen extends StatefulWidget {
   final Map<String, dynamic> contrato;
@@ -325,6 +326,34 @@ class _DetalleContratoConsignacionScreenState
                 label: const Text('Gestionar Liquidaciones'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Botón para ver stock en destino
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  final titulo = '${widget.contrato['tienda_consignadora']['denominacion']} → ${widget.contrato['tienda_consignataria']['denominacion']}';
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProductosZonaDestinoScreen(
+                        idContrato: widget.contrato['id'],
+                        tituloContrato: titulo,
+                        idZonaDestino: widget.contrato['id_layout_destino'],
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.inventory, size: 20),
+                label: const Text('Ver Stock en Destino'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
