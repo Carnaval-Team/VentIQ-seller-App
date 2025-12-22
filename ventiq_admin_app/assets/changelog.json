@@ -1,8 +1,85 @@
 {
-  "current_version": "1.5.2",
-  "build": 152,
+  "current_version": "1.6.0",
+  "build": 160,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.6.0",
+      "date": "2025-12-22",
+      "title": "🛍️ Catálogo de Productos y Mejoras en Consignaciones",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Gestión Completa de Catálogo de Productos",
+          "description": "Nuevo módulo para publicar y gestionar productos en catálogo con validación de requisitos (denominación, precio, imagen y presentación)"
+        },
+        {
+          "type": "feature",
+          "title": "Pantalla de Gestión de Catálogo",
+          "description": "Nueva pantalla con listado de productos, búsqueda, filtros y toggle para publicar/despublicar productos en catálogo con validaciones automáticas"
+        },
+        {
+          "type": "feature",
+          "title": "Edición Inline de Productos en Catálogo",
+          "description": "Posibilidad de editar nombre, precio base del sistema e imagen directamente desde el diálogo de detalles del producto"
+        },
+        {
+          "type": "feature",
+          "title": "Carga de Imágenes de Productos",
+          "description": "Sistema de carga de imágenes a Supabase Storage con URL pública automática y actualización del producto"
+        },
+        {
+          "type": "feature",
+          "title": "Validación de Requisitos de Catálogo",
+          "description": "Sistema automático que valida que los productos tengan denominación, precio vigente, imagen y presentación antes de publicar en catálogo"
+        },
+        {
+          "type": "feature",
+          "title": "Control de Acceso por Plan de Suscripción",
+          "description": "Acceso al módulo de catálogo restringido a tiendas con plan Pro o Avanzado activo"
+        },
+        {
+          "type": "feature",
+          "title": "Activación de Catálogo por Tienda",
+          "description": "Nueva opción en configuración de tienda para activar/desactivar la publicación en catálogo"
+        },
+        {
+          "type": "improvement",
+          "title": "Reorden de Tabs en Configuración",
+          "description": "Tab de Tienda movido al segundo lugar en la pantalla de Configuración para mejor accesibilidad"
+        },
+        {
+          "type": "improvement",
+          "title": "Precio Base del Sistema",
+          "description": "Aclaración visual de que el precio editado es el precio base del producto en todo el sistema"
+        },
+        {
+          "type": "improvement",
+          "title": "Feedback Visual en Ediciones",
+          "description": "Indicadores de carga, mensajes de confirmación y validaciones en tiempo real al editar productos"
+        },
+        {
+          "type": "fix",
+          "title": "Corrección en Validación de Precios de Consignación",
+          "description": "Corregida validación de precios vigentes en RPC de consignación para verificar fechas correctamente"
+        },
+        {
+          "type": "fix",
+          "title": "Corrección en Nombres de Campos de Precio",
+          "description": "Alineación correcta de nombres de campos (precio_venta_cup) en todas las consultas y RPCs"
+        },
+        {
+          "type": "improvement",
+          "title": "Duplicación Bajo Demanda en Consignaciones",
+          "description": "Sistema inteligente que duplica productos solo cuando es necesario en contratos de consignación, reutilizando los que ya existen en la tienda destino"
+        },
+        {
+          "type": "improvement",
+          "title": "Verificación Automática de Categorías y Presentaciones",
+          "description": "Al duplicar productos en consignación, se verifica y crea automáticamente categorías, subcategorías y presentaciones en la tienda destino"
+        }
+      ]
+    },
     {
       "version": "1.5.2",
       "date": "2025-12-17",
