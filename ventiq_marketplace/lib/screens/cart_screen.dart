@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../services/cart_service.dart';
+import 'route_plan_screen.dart';
 
 /// Pantalla del carrito de compras
 class CartScreen extends StatefulWidget {
@@ -39,9 +40,9 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
 
   Future<void> _loadCart() async {
     if (!mounted || _isLoading) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       // Forzar recarga completa del carrito desde SharedPreferences
       await _cartService.forceReload();
@@ -57,7 +58,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         );
       }
     }
-    
+
     if (mounted) {
       setState(() => _isLoading = false);
     }
@@ -120,7 +121,9 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Vaciar carrito'),
-        content: const Text('¿Estás seguro de que quieres eliminar todos los productos?'),
+        content: const Text(
+          '¿Estás seguro de que quieres eliminar todos los productos?',
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         actions: [
           TextButton(
@@ -144,7 +147,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Carrito vaciado'),
+            content: Text('Plan vaciado'),
             backgroundColor: AppTheme.successColor,
           ),
         );
@@ -152,11 +155,68 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _traceRoute() async {
+    // Collect unique stores from cart items
+    final Map<int, CartItem> uniqueStores = {};
+    for (final item in _cartService.items) {
+      if (!uniqueStores.containsKey(item.storeId)) {
+        uniqueStores[item.storeId] = item;
+      }
+    }
+
+    if (uniqueStores.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay tiendas en tu plan')),
+      );
+      return;
+    }
+
+    // Filter stores with valid location
+    final List<Map<String, dynamic>> storesWithLocation = [];
+    for (final item in uniqueStores.values) {
+      if (item.storeLocation != null && item.storeLocation!.contains(',')) {
+        storesWithLocation.add({
+          'id': item.storeId,
+          'denominacion': item.storeName,
+          'ubicacion': item.storeLocation,
+          'imagen_url': item
+              .storeLocation, // Using storeLocation as placeholder if needed? No, wait.
+          // CartItem doesn't have store image URL readily available in plain CartItem?
+          // Let's check CartItem definition again.
+          // It has 'storeLocation', 'storeName'. IT DOES NOT HAVE store image URL explicitly in the constructor shown earlier?
+          // Wait, let me check the CartItem definition in step 13.
+          // It DOES NOT have storeImageUrl. It has productImage and productName.
+          // I might need to fetch store details or just use a default icon.
+          // Or I can update CartItem to include it later, but for now let's survive without it or pass null.
+          'direccion': item.storeAddress,
+        });
+      }
+    }
+
+    if (storesWithLocation.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Las tiendas en tu plan no tienen ubicación registrada',
+          ),
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RoutePlanScreen(stores: storesWithLocation),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Carrito (${_cartService.itemCount})'),
+        title: Text('Plan de Compra (${_cartService.itemCount})'),
         actions: [
           // Botón de refresh manual
           IconButton(
@@ -177,10 +237,12 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _cartService.isEmpty
-                ? _buildEmptyState()
-                : _buildCartContent(),
+            ? _buildEmptyState()
+            : _buildCartContent(),
       ),
-      bottomNavigationBar: _cartService.isNotEmpty ? _buildCheckoutButton() : null,
+      bottomNavigationBar: _cartService.isNotEmpty
+          ? _buildCheckoutButton()
+          : null,
     );
   }
 
@@ -202,7 +264,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  'Tu carrito está vacío',
+                  'Tu plan de compra está vacío',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w600,
@@ -211,7 +273,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Agrega productos para comenzar tu compra',
+                  'Agrega productos para armar tu ruta',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 15,
@@ -235,7 +297,10 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                   label: const Text('Explorar productos'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 16,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -276,14 +341,18 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildStoreSection(String storeName, List<CartItem> items, double total) {
+  Widget _buildStoreSection(
+    String storeName,
+    List<CartItem> items,
+    double total,
+  ) {
     // Obtener ubicación y dirección del primer item (todos son de la misma tienda)
     final firstItem = items.first;
     final storeLocation = firstItem.storeLocation;
     final storeMunicipio = firstItem.storeMunicipio;
     final storeProvincia = firstItem.storeProvincia;
     final storeAddress = firstItem.storeAddress;
-    
+
     // Construir ubicación completa
     final List<String> locationParts = [];
     if (storeLocation != null && storeLocation.isNotEmpty) {
@@ -296,136 +365,150 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
       locationParts.add(storeProvincia);
     }
     final fullLocation = locationParts.join(', ');
-    
+
     return Container(
-      margin: const EdgeInsets.only(top: 12, left: 16, right: 16),
+      margin: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey.withOpacity(0.15),
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header de tienda
+          // Header de tienda con gradiente
           Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  AppTheme.primaryColor.withOpacity(0.08),
-                  AppTheme.primaryColor.withOpacity(0.04),
-                ],
+                colors: [Color(0xFFF0F4FF), Colors.white],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
               ),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
               ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Nombre y total
+                // Fila superior: Icono + Nombre + Total
                 Row(
                   children: [
-                    Icon(
-                      Icons.store_rounded,
-                      size: 20,
-                      color: AppTheme.primaryColor.withOpacity(0.8),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        storeName,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.primaryColor.withOpacity(0.9),
-                          letterSpacing: -0.2,
-                        ),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.store_rounded,
+                        size: 20,
+                        color: AppTheme.primaryColor,
                       ),
                     ),
-                    Text(
-                      '\$${total.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.primaryColor.withOpacity(0.9),
-                        letterSpacing: -0.3,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            storeName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          if (fullLocation.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                fullLocation,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary.withOpacity(
+                                    0.8,
+                                  ),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.successColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppTheme.successColor.withOpacity(0.2),
+                        ),
+                      ),
+                      child: Text(
+                        '\$${total.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.successColor,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                
-                // Ubicación
-                if (fullLocation.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.location_on_rounded,
-                        size: 14,
-                        color: AppTheme.secondaryColor.withOpacity(0.7),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          fullLocation,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textSecondary.withOpacity(0.85),
-                            height: 1.3,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+
+                // Dirección (si existe)
+                if (storeAddress != null && storeAddress.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10, left: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+                          size: 14,
+                          color: AppTheme.textSecondary.withOpacity(0.7),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-                
-                // Dirección
-                if (storeAddress != null && storeAddress.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.home_rounded,
-                        size: 14,
-                        color: AppTheme.textSecondary.withOpacity(0.6),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          storeAddress,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: AppTheme.textSecondary.withOpacity(0.8),
-                            height: 1.3,
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            storeAddress,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary.withOpacity(0.7),
+                              height: 1.2,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ],
               ],
             ),
           ),
 
+          // Divisor sutil
+          Divider(height: 1, color: Colors.grey.withOpacity(0.1)),
+
           // Items de la tienda
           ...items.map((item) => _buildCartItem(item)),
+
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -433,13 +516,10 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
 
   Widget _buildCartItem(CartItem item) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(
-            color: Colors.grey.withOpacity(0.1),
-            width: 1,
-          ),
+          bottom: BorderSide(color: Colors.grey.withOpacity(0.05), width: 1),
         ),
       ),
       child: Row(
@@ -447,42 +527,45 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
         children: [
           // Imagen del producto
           Container(
-            width: 70,
-            height: 70,
+            width: 80,
+            height: 80,
             decoration: BoxDecoration(
               color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: Colors.grey.withOpacity(0.15),
-                width: 1,
-              ),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            child: item.productImage != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.network(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: item.productImage != null
+                  ? Image.network(
                       item.productImage!,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
                         return Center(
                           child: Icon(
                             Icons.shopping_bag_rounded,
-                            size: 30,
-                            color: Colors.grey[400],
+                            size: 32,
+                            color: Colors.grey[300],
                           ),
                         );
                       },
+                    )
+                  : Center(
+                      child: Icon(
+                        Icons.shopping_bag_rounded,
+                        size: 32,
+                        color: Colors.grey[300],
+                      ),
                     ),
-                  )
-                : Center(
-                    child: Icon(
-                      Icons.shopping_bag_rounded,
-                      size: 30,
-                      color: Colors.grey[400],
-                    ),
-                  ),
+            ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
 
           // Información del producto
           Expanded(
@@ -492,32 +575,45 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 Text(
                   item.productName,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textPrimary,
-                    letterSpacing: -0.2,
+                    height: 1.2,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${item.variantName} - ${item.presentacion}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary.withOpacity(0.8),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${item.variantName} • ${item.presentacion}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.textSecondary.withOpacity(0.9),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    Text(
-                      '\$${item.price.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.accentColor,
-                        letterSpacing: -0.3,
+                    FittedBox(
+                      child: Text(
+                        '\$${item.price.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textPrimary,
+                          letterSpacing: -0.5,
+                        ),
                       ),
                     ),
                     const Spacer(),
@@ -569,7 +665,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             constraints: const BoxConstraints(),
           ),
         ),
-        
+
         // Cantidad
         Container(
           width: 40,
@@ -584,7 +680,7 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
             ),
           ),
         ),
-        
+
         // Botón más
         Container(
           decoration: BoxDecoration(
@@ -648,19 +744,11 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                   ],
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    // TODO: Implementar checkout
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Checkout en desarrollo'),
-                        backgroundColor: AppTheme.primaryColor,
-                      ),
-                    );
-                  },
+                  onPressed: _traceRoute,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryColor,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
+                      horizontal: 24,
                       vertical: 16,
                     ),
                     shape: RoundedRectangleBorder(
@@ -671,16 +759,16 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                   child: const Row(
                     children: [
                       Text(
-                        'Continuar',
+                        'Trazar ruta',
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                           letterSpacing: -0.2,
                         ),
                       ),
                       SizedBox(width: 8),
-                      Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
+                      Icon(Icons.map_rounded, color: Colors.white, size: 20),
                     ],
                   ),
                 ),

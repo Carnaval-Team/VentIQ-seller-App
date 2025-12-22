@@ -60,7 +60,7 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.shopping_cart_outlined),
             activeIcon: Icon(Icons.shopping_cart),
-            label: 'Carrito',
+            label: 'Plan',
           ),
         ],
       ),

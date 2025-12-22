@@ -9,8 +9,9 @@ import 'store_detail_screen.dart';
 
 class MapScreen extends StatefulWidget {
   final List<Map<String, dynamic>> stores;
+  final Map<String, dynamic>? initialStore;
 
-  const MapScreen({super.key, required this.stores});
+  const MapScreen({super.key, required this.stores, this.initialStore});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -26,6 +27,9 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialStore != null) {
+      _selectedStore = widget.initialStore;
+    }
     _getCurrentLocation();
   }
 
@@ -206,7 +210,17 @@ class _MapScreenState extends State<MapScreen> {
       22.40694,
       -79.96472,
     ); // Default to Santa Clara based on user example
-    if (widget.stores.isNotEmpty) {
+
+    if (widget.initialStore != null &&
+        widget.initialStore!['ubicacion'] != null) {
+      try {
+        final parts = (widget.initialStore!['ubicacion'] as String).split(',');
+        initialCenter = LatLng(
+          double.parse(parts[0].trim()),
+          double.parse(parts[1].trim()),
+        );
+      } catch (_) {}
+    } else if (widget.stores.isNotEmpty) {
       try {
         final firstStoreParts = (widget.stores.first['ubicacion'] as String)
             .split(',');

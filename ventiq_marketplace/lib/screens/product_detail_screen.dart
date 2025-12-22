@@ -5,6 +5,7 @@ import '../services/cart_service.dart';
 import '../widgets/carnaval_fab.dart';
 import '../services/rating_service.dart';
 import '../widgets/rating_input_dialog.dart';
+import 'map_screen.dart';
 
 /// Pantalla de detalles del producto del marketplace
 class ProductDetailScreen extends StatefulWidget {
@@ -272,11 +273,49 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
+  void _openStoreLocation() {
+    final metadata = widget.product['metadata'] as Map<String, dynamic>?;
+    if (metadata == null) return;
+
+    final storeLocation = metadata['ubicacion'] as String?;
+
+    if (storeLocation == null || !storeLocation.contains(',')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ubicación de la tienda no disponible'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Construir objeto de tienda para el mapa
+    final storeData = {
+      'id': metadata['id_tienda'],
+      'denominacion': metadata['denominacion_tienda'],
+      'ubicacion': storeLocation,
+      'direccion': metadata['direccion'],
+      'imagem_url':
+          null, // No tenemos la imagen de la tienda aquí, usará icono default
+    };
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            MapScreen(stores: [storeData], initialStore: storeData),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      floatingActionButton: const CarnavalFab(),
+      floatingActionButton: const Padding(
+        padding: EdgeInsets.only(bottom: 80),
+        child: CarnavalFab(),
+      ),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -391,6 +430,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                   // Variantes disponibles
                   _buildVariantsSection(),
+
+                  // Información de la tienda
+                  // if (widget.product['metadata'] != null)
+                  //   _buildStoreInfoSection(),
 
                   // Botón fijo de agregar al carrito
                   if (_selectedQuantities.isNotEmpty) _buildFixedCartButton(),
@@ -605,6 +648,85 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 letterSpacing: -0.5,
               ),
             ),
+            const SizedBox(height: 8),
+            // Información de la tienda (clickable)
+            if (widget.product['metadata'] != null)
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _openStoreLocation,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primaryColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.store_rounded,
+                              color: AppTheme.primaryColor,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.product['metadata']['denominacion_tienda'] ??
+                                      'Tienda',
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.primaryColor,
+                                  ),
+                                ),
+                                if (widget.product['metadata']['ubicacion'] !=
+                                    null) ...[
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.location_on_outlined,
+                                        size: 12,
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          '${widget.product['metadata']['municipio']}, ${widget.product['metadata']['provincia']}',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppTheme.textSecondary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 14,
+                            color: AppTheme.primaryColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             const SizedBox(height: 12),
             // Metadata del producto
             Row(
@@ -695,6 +817,124 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Sección con información de la tienda
+  Widget _buildStoreInfoSection() {
+    final metadata = widget.product['metadata'] as Map<String, dynamic>?;
+    if (metadata == null) return const SizedBox.shrink();
+
+    return Transform.translate(
+      offset: const Offset(
+        0,
+        -40,
+      ), // Negative offset to overlap slightly or sit close
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 15,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              onTap: _openStoreLocation,
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: const Icon(
+                        Icons.store_rounded,
+                        color: AppTheme.primaryColor,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Vendido por',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            metadata['denominacion_tienda'] ??
+                                'Tienda Desconocida',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          if (metadata['ubicacion'] != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.location_on_outlined,
+                                  size: 14,
+                                  color: AppTheme.textSecondary,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    '${metadata['municipio']}, ${metadata['provincia']}',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 16,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

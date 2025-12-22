@@ -7,6 +7,7 @@ import 'product_detail_screen.dart';
 import '../services/marketplace_service.dart';
 import '../services/rating_service.dart';
 import '../widgets/rating_input_dialog.dart';
+import 'map_screen.dart';
 
 /// Pantalla de detalles de la tienda
 class StoreDetailScreen extends StatefulWidget {
@@ -188,10 +189,26 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   void _openMap() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Abrir mapa para: ${widget.store['nombre']}'),
-        backgroundColor: AppTheme.primaryColor,
+    final ubicacion = widget.store['ubicacion'] as String?;
+    if (ubicacion == null || !ubicacion.contains(',')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ubicación no disponible en el mapa'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MapScreen(
+          stores: [
+            widget.store,
+          ], // Pass only this store, or fetch all if needed context
+          initialStore: widget.store,
+        ),
       ),
     );
   }
@@ -453,7 +470,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             icon: Icons.location_on_outlined,
             title: 'Ubicación',
             content:
-                '${widget.store['ubicacion']}, ${widget.store['municipio']}, ${widget.store['provincia']}',
+                '${widget.store['municipio']}, ${widget.store['provincia']}',
             onTap: _openMap,
           ),
           const SizedBox(height: 12),
