@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import '../config/app_colors.dart';
 import '../services/store_data_service.dart';
@@ -186,7 +187,18 @@ class _StoreDataManagementScreenState extends State<StoreDataManagementScreen> {
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.example.app',
+          userAgentPackageName: 'VentIQAdmin/1.6.0 (+https://ventiq.com; contact: support@ventiq.com)',
+          tileSize: 256,
+        ),
+        RichAttributionWidget(
+          attributions: [
+            TextSourceAttribution(
+              'OpenStreetMap contributors',
+              onTap: () => launchUrl(
+                Uri.parse('https://openstreetmap.org/copyright'),
+              ),
+            ),
+          ],
         ),
         MarkerLayer(
           markers: [
@@ -410,12 +422,8 @@ class _StoreDataManagementScreenState extends State<StoreDataManagementScreen> {
         estado: _selectedState?['adminCode1'],
         nombrePais: _selectedCountry?['countryName'],
         nombreEstado: _selectedState?['name'],
-        latitude: _selectedCity != null 
-            ? double.tryParse(_selectedCity!['lat'].toString())
-            : null,
-        longitude: _selectedCity != null 
-            ? double.tryParse(_selectedCity!['lng'].toString())
-            : null,
+        latitude: _mapLatitude,
+        longitude: _mapLongitude,
         imagenUrl: imagenUrl,
       );
 

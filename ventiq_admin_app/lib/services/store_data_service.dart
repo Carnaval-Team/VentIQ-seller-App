@@ -85,6 +85,12 @@ class StoreDataService {
       if (nombreEstado != null) updateData['nombre_estado'] = nombreEstado;
       if (latitude != null) updateData['latitude'] = latitude;
       if (longitude != null) updateData['longitude'] = longitude;
+      
+      // Construir el campo ubicacion a partir de latitude y longitude
+      if (latitude != null && longitude != null) {
+        updateData['ubicacion'] = '$latitude,$longitude';
+      }
+      
       if (imagenUrl != null) updateData['imagen_url'] = imagenUrl;
 
       await _supabase
@@ -96,6 +102,27 @@ class StoreDataService {
       return true;
     } catch (e) {
       print('❌ Error actualizando datos de tienda: $e');
+      rethrow;
+    }
+  }
+
+  Future<bool> updateStoreField(int storeId, String fieldKey, dynamic value) async {
+    try {
+      print('🔄 Actualizando campo $fieldKey para tienda: $storeId');
+      
+      final updateData = <String, dynamic>{
+        fieldKey: value,
+      };
+
+      await _supabase
+          .from('app_dat_tienda')
+          .update(updateData)
+          .eq('id', storeId);
+
+      print('✅ Campo $fieldKey actualizado correctamente');
+      return true;
+    } catch (e) {
+      print('❌ Error actualizando campo $fieldKey: $e');
       rethrow;
     }
   }

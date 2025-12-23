@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:convert';
 import '../config/app_colors.dart';
 import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
@@ -305,7 +307,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const SizedBox(height: 12),
                   _buildInfoRow(
                     'Provincia/Estado',
-                    _storeData!['nombre_estado'] ?? 'No especificado',
+                    _storeData!['nombre_estado'] ?? 'No especificada',
                     Icons.location_on,
                   ),
                   const SizedBox(height: 12),
@@ -316,6 +318,30 @@ class _SettingsScreenState extends State<SettingsScreen>
                         : 'No especificadas',
                     Icons.map,
                   ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Días y horarios de trabajo
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Horario de Atención',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildDiasTrabajoSelector(),
+                  const SizedBox(height: 16),
+                  _buildHorariosTrabajoSelector(),
                 ],
               ),
             ),
@@ -555,7 +581,18 @@ class _SettingsScreenState extends State<SettingsScreen>
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.example.app',
+          userAgentPackageName: 'VentIQAdmin/1.6.0 (+https://ventiq.com; contact: support@ventiq.com)',
+          tileSize: 256,
+        ),
+        RichAttributionWidget(
+          attributions: [
+            TextSourceAttribution(
+              'OpenStreetMap contributors',
+              onTap: () => launchUrl(
+                Uri.parse('https://openstreetmap.org/copyright'),
+              ),
+            ),
+          ],
         ),
         MarkerLayer(
           markers: [
@@ -689,5 +726,286 @@ class _SettingsScreenState extends State<SettingsScreen>
     // El AdminBottomNavigation ya maneja la navegación automáticamente
     // Esta función se mantiene por compatibilidad pero no es necesaria
     // ya que AdminBottomNavigation usa _handleTap internamente
+  }
+
+  Widget _buildEditableRow(String label, String value, IconData icon, String fieldKey) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.grey.shade600),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => _showEditDialog(label, value, fieldKey),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(6),
+                    color: Colors.grey.shade50,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          value,
+                          style: const TextStyle(fontSize: 14),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Icon(Icons.edit, size: 16, color: Colors.blue.shade600),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showEditDialog(String label, String currentValue, String fieldKey) {
+    final controller = TextEditingController(text: currentValue);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Editar $label'),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: 'Ingresa $label',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await _updateStoreField(fieldKey, controller.text);
+              if (mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ $label actualizado'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _updateStoreField(String fieldKey, String value) async {
+    try {
+      if (_storeId == null) return;
+      
+      await _storeDataService.updateStoreField(_storeId!, fieldKey, value);
+      
+      if (mounted) {
+        setState(() {
+          _storeData![fieldKey] = value;
+        });
+      }
+    } catch (e) {
+      print('Error actualizando campo: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildDiasTrabajoSelector() {
+    final diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    final diasSeleccionados = _parsearDiasTrabajoJSON(_storeData!['dias_trabajo']);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Días de Trabajo',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: diasSemana.map((dia) {
+            final isSelected = diasSeleccionados.contains(dia.toLowerCase());
+            return FilterChip(
+              label: Text(dia),
+              selected: isSelected,
+              onSelected: (selected) async {
+                final nuevosDias = List<String>.from(diasSeleccionados);
+                if (selected) {
+                  nuevosDias.add(dia.toLowerCase());
+                } else {
+                  nuevosDias.removeWhere((d) => d == dia.toLowerCase());
+                }
+                await _guardarDiasTrabajoJSON(nuevosDias);
+              },
+              backgroundColor: Colors.grey.shade200,
+              selectedColor: Colors.green.shade300,
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHorariosTrabajoSelector() {
+    final horaApertura = _storeData!['hora_apertura'] ?? '09:00:00';
+    final horaCierre = _storeData!['hora_cierre'] ?? '18:00:00';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Horarios',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildTimePickerField(
+                'Hora Apertura',
+                horaApertura,
+                'hora_apertura',
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildTimePickerField(
+                'Hora Cierre',
+                horaCierre,
+                'hora_cierre',
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimePickerField(String label, String currentTime, String fieldKey) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade600,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () => _selectTime(label, currentTime, fieldKey),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(6),
+              color: Colors.grey.shade50,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  currentTime.substring(0, 5),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                Icon(Icons.access_time, size: 18, color: Colors.blue.shade600),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _selectTime(String label, String currentTime, String fieldKey) async {
+    final timeParts = currentTime.split(':');
+    final initialTime = TimeOfDay(
+      hour: int.parse(timeParts[0]),
+      minute: int.parse(timeParts[1]),
+    );
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+    );
+
+    if (pickedTime != null) {
+      final formattedTime = '${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}:00';
+      await _updateStoreField(fieldKey, formattedTime);
+    }
+  }
+
+  List<String> _parsearDiasTrabajoJSON(dynamic diasJSON) {
+    if (diasJSON == null) return [];
+    if (diasJSON is String) {
+      try {
+        final decoded = jsonDecode(diasJSON);
+        return List<String>.from(decoded);
+      } catch (e) {
+        return [];
+      }
+    }
+    if (diasJSON is List) {
+      return List<String>.from(diasJSON);
+    }
+    return [];
+  }
+
+  Future<void> _guardarDiasTrabajoJSON(List<String> dias) async {
+    try {
+      if (_storeId == null) return;
+      
+      final diasJSON = jsonEncode(dias);
+      await _storeDataService.updateStoreField(_storeId!, 'dias_trabajo', diasJSON);
+      
+      if (mounted) {
+        setState(() {
+          _storeData!['dias_trabajo'] = diasJSON;
+        });
+      }
+    } catch (e) {
+      print('Error guardando días de trabajo: $e');
+    }
   }
 }
