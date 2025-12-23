@@ -616,18 +616,20 @@ class _AdminDrawerState extends State<AdminDrawer> {
   void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: const Text('Cerrar Sesión'),
           content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('Cancelar'),
             ),
             ElevatedButton(
               onPressed: () async {
-                Navigator.of(context).pop(); // Cerrar diálogo
+                // Cerrar diálogo usando dialogContext
+                Navigator.of(dialogContext).pop();
+                // Usar el contexto del widget (context) para la navegación final
                 await _performLogout(context);
               },
               style: ElevatedButton.styleFrom(
@@ -645,32 +647,58 @@ class _AdminDrawerState extends State<AdminDrawer> {
   // Realizar logout y navegar al login
   Future<void> _performLogout(BuildContext context) async {
     try {
+      print('🔐 Iniciando logout...');
       final authService = AuthService();
 
       // Usar AuthService.signOut() que limpia TODO correctamente
       await authService.signOut();
 
+      // Pequeña espera para asegurar que la limpieza se complete
+      await Future.delayed(const Duration(milliseconds: 300));
+
       // Navegar al login y limpiar stack de navegación
+      print('🔄 Verificando si context está montado antes de navegar...');
       if (context.mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        print('🔄 Navegando a login después de logout...');
+        // Usar rootNavigator: true para asegurar que navegamos en el contexto raíz
+        Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
+          '/login',
+          (route) => false,
+        );
+        print('✅ Navegación a login completada');
+      } else {
+        print('⚠️ Context no está montado, no se puede navegar');
       }
     } catch (e) {
       print('❌ Error durante logout: $e');
       // A pesar del error, intentar navegar al login para forzar salida
       if (context.mounted) {
-        // Mostrar aviso de error pero navegar de todos modos
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Cierre de sesión con advertencias. Redirigiendo...'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        try {
+          // Mostrar aviso de error pero navegar de todos modos
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cierre de sesión con advertencias. Redirigiendo...'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } catch (snackbarError) {
+          print('⚠️ Error mostrando SnackBar: $snackbarError');
+        }
         
         // Pequeña espera para que se vea el SnackBar un momento
         await Future.delayed(const Duration(milliseconds: 500));
         
         if (context.mounted) {
-          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+          print('🔄 Navegando a login después de error en logout...');
+          try {
+            Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
+              '/login',
+              (route) => false,
+            );
+          } catch (navError) {
+            print('❌ Error en navegación: $navError');
+          }
         }
       }
     }
