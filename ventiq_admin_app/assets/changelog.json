@@ -1,8 +1,20 @@
 {
-  "current_version": "1.6.0",
-  "build": 160,
+  "current_version": "1.6.1",
+  "build": 161,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.6.1",
+      "date": "2025-12-23",
+      "title": "🔧 Correcciones y Estabilidad",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Correcciones en Catálogo y Mejoras Generales",
+          "description": "Se han realizado correcciones en el catálogo de productos y mejoras generales de estabilidad y rendimiento."
+        }
+      ]
+    },
     {
       "version": "1.6.0",
       "date": "2025-12-22",
