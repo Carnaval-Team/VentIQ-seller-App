@@ -292,9 +292,23 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton.icon(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    // Navegar al home (MainScreen) limpiando todo el stack
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '/home',
+                      (route) => false,
+                    );
+                  },
                   icon: const Icon(Icons.shopping_bag_outlined),
-                  label: const Text('Explorar productos'),
+                  label: const Text(
+                    'Explorar productos',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryColor,
                     padding: const EdgeInsets.symmetric(
@@ -605,18 +619,22 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    FittedBox(
-                      child: Text(
-                        '\$${item.price.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.textPrimary,
-                          letterSpacing: -0.5,
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '\$${item.price.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                            letterSpacing: -0.5,
+                          ),
                         ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     // Controles de cantidad
                     _buildQuantityControls(item),
                   ],
