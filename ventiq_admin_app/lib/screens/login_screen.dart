@@ -49,11 +49,17 @@ class _LoginScreenState extends State<LoginScreen> {
     final hasValidSession = await _userPreferencesService.hasValidSession();
     if (hasValidSession && mounted) {
       print('✅ Valid session found, auto-logging in...');
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/dashboard',
-        (route) => false,
-      );
+      // Agregar pequeño delay para asegurar que la UI se renderice primero
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/dashboard',
+          (route) => false,
+        );
+      }
+    } else {
+      print('❌ No valid session, staying on login screen');
     }
   }
 
