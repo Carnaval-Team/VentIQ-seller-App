@@ -1,8 +1,65 @@
 {
-  "current_version": "1.6.1",
-  "build": 161,
+  "current_version": "1.6.2",
+  "build": 162,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.6.2",
+      "date": "2025-12-23",
+      "title": "🔧 Correcciones en Interacciones, Extracción y UI",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Manejo de Valores Nulos en Ratings de Productos",
+          "description": "Corregido manejo de valores nulos en estadísticas de ratings de productos para evitar errores de tipo cast. Ahora todos los campos numéricos se convierten a 0 si son nulos."
+        },
+        {
+          "type": "fix",
+          "title": "Optimización de Transferencia de Inventario",
+          "description": "Eliminadas llamadas innecesarias a RPC por cada producto en transferencias de inventario para evitar timeouts. Ahora se procesan todos los productos de una sola vez."
+        },
+        {
+          "type": "fix",
+          "title": "Overflow en Tarjeta de Módulos del CRM",
+          "description": "Corregido desbordamiento visual en tarjetas de módulos del dashboard CRM ajustando padding, tamaños de fuente e iconos. Texto ahora se adapta correctamente sin desbordarse."
+        },
+        {
+          "type": "fix",
+          "title": "Overflow en Row de KPI Cards",
+          "description": "Envuelto Row de detalles en SingleChildScrollView para permitir scroll horizontal cuando el contenido no cabe en pantallas pequeñas."
+        },
+        {
+          "type": "improvement",
+          "title": "Distribución de Estrellas en Ratings de Productos",
+          "description": "Extendido RPC get_estadisticas_productos_rating para retornar cantidad de cada rating (1-5 estrellas). Ahora se muestra la distribución visual completa en el resumen de productos."
+        },
+        {
+          "type": "improvement",
+          "title": "Navegación desde Card de Ratings de Productos",
+          "description": "Card de calificación promedio de productos ahora es clickeable y navega al listado detallado de ratings de productos."
+        },
+        {
+          "type": "improvement",
+          "title": "Remoción de Información del Usuario en Ratings",
+          "description": "Eliminado campo usuario_email de todas las RPCs de interacciones. Ahora solo se muestran rating, comentario y fecha sin información del usuario."
+        },
+        {
+          "type": "fix",
+          "title": "Loading State en Diálogo de Cerrar Sesión",
+          "description": "Agregado estado loading al diálogo de cerrar sesión. Ahora muestra spinner y deshabilita botones mientras se procesa el logout, evitando múltiples clics."
+        },
+        {
+          "type": "fix",
+          "title": "Cantidades Incorrectas en Extracción de Inventario",
+          "description": "Corregido cálculo de stock disponible en diálogo de extracción. Ahora muestra correctamente el stock en la ubicación seleccionada, no el stock total del producto."
+        },
+        {
+          "type": "fix",
+          "title": "Campo id_producto Nulo en Extracción",
+          "description": "Agregado mapeo de id_producto a id en _addProductToExtraction para asegurar que el producto seleccionado tenga el campo id requerido por la RPC."
+        }
+      ]
+    },
     {
       "version": "1.6.1",
       "date": "2025-12-23",
