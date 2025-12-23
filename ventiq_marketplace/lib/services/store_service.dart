@@ -183,6 +183,7 @@ class StoreService {
             )
           ''')
           .eq('id_tienda', storeId)
+          .eq('mostrar_en_catalogo', true)
           .isFilter('deleted_at', null);
 
       // Eliminar duplicados

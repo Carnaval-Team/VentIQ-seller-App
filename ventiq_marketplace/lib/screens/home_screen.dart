@@ -41,17 +41,36 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _searchResultsProducts = [];
   Timer? _debounceTimer;
 
+  // Banner state
+  bool _showBanner = true;
+  Timer? _bannerTimer;
+  final GlobalKey<_MarqueeTextState> _marqueeKey =
+      GlobalKey<_MarqueeTextState>();
+
   @override
   void initState() {
     super.initState();
     _loadData();
+    _startBannerTimer();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _debounceTimer?.cancel();
+    _bannerTimer?.cancel();
     super.dispose();
+  }
+
+  /// Iniciar timer para mostrar/ocultar banner
+  void _startBannerTimer() {
+    _bannerTimer = Timer.periodic(const Duration(seconds: 90), (timer) {
+      if (mounted) {
+        setState(() {
+          _showBanner = !_showBanner;
+        });
+      }
+    });
   }
 
   /// Cargar datos desde Supabase
@@ -213,6 +232,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _buildSearchSection(),
               ),
             ),
+
+            // Banner informativo sobre Carnaval App
+            SliverToBoxAdapter(child: _buildCarnavalInfoBanner()),
 
             if (_isSearching) _buildSearchResults() else _buildHomeContent(),
           ],
@@ -552,6 +574,80 @@ class _HomeScreenState extends State<HomeScreen> {
               horizontal: 20,
               vertical: 16,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Banner informativo sobre Carnaval App con efecto marquee
+  Widget _buildCarnavalInfoBanner() {
+    if (!_showBanner) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.paddingM,
+        AppTheme.paddingS,
+        AppTheme.paddingM,
+        AppTheme.paddingS,
+      ),
+      child: GestureDetector(
+        onTap: () {
+          // Reiniciar animación del marquee
+          _marqueeKey.currentState?.resetAnimation();
+        },
+        child: Container(
+          height: 36,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.blue.shade50, Colors.blue.shade100],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue.shade200, width: 1),
+          ),
+          child: Row(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Icon(
+                  Icons.info_outline,
+                  color: Colors.blue.shade600,
+                  size: 20,
+                ),
+              ),
+              Expanded(
+                child: _MarqueeText(
+                  key: _marqueeKey,
+                  textSpan: TextSpan(
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.blue.shade900,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    children: [
+                      const TextSpan(
+                        text:
+                            'Algunos de los productos que aparecen en el catálogo se pueden comprar en línea a través de Carnaval App con ',
+                      ),
+                      TextSpan(
+                        text: 'envío a domicilio gratis',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14, // Más grande
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                      const TextSpan(
+                        text:
+                            '. El precio puede diferir por temas logísticos y de preparación hasta en un 5%. Para ir a comprar haga click en el botón rojo en la parte inferior derecha.',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1042,6 +1138,85 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// Widget de texto con efecto marquee (desplazamiento horizontal)
+/// Widget de texto con efecto marquee (desplazamiento horizontal)
+class _MarqueeText extends StatefulWidget {
+  final TextSpan textSpan;
+
+  const _MarqueeText({super.key, required this.textSpan});
+
+  @override
+  State<_MarqueeText> createState() => _MarqueeTextState();
+}
+
+class _MarqueeTextState extends State<_MarqueeText>
+    with SingleTickerProviderStateMixin {
+  late ScrollController _scrollController;
+  late Timer _timer;
+  double _offset = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+
+    // Iniciar animación después de un pequeño delay
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        _startScrolling();
+      }
+    });
+  }
+
+  void resetAnimation() {
+    _offset = 0;
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+  }
+
+  void _startScrolling() {
+    _timer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (!mounted || !_scrollController.hasClients) {
+        timer.cancel();
+        return;
+      }
+
+      _offset += 1.5;
+
+      // Si llegamos al final, volver al inicio
+      if (_offset >= _scrollController.position.maxScrollExtent) {
+        _offset = 0;
+      }
+
+      _scrollController.jumpTo(_offset);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      physics: const NeverScrollableScrollPhysics(),
+      child: Row(
+        children: [
+          Text.rich(widget.textSpan),
+          const SizedBox(width: 100), // Espacio antes de repetir
+          Text.rich(widget.textSpan),
+        ],
+      ),
     );
   }
 }
