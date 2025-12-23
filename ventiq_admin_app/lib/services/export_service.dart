@@ -960,6 +960,7 @@ class ExportService {
     bool includeNombreCorto = false,
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
+    bool includeDescripcion = false,
   }) async {
     try {
       final now = DateTime.now();
@@ -979,6 +980,7 @@ class ExportService {
           includeNombreCorto: includeNombreCorto,
           includeMarca: includeMarca,
           includeDescripcionCorta: includeDescripcionCorta,
+          includeDescripcion: includeDescripcion,
         );
         mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         fileName = 'inventario_${cleanWarehouse}_$dateStr.xlsx';
@@ -1085,6 +1087,7 @@ class ExportService {
                         includeNombreCorto: includeNombreCorto,
                         includeMarca: includeMarca,
                         includeDescripcionCorta: includeDescripcionCorta,
+                        includeDescripcion: includeDescripcion,
                       ),
                     );
 
@@ -1312,6 +1315,7 @@ class ExportService {
     bool includeNombreCorto = false,
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
+    bool includeDescripcion = false,
   }) async {
     final excel = Excel.createExcel();
     
@@ -1350,6 +1354,7 @@ class ExportService {
           includeNombreCorto: includeNombreCorto,
           includeMarca: includeMarca,
           includeDescripcionCorta: includeDescripcionCorta,
+          includeDescripcion: includeDescripcion,
         );
       }
     }
@@ -1477,6 +1482,7 @@ class ExportService {
     bool includeNombreCorto = false,
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
+    bool includeDescripcion = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
@@ -1496,6 +1502,10 @@ class ExportService {
     }
     if (includeDescripcionCorta) {
       headers.add('Descripción Corta');
+      columnIndex++;
+    }
+    if (includeDescripcion) {
+      headers.add('Descripción');
       columnIndex++;
     }
     
@@ -1519,6 +1529,10 @@ class ExportService {
     }
     if (includeDescripcionCorta) {
       sheet.setColumnWidth(currentCol, 30); // Descripción Corta
+      currentCol++;
+    }
+    if (includeDescripcion) {
+      sheet.setColumnWidth(currentCol, 35); // Descripción
       currentCol++;
     }
     
@@ -1578,6 +1592,9 @@ class ExportService {
       }
       if (includeDescripcionCorta) {
         rowData.add(product.descripcionCorta ?? '');
+      }
+      if (includeDescripcion) {
+        rowData.add(product.descripcion ?? '');
       }
       
       // Agregar columnas numéricas
@@ -1640,6 +1657,7 @@ class ExportService {
     bool includeNombreCorto = false,
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
+    bool includeDescripcion = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
@@ -1667,6 +1685,11 @@ class ExportService {
     if (includeDescripcionCorta) {
       headers.add('Descripción Corta');
       columnWidths[columnIndex] = const pw.FlexColumnWidth(2);
+      columnIndex++;
+    }
+    if (includeDescripcion) {
+      headers.add('Descripción');
+      columnWidths[columnIndex] = const pw.FlexColumnWidth(2.5);
       columnIndex++;
     }
     
@@ -1702,6 +1725,9 @@ class ExportService {
             }
             if (includeDescripcionCorta) {
               rowData.add(producto['descripcion_corta']?.toString() ?? '');
+            }
+            if (includeDescripcion) {
+              rowData.add(producto['descripcion']?.toString() ?? '');
             }
             
             // Agregar columnas numéricas

@@ -619,7 +619,7 @@ class _AdminDrawerState extends State<AdminDrawer> {
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
+          builder: (BuildContext builderContext, StateSetter setState) {
             bool isLoading = false;
 
             return AlertDialog(
@@ -643,9 +643,18 @@ class _AdminDrawerState extends State<AdminDrawer> {
                       ? null
                       : () async {
                           setState(() => isLoading = true);
-                          await _performLogout(context);
+                          // Hacer logout
+                          await _performLogout();
+                          // Cerrar diálogo
                           if (dialogContext.mounted) {
                             Navigator.of(dialogContext).pop();
+                          }
+                          // Navegar a splash que detectará que no hay sesión
+                          if (context.mounted) {
+                            Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
+                              '/',
+                              (route) => false,
+                            );
                           }
                         },
                   style: ElevatedButton.styleFrom(
@@ -671,8 +680,8 @@ class _AdminDrawerState extends State<AdminDrawer> {
     );
   }
 
-  // Realizar logout y navegar al login
-  Future<void> _performLogout(BuildContext context) async {
+  // Realizar logout
+  Future<void> _performLogout() async {
     try {
       print('🔐 Iniciando logout...');
       final authService = AuthService();
@@ -683,51 +692,9 @@ class _AdminDrawerState extends State<AdminDrawer> {
       // Pequeña espera para asegurar que la limpieza se complete
       await Future.delayed(const Duration(milliseconds: 300));
 
-      // Navegar al login y limpiar stack de navegación
-      print('🔄 Verificando si context está montado antes de navegar...');
-      if (context.mounted) {
-        print('🔄 Navegando a login después de logout...');
-        // Usar rootNavigator: true para asegurar que navegamos en el contexto raíz
-        Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
-          '/login',
-          (route) => false,
-        );
-        print('✅ Navegación a login completada');
-      } else {
-        print('⚠️ Context no está montado, no se puede navegar');
-      }
+      print('✅ Logout completado');
     } catch (e) {
       print('❌ Error durante logout: $e');
-      // A pesar del error, intentar navegar al login para forzar salida
-      if (context.mounted) {
-        try {
-          // Mostrar aviso de error pero navegar de todos modos
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Cierre de sesión con advertencias. Redirigiendo...'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        } catch (snackbarError) {
-          print('⚠️ Error mostrando SnackBar: $snackbarError');
-        }
-        
-        // Pequeña espera para que se vea el SnackBar un momento
-        await Future.delayed(const Duration(milliseconds: 500));
-        
-        if (context.mounted) {
-          print('🔄 Navegando a login después de error en logout...');
-          try {
-            Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
-              '/login',
-              (route) => false,
-            );
-          } catch (navError) {
-            print('❌ Error en navegación: $navError');
-          }
-        }
-      }
     }
   }
 
