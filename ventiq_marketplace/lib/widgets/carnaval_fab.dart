@@ -129,7 +129,14 @@ class CarnavalFab extends StatelessWidget {
   }
 
   Future<void> _launchCarnavalApp(BuildContext context) async {
-    final bool isIOS = Platform.isIOS;
+    bool isIOS;
+    bool navegador = false;
+    try {
+      isIOS = Platform.isIOS;
+    } catch (e) {
+      isIOS = false;
+      navegador = true;
+    }
 
     // URIs para abrir la app
     final Uri appUri = Uri.parse(
@@ -150,7 +157,7 @@ class CarnavalFab extends StatelessWidget {
       // Intentar abrir la app
       bool appLaunched = false;
       try {
-        if (await launchUrl(appUri, mode: LaunchMode.externalApplication)) {
+        if (await launchUrl(navegador ? playStoreUri: appUri , mode: LaunchMode.externalApplication)) {
           appLaunched = true;
         }
       } catch (e) {

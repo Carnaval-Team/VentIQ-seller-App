@@ -470,7 +470,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
             icon: Icons.location_on_outlined,
             title: 'Ubicación',
             content:
-                '${widget.store['municipio']}, ${widget.store['provincia']}',
+                '${widget.store['ubicacion']}',
             onTap: _openMap,
           ),
           const SizedBox(height: 12),

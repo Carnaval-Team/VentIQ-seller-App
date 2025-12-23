@@ -5,6 +5,7 @@ import '../services/cart_service.dart';
 import '../widgets/carnaval_fab.dart';
 import '../services/rating_service.dart';
 import '../widgets/rating_input_dialog.dart';
+import '../services/store_service.dart'; // Import agregado
 import 'map_screen.dart';
 
 /// Pantalla de detalles del producto del marketplace
@@ -21,8 +22,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   final ProductDetailService _productDetailService = ProductDetailService();
   final CartService _cartService = CartService();
   final RatingService _ratingService = RatingService();
+  final StoreService _storeService = StoreService(); // Servicio agregado
 
   Map<String, dynamic>? _productDetails;
+  Map<String, dynamic>? _storeDetails; // Variable para detalles de la tienda
   List<Map<String, dynamic>> _variants = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -48,7 +51,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     try {
       // ✅ Manejo seguro de tipos para id_producto
-      // Puede venir como 'id_producto' o 'id' dependiendo de la fuente
       final dynamic productIdValue =
           widget.product['id_producto'] ?? widget.product['id'];
 
@@ -68,10 +70,37 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
       print('🔍 Cargando detalles del producto ID: $productId');
 
+      // 1. Cargar detalles del producto
       final details = await _productDetailService.getProductDetail(productId);
+
+      // 2. Cargar detalles de la tienda si tenemos el ID
+      Map<String, dynamic>? storeData;
+
+      // Intentar obtener ID de tienda de varias fuentes
+      dynamic storeIdValue;
+      if (widget.product['metadata'] != null) {
+        storeIdValue = widget.product['metadata']['id_tienda'];
+      }
+
+      // Si no está en metadata, buscar en los detalles del producto recién cargados
+      if (storeIdValue == null && details['id_tienda'] != null) {
+        storeIdValue = details['id_tienda'];
+      }
+
+      if (storeIdValue != null) {
+        final int storeId = storeIdValue is int
+            ? storeIdValue
+            : int.tryParse(storeIdValue.toString()) ?? 0;
+
+        if (storeId > 0) {
+          print('🔍 Cargando detalles de la tienda ID: $storeId');
+          storeData = await _storeService.getStoreDetails(storeId);
+        }
+      }
 
       setState(() {
         _productDetails = details;
+        _storeDetails = storeData;
         _variants = List<Map<String, dynamic>>.from(details['variantes'] ?? []);
         // Seleccionar la primera variante por defecto
         if (_variants.isNotEmpty) {
@@ -81,10 +110,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       });
 
       print('✅ Detalles cargados: ${_variants.length} variantes disponibles');
+      if (_storeDetails != null) {
+        print('✅ Tienda cargada: ${_storeDetails!['denominacion']}');
+      }
     } catch (e, stackTrace) {
       print('❌ Error cargando detalles: $e');
       print('Stack trace: $stackTrace');
-      print('Datos del producto: ${widget.product.keys.toList()}');
       setState(() {
         _errorMessage = 'Error al cargar los detalles del producto: $e';
         _isLoading = false;
@@ -470,7 +501,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   /// Hero Image con gradiente y badges flotantes
   Widget _buildHeroImage() {
-    final imageUrl = _productDetails?['imagen'] ?? widget.product['imagen'];
+    final imageUrl =
+        _productDetails?['imagen'] ??
+        widget.product['imagen'] ??
+        widget.product['imageUrl'];
 
     return Stack(
       children: [
@@ -649,84 +683,116 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ),
             const SizedBox(height: 8),
+            const SizedBox(height: 8),
             // Información de la tienda (clickable)
-            if (widget.product['metadata'] != null)
-              Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _openStoreLocation,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.store_rounded,
-                              color: AppTheme.primaryColor,
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  widget.product['metadata']['denominacion_tienda'] ??
-                                      'Tienda',
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.primaryColor,
-                                  ),
+            if (_storeDetails != null ||
+                widget.product['metadata'] != null) ...[
+              Builder(
+                builder: (context) {
+                  final storeName =
+                      _storeDetails?['denominacion'] ??
+                      widget.product['metadata']?['denominacion_tienda'] ??
+                      'Tienda';
+
+                  String locationText = '';
+                  if (_storeDetails != null) {
+                    final address = _storeDetails!['direccion'] ?? '';
+                    final state = _storeDetails!['nombre_estado'] ?? '';
+                    final country = _storeDetails!['nombre_pais'] ?? '';
+                    locationText = [
+                      address,
+                      state,
+                      country,
+                    ].where((e) => e.toString().isNotEmpty).join(', ');
+                  } else {
+                    final municipio =
+                        widget.product['metadata']?['municipio'] ?? '';
+                    final provincia =
+                        widget.product['metadata']?['provincia'] ?? '';
+                    locationText = '$municipio, $provincia';
+                  }
+
+                  if (locationText.trim() == ',')
+                    locationText = 'Ubicación no disponible';
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _openStoreLocation,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                if (widget.product['metadata']['ubicacion'] !=
-                                    null) ...[
-                                  const SizedBox(height: 2),
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.location_on_outlined,
-                                        size: 12,
-                                        color: AppTheme.textSecondary,
+                                child: const Icon(
+                                  Icons.store_rounded,
+                                  color: AppTheme.primaryColor,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      storeName,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.primaryColor,
                                       ),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          '${widget.product['metadata']['municipio']}, ${widget.product['metadata']['provincia']}',
-                                          style: const TextStyle(
-                                            fontSize: 12,
+                                    ),
+                                    if (locationText.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.location_on_outlined,
+                                            size: 12,
                                             color: AppTheme.textSecondary,
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              locationText,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                color: AppTheme.textSecondary,
+                                              ),
+                                              maxLines:
+                                                  2, // Permitir 2 líneas para dirección larga
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
-                                  ),
-                                ],
-                              ],
-                            ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 14,
+                                color: AppTheme.primaryColor,
+                              ),
+                            ],
                           ),
-                          const Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            size: 14,
-                            color: AppTheme.primaryColor,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
+            ],
             const SizedBox(height: 12),
             // Metadata del producto
             Row(
