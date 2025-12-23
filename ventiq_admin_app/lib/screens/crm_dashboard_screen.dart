@@ -195,6 +195,13 @@ class _CRMDashboardScreenState extends State<CRMDashboardScreen>
           childAspectRatio: 1.3,
           children: [
             _buildModuleCard(
+              'Interacciones',
+              Icons.star_rate,
+              '/interacciones-clientes',
+              Colors.amber,
+              'Ratings y comentarios',
+            ),
+            _buildModuleCard(
               'Clientes',
               Icons.people,
               '/customers',
@@ -222,13 +229,6 @@ class _CRMDashboardScreenState extends State<CRMDashboardScreen>
               Colors.purple,
               'Gestión comercial',
             ),
-            _buildModuleCard(
-              'Interacciones',
-              Icons.star_rate,
-              '/interacciones-clientes',
-              Colors.amber,
-              'Ratings y comentarios',
-            ),
           ],
         ),
       ],
@@ -248,29 +248,29 @@ class _CRMDashboardScreenState extends State<CRMDashboardScreen>
         borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.pushNamed(context, route),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, color: color, size: 28),
+                child: Icon(icon, color: color, size: 24),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Flexible(
                 child: Text(
                   title,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                    fontSize: 12,
                   ),
                   textAlign: TextAlign.center,
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -278,7 +278,7 @@ class _CRMDashboardScreenState extends State<CRMDashboardScreen>
               Flexible(
                 child: Text(
                   subtitle,
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

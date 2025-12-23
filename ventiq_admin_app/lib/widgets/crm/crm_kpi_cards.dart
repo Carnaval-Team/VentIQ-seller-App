@@ -223,9 +223,12 @@ class CRMKPICards extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: details.map((detail) => _buildDetailItem(detail)).toList(),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: details.map((detail) => _buildDetailItem(detail)).toList(),
+              ),
             ),
           ],
         ),
