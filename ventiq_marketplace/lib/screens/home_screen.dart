@@ -376,18 +376,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ProductDetailScreen(
-                        product: {
-                          'id': product['id'],
-                          'nombre': product['denominacion'],
-                          'precio':
-                              (product['app_dat_precio_venta']?[0]?['precio_venta'] ??
-                              product['precio_venta'] ??
-                              0),
-                          'imageUrl': product['imagen'],
-                          // Add other necessary fields
-                        },
-                      ),
+                      builder: (context) =>
+                          ProductDetailScreen(product: product),
                     ),
                   );
                 },
@@ -925,18 +915,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ProductDetailScreen(
-                                product: {
-                                  'id': product['id_producto'],
-                                  'nombre': product['nombre'],
-                                  'precio': product['precio_venta'],
-                                  'categoria': product['categoria_nombre'],
-                                  'imageUrl': product['imagen'],
-                                  'tienda': product['tienda_nombre'],
-                                  'rating': product['rating_promedio'],
-                                  'stock': product['stock_disponible'],
-                                },
-                              ),
+                              builder: (context) =>
+                                  ProductDetailScreen(product: product),
                             ),
                           );
                         },

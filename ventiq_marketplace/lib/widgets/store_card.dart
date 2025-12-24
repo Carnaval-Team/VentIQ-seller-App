@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import 'marquee_text.dart';
+import 'supabase_image.dart';
 
 /// Tarjeta de tienda para el marketplace
 class StoreCard extends StatelessWidget {
@@ -89,16 +90,13 @@ class StoreCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(
                               AppTheme.radiusM,
                             ),
-                            child: Image.network(
-                              logoUrl!,
+                            child: SupabaseImage(
+                              imageUrl: logoUrl!,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(
-                                  Icons.store_rounded,
-                                  size: 35,
-                                  color: AppTheme.primaryColor,
-                                );
-                              },
+                              borderRadius: AppTheme.radiusM,
+                              width: 50,
+                              height: 50,
+                              placeholderAsset: null, // Default
                             ),
                           )
                         : Icon(

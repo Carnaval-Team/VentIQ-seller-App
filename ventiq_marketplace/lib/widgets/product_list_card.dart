@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import 'supabase_image.dart';
 
 /// Tarjeta de producto para vista de lista
 class ProductListCard extends StatelessWidget {
@@ -34,10 +35,7 @@ class ProductListCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey.withOpacity(0.15),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -59,7 +57,7 @@ class ProductListCard extends StatelessWidget {
                 // Imagen del producto
                 _buildProductImage(),
                 const SizedBox(width: 12),
-                
+
                 // Información del producto
                 Expanded(
                   child: Column(
@@ -88,7 +86,7 @@ class ProductListCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      
+
                       // Precio
                       Text(
                         '\$${price.toStringAsFixed(2)}',
@@ -100,12 +98,12 @@ class ProductListCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      
+
                       // Presentaciones
                       if (presentations.isNotEmpty) _buildPresentations(),
-                      
+
                       if (presentations.isNotEmpty) const SizedBox(height: 8),
-                      
+
                       // Tienda y Stock
                       Row(
                         children: [
@@ -132,10 +130,7 @@ class ProductListCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.grey[50],
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Colors.grey.withOpacity(0.15),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -145,15 +140,13 @@ class ProductListCard extends StatelessWidget {
         ],
       ),
       child: imageUrl != null && imageUrl!.isNotEmpty
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                imageUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return _buildPlaceholderImage();
-                },
-              ),
+          ? SupabaseImage(
+              imageUrl: imageUrl!,
+              fit: BoxFit.cover,
+              width: 85,
+              height: 85,
+              borderRadius: 10,
+              placeholderAsset: null, // Use default or specific logic if needed
             )
           : _buildPlaceholderImage(),
     );
@@ -273,19 +266,19 @@ class ProductListCard extends StatelessWidget {
 
   Widget _buildStockInfo() {
     final bool isLowStock = availableStock < 10;
-    final Color stockColor = isLowStock 
-        ? AppTheme.errorColor 
+    final Color stockColor = isLowStock
+        ? AppTheme.errorColor
         : AppTheme.textSecondary.withOpacity(0.8);
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: isLowStock 
+        color: isLowStock
             ? AppTheme.errorColor.withOpacity(0.08)
             : Colors.grey.withOpacity(0.08),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: isLowStock 
+          color: isLowStock
               ? AppTheme.errorColor.withOpacity(0.2)
               : Colors.grey.withOpacity(0.15),
           width: 0.5,
@@ -294,11 +287,7 @@ class ProductListCard extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.inventory_2_rounded,
-            size: 13,
-            color: stockColor,
-          ),
+          Icon(Icons.inventory_2_rounded, size: 13, color: stockColor),
           const SizedBox(width: 4),
           Text(
             '$availableStock',

@@ -148,10 +148,28 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     try {
       // ✅ Obtener TODOS los datos de la tienda desde metadata del RPC
-      final metadata = widget.product['metadata'] as Map<String, dynamic>?;
+      Map<String, dynamic>? metadata =
+          widget.product['metadata'] as Map<String, dynamic>?;
+
+      // Intentar recuperar metadatos si no vienen en la navegación
+      if (metadata == null && _storeDetails != null) {
+        print(
+          '⚠️ Metadata no disponible en widget.product, usando _storeDetails',
+        );
+        metadata = {
+          'id_tienda': _storeDetails!['id'],
+          'denominacion_tienda': _storeDetails!['denominacion'],
+          'ubicacion': _storeDetails!['ubicacion'],
+          'direccion': _storeDetails!['direccion'],
+          'provincia': _storeDetails!['provincia'],
+          'municipio': _storeDetails!['municipio'],
+        };
+      }
 
       if (metadata == null) {
-        throw Exception('Metadata del producto no disponible');
+        throw Exception(
+          'Metadata del producto no disponible y no se pudo recuperar de la tienda',
+        );
       }
 
       // Extraer datos de la tienda desde metadata (según get_productos_marketplace.sql líneas 94-132)
