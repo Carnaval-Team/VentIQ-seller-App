@@ -5,8 +5,7 @@ import '../services/consignacion_envio_listado_service.dart';
 import '../services/consignacion_envio_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_display_service.dart';
-// Importa este si lo necesitas para otras utilidades, pero trataremos de minimizar deps
-// import '../services/consignacion_service.dart';
+import 'confirmar_recepcion_consignacion_screen.dart';
 
 class ConsignacionEnvioDetallesScreen extends StatefulWidget {
   final int idEnvio;
@@ -76,9 +75,20 @@ class _ConsignacionEnvioDetallesScreenState
   }
 
   void _refrescar() {
+    print('🔄 Refrescando detalles del envío ${widget.idEnvio}');
     setState(() {
       _detallesFuture =
-          ConsignacionEnvioListadoService.obtenerDetallesEnvio(widget.idEnvio);
+          ConsignacionEnvioListadoService.obtenerDetallesEnvio(widget.idEnvio)
+              .then((detalles) {
+            if (detalles != null) {
+              print('📋 Detalles recibidos en pantalla:');
+              print('   - Almacén Origen: ${detalles['almacen_origen']}');
+              print('   - Almacén Destino: ${detalles['almacen_destino']}');
+              print('   - Porcentaje Comisión: ${detalles['porcentaje_comision']}');
+              print('   - Todas las claves: ${detalles.keys.toList()}');
+            }
+            return detalles;
+          });
       _productosFuture =
           ConsignacionEnvioListadoService.obtenerProductosEnvio(widget.idEnvio);
     });
@@ -128,21 +138,21 @@ class _ConsignacionEnvioDetallesScreenState
               : int.tryParse(tipoEnvioRaw?.toString() ?? '') ?? 1;
 
           // Lógica de permisos de edición
-          // El consignatario revisa y configura el envío cuando está PROPUESTO
-          // SIEMPRE que sea un envío DIRECTO (tipo 1).
-          // Si es DEVOLUCIÓN (tipo 2), el consignatario NO configura precios.
+          // El consignatario NO edita precios en la pantalla de detalles cuando está PROPUESTO
+          // En su lugar, debe ir a ConfirmarRecepcionConsignacionScreen
           
           bool puedeEditar = false;
-          if (tipoEnvio == 1 && widget.rol == 'consignatario' && 
-              (estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO || 
-               estadoEnvio == ConsignacionEnvioListadoService.ESTADO_EN_TRANSITO)) {
+          if (tipoEnvio == 1 && widget.rol == 'consignatario' && estadoEnvio == ConsignacionEnvioListadoService.ESTADO_EN_TRANSITO) {
             puedeEditar = true;
           }
 
           // Acciones para que el CONSIGNADOR gestione la devolución desde el detalle
           bool puedeGestionarDevolucionConsignador = (tipoEnvio == 2 && widget.rol == 'consignador' && estadoEnvio == 1);
           
-          // Acciones para que el CONSIGNATARIO acepte/rechace el envío directo
+          // Botón "Verificar Envío" para CONSIGNATARIO cuando envío está PROPUESTO
+          bool puedeVerificarEnvio = (tipoEnvio == 1 && widget.rol == 'consignatario' && estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO);
+          
+          // Acciones para que el CONSIGNATARIO acepte/rechace el envío directo (solo cuando está EN_TRANSITO)
           bool puedeGestionarEnvioConsignatario = (tipoEnvio == 1 && widget.rol == 'consignatario' && estadoEnvio == 3);
 
           // Acciones de CANCELACIÓN (quien crea, puede cancelar antes de avanzar)
@@ -159,6 +169,11 @@ class _ConsignacionEnvioDetallesScreenState
                 _buildSeccionDetalles(detalles),
                 const SizedBox(height: 24),
                 _buildSeccionProductos(puedeEditar: puedeEditar),
+                
+                if (puedeVerificarEnvio) ...[
+                  const SizedBox(height: 24),
+                  _buildBotonVerificarEnvio(detalles),
+                ],
                 
                 if (puedeEditar) ...[
                   const SizedBox(height: 24),
@@ -328,6 +343,12 @@ class _ConsignacionEnvioDetallesScreenState
         ? precioCostoUsdRaw.toDouble()
         : double.tryParse(precioCostoUsdRaw?.toString() ?? '') ?? 0;
     
+    // Precio de costo configurado en la consignación (lo que pagará la consignataria)
+    final precioCostoCupRaw = producto['precio_costo_cup'];
+    final precioCostoCup = precioCostoCupRaw is num
+        ? precioCostoCupRaw.toDouble()
+        : double.tryParse(precioCostoCupRaw?.toString() ?? '') ?? 0;
+    
     // Si viene tasa de cambio en producto, usarla, si no usar global
     final tasaCambioProdRaw = producto['tasa_cambio'];
     double tasaCambioProd = tasaCambioProdRaw is num
@@ -356,10 +377,11 @@ class _ConsignacionEnvioDetallesScreenState
     // Inicialización de controladores si es editable
     if (puedeEditar && idEnvioProducto != 0) {
       if (!_preciosVentaConfigurables.containsKey(idEnvioProducto)) {
-        // Por defecto sugerimos el Costo USD * Tasa (o el guardado si existe y es > 0)
+        // Sugerir precio de venta basado en precio_costo_cup del envío
+        // Si ya hay precio_venta_cup guardado, usarlo; si no, usar precio_costo_cup como base
         double precioSug = precioVentaCupGuardado > 0 
             ? precioVentaCupGuardado 
-            : (precioCostoUsd * tasaCambioProd);
+            : precioCostoCup;  // Usar precio_costo_cup del envío como base
             
         _preciosVentaConfigurables[idEnvioProducto] = precioSug;
         _precioVentaControllers[idEnvioProducto] = TextEditingController(
@@ -446,14 +468,14 @@ class _ConsignacionEnvioDetallesScreenState
               if (puedeEditar)
                 Row(
                   children: [
-                    // Col 1: Costo Consignador
+                    // Col 1: Precios de Costo del Envío
                     Expanded(
                       flex: 3,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Costo (Consignador)',
+                            'Costo Consignación',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
@@ -471,10 +493,11 @@ class _ConsignacionEnvioDetallesScreenState
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                // Precio en USD convertido a CUP usando tasa del envío
                                 Text(
                                   '\$${precioCostoUsd.toStringAsFixed(2)} USD',
                                   style: const TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.blue,
                                   ),
@@ -482,9 +505,19 @@ class _ConsignacionEnvioDetallesScreenState
                                 Text(
                                   '≈ \$${(precioCostoUsd * tasaCambioProd).toStringAsFixed(0)} CUP',
                                   style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.blue[700],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                // Precio de costo CUP configurado en el envío
+                                Text(
+                                  'Costo Envío: \$${precioCostoCup.toStringAsFixed(2)} CUP',
+                                  style: TextStyle(
                                     fontSize: 11,
-                                    color: Colors.blue[800],
-                                    fontStyle: FontStyle.italic,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green[700],
+                                    backgroundColor: Colors.green[50],
                                   ),
                                 ),
                               ],
@@ -510,7 +543,7 @@ class _ConsignacionEnvioDetallesScreenState
                             ),
                           ),
                           const SizedBox(height: 4),
-                           _buildMargenTextField(idEnvioProducto, precioCostoUsd, tasaCambioProd),
+                           _buildMargenTextField(idEnvioProducto, precioCostoCup),
                         ],
                       ),
                     ),
@@ -553,7 +586,7 @@ class _ConsignacionEnvioDetallesScreenState
                   ],
                 )
               else
-                // Vista Solo Lectura (sin edición) - NO mostrar costos en devoluciones
+                // Vista Solo Lectura (sin edición) - Mostrar precios del envío
                  Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -562,8 +595,8 @@ class _ConsignacionEnvioDetallesScreenState
                       '\$${precioCostoUsd.toStringAsFixed(2)}',
                     ),
                     _buildProductoInfo(
-                      'Costo CUP',
-                      '\$${(precioCostoUsd * tasaCambioProd).toStringAsFixed(2)}',
+                      'Costo Envío CUP',
+                      '\$${precioCostoCup.toStringAsFixed(2)}',
                     ),
                     _buildProductoInfo(
                       'Precio Venta',
@@ -607,7 +640,7 @@ class _ConsignacionEnvioDetallesScreenState
     );
   }
 
-  Widget _buildMargenTextField(int idEnvioProducto, double precioCostoUsd, double tasa) {
+  Widget _buildMargenTextField(int idEnvioProducto, double precioCostoCup) {
     return TextField(
       controller: _margenControllers[idEnvioProducto],
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -622,8 +655,8 @@ class _ConsignacionEnvioDetallesScreenState
       onChanged: (value) {
         final margen = double.tryParse(value);
         if (margen != null) {
-          final precioBase = precioCostoUsd * tasa;
-          final precioFinal = precioBase * (1 + (margen / 100));
+          // Calcular precio de venta basado en precio_costo_cup del envío
+          final precioFinal = precioCostoCup * (1 + (margen / 100));
           setState(() {
             _preciosVentaConfigurables[idEnvioProducto] = precioFinal;
             _precioVentaControllers[idEnvioProducto]?.text = precioFinal.toStringAsFixed(2);
@@ -1062,6 +1095,93 @@ class _ConsignacionEnvioDetallesScreenState
       }
     } finally {
       if (mounted) setState(() => _isAccepting = false);
+    }
+  }
+
+  Widget _buildBotonVerificarEnvio(Map<String, dynamic> detalles) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: () => _navegarAVerificarEnvio(detalles),
+        icon: const Icon(Icons.fact_check),
+        label: const Text(
+          'Verificar Envío',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _navegarAVerificarEnvio(Map<String, dynamic> detalles) async {
+    // Logging: Mostrar todos los detalles recibidos
+    debugPrint('📋 ===== VERIFICAR ENVÍO =====');
+    debugPrint('📋 Detalles completos recibidos:');
+    detalles.forEach((key, value) {
+      debugPrint('   - $key: $value (${value.runtimeType})');
+    });
+    
+    // Navegar a ConfirmarRecepcionConsignacionScreen
+    final idContrato = detalles['id_contrato_consignacion'];
+    final idTiendaOrigen = detalles['id_tienda_consignadora'];
+    final idTiendaDestino = detalles['id_tienda_consignataria'];
+    final idAlmacenOrigen = detalles['id_almacen_origen'];
+    final idAlmacenDestino = detalles['id_almacen_destino'];
+
+    debugPrint('📋 Datos extraídos:');
+    debugPrint('   - idContrato: $idContrato');
+    debugPrint('   - idTiendaOrigen: $idTiendaOrigen');
+    debugPrint('   - idTiendaDestino: $idTiendaDestino');
+    debugPrint('   - idAlmacenOrigen: $idAlmacenOrigen');
+    debugPrint('   - idAlmacenDestino: $idAlmacenDestino');
+
+    // Validar datos y mostrar cuál falta
+    List<String> datosFaltantes = [];
+    if (idContrato == null) datosFaltantes.add('Contrato');
+    if (idTiendaOrigen == null) datosFaltantes.add('Tienda Origen');
+    if (idTiendaDestino == null) datosFaltantes.add('Tienda Destino');
+    if (idAlmacenOrigen == null) datosFaltantes.add('Almacén Origen');
+    if (idAlmacenDestino == null) datosFaltantes.add('Almacén Destino');
+
+    if (datosFaltantes.isNotEmpty) {
+      debugPrint('❌ DATOS FALTANTES: ${datosFaltantes.join(', ')}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Faltan datos: ${datosFaltantes.join(', ')}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    debugPrint('✅ Todos los datos están presentes. Navegando a ConfirmarRecepcionConsignacionScreen...');
+
+    if (!mounted) return;
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ConfirmarRecepcionConsignacionScreen(
+          idContrato: idContrato,
+          idTiendaOrigen: idTiendaOrigen,
+          idTiendaDestino: idTiendaDestino,
+          idAlmacenOrigen: idAlmacenOrigen,
+          idAlmacenDestino: idAlmacenDestino,
+          idEnvio: widget.idEnvio, // Pasar el ID del envío
+        ),
+      ),
+    );
+
+    // Si se confirmó la recepción, cerrar esta pantalla y refrescar
+    if (result == true && mounted) {
+      Navigator.pop(context, true);
     }
   }
 
