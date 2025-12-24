@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import 'supabase_image.dart';
 
 /// Tarjeta de tienda para vista de lista
 class StoreListCard extends StatelessWidget {
@@ -40,10 +41,7 @@ class StoreListCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey.withOpacity(0.15),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -144,10 +142,7 @@ class StoreListCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey.withOpacity(0.15),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.grey.withOpacity(0.15), width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -157,15 +152,11 @@ class StoreListCard extends StatelessWidget {
         ],
       ),
       child: logoUrl != null && logoUrl!.isNotEmpty
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                logoUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return _buildPlaceholderLogo();
-                },
-              ),
+          ? SupabaseImage(
+              imageUrl: logoUrl!,
+              fit: BoxFit.cover,
+              borderRadius: 12,
+              placeholderAsset: null, // Default
             )
           : _buildPlaceholderLogo(),
     );
@@ -173,11 +164,7 @@ class StoreListCard extends StatelessWidget {
 
   Widget _buildPlaceholderLogo() {
     return Center(
-      child: Icon(
-        Icons.store_rounded,
-        size: 32,
-        color: Colors.grey[400],
-      ),
+      child: Icon(Icons.store_rounded, size: 32, color: Colors.grey[400]),
     );
   }
 

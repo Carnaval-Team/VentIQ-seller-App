@@ -469,8 +469,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
           _buildInfoRow(
             icon: Icons.location_on_outlined,
             title: 'Ubicación',
-            content:
-                '${widget.store['ubicacion']}',
+            content: '${widget.store['ubicacion']}',
             onTap: _openMap,
           ),
           const SizedBox(height: 12),
