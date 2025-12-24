@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../widgets/product_list_card.dart';
 import '../widgets/carnaval_fab.dart';
+import '../widgets/supabase_image.dart';
 import 'product_detail_screen.dart';
 import '../services/marketplace_service.dart';
 import '../services/rating_service.dart';
@@ -200,14 +201,35 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
       return;
     }
 
+    final parts = ubicacion.split(',');
+    final lat = parts.length == 2 ? double.tryParse(parts[0].trim()) : null;
+    final lng = parts.length == 2 ? double.tryParse(parts[1].trim()) : null;
+
+    if (lat == null || lng == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ubicación de la tienda no es válida (lat,lng)'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final normalizedStore = {
+      ...widget.store,
+      // Asegurar compatibilidad con MapScreen
+      'denominacion': widget.store['denominacion'] ?? widget.store['nombre'],
+      'imagen_url': widget.store['imagen_url'] ?? widget.store['logoUrl'],
+    };
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => MapScreen(
           stores: [
-            widget.store,
+            normalizedStore,
           ], // Pass only this store, or fetch all if needed context
-          initialStore: widget.store,
+          initialStore: normalizedStore,
         ),
       ),
     );
@@ -298,6 +320,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildSliverAppBar() {
+    final screenWidth = MediaQuery.of(context).size.width;
     return SliverAppBar(
       expandedHeight: 250,
       pinned: true,
@@ -350,12 +373,12 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
           children: [
             // Imagen de fondo o gradiente
             widget.store['logoUrl'] != null
-                ? Image.network(
-                    widget.store['logoUrl'],
+                ? SupabaseImage(
+                    imageUrl: widget.store['logoUrl'],
+                    width: screenWidth,
+                    height: 250,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return _buildGradientBackground();
-                    },
+                    errorWidgetOverride: _buildGradientBackground(),
                   )
                 : _buildGradientBackground(),
 

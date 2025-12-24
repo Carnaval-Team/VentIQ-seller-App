@@ -8,6 +8,8 @@ class SupabaseImage extends StatelessWidget {
   final BoxFit fit;
   final double? borderRadius;
   final String? placeholderAsset;
+  final Widget? placeholderWidget;
+  final Widget? errorWidgetOverride;
 
   const SupabaseImage({
     super.key,
@@ -17,6 +19,8 @@ class SupabaseImage extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.borderRadius,
     this.placeholderAsset,
+    this.placeholderWidget,
+    this.errorWidgetOverride,
   });
 
   String _getOptimizedUrl() {
@@ -50,30 +54,56 @@ class SupabaseImage extends StatelessWidget {
         width: width,
         height: height,
         fit: fit,
-        placeholder: (context, url) => Container(
-          width: width,
-          height: height,
-          color: Colors.grey[200],
-          child: const Center(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+        placeholder: (context, url) {
+          if (placeholderWidget != null) {
+            return SizedBox(
+              width: width,
+              height: height,
+              child: placeholderWidget,
+            );
+          }
+          if (placeholderAsset != null) {
+            return Image.asset(
+              placeholderAsset!,
+              width: width,
+              height: height,
+              fit: fit,
+            );
+          }
+          return Container(
+            width: width,
+            height: height,
+            color: Colors.grey[200],
+            child: const Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
             ),
-          ),
-        ),
-        errorWidget: (context, url, error) => Container(
-          width: width,
-          height: height,
-          color: Colors.grey[200],
-          child: Center(
-            child: Icon(
-              Icons.image_not_supported_outlined,
-              color: Colors.grey[400],
-              size: (width ?? 50) * 0.4,
+          );
+        },
+        errorWidget: (context, url, error) {
+          if (errorWidgetOverride != null) {
+            return SizedBox(
+              width: width,
+              height: height,
+              child: errorWidgetOverride,
+            );
+          }
+          return Container(
+            width: width,
+            height: height,
+            color: Colors.grey[200],
+            child: Center(
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                color: Colors.grey[400],
+                size: (width ?? 50) * 0.4,
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

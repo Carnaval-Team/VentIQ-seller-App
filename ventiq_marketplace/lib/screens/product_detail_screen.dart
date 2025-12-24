@@ -3,6 +3,7 @@ import '../config/app_theme.dart';
 import '../services/product_detail_service.dart';
 import '../services/cart_service.dart';
 import '../widgets/carnaval_fab.dart';
+import '../widgets/supabase_image.dart';
 import '../services/rating_service.dart';
 import '../widgets/rating_input_dialog.dart';
 import '../services/store_service.dart'; // Import agregado
@@ -322,39 +323,105 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  void _openStoreLocation() {
+  Future<void> _openStoreLocation() async {
     final metadata = widget.product['metadata'] as Map<String, dynamic>?;
-    if (metadata == null) return;
 
-    final storeLocation = metadata['ubicacion'] as String?;
+    dynamic storeIdValue;
+    if (metadata != null) {
+      storeIdValue = metadata['id_tienda'];
+    }
 
-    if (storeLocation == null || !storeLocation.contains(',')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Ubicación de la tienda no disponible'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+    final int storeId = storeIdValue is int
+        ? storeIdValue
+        : int.tryParse(storeIdValue?.toString() ?? '') ?? 0;
+
+    // Preferir coordenadas reales de la tienda desde _storeDetails (tabla app_dat_tienda)
+    final String? ubicacionCoords =
+        (_storeDetails?['ubicacion'] as String?) ??
+        (metadata?['ubicacion'] as String?);
+
+    // Validación estricta: debe ser lat,lng numérico
+    final parts = ubicacionCoords?.split(',');
+    final lat = (parts != null && parts.length == 2)
+        ? double.tryParse(parts[0].trim())
+        : null;
+    final lng = (parts != null && parts.length == 2)
+        ? double.tryParse(parts[1].trim())
+        : null;
+
+    if (lat == null || lng == null) {
+      // Intentar obtener detalles de tienda si aún no están cargados
+      Map<String, dynamic>? storeDetails = _storeDetails;
+      if (storeDetails == null && storeId > 0) {
+        try {
+          storeDetails = await _storeService.getStoreDetails(storeId);
+        } catch (_) {}
+      }
+
+      final String? fallbackUbicacion = storeDetails?['ubicacion'] as String?;
+      final fallbackParts = fallbackUbicacion?.split(',');
+      final fallbackLat = (fallbackParts != null && fallbackParts.length == 2)
+          ? double.tryParse(fallbackParts[0].trim())
+          : null;
+      final fallbackLng = (fallbackParts != null && fallbackParts.length == 2)
+          ? double.tryParse(fallbackParts[1].trim())
+          : null;
+
+      if (fallbackLat == null || fallbackLng == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Ubicación de la tienda no disponible'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Reemplazar con ubicación válida
+      final storeData = {
+        'id': storeId > 0 ? storeId : (metadata?['id_tienda']),
+        'denominacion':
+            storeDetails?['denominacion'] ?? metadata?['denominacion_tienda'],
+        'ubicacion': fallbackUbicacion,
+        'direccion': storeDetails?['direccion'] ?? metadata?['direccion'],
+        'imagen_url': storeDetails?['imagen_url'],
+        'logoUrl': storeDetails?['imagen_url'],
+      };
+
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                MapScreen(stores: [storeData], initialStore: storeData),
+          ),
+        );
+      }
       return;
     }
 
     // Construir objeto de tienda para el mapa
     final storeData = {
-      'id': metadata['id_tienda'],
-      'denominacion': metadata['denominacion_tienda'],
-      'ubicacion': storeLocation,
-      'direccion': metadata['direccion'],
-      'imagem_url':
-          null, // No tenemos la imagen de la tienda aquí, usará icono default
+      'id': storeId > 0 ? storeId : (metadata?['id_tienda']),
+      'denominacion':
+          _storeDetails?['denominacion'] ?? metadata?['denominacion_tienda'],
+      'ubicacion': ubicacionCoords,
+      'direccion': _storeDetails?['direccion'] ?? metadata?['direccion'],
+      'imagen_url': _storeDetails?['imagen_url'],
+      'logoUrl': _storeDetails?['imagen_url'],
     };
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            MapScreen(stores: [storeData], initialStore: storeData),
-      ),
-    );
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              MapScreen(stores: [storeData], initialStore: storeData),
+        ),
+      );
+    }
   }
 
   @override
@@ -524,6 +591,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         widget.product['imagen'] ??
         widget.product['imageUrl'];
 
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Stack(
       children: [
         // Imagen principal
@@ -541,18 +610,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ),
           ),
           child: imageUrl != null
-              ? Image.network(
-                  imageUrl,
+              ? SupabaseImage(
+                  imageUrl: imageUrl,
+                  width: screenWidth,
+                  height: 280,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Center(
-                      child: Icon(
-                        Icons.shopping_bag_rounded,
-                        size: 100,
-                        color: Colors.grey[300],
-                      ),
-                    );
-                  },
+                  errorWidgetOverride: Center(
+                    child: Icon(
+                      Icons.shopping_bag_rounded,
+                      size: 100,
+                      color: Colors.grey[300],
+                    ),
+                  ),
                 )
               : Center(
                   child: Icon(
