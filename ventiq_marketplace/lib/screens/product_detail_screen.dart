@@ -28,6 +28,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Map<String, dynamic>? _productDetails;
   Map<String, dynamic>? _storeDetails; // Variable para detalles de la tienda
   List<Map<String, dynamic>> _variants = [];
+  List<Map<String, dynamic>> _relatedProducts = [];
+  bool _isLoadingRelatedProducts = false;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -48,6 +50,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _isLoadingRelatedProducts = true;
     });
 
     try {
@@ -73,6 +76,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
       // 1. Cargar detalles del producto
       final details = await _productDetailService.getProductDetail(productId);
+
+      // Cargar productos relacionados (top 10)
+      final relatedProducts = await _productDetailService.getRelatedProducts(
+        productId,
+        limit: 10,
+      );
 
       // 2. Cargar detalles de la tienda si tenemos el ID
       Map<String, dynamic>? storeData;
@@ -103,6 +112,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         _productDetails = details;
         _storeDetails = storeData;
         _variants = List<Map<String, dynamic>>.from(details['variantes'] ?? []);
+        _relatedProducts = relatedProducts;
+        _isLoadingRelatedProducts = false;
         // Seleccionar la primera variante por defecto
         if (_variants.isNotEmpty) {
           _selectedVariant = _variants.first;
@@ -120,19 +131,43 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       setState(() {
         _errorMessage = 'Error al cargar los detalles del producto: $e';
         _isLoading = false;
+        _isLoadingRelatedProducts = false;
       });
     }
   }
 
-  /// Actualiza la cantidad seleccionada de una variante
-  void _updateQuantity(String variantId, int quantity) {
+  Future<void> _addDefaultToPlan() async {
+    final variant =
+        _selectedVariant ?? (_variants.isNotEmpty ? _variants.first : null);
+
+    if (variant == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay presentación disponible para este producto'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final variantId = variant['id']?.toString();
+    if (variantId == null || variantId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo determinar la presentación del producto'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() {
-      if (quantity > 0) {
-        _selectedQuantities[variantId] = quantity;
-      } else {
-        _selectedQuantities.remove(variantId);
-      }
+      _selectedQuantities = {variantId: 1};
     });
+
+    await _addToCart();
   }
 
   /// Agrega los productos seleccionados al carrito
@@ -252,7 +287,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '$totalItems ${totalItems == 1 ? 'producto agregado' : 'productos agregados'} al carrito',
+                    '$totalItems ${totalItems == 1 ? 'producto agregado' : 'productos agregados'} al plan',
                   ),
                 ),
               ],
@@ -275,7 +310,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al agregar al carrito: $e'),
+            content: Text('Error al agregar al plan: $e'),
             backgroundColor: AppTheme.errorColor,
           ),
         );
@@ -432,6 +467,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         padding: EdgeInsets.only(bottom: 80),
         child: CarnavalFab(),
       ),
+      bottomNavigationBar: (!_isLoading && _errorMessage == null)
+          ? SafeArea(child: _buildAddToPlanSection())
+          : null,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -540,25 +578,286 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   // Características destacadas
                   // _buildFeatures(),
 
-                  // Descripción
-                  if (_productDetails?['descripcion'] != null)
-                    _buildDescriptionSection(),
-
-                  // Variantes disponibles
-                  _buildVariantsSection(),
-
-                  // Información de la tienda
-                  // if (widget.product['metadata'] != null)
-                  //   _buildStoreInfoSection(),
-
-                  // Botón fijo de agregar al carrito
-                  if (_selectedQuantities.isNotEmpty) _buildFixedCartButton(),
+                  // Productos relacionados
+                  _buildRelatedProductsSection(),
 
                   // Espacio final
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildRelatedProductsSection() {
+    if (_isLoadingRelatedProducts) {
+      return const SizedBox.shrink();
+    }
+
+    if (_relatedProducts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppTheme.primaryColor.withOpacity(0.2),
+                      AppTheme.primaryColor.withOpacity(0.1),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome,
+                  color: AppTheme.primaryColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Productos relacionados',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 240,
+            child: PageView.builder(
+              controller: PageController(viewportFraction: 0.82),
+              itemCount: _relatedProducts.length,
+              itemBuilder: (context, index) {
+                final p = _relatedProducts[index];
+                final name = (p['denominacion'] ?? 'Producto').toString();
+                final imageUrl = p['imagen']?.toString();
+                final tieneStock = (p['tiene_stock'] as bool?) ?? false;
+                final stock = (p['stock_disponible'] as num?)?.toDouble();
+                final metadata = p['metadata'] as Map<String, dynamic>?;
+                final ratingRaw = metadata?['rating_promedio'];
+                final rating = ratingRaw is num
+                    ? ratingRaw.toDouble()
+                    : double.tryParse(ratingRaw?.toString() ?? '') ?? 0.0;
+                final totalRatingsRaw = metadata?['total_ratings'];
+                final totalRatings = totalRatingsRaw is int
+                    ? totalRatingsRaw
+                    : int.tryParse(totalRatingsRaw?.toString() ?? '') ?? 0;
+                final priceRaw = p['precio_venta'];
+                final price = priceRaw is num
+                    ? priceRaw.toDouble()
+                    : double.tryParse(priceRaw?.toString() ?? '') ?? 0.0;
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ProductDetailScreen(product: p),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(18),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: Colors.grey.withOpacity(0.12),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.06),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClipRRect(
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(18),
+                              ),
+                              child: SizedBox(
+                                height: 130,
+                                width: double.infinity,
+                                child: imageUrl != null && imageUrl.isNotEmpty
+                                    ? SupabaseImage(
+                                        imageUrl: imageUrl,
+                                        width: double.infinity,
+                                        height: 130,
+                                        fit: BoxFit.cover,
+                                        errorWidgetOverride: Container(
+                                          color: Colors.grey[100],
+                                          child: const Center(
+                                            child: Icon(
+                                              Icons.shopping_bag_rounded,
+                                              color: AppTheme.textSecondary,
+                                              size: 36,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    : Container(
+                                        color: Colors.grey[100],
+                                        child: const Center(
+                                          child: Icon(
+                                            Icons.shopping_bag_rounded,
+                                            color: AppTheme.textSecondary,
+                                            size: 36,
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      name,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.textPrimary,
+                                        height: 1.15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.star_rounded,
+                                          size: 14,
+                                          color: AppTheme.warningColor,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          rating.toStringAsFixed(1),
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.textPrimary,
+                                          ),
+                                        ),
+                                        if (totalRatings > 0) ...[
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '($totalRatings)',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppTheme.textSecondary
+                                                  .withOpacity(0.85),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const Spacer(),
+                                    Row(
+                                      children: [
+                                        Text(
+                                          '\$${price.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppTheme.accentColor,
+                                            letterSpacing: -0.2,
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: tieneStock
+                                                ? AppTheme.successColor
+                                                      .withOpacity(0.08)
+                                                : AppTheme.errorColor
+                                                      .withOpacity(0.08),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            border: Border.all(
+                                              color: tieneStock
+                                                  ? AppTheme.successColor
+                                                        .withOpacity(0.2)
+                                                  : AppTheme.errorColor
+                                                        .withOpacity(0.2),
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            tieneStock
+                                                ? (stock == null
+                                                      ? 'En stock'
+                                                      : '${stock.toStringAsFixed(0)}')
+                                                : 'Sin stock',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              color: tieneStock
+                                                  ? AppTheme.successColor
+                                                  : AppTheme.errorColor,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -769,8 +1068,35 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 letterSpacing: -0.5,
               ),
             ),
-            const SizedBox(height: 8),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+
+            Builder(
+              builder: (context) {
+                final variant =
+                    _selectedVariant ??
+                    (_variants.isNotEmpty ? _variants.first : null);
+                final price =
+                    (variant?['precio'] as num?)?.toDouble() ??
+                    (_productDetails?['precio'] as num?)?.toDouble() ??
+                    0.0;
+
+                return Row(
+                  children: [
+                    Text(
+                      '\$${price.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.accentColor,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+
+            const SizedBox(height: 10),
             // Información de la tienda (clickable)
             if (_storeDetails != null ||
                 widget.product['metadata'] != null) ...[
@@ -925,52 +1251,111 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                // Variantes
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppTheme.primaryColor.withOpacity(0.1),
-                          AppTheme.primaryColor.withOpacity(0.05),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppTheme.primaryColor.withOpacity(0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.widgets_rounded,
-                          size: 18,
-                          color: AppTheme.primaryColor,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${_variants.length} opciones',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.primaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAddToPlanSection() {
+    final variant =
+        _selectedVariant ?? (_variants.isNotEmpty ? _variants.first : null);
+    final price =
+        (variant?['precio'] as num?)?.toDouble() ??
+        (_productDetails?['precio'] as num?)?.toDouble() ??
+        0.0;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppTheme.primaryColor.withOpacity(0.15),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '\$${price.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: AppTheme.accentColor,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppTheme.primaryColor,
+                  AppTheme.primaryColor.withOpacity(0.85),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withOpacity(0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ElevatedButton(
+              onPressed: (variant == null) ? null : _addDefaultToPlan,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.playlist_add, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'Añadir al plan',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1167,656 +1552,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildDescriptionSection() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppTheme.primaryColor.withOpacity(0.2),
-                      AppTheme.primaryColor.withOpacity(0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.description_rounded,
-                  color: AppTheme.primaryColor,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Descripción del Producto',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _productDetails!['descripcion'],
-            style: TextStyle(
-              fontSize: 15,
-              color: AppTheme.textSecondary.withOpacity(0.9),
-              height: 1.6,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVariantsSection() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppTheme.accentColor.withOpacity(0.2),
-                      AppTheme.accentColor.withOpacity(0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.shopping_basket_rounded,
-                  color: AppTheme.accentColor,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Elige tu Presentación',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppTheme.primaryColor,
-                      AppTheme.primaryColor.withOpacity(0.8),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.primaryColor.withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  '${_variants.length}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          if (_variants.isEmpty)
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(32),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.inventory_2_outlined,
-                      size: 48,
-                      color: AppTheme.textSecondary.withOpacity(0.5),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'No hay presentaciones disponibles',
-                      style: TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            _buildSingleVariantCard(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSingleVariantCard() {
-    if (_selectedVariant == null) return const SizedBox.shrink();
-
-    final variantId = _selectedVariant!['id'] as String;
-    final descripcion = _selectedVariant!['descripcion'] as String?;
-    final precio = (_selectedVariant!['precio'] as num?)?.toDouble() ?? 0.0;
-    final cantidadTotal = _selectedVariant!['cantidad_total'] as int? ?? 0;
-    final currentQuantity = _selectedQuantities[variantId] ?? 0;
-    final isSelected = currentQuantity > 0;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isSelected
-              ? AppTheme.primaryColor
-              : Colors.grey.withOpacity(0.1),
-          width: isSelected ? 2 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isSelected
-                ? AppTheme.primaryColor.withOpacity(0.2)
-                : Colors.black.withOpacity(0.05),
-            blurRadius: isSelected ? 15 : 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Dropdown selector de presentación
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppTheme.primaryColor.withOpacity(0.08),
-                    AppTheme.primaryColor.withOpacity(0.05),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppTheme.primaryColor.withOpacity(0.2),
-                  width: 1,
-                ),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<Map<String, dynamic>>(
-                  value: _selectedVariant,
-                  isExpanded: true,
-                  icon: Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: AppTheme.primaryColor,
-                    size: 24,
-                  ),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
-                  ),
-                  items: _variants.map((variant) {
-                    final vNombre = variant['nombre'] as String? ?? 'Variante';
-                    final vEsBase = variant['es_base'] as bool? ?? false;
-                    return DropdownMenuItem<Map<String, dynamic>>(
-                      value: variant,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              vNombre,
-                              style: TextStyle(
-                                color: AppTheme.textPrimary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          if (vEsBase)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppTheme.warningColor.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.star_rounded,
-                                    size: 10,
-                                    color: AppTheme.warningColor,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    'Base',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppTheme.warningColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (newVariant) {
-                    setState(() {
-                      _selectedVariant = newVariant;
-                      // Limpiar cantidad anterior si cambia de variante
-                      _selectedQuantities.clear();
-                    });
-                  },
-                ),
-              ),
-            ),
-
-            if (descripcion != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                descripcion,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textSecondary.withOpacity(0.85),
-                  height: 1.2,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-
-            const SizedBox(height: 12),
-
-            // Precio y stock
-            Row(
-              children: [
-                Text(
-                  '\$${precio.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.accentColor,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: cantidadTotal > 0
-                        ? AppTheme.successColor.withOpacity(0.08)
-                        : AppTheme.errorColor.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: cantidadTotal > 0
-                          ? AppTheme.successColor.withOpacity(0.2)
-                          : AppTheme.errorColor.withOpacity(0.2),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.inventory_2_rounded,
-                        size: 14,
-                        color: cantidadTotal > 0
-                            ? AppTheme.successColor
-                            : AppTheme.errorColor,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$cantidadTotal disponibles',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: cantidadTotal > 0
-                              ? AppTheme.successColor
-                              : AppTheme.errorColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // Selector de cantidad
-            Row(
-              children: [
-                // Botón menos
-                Container(
-                  decoration: BoxDecoration(
-                    color: currentQuantity > 0
-                        ? AppTheme.primaryColor.withOpacity(0.08)
-                        : Colors.grey.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: IconButton(
-                    onPressed: currentQuantity > 0
-                        ? () => _updateQuantity(variantId, currentQuantity - 1)
-                        : null,
-                    icon: const Icon(Icons.remove_rounded),
-                    color: AppTheme.primaryColor,
-                    iconSize: 22,
-                    padding: const EdgeInsets.all(8),
-                    constraints: const BoxConstraints(),
-                  ),
-                ),
-
-                // Cantidad
-                Expanded(
-                  child: Container(
-                    alignment: Alignment.center,
-                    child: Text(
-                      '$currentQuantity',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        color: isSelected
-                            ? AppTheme.primaryColor
-                            : AppTheme.textPrimary,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Botón más
-                Container(
-                  decoration: BoxDecoration(
-                    color: currentQuantity < cantidadTotal
-                        ? AppTheme.primaryColor.withOpacity(0.08)
-                        : Colors.grey.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: IconButton(
-                    onPressed: currentQuantity < cantidadTotal
-                        ? () => _updateQuantity(variantId, currentQuantity + 1)
-                        : null,
-                    icon: const Icon(Icons.add_rounded),
-                    color: AppTheme.primaryColor,
-                    iconSize: 22,
-                    padding: const EdgeInsets.all(8),
-                    constraints: const BoxConstraints(),
-                  ),
-                ),
-              ],
-            ),
-
-            // Subtotal
-            if (currentQuantity > 0) ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppTheme.primaryColor.withOpacity(0.08),
-                      AppTheme.primaryColor.withOpacity(0.12),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: AppTheme.primaryColor.withOpacity(0.2),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Subtotal:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                    Text(
-                      '\$${(precio * currentQuantity).toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.primaryColor,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFixedCartButton() {
-    final totalItems = _selectedQuantities.values.fold<int>(
-      0,
-      (sum, qty) => sum + qty,
-    );
-    final totalPrice = _selectedQuantities.entries.fold<double>(0.0, (
-      sum,
-      entry,
-    ) {
-      final variant = _variants.firstWhere((v) => v['id'] == entry.key);
-      final precio = (variant['precio'] as num?)?.toDouble() ?? 0.0;
-      return sum + (precio * entry.value);
-    });
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      height: 100,
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Colors.white, Colors.white.withOpacity(0.95)],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: AppTheme.primaryColor.withOpacity(0.2),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryColor.withOpacity(0.2),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Información del total
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppTheme.primaryColor.withOpacity(0.15),
-                        AppTheme.primaryColor.withOpacity(0.08),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '$totalItems ${totalItems == 1 ? 'producto' : 'productos'}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.primaryColor.withOpacity(0.9),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Text(
-                      'Total: ',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textSecondary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Text(
-                      '\$${totalPrice.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.accentColor,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Botón de agregar
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppTheme.primaryColor,
-                  AppTheme.primaryColor.withOpacity(0.8),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.primaryColor.withOpacity(0.4),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: ElevatedButton(
-              onPressed: _addToCart,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.shopping_cart_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  SizedBox(width: 6),
-                  Text(
-                    'Agregar',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import '../config/app_theme.dart';
 import '../widgets/carnaval_fab.dart';
 import '../widgets/supabase_image.dart';
+import '../services/routing_service.dart';
 import 'store_detail_screen.dart';
 
 class MapScreen extends StatefulWidget {
@@ -20,8 +21,12 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
+  final RoutingService _routingService = RoutingService();
   Position? _currentPosition;
   Map<String, dynamic>? _selectedStore;
+  List<LatLng>? _routePolyline;
+  bool _isTracingRoute = false;
+  String? _routedStoreId;
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
 
@@ -179,7 +184,15 @@ class _MapScreenState extends State<MapScreen> {
               child: GestureDetector(
                 onTap: () {
                   setState(() {
+                    final newStoreId = _getStoreIdKey(store);
+                    final shouldClearRoute = _routedStoreId != newStoreId;
+
                     _selectedStore = store;
+
+                    if (shouldClearRoute) {
+                      _routePolyline = null;
+                      _routedStoreId = null;
+                    }
                   });
                 },
                 child: Column(
@@ -287,6 +300,18 @@ class _MapScreenState extends State<MapScreen> {
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName:
                     'com.ventiq.marketplace', // Replace with your app package
+              ),
+              PolylineLayer(
+                polylines: [
+                  if (_routePolyline != null && _routePolyline!.isNotEmpty)
+                    Polyline(
+                      points: _routePolyline!,
+                      strokeWidth: 4.0,
+                      color: AppTheme.primaryColor,
+                      borderStrokeWidth: 2.0,
+                      borderColor: Colors.white,
+                    ),
+                ],
               ),
               MarkerLayer(markers: _buildMarkers()),
             ],
@@ -425,72 +450,104 @@ class _MapScreenState extends State<MapScreen> {
                         ],
                       ),
                       const SizedBox(height: 24),
-                      Row(
+                      Column(
                         children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () {
-                                setState(() {
-                                  _selectedStore = null;
-                                });
-                              },
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: const Text('Cerrar'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => StoreDetailScreen(
-                                      store: {
-                                        'id': _selectedStore!['id'],
-                                        'nombre': _getStoreName(
-                                          _selectedStore!,
-                                        ),
-                                        'logoUrl': _getStoreImageUrl(
-                                          _selectedStore!,
-                                        ),
-                                        'ubicacion':
-                                            _selectedStore!['ubicacion'] ??
-                                            'Sin ubicación',
-                                        // Default dummy data if missing from fetch, logic in StoreDetailScreen might need adjust if it expects these
-                                        'provincia': 'Santo Domingo',
-                                        'municipio': 'Santo Domingo Este',
-                                        'direccion': _getStoreAddress(
-                                          _selectedStore!,
-                                        ),
-                                        'productCount': 0, // Placeholder
-                                        'latitude': 0, // Placeholder
-                                        'longitude': 0, // Placeholder
-                                      },
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedStore = null;
+                                    });
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.primaryColor,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  child: const Text('Cerrar'),
                                 ),
                               ),
-                              child: const Text('Ir a la tienda'),
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _isTracingRoute
+                                      ? null
+                                      : _traceRouteToSelectedStore,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primaryColor,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: _isTracingRoute
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Text('Ir a la tienda'),
+                                ),
+                              ),
+                            ],
                           ),
+                          if (_hasRouteForSelectedStore) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => StoreDetailScreen(
+                                        store: {
+                                          'id': _selectedStore!['id'],
+                                          'nombre': _getStoreName(
+                                            _selectedStore!,
+                                          ),
+                                          'logoUrl': _getStoreImageUrl(
+                                            _selectedStore!,
+                                          ),
+                                          'ubicacion':
+                                              _selectedStore!['ubicacion'] ??
+                                              'Sin ubicación',
+                                          'provincia': 'Santo Domingo',
+                                          'municipio': 'Santo Domingo Este',
+                                          'direccion': _getStoreAddress(
+                                            _selectedStore!,
+                                          ),
+                                          'productCount': 0,
+                                          'latitude': 0,
+                                          'longitude': 0,
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Text('Visitar tienda'),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -499,6 +556,85 @@ class _MapScreenState extends State<MapScreen> {
               },
             ),
         ],
+      ),
+    );
+  }
+
+  String _getStoreIdKey(Map<String, dynamic> store) {
+    final id = store['id'];
+    if (id == null) return store.hashCode.toString();
+    return id.toString();
+  }
+
+  bool get _hasRouteForSelectedStore {
+    if (_selectedStore == null) return false;
+    if (_routePolyline == null || _routePolyline!.isEmpty) return false;
+    return _routedStoreId == _getStoreIdKey(_selectedStore!);
+  }
+
+  Future<void> _traceRouteToSelectedStore() async {
+    final store = _selectedStore;
+    if (store == null) return;
+
+    final endPoint = _parseUbicacion(store['ubicacion']);
+    if (endPoint == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Esta tienda no tiene ubicación válida')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isTracingRoute = true;
+    });
+
+    LatLng startPoint;
+    if (_currentPosition != null) {
+      startPoint = LatLng(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+      );
+    } else {
+      try {
+        final position = await Geolocator.getCurrentPosition();
+        if (mounted) {
+          setState(() {
+            _currentPosition = position;
+          });
+        }
+        startPoint = LatLng(position.latitude, position.longitude);
+      } catch (_) {
+        startPoint = const LatLng(22.40694, -79.96472);
+      }
+    }
+
+    final polyline = await _routingService.getRouteBetweenPoints(
+      startPoint,
+      endPoint,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _routePolyline = polyline;
+      _routedStoreId = _getStoreIdKey(store);
+      _isTracingRoute = false;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _fitRouteBounds(polyline);
+    });
+  }
+
+  void _fitRouteBounds(List<LatLng> points) {
+    if (points.isEmpty) return;
+    _mapController.fitCamera(
+      CameraFit.coordinates(
+        coordinates: points,
+        padding: const EdgeInsets.all(50),
+        maxZoom: 16.0,
       ),
     );
   }
