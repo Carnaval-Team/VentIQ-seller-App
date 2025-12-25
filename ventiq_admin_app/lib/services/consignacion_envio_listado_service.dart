@@ -24,6 +24,8 @@ class ConsignacionEnvioListadoService {
     int? idTienda,
   }) async {
     try {
+      print('🔍 Obteniendo envíos con filtros: idContrato=$idContrato, estadoEnvio=$estadoEnvio, idTienda=$idTienda');
+      
       final response = await _supabase.rpc(
         'obtener_envios_consignacion',
         params: {
@@ -33,8 +35,31 @@ class ConsignacionEnvioListadoService {
         },
       );
 
-      if (response == null) return [];
-      return List<Map<String, dynamic>>.from(response as List);
+      print('📦 Respuesta RPC recibida: ${response?.runtimeType}');
+      if (response == null) {
+        print('⚠️ Respuesta nula');
+        return [];
+      }
+      
+      final envios = List<Map<String, dynamic>>.from(response as List);
+      print('✅ Envíos obtenidos: ${envios.length}');
+      
+      // Logging detallado de cada envío
+      for (var i = 0; i < envios.length; i++) {
+        final envio = envios[i];
+        print('📋 Envío $i:');
+        print('   - ID: ${envio['id_envio']}');
+        print('   - Número: ${envio['numero_envio']}');
+        print('   - Estado: ${envio['estado_envio_texto']}');
+        print('   - Cantidad Productos: ${envio['cantidad_productos']}');
+        print('   - Cantidad Total Unidades: ${envio['cantidad_total_unidades']}');
+        print('   - Valor Total Costo: ${envio['valor_total_costo']}');
+        print('   - Productos JSON: ${envio['productos_json']}');
+        print('   - Productos Aceptados: ${envio['productos_aceptados']}');
+        print('   - Productos Rechazados: ${envio['productos_rechazados']}');
+      }
+      
+      return envios;
     } catch (e) {
       print('❌ Error obteniendo envíos: $e');
       rethrow;
@@ -141,6 +166,8 @@ class ConsignacionEnvioListadoService {
     int idEnvio,
   ) async {
     try {
+      print('🔍 Obteniendo detalles del envío: $idEnvio');
+      
       final response = await _supabase.rpc(
         'obtener_detalles_envio',
         params: {
@@ -148,8 +175,35 @@ class ConsignacionEnvioListadoService {
         },
       );
 
-      if (response == null || (response as List).isEmpty) return null;
-      return response.first as Map<String, dynamic>;
+      print('📦 Respuesta RPC detalles recibida: ${response?.runtimeType}');
+      
+      if (response == null || (response as List).isEmpty) {
+        print('⚠️ Respuesta vacía para envío $idEnvio');
+        return null;
+      }
+      
+      final detalles = response.first as Map<String, dynamic>;
+      print('✅ Detalles del envío obtenidos:');
+      print('   - ID Envío: ${detalles['id_envio']}');
+      print('   - Número: ${detalles['numero_envio']}');
+      print('   - Estado: ${detalles['estado_envio_texto']}');
+      print('   - ID Contrato: ${detalles['id_contrato_consignacion']}');
+      print('   - ID Tienda Origen: ${detalles['id_tienda_consignadora']}');
+      print('   - ID Tienda Destino: ${detalles['id_tienda_consignataria']}');
+      print('   - ID Almacén Origen: ${detalles['id_almacen_origen']}');
+      print('   - ID Almacén Destino: ${detalles['id_almacen_destino']}');
+      print('   - Tienda Consignadora: ${detalles['tienda_consignadora']}');
+      print('   - Tienda Consignataria: ${detalles['tienda_consignataria']}');
+      print('   - Almacén Origen: ${detalles['almacen_origen']}');
+      print('   - Almacén Destino: ${detalles['almacen_destino']}');
+      print('   - Cantidad Productos: ${detalles['cantidad_productos']}');
+      print('   - Cantidad Total Unidades: ${detalles['cantidad_total_unidades']}');
+      print('   - Valor Total Costo: ${detalles['valor_total_costo']}');
+      print('   - Valor Total Venta: ${detalles['valor_total_venta']}');
+      print('   - Productos JSON: ${detalles['productos']}');
+      print('   - Tipo Envío: ${detalles['tipo_envio']}');
+      
+      return detalles;
     } catch (e) {
       print('❌ Error obteniendo detalles del envío: $e');
       rethrow;

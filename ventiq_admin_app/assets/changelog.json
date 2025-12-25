@@ -1,8 +1,30 @@
 {
-  "current_version": "1.6.2",
-  "build": 162,
+  "current_version": "1.6.3",
+  "build": 163,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.6.3",
+      "date": "2025-12-24",
+      "title": "📦 Paginado de Movimientos y Mejoras en Consignación",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Paginado Infinito en Movimientos de Productos",
+          "description": "Implementado sistema de paginado con infinite scroll en la pantalla de movimientos de productos. Carga inicial de 20 elementos con carga progresiva al llegar al final de la lista."
+        },
+        {
+          "type": "improvement",
+          "title": "Dropdown de Margen en Consignación",
+          "description": "Agregado dropdown con opciones de margen (1-15%) al lado del precio costo en CUP en asignar_productos_consignacion_screen. Calcula automáticamente el precio de venta final."
+        },
+        {
+          "type": "improvement",
+          "title": "Visualización de Precios en Consignación",
+          "description": "Consignador ve precio costo en USD y CUP, margen seleccionable, precio de venta final en CUP, equivalente en USD y ganancia en USD."
+        }
+      ]
+    },
     {
       "version": "1.6.2",
       "date": "2025-12-23",

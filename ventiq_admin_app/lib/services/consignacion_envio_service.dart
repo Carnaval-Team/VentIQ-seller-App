@@ -56,14 +56,30 @@ class ConsignacionEnvioService {
       debugPrint('   Operación Extracción: $idOperacionExtraccion');
 
       // Preparar productos en formato JSONB
-      final productosJson = productos.map((p) => {
-        'id_inventario': p['id_inventario'],
-        'id_producto': p['id_producto'],
-        'cantidad': p['cantidad'],
-        'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
-        'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
-        'tasa_cambio': p['tasa_cambio'] ?? 440.0,
+      // precio_venta: precio de costo para la consignación (configurado por consignador en CUP)
+      // precio_costo_usd: precio_venta convertido a USD según tasa vigente
+      // precio_costo_cup: precio_venta (precio configurado por consignador)
+      // precio_venta_cup: se configura después por el consignatario en ConfirmarRecepcionConsignacionScreen
+      final productosJson = productos.map((p) {
+        final precioVentaCup = (p['precio_venta'] ?? 0.0) as double;
+        final tasaCambio = (p['tasa_cambio'] ?? 440.0) as double;
+        final precioCostoUsd = tasaCambio > 0 ? precioVentaCup / tasaCambio : 0.0;
+        
+        return {
+          'id_inventario': p['id_inventario'],
+          'id_producto': p['id_producto'],
+          'cantidad': p['cantidad'],
+          'precio_costo_usd': precioCostoUsd, // Precio configurado convertido a USD
+          'precio_costo_cup': precioVentaCup, // Precio configurado por consignador
+          'precio_venta': precioVentaCup, // Mismo valor para compatibilidad con RPC
+          'tasa_cambio': tasaCambio,
+        };
       }).toList();
+      
+      debugPrint('💰 Productos con precios de costo para consignación:');
+      for (var p in productosJson) {
+        debugPrint('   - ID Producto: ${p['id_producto']}, Cantidad: ${p['cantidad']}, Precio Costo Consignación: ${p['precio_venta']}');
+      }
 
       // Llamar función RPC
       final response = await _supabase.rpc(
