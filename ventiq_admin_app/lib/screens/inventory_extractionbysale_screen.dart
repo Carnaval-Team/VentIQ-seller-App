@@ -42,6 +42,7 @@ class _InventoryExtractionBySaleScreenState
   bool _isLoading = false;
   bool _showDescriptionInSelectors = false;
   bool _isGeneratingOffer = false;
+  String _offerCurrencyCode = 'CUP';
 
   // Motivos de venta
   List<Map<String, dynamic>> _motivoVentaOptions = [];
@@ -754,7 +755,85 @@ class _InventoryExtractionBySaleScreenState
     }
   }
 
-  Future<void> _generateOfferPdf() async {
+  Future<String?> _showOfferCurrencyDialog({required String initialCurrency}) {
+    const currencies = <String>['CUP', 'USD', 'EUR', 'MLC'];
+    final normalizedInitial =
+        currencies.contains(initialCurrency) ? initialCurrency : currencies[0];
+
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        String selectedCurrency = normalizedInitial;
+
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Moneda de la oferta'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ...currencies.map(
+                      (c) => RadioListTile<String>(
+                        value: c,
+                        groupValue: selectedCurrency,
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setStateDialog(() {
+                            selectedCurrency = value;
+                          });
+                        },
+                        title: Text(c),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () =>
+                      Navigator.pop(dialogContext, selectedCurrency),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.success,
+                  ),
+                  child: const Text('Generar PDF'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _onOfferPdfPressed() async {
+    if (_selectedProducts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debe seleccionar al menos un producto')),
+      );
+      return;
+    }
+
+    final selectedCurrency = await _showOfferCurrencyDialog(
+      initialCurrency: _offerCurrencyCode,
+    );
+    if (selectedCurrency == null) return;
+
+    if (!mounted) return;
+    setState(() {
+      _offerCurrencyCode = selectedCurrency;
+    });
+
+    await _generateOfferPdf(currencyCode: selectedCurrency);
+  }
+
+  Future<void> _generateOfferPdf({required String currencyCode}) async {
     if (_selectedProducts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Debe seleccionar al menos un producto')),
@@ -804,7 +883,7 @@ class _InventoryExtractionBySaleScreenState
         storeName: storeName,
         storeAddress: storeAddress,
         storeLocation: storeLocation,
-        currencyCode: 'CUP',
+        currencyCode: currencyCode,
         offerTitle: 'OFERTA COMERCIAL',
         issuedAt: DateTime.now(),
         clientName:
@@ -1360,7 +1439,7 @@ class _InventoryExtractionBySaleScreenState
                         onPressed:
                             (_isLoading || _isGeneratingOffer)
                                 ? null
-                                : _generateOfferPdf,
+                                : _onOfferPdfPressed,
                         icon:
                             _isGeneratingOffer
                                 ? const SizedBox(
