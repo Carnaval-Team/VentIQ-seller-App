@@ -79,6 +79,48 @@ class StoreManagementService {
     return Map<String, dynamic>.from(response as Map);
   }
 
+  Future<Map<String, dynamic>> updateStore({
+    required int storeId,
+    required String denominacion,
+    required String direccion,
+    required String ubicacion,
+    required String imagenUrl,
+    required String phone,
+    required String pais,
+    required String estado,
+    required String nombrePais,
+    required String nombreEstado,
+    required String horaApertura,
+    required String horaCierre,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final payload = {
+      'denominacion': denominacion,
+      'direccion': direccion,
+      'ubicacion': ubicacion,
+      'imagen_url': imagenUrl,
+      'phone': phone,
+      'pais': pais,
+      'estado': estado,
+      'nombre_pais': nombrePais,
+      'nombre_estado': nombreEstado,
+      'hora_apertura': horaApertura,
+      'hora_cierre': horaCierre,
+      'latitude': latitude,
+      'longitude': longitude,
+    };
+
+    final response = await _supabase
+        .from('app_dat_tienda')
+        .update(payload)
+        .eq('id', storeId)
+        .select('*')
+        .single();
+
+    return Map<String, dynamic>.from(response as Map);
+  }
+
   Future<void> updateMostrarEnCatalogo({
     required int storeId,
     required bool mostrarEnCatalogo,
@@ -527,9 +569,7 @@ class StoreManagementService {
         .from('app_dat_precio_venta')
         .select('id')
         .eq('id_producto', productId)
-        
         .eq('fecha_desde', fecha.toIso8601String().substring(0, 10))
-
         .maybeSingle();
 
     if (existing != null) {

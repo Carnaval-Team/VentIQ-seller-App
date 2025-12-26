@@ -65,5 +65,5 @@ class UpdateService {
   }
 
   static const String downloadUrl =
-      'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/vendedor%20cuba.apk';
+      'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/apk/inventtia%20catalogo.apk';
 }

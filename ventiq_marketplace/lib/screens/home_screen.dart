@@ -79,8 +79,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final changelog = await _changelogService.getLatestChangelog();
       if (changelog == null) return;
 
-      final shouldShow =
-          await _preferencesService.isFirstTimeOpening(changelog.version);
+      final shouldShow = await _preferencesService.isFirstTimeOpening(
+        changelog.version,
+      );
       if (!shouldShow) return;
 
       await Future.delayed(const Duration(milliseconds: 500));
@@ -736,6 +737,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           'logoUrl': store['imagen_url'],
                           'ubicacion': store['ubicacion'],
                           'direccion': store['direccion'],
+                          'phone': store['phone'] ?? store['telefono'],
                         },
                       ),
                     ),
@@ -1506,6 +1508,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   'municipio': 'Santo Domingo Este',
                                   'direccion':
                                       store['direccion'] ?? 'Sin dirección',
+                                  'phone': store['phone'] ?? store['telefono'],
                                   'productCount': store['total_productos'],
                                   'latitude': 18.4861,
                                   'longitude': -69.9312,

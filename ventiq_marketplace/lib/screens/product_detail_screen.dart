@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../services/product_detail_service.dart';
 import '../services/cart_service.dart';
@@ -43,6 +44,59 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void initState() {
     super.initState();
     _loadProductDetails();
+  }
+
+  String _normalizeWhatsappPhone(String raw) {
+    return raw.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  Future<void> _openWhatsApp(String? rawPhone) async {
+    final phone = rawPhone?.toString().trim();
+    if (phone == null || phone.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Teléfono no disponible'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final normalized = _normalizeWhatsappPhone(phone);
+    if (normalized.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Teléfono no válido'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final waAppUri = Uri.parse('whatsapp://send?phone=$normalized');
+    final waWebUri = Uri.parse('https://wa.me/$normalized');
+
+    try {
+      final launchedApp = await launchUrl(
+        waAppUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (launchedApp) return;
+    } catch (_) {}
+
+    try {
+      await launchUrl(waWebUri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo abrir WhatsApp: $e'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
   }
 
   /// Carga los detalles completos del producto desde Supabase
@@ -1189,6 +1243,53 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                         ],
                                       ),
                                     ],
+                                    Builder(
+                                      builder: (context) {
+                                        final phone = _storeDetails?['phone']
+                                            ?.toString();
+                                        if (phone == null ||
+                                            phone.trim().isEmpty) {
+                                          return const SizedBox.shrink();
+                                        }
+
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 6,
+                                          ),
+                                          child: InkWell(
+                                            onTap: () => _openWhatsApp(phone),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.chat_rounded,
+                                                  size: 14,
+                                                  color: Colors.green,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(
+                                                    phone,
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      color: AppTheme
+                                                          .textSecondary,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   ],
                                 ),
                               ),

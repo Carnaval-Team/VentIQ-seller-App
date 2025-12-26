@@ -37,6 +37,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   List<Map<String, dynamic>> _products = [];
 
   final _createFormKey = GlobalKey<FormState>();
+  final _editFormKey = GlobalKey<FormState>();
   final _denominacionController = TextEditingController();
   final _direccionController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -113,6 +114,312 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
         _errorMessage = 'Error cargando tu tienda: $e';
       });
     }
+  }
+
+  void _fillStoreFormFromData(Map<String, dynamic> store) {
+    _denominacionController.text = (store['denominacion'] ?? '').toString();
+    _direccionController.text = (store['direccion'] ?? '').toString();
+    _phoneController.text = (store['phone'] ?? '').toString();
+
+    _paisController.text = (store['pais'] ?? '').toString();
+    _estadoController.text = (store['estado'] ?? '').toString();
+    _nombrePaisController.text = (store['nombre_pais'] ?? '').toString();
+    _nombreEstadoController.text = (store['nombre_estado'] ?? '').toString();
+
+    final ubicacion = (store['ubicacion'] ?? '').toString();
+    if (ubicacion.contains(',')) {
+      final parts = ubicacion.split(',');
+      if (parts.length == 2) {
+        final lat = double.tryParse(parts[0].trim());
+        final lng = double.tryParse(parts[1].trim());
+        if (lat != null && lng != null) {
+          _selectedLocation = LatLng(lat, lng);
+        }
+      }
+    }
+
+    final imageUrl = (store['imagen_url'] ?? '').toString().trim();
+    _imageUrl = imageUrl.isEmpty ? null : imageUrl;
+
+    final horaAperturaStr = (store['hora_apertura'] ?? '').toString();
+    final horaCierreStr = (store['hora_cierre'] ?? '').toString();
+
+    TimeOfDay? parseTime(String v) {
+      final parts = v.split(':');
+      if (parts.length < 2) return null;
+      final hh = int.tryParse(parts[0]);
+      final mm = int.tryParse(parts[1]);
+      if (hh == null || mm == null) return null;
+      return TimeOfDay(hour: hh, minute: mm);
+    }
+
+    final open = parseTime(horaAperturaStr);
+    final close = parseTime(horaCierreStr);
+    if (open != null) _horaApertura = open;
+    if (close != null) _horaCierre = close;
+  }
+
+  Future<void> _updateStore({required int storeId}) async {
+    if (!(_editFormKey.currentState?.validate() ?? false)) return;
+
+    if (_selectedLocation == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona la ubicación en el mapa'),
+          backgroundColor: AppTheme.warningColor,
+        ),
+      );
+      return;
+    }
+
+    if (_imageUrl == null || _imageUrl!.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sube una imagen para la tienda'),
+          backgroundColor: AppTheme.warningColor,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final lat = _selectedLocation!.latitude;
+      final lng = _selectedLocation!.longitude;
+      final ubicacion = '${lat.toStringAsFixed(7)},${lng.toStringAsFixed(7)}';
+
+      await _storeService.updateStore(
+        storeId: storeId,
+        denominacion: _denominacionController.text.trim(),
+        direccion: _direccionController.text.trim(),
+        ubicacion: ubicacion,
+        imagenUrl: _imageUrl!.trim(),
+        phone: _phoneController.text.trim(),
+        pais: _paisController.text.trim(),
+        estado: _estadoController.text.trim(),
+        nombrePais: _nombrePaisController.text.trim(),
+        nombreEstado: _nombreEstadoController.text.trim(),
+        horaApertura: _formatTime(_horaApertura),
+        horaCierre: _formatTime(_horaCierre),
+        latitude: lat,
+        longitude: lng,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tienda actualizada correctamente'),
+          backgroundColor: AppTheme.successColor,
+        ),
+      );
+
+      await _loadStores();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Error actualizando tienda: $e';
+      });
+    }
+  }
+
+  Future<void> _openEditStoreSheet({
+    required Map<String, dynamic> store,
+  }) async {
+    final storeIdRaw = store['id'];
+    final int? storeId = storeIdRaw is int
+        ? storeIdRaw
+        : (storeIdRaw is num ? storeIdRaw.toInt() : null);
+    if (storeId == null) return;
+
+    setState(() {
+      _fillStoreFormFromData(store);
+    });
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: AppTheme.paddingM,
+              right: AppTheme.paddingM,
+              top: AppTheme.paddingM,
+              bottom: bottomInset + AppTheme.paddingM,
+            ),
+            child: Form(
+              key: _editFormKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Editar tienda',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _denominacionController,
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'La denominación es obligatoria';
+                        return null;
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Denominación',
+                        prefixIcon: Icon(Icons.storefront_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _direccionController,
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'La dirección es obligatoria';
+                        return null;
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Dirección',
+                        prefixIcon: Icon(Icons.location_on_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _phoneController,
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'El teléfono es obligatorio';
+                        return null;
+                      },
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Teléfono (WhatsApp)',
+                        prefixIcon: Icon(Icons.phone_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _buildLocationCard(),
+                    const SizedBox(height: 14),
+                    _buildImageCard(),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _paisController,
+                            maxLength: 2,
+                            validator: (v) {
+                              final t = (v ?? '').trim();
+                              if (t.length != 2) {
+                                return 'Código país (2 letras)';
+                              }
+                              return null;
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'País (ISO)',
+                              prefixIcon: Icon(Icons.flag_outlined),
+                              counterText: '',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _estadoController,
+                            maxLength: 10,
+                            validator: (v) {
+                              final t = (v ?? '').trim();
+                              if (t.isEmpty) return 'Código estado';
+                              return null;
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Estado (código)',
+                              prefixIcon: Icon(Icons.map_outlined),
+                              counterText: '',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _nombrePaisController,
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'Nombre del país';
+                        return null;
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre país',
+                        prefixIcon: Icon(Icons.public_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _nombreEstadoController,
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if (t.isEmpty) return 'Nombre del estado';
+                        return null;
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre estado',
+                        prefixIcon: Icon(Icons.map_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _buildScheduleRow(),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Cancelar'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: _isUploadingImage || _isLoading
+                                ? null
+                                : () => _updateStore(storeId: storeId),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppTheme.primaryColor,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text(
+                              'Guardar',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   int? _getSelectedStoreId() {
@@ -608,6 +915,12 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
+                            ),
+                            IconButton(
+                              onPressed: () =>
+                                  _openEditStoreSheet(store: store),
+                              icon: const Icon(Icons.edit_outlined),
+                              tooltip: 'Editar',
                             ),
                             _buildValidationChip(isValidated),
                           ],
@@ -1188,7 +1501,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                     },
                     keyboardType: TextInputType.phone,
                     decoration: const InputDecoration(
-                      labelText: 'Teléfono',
+                      labelText: 'Teléfono (WhatsApp)',
                       prefixIcon: Icon(Icons.phone_outlined),
                     ),
                   ),

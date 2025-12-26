@@ -528,6 +528,7 @@ class _MapScreenState extends State<MapScreen> {
                                           'direccion': _getStoreAddress(
                                             _selectedStore!,
                                           ),
+                                          'phone': _selectedStore!['phone'],
                                           'productCount': 0,
                                           'latitude': 0,
                                           'longitude': 0,
