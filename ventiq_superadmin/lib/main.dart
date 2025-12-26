@@ -5,6 +5,7 @@ import 'config/supabase_config.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/tiendas_screen.dart';
+import 'screens/tiendas_catalogo_screen.dart';
 import 'screens/usuarios_screen.dart';
 import 'screens/administradores_screen.dart';
 import 'screens/almacenes_screen.dart';
@@ -44,6 +45,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/login': (context) => const LoginScreen(),
         '/dashboard': (context) => const DashboardScreen(),
         '/tiendas': (context) => const TiendasScreen(),
+        '/tiendas-catalogo': (context) => const TiendasCatalogoScreen(),
         '/usuarios': (context) => const UsuariosScreen(),
         '/administradores': (context) => const AdministradoresScreen(),
         '/almacenes': (context) => const AlmacenesScreen(),
