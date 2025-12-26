@@ -1,0 +1,59 @@
+{
+  "current_version": "1.0.0",
+  "build": 1,
+  "app_name": "ventiq_marketplace",
+  "changelogs": [
+    {
+      "version": "1.0.0",
+      "date": "2025-12-26",
+      "title": "🚀 Bienvenido a Inventtia Catálogo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Explora tiendas y productos",
+          "description": "Navega por el marketplace, descubre tiendas destacadas y revisa productos con imágenes y detalles." 
+        },
+        {
+          "type": "feature",
+          "title": "Búsqueda rápida",
+          "description": "Busca tiendas y productos desde la pantalla principal con resultados instantáneos." 
+        },
+        {
+          "type": "feature",
+          "title": "Detalles de producto",
+          "description": "Accede a la ficha del producto con información esencial (imagen, nombre, precio y más)."
+        },
+        {
+          "type": "feature",
+          "title": "Carrito / Plan",
+          "description": "Agrega productos al plan y gestiona tu selección para preparar compras o pedidos." 
+        },
+        {
+          "type": "feature",
+          "title": "Autenticación",
+          "description": "Crea cuenta o inicia sesión con correo y contraseña para acceder a funciones avanzadas." 
+        },
+        {
+          "type": "feature",
+          "title": "Administración de tienda",
+          "description": "Si eres dueño/administrador, puedes acceder a “Administrar mi tienda” y gestionar información y visibilidad." 
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de productos de la tienda",
+          "description": "Crea productos con nombre, imagen, categoría, precio y cantidad inicial; y edítalos cuando lo necesites." 
+        },
+        {
+          "type": "improvement",
+          "title": "Pull-to-refresh",
+          "description": "Actualiza el estado de validación de la tienda y la lista de productos con solo deslizar hacia abajo." 
+        },
+        {
+          "type": "improvement",
+          "title": "Control de visibilidad en catálogo",
+          "description": "Activa o desactiva si un producto se muestra en catálogo, respetando las restricciones cuando la tienda está en validación." 
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../services/auth_service.dart';
 
 /// Pantalla de splash con logo de Inventtia
 class SplashScreen extends StatefulWidget {
@@ -19,7 +20,12 @@ class _SplashScreenState extends State<SplashScreen> {
   /// Navegar a la pantalla principal después de 2 segundos
   Future<void> _navigateToHome() async {
     await Future.delayed(const Duration(seconds: 2));
-    
+
+    try {
+      final authService = AuthService();
+      await authService.syncLocalUserFromSupabaseIfNeeded();
+    } catch (_) {}
+
     if (mounted) {
       Navigator.of(context).pushReplacementNamed('/home');
     }
