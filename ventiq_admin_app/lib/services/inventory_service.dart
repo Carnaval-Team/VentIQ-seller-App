@@ -6,6 +6,7 @@ import 'user_preferences_service.dart';
 import 'transfer_service.dart';
 import 'product_service.dart';
 import '../services/consignacion_envio_service.dart';
+import 'consignacion_envio_listado_service.dart';
 import 'financial_service.dart';
 import 'restaurant_service.dart'; // Agregar import para conversión de unidades
 import 'permissions_service.dart';
@@ -2315,19 +2316,32 @@ class InventoryService {
       print('\n🔍 Verificando si es operación de consignación...');
       try {
         // 1. CASO RECEPCIÓN: Validar que la extracción esté completada
+        // Buscar en dos lugares: app_dat_producto_consignacion y app_dat_consignacion_envio
         final productosRecepcionConsignacion = await _supabase
             .from('app_dat_producto_consignacion')
             .select('id')
             .eq('id_operacion_recepcion', idOperacion);
 
-        if (productosRecepcionConsignacion.isNotEmpty) {
+        final envioConsignacion = await _supabase
+            .from('app_dat_consignacion_envio')
+            .select('id')
+            .eq('id_operacion_recepcion', idOperacion);
+
+        final esRecepcionConsignacion = productosRecepcionConsignacion.isNotEmpty || envioConsignacion.isNotEmpty;
+
+        if (esRecepcionConsignacion) {
           print('📦 Esta es una operación de RECEPCIÓN de consignación');
+          print('   - Productos en app_dat_producto_consignacion: ${productosRecepcionConsignacion.length}');
+          print('   - Envíos en app_dat_consignacion_envio: ${envioConsignacion.length}');
           
           final validacion = await ConsignacionService.validarOrdenOperacionesConsignacion(idOperacion);
           
           if (validacion['valido'] != true) {
             final mensaje = validacion['mensaje'] ?? 'La operación de extracción debe completarse primero';
             final idExp = validacion['id_operacion_extraccion'];
+            
+            print('❌ Validación fallida: $mensaje');
+            print('   ID Operación Extracción: $idExp');
             
             return {
               'success': false,
@@ -2385,10 +2399,9 @@ class InventoryService {
           await ConsignacionEnvioService.marcarEnTransito(idEnvio: idEnvio, idUsuario: idUsuario);
         }
 
-        // B. Si fue una recepción -> NO completar automáticamente
-        // Las operaciones de recepción deben quedar en PENDIENTE hasta que se completen manualmente
-        // NOTA: Las operaciones de consignación tienen dependencias (extracción debe estar completada)
-        // por lo que NO se deben completar automáticamente
+        // B. Si fue una recepción -> Actualizar envío a ACEPTADO
+        // Las operaciones de recepción de consignación se completan manualmente
+        // pero cuando se completan, el envío debe pasar a estado ACEPTADO
         final dataEnvioRecepcion = await _supabase
             .from('app_dat_consignacion_envio')
             .select('id')
@@ -2397,10 +2410,19 @@ class InventoryService {
             
         if (dataEnvioRecepcion != null) {
           final idEnvio = dataEnvioRecepcion['id'] as int;
-          print('ℹ️ Operación de recepción creada. Envío $idEnvio permanece en estado PENDIENTE');
-          print('   Las operaciones de consignación deben completarse manualmente respetando dependencias');
-          // COMENTADO: No completar automáticamente
-          // await ConsignacionEnvioService.marcarEntregado(idEnvio: idEnvio, idUsuario: idUsuario);
+          print('✅ Operación de recepción completada. Moviendo envío $idEnvio a ACEPTADO...');
+          
+          // Actualizar estado del envío a ACEPTADO (4)
+          final estadoActualizado = await ConsignacionEnvioListadoService.actualizarEstadoEnvio(
+            idEnvio,
+            ConsignacionEnvioListadoService.ESTADO_ACEPTADO,
+          );
+          
+          if (estadoActualizado) {
+            print('✅ Estado del envío actualizado a ACEPTADO');
+          } else {
+            print('⚠️ No se pudo actualizar el estado del envío a ACEPTADO');
+          }
         }
       } catch (e) {
         print('⚠️ Error sincronizando estado de envío: $e');

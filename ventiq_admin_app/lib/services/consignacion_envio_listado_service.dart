@@ -17,7 +17,7 @@ class ConsignacionEnvioListadoService {
   static const int ESTADO_PRODUCTO_ACEPTADO = 3;
   static const int ESTADO_PRODUCTO_RECHAZADO = 4;
 
-  /// Obtiene lista de envíos con filtros opcionales
+  /// Obtiene lista de envíos con filtros opcionales y totales calculados
   static Future<List<Map<String, dynamic>>> obtenerEnvios({
     int? idContrato,
     int? estadoEnvio,
@@ -27,7 +27,7 @@ class ConsignacionEnvioListadoService {
       print('🔍 Obteniendo envíos con filtros: idContrato=$idContrato, estadoEnvio=$estadoEnvio, idTienda=$idTienda');
       
       final response = await _supabase.rpc(
-        'obtener_envios_consignacion',
+        'obtener_envios_consignacion_con_totales',
         params: {
           'p_id_contrato': idContrato,
           'p_estado_envio': estadoEnvio,
@@ -54,9 +54,6 @@ class ConsignacionEnvioListadoService {
         print('   - Cantidad Productos: ${envio['cantidad_productos']}');
         print('   - Cantidad Total Unidades: ${envio['cantidad_total_unidades']}');
         print('   - Valor Total Costo: ${envio['valor_total_costo']}');
-        print('   - Productos JSON: ${envio['productos_json']}');
-        print('   - Productos Aceptados: ${envio['productos_aceptados']}');
-        print('   - Productos Rechazados: ${envio['productos_rechazados']}');
       }
       
       return envios;
@@ -66,15 +63,17 @@ class ConsignacionEnvioListadoService {
     }
   }
 
-  /// Obtiene envíos por estado
+  /// Obtiene envíos por estado con totales calculados
   static Future<List<Map<String, dynamic>>> obtenerEnviosPorEstado(
     int estadoEnvio,
   ) async {
     try {
       final response = await _supabase.rpc(
-        'obtener_envios_consignacion',
+        'obtener_envios_consignacion_con_totales',
         params: {
+          'p_id_contrato': null,
           'p_estado_envio': estadoEnvio,
+          'p_id_tienda': null,
         },
       );
 
@@ -86,15 +85,17 @@ class ConsignacionEnvioListadoService {
     }
   }
 
-  /// Obtiene envíos de un contrato específico
+  /// Obtiene envíos de un contrato específico con totales calculados
   static Future<List<Map<String, dynamic>>> obtenerEnviosPorContrato(
     int idContrato,
   ) async {
     try {
       final response = await _supabase.rpc(
-        'obtener_envios_consignacion',
+        'obtener_envios_consignacion_con_totales',
         params: {
           'p_id_contrato': idContrato,
+          'p_estado_envio': null,
+          'p_id_tienda': null,
         },
       );
 
@@ -141,14 +142,16 @@ class ConsignacionEnvioListadoService {
     }
   }
 
-  /// Obtiene envíos de una tienda (como consignadora o consignataria)
+  /// Obtiene envíos de una tienda (como consignadora o consignataria) con totales calculados
   static Future<List<Map<String, dynamic>>> obtenerEnviosPorTienda(
     int idTienda,
   ) async {
     try {
       final response = await _supabase.rpc(
-        'obtener_envios_consignacion',
+        'obtener_envios_consignacion_con_totales',
         params: {
+          'p_id_contrato': null,
+          'p_estado_envio': null,
           'p_id_tienda': idTienda,
         },
       );
@@ -161,17 +164,20 @@ class ConsignacionEnvioListadoService {
     }
   }
 
-  /// Obtiene detalles completos de un envío
+  /// Obtiene detalles completos de un envío con totales calculados
   static Future<Map<String, dynamic>?> obtenerDetallesEnvio(
     int idEnvio,
   ) async {
     try {
       print('🔍 Obteniendo detalles del envío: $idEnvio');
       
+      // Usar el RPC que calcula totales correctamente
       final response = await _supabase.rpc(
-        'obtener_detalles_envio',
+        'obtener_envios_consignacion_con_totales',
         params: {
-          'p_id_envio': idEnvio,
+          'p_id_contrato': null,
+          'p_estado_envio': null,
+          'p_id_tienda': null,
         },
       );
 
@@ -182,31 +188,32 @@ class ConsignacionEnvioListadoService {
         return null;
       }
       
-      final detalles = response.first as Map<String, dynamic>;
-      print('✅ Detalles del envío obtenidos:');
-      print('   - ID Envío: ${detalles['id_envio']}');
-      print('   - Número: ${detalles['numero_envio']}');
-      print('   - Estado: ${detalles['estado_envio_texto']}');
-      print('   - ID Contrato: ${detalles['id_contrato_consignacion']}');
-      print('   - ID Tienda Origen: ${detalles['id_tienda_consignadora']}');
-      print('   - ID Tienda Destino: ${detalles['id_tienda_consignataria']}');
-      print('   - ID Almacén Origen: ${detalles['id_almacen_origen']}');
-      print('   - ID Almacén Destino: ${detalles['id_almacen_destino']}');
-      print('   - Tienda Consignadora: ${detalles['tienda_consignadora']}');
-      print('   - Tienda Consignataria: ${detalles['tienda_consignataria']}');
-      print('   - Almacén Origen: ${detalles['almacen_origen']}');
-      print('   - Almacén Destino: ${detalles['almacen_destino']}');
-      print('   - Cantidad Productos: ${detalles['cantidad_productos']}');
-      print('   - Cantidad Total Unidades: ${detalles['cantidad_total_unidades']}');
-      print('   - Valor Total Costo: ${detalles['valor_total_costo']}');
-      print('   - Valor Total Venta: ${detalles['valor_total_venta']}');
-      print('   - Productos JSON: ${detalles['productos']}');
-      print('   - Tipo Envío: ${detalles['tipo_envio']}');
+      // Filtrar por id_envio
+      final detalles = response.firstWhere(
+        (envio) => (envio['id_envio'] as num?)?.toInt() == idEnvio,
+        orElse: () => null,
+      );
       
-      return detalles;
+      if (detalles == null) {
+        print('⚠️ Envío no encontrado: $idEnvio');
+        return null;
+      }
+      
+      final detalle = detalles as Map<String, dynamic>;
+      print('✅ Detalles del envío obtenidos:');
+      print('   - ID Envío: ${detalle['id_envio']}');
+      print('   - Número: ${detalle['numero_envio']}');
+      print('   - Estado: ${detalle['estado_envio_texto']}');
+      print('   - ID Contrato: ${detalle['id_contrato_consignacion']}');
+      print('   - Cantidad Productos: ${detalle['cantidad_productos']}');
+      print('   - Cantidad Total Unidades: ${detalle['cantidad_total_unidades']}');
+      print('   - Valor Total Costo: ${detalle['valor_total_costo']}');
+      print('   - Valor Total Venta: ${detalle['valor_total_venta']}');
+      
+      return detalle;
     } catch (e) {
       print('❌ Error obteniendo detalles del envío: $e');
-      rethrow;
+      return null;
     }
   }
 
@@ -215,18 +222,39 @@ class ConsignacionEnvioListadoService {
     int idEnvio,
   ) async {
     try {
+      print('📦 Obteniendo productos del envío: $idEnvio');
+      
       final response = await _supabase.rpc(
-        'obtener_productos_envio_detallado',
+        'obtener_productos_envio',
         params: {
           'p_id_envio': idEnvio,
         },
       );
 
-      if (response == null) return [];
-      return List<Map<String, dynamic>>.from(response as List);
+      if (response == null) {
+        print('⚠️ Respuesta nula del RPC obtener_productos_envio');
+        return [];
+      }
+      
+      final productos = List<Map<String, dynamic>>.from(response as List);
+      print('✅ Productos obtenidos: ${productos.length}');
+      
+      // Logging detallado de los campos retornados
+      if (productos.isNotEmpty) {
+        print('📋 Campos del primer producto: ${productos[0].keys.toList()}');
+        for (var i = 0; i < productos.length; i++) {
+          final p = productos[i];
+          print('   Producto $i: id=${p['id']}, denominacion=${p['denominacion']}, cantidad=${p['cantidad_propuesta']}');
+        }
+      } else {
+        print('⚠️ No hay productos en el envío $idEnvio');
+      }
+      
+      return productos;
     } catch (e) {
       print('❌ Error obteniendo productos del envío: $e');
-      rethrow;
+      print('   Stack trace: $e');
+      return [];
     }
   }
 
@@ -345,6 +373,27 @@ class ConsignacionEnvioListadoService {
     } catch (e) {
       print('❌ Error rechazando producto del envío: $e');
       return {'success': false, 'mensaje': e.toString()};
+    }
+  }
+
+  /// Actualiza el estado de un envío de consignación
+  static Future<bool> actualizarEstadoEnvio(
+    int idEnvio,
+    int nuevoEstado,
+  ) async {
+    try {
+      print('🔄 Actualizando estado del envío $idEnvio a ${obtenerTextoEstado(nuevoEstado)}');
+      
+      await _supabase
+          .from('app_dat_consignacion_envio')
+          .update({'estado': nuevoEstado})
+          .eq('id', idEnvio);
+
+      print('✅ Estado del envío actualizado correctamente');
+      return true;
+    } catch (e) {
+      print('❌ Error actualizando estado del envío: $e');
+      return false;
     }
   }
 }

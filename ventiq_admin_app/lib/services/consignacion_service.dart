@@ -91,6 +91,119 @@ class ConsignacionService {
     }
   }
 
+  /// Obtener contratos con filtrado, búsqueda y paginación
+  static Future<Map<String, dynamic>> getContratosFiltrados({
+    required int idTienda,
+    int? estadoConfirmacion, // null = todos, 0 = pendientes, 1 = confirmados, 2 = cancelados
+    String? searchTerm, // búsqueda por nombre de tienda
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    try {
+      debugPrint('🔍 Buscando contratos: searchTerm=$searchTerm, estado=$estadoConfirmacion, offset=$offset, limit=$limit');
+
+      // Paso 1: Obtener contratos base (sin enriquecer aún)
+      var query = _supabase
+          .from('app_dat_contrato_consignacion')
+          .select('*')
+          .or('id_tienda_consignadora.eq.$idTienda,id_tienda_consignataria.eq.$idTienda')
+          .eq('estado', 1);
+
+      // Aplicar filtro de estado de confirmación
+      if (estadoConfirmacion != null) {
+        query = query.eq('estado_confirmacion', estadoConfirmacion);
+      }
+
+      // Obtener total de registros (sin paginación)
+      final allResponse = await query.order('created_at', ascending: false);
+      final totalRegistros = allResponse.length;
+
+      // Aplicar paginación
+      final response = await query
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
+
+      debugPrint('✅ Contratos base obtenidos: ${response.length} de $totalRegistros');
+
+      // Paso 2: Enriquecer con datos de tiendas y filtrar por búsqueda
+      final List<Map<String, dynamic>> enrichedContratos = [];
+      
+      for (var contrato in response) {
+        final idConsignadora = contrato['id_tienda_consignadora'];
+        final idConsignataria = contrato['id_tienda_consignataria'];
+
+        // Obtener datos de tiendas
+        final tiendaConsignadora = await _supabase
+            .from('app_dat_tienda')
+            .select('id, denominacion, direccion')
+            .eq('id', idConsignadora)
+            .single();
+
+        final tiendaConsignataria = await _supabase
+            .from('app_dat_tienda')
+            .select('id, denominacion, direccion')
+            .eq('id', idConsignataria)
+            .single();
+
+        // Obtener datos del almacén destino si existe
+        Map<String, dynamic>? almacenDestino;
+        if (contrato['id_almacen_destino'] != null) {
+          try {
+            almacenDestino = await _supabase
+                .from('app_dat_almacen')
+                .select('id, denominacion, direccion')
+                .eq('id', contrato['id_almacen_destino'])
+                .single();
+          } catch (e) {
+            debugPrint('⚠️ No se pudo obtener almacén destino: $e');
+          }
+        }
+
+        final contratoEnriquecido = {
+          ...contrato,
+          'tienda_consignadora': tiendaConsignadora,
+          'tienda_consignataria': tiendaConsignataria,
+          if (almacenDestino != null) 'almacen_destino': almacenDestino,
+        };
+
+        // Paso 3: Filtrar por búsqueda (en memoria, después de enriquecer)
+        if (searchTerm != null && searchTerm.isNotEmpty) {
+          final searchLower = searchTerm.toLowerCase();
+          final tiendaConsignadoraNombre = (tiendaConsignadora['denominacion'] as String?)?.toLowerCase() ?? '';
+          final tiendaConsignatariaNombre = (tiendaConsignataria['denominacion'] as String?)?.toLowerCase() ?? '';
+          
+          // Si no coincide con ninguna tienda, saltar este contrato
+          if (!tiendaConsignadoraNombre.contains(searchLower) && 
+              !tiendaConsignatariaNombre.contains(searchLower)) {
+            continue;
+          }
+        }
+
+        enrichedContratos.add(contratoEnriquecido);
+      }
+
+      debugPrint('✅ Contratos enriquecidos: ${enrichedContratos.length}');
+
+      return {
+        'contratos': enrichedContratos,
+        'total': totalRegistros,
+        'offset': offset,
+        'limit': limit,
+        'hasMore': (offset + limit) < totalRegistros,
+      };
+    } catch (e) {
+      debugPrint('❌ Error buscando contratos: $e');
+      return {
+        'contratos': [],
+        'total': 0,
+        'offset': offset,
+        'limit': limit,
+        'hasMore': false,
+        'error': e.toString(),
+      };
+    }
+  }
+
   /// Obtener productos en consignación de un contrato (CONFIRMADOS) - CON CACHÉ
   static Future<List<Map<String, dynamic>>> getProductosConsignacion(int idContrato) async {
     try {
@@ -2038,7 +2151,7 @@ class ConsignacionService {
   }
 
   /// ✅ NUEVO: Actualizar monto_total del contrato después de confirmar productos
-  /// Calcula: sum(precio_costo * cantidad_enviada) y lo SUMA al monto_total existente
+  /// Calcula: sum(precio_costo_usd * cantidad_enviada) y lo SUMA al monto_total existente
   static Future<void> actualizarMontoTotalContrato({
     required int contratoId,
     required List<Map<String, dynamic>> productosConfirmados,
@@ -2046,16 +2159,16 @@ class ConsignacionService {
     try {
       debugPrint('💰 Actualizando monto_total del contrato $contratoId...');
       
-      // Calculate total to add: sum(precio_costo * cantidad_enviada)
+      // Calculate total to add: sum(precio_costo_usd * cantidad_enviada)
       double montoAAgregar = 0.0;
       for (final producto in productosConfirmados) {
-        // El precio_costo viene del consignador (precio_venta_sugerido en la UI)
-        final precioCosto = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
+        // El precio_costo_usd es el precio configurado por el consignador en USD
+        final precioCostoUsd = (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
         final cantidadEnviada = (producto['cantidad_enviada'] as num?)?.toDouble() ?? 0.0;
-        montoAAgregar += precioCosto * cantidadEnviada;
+        montoAAgregar += precioCostoUsd * cantidadEnviada;
         
         debugPrint('   Producto: ${producto['producto']?['denominacion'] ?? 'N/A'}');
-        debugPrint('   Precio costo: \$${precioCosto.toStringAsFixed(2)} × Cantidad: $cantidadEnviada = \$${(precioCosto * cantidadEnviada).toStringAsFixed(2)}');
+        debugPrint('   Precio costo USD: \$${precioCostoUsd.toStringAsFixed(2)} USD × Cantidad: $cantidadEnviada = \$${(precioCostoUsd * cantidadEnviada).toStringAsFixed(2)} USD');
       }
       
       debugPrint('💰 Monto a agregar al contrato: \$${montoAAgregar.toStringAsFixed(2)}');

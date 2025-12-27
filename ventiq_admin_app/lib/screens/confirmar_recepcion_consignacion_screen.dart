@@ -96,20 +96,37 @@ class _ConfirmarRecepcionConsignacionScreenState
         // Si viene de un envío específico, obtener productos del envío
         final productosEnvio = await ConsignacionEnvioListadoService.obtenerProductosEnvio(widget.idEnvio!);
         
+        debugPrint('📦 Productos obtenidos del envío: ${productosEnvio.length}');
+        if (productosEnvio.isNotEmpty) {
+          debugPrint('📋 Campos disponibles: ${productosEnvio[0].keys.toList()}');
+        }
+        
         // Transformar formato de productos del envío al formato esperado
         productos = productosEnvio.map((p) {
+          final idEnvioProducto = (p['id_envio_producto'] as num?)?.toInt() ?? 0;
+          final idProducto = (p['id_producto'] as num?)?.toInt() ?? 0;
+          final nombreProducto = (p['nombre_producto'] as String?) ?? 'Producto sin nombre';
+          final sku = (p['sku'] as String?) ?? 'N/A';
+          final cantidadPropuesta = (p['cantidad_propuesta'] as num?)?.toDouble() ?? 0;
+          final precioCostoCup = (p['precio_costo_cup'] as num?)?.toDouble() ?? 0;
+          final precioCostoUsd = (p['precio_costo_usd'] as num?)?.toDouble() ?? 0;
+          final precioVentaCup = (p['precio_venta_cup'] as num?)?.toDouble() ?? 0;
+          
+          debugPrint('✅ Producto mapeado: id=$idEnvioProducto, nombre=$nombreProducto, cantidad=$cantidadPropuesta');
+          
           return {
-            'id': p['id_envio_producto'],
-            'id_producto': p['id_producto'],
-            'cantidad_enviada': p['cantidad_propuesta'],
-            'precio_costo_unitario': p['precio_costo_cup'], // Precio configurado por consignador en CUP
-            'precio_costo_usd': p['precio_costo_usd'], // Precio de costo en USD (de productopresentacion)
-            'precio_venta_sugerido': p['precio_costo_cup'], // Base para calcular precio de venta
+            'id': idEnvioProducto,
+            'id_producto': idProducto,
+            'cantidad_enviada': cantidadPropuesta,
+            'precio_costo_unitario': precioCostoCup,
+            'precio_costo_usd': precioCostoUsd,
+            'precio_venta_sugerido': precioCostoCup,
+            'precio_venta_cup': precioVentaCup, // Agregar precio_venta_cup si ya está configurado
             'puede_modificar_precio': true,
             'producto': {
-              'id': p['id_producto'],
-              'denominacion': p['nombre_producto'],
-              'sku': p['sku'],
+              'id': idProducto,
+              'denominacion': nombreProducto,
+              'sku': sku,
             },
           };
         }).toList();
@@ -852,10 +869,30 @@ class _ConfirmarRecepcionConsignacionScreenState
           debugPrint('📦 Envío encontrado: $idEnvio');
         }
 
+        // Construir JSON de precios del formulario
+        final preciosProductos = <Map<String, dynamic>>[];
+        for (final producto in _productosPendientes) {
+          final idProductoConsignacion = producto['id'] as int;
+          final idProducto = producto['id_producto'] as int;
+          final precioSugerido = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
+          final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioSugerido;
+          final precioCostoUsd = (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+          
+          preciosProductos.add({
+            'id_producto': idProducto,
+            'precio_venta_cup': precioConfigurable,
+            'precio_costo_usd': precioCostoUsd,
+          });
+        }
+        
+        debugPrint('💰 Precios del formulario: $preciosProductos');
+        
         // Aceptar envío completo con ConsignacionEnvioService
         final aceptarResult = await ConsignacionEnvioService.aceptarEnvio(
           idEnvio: idEnvio,
           idUsuario: user.id,
+          idTiendaDestino: widget.idTiendaDestino,
+          preciosProductos: preciosProductos,
         );
 
         if (!mounted) return;
