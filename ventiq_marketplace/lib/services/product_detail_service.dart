@@ -9,6 +9,34 @@ class ProductDetailService {
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
+  Future<List<Map<String, dynamic>>> getRelatedProducts(
+    int productId, {
+    int limit = 10,
+    int offset = 0,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_productos_relacionados',
+        params: {
+          'id_producto_param': productId,
+          'limit_param': limit,
+          'offset_param': offset,
+        },
+      );
+
+      if (response == null) return <Map<String, dynamic>>[];
+
+      final list = response as List<dynamic>;
+      return list
+          .whereType<Map<String, dynamic>>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (e) {
+      print('❌ Error obteniendo productos relacionados: $e');
+      return <Map<String, dynamic>>[];
+    }
+  }
+
   /// Obtiene los detalles completos de un producto
   ///
   /// Usa el RPC get_productos_marketplace para obtener el producto con sus presentaciones

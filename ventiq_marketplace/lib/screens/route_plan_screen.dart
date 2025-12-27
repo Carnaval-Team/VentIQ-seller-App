@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart' hide Path;
 import 'package:geolocator/geolocator.dart';
 import '../config/app_theme.dart';
 import '../services/routing_service.dart';
+import '../widgets/supabase_image.dart';
 
 class RoutePlanScreen extends StatefulWidget {
   final List<Map<String, dynamic>> stores;
@@ -25,6 +26,22 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
   bool _isLoading = true;
   double? _totalDistance;
   double? _totalDuration;
+
+  String? _getStoreImageUrl(Map<String, dynamic> store) {
+    final candidates = [
+      store['imagen_url'],
+      store['logoUrl'],
+      store['imagem_url'],
+      store['logo_url'],
+      store['imageUrl'],
+    ];
+
+    for (final c in candidates) {
+      final v = c?.toString().trim();
+      if (v != null && v.isNotEmpty) return v;
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -149,10 +166,13 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
 
       // 4. Reordenar tiendas según el orden optimizado
       final optimizedStores = <Map<String, dynamic>>[];
-      for (int i = 1; i < routeResult.waypointOrder.length; i++) {
-        final waypointIndex = routeResult.waypointOrder[i] - 1;
-        if (waypointIndex >= 0 && waypointIndex < widget.stores.length) {
-          optimizedStores.add(widget.stores[waypointIndex]);
+      // routeResult.waypointOrder ahora contiene índices de entrada ordenados
+      // por el orden de visita del trip (incluyendo el índice 0 = start).
+      for (final inputIndex in routeResult.waypointOrder) {
+        if (inputIndex == 0) continue; // 0 = ubicación actual
+        final storeIndex = inputIndex - 1; // stores empiezan en 1
+        if (storeIndex >= 0 && storeIndex < widget.stores.length) {
+          optimizedStores.add(widget.stores[storeIndex]);
         }
       }
 
@@ -286,6 +306,8 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
     // Store markers with order number
     for (int i = 0; i < _optimizedPath.length; i++) {
       final store = _optimizedPath[i];
+      final storeName = (store['denominacion'] ?? store['nombre'] ?? 'Tienda')
+          .toString();
       final parts = (store['ubicacion'] as String).split(',');
       final point = LatLng(
         double.parse(parts[0].trim()),
@@ -295,8 +317,8 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
       markers.add(
         Marker(
           point: point,
-          width: 70,
-          height: 80,
+          width: 180,
+          height: 85,
           child: GestureDetector(
             onTap: () {
               // Optional: show info
@@ -309,6 +331,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                     horizontal: 8,
                     vertical: 4,
                   ),
+                  constraints: const BoxConstraints(maxWidth: 180),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryColor,
                     borderRadius: BorderRadius.circular(12),
@@ -320,11 +343,14 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                     ],
                   ),
                   child: Text(
-                    '${i + 1}',
+                    '$storeName (${i + 1})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                      fontSize: 11,
                     ),
                   ),
                 ),
@@ -338,14 +364,13 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                     border: Border.all(color: AppTheme.primaryColor, width: 2),
                   ),
                   child: ClipOval(
-                    child:
-                        (store['imagen_url'] != null &&
-                            store['imagen_url'].toString().isNotEmpty &&
-                            store['imagen_url'].toString().startsWith('http'))
-                        ? Image.network(
-                            store['imagen_url'].toString(),
+                    child: _getStoreImageUrl(store) != null
+                        ? SupabaseImage(
+                            imageUrl: _getStoreImageUrl(store)!,
+                            width: 40,
+                            height: 40,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
+                            errorWidgetOverride: const Icon(
                               Icons.store,
                               color: AppTheme.primaryColor,
                               size: 20,

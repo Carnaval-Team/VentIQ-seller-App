@@ -39,8 +39,12 @@ class RoutingService {
       ].map((point) => '${point.longitude},${point.latitude}').join(';');
 
       // Llamar a OSRM Trip API
+      // Importante:
+      // - source=first fija el inicio en la ubicación actual
+      // - destination=any permite que OSRM elija el mejor destino final
+      //   (si usamos destination=last, con 2 tiendas siempre obliga start->A->B)
       final url = Uri.parse(
-        '$_osrmBaseUrl/trip/v1/driving/$coordinates?source=first&destination=last&roundtrip=false&geometries=polyline',
+        '$_osrmBaseUrl/trip/v1/driving/$coordinates?source=first&destination=any&roundtrip=false&geometries=polyline',
       );
 
       print('🗺️ Llamando a OSRM Trip API: $url');
@@ -75,10 +79,22 @@ class RoutingService {
       // Decodificar polyline
       final polyline = _decodePolyline(geometry);
 
-      // Extraer orden de waypoints
-      final waypointOrder = (data['waypoints'] as List)
-          .map((wp) => wp['waypoint_index'] as int)
-          .toList();
+      // Extraer orden de visita real.
+      // OSRM devuelve `waypoints` en el orden de entrada; cada waypoint trae
+      // `waypoint_index` = posición dentro del trip optimizado.
+      // Necesitamos retornar una lista ordenada por `waypoint_index`, pero con
+      // el índice de entrada para poder mapearlo luego a stores.
+      final waypointsData = data['waypoints'] as List;
+      final orderedInputIndices =
+          List<int>.generate(waypointsData.length, (i) => i)..sort((a, b) {
+            final ai =
+                (waypointsData[a] as Map<String, dynamic>)['waypoint_index']
+                    as int;
+            final bi =
+                (waypointsData[b] as Map<String, dynamic>)['waypoint_index']
+                    as int;
+            return ai.compareTo(bi);
+          });
 
       print(
         '✅ Ruta obtenida: ${polyline.length} puntos, ${distance.toStringAsFixed(0)}m, ${(duration / 60).toStringAsFixed(1)}min',
@@ -86,7 +102,7 @@ class RoutingService {
 
       return RouteResult(
         polyline: polyline,
-        waypointOrder: waypointOrder,
+        waypointOrder: orderedInputIndices,
         totalDistance: distance,
         totalDuration: duration,
       );

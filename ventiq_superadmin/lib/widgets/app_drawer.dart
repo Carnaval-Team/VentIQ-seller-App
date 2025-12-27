@@ -36,6 +36,11 @@ class AppDrawer extends StatelessWidget {
                       route: '/tiendas',
                     ),
                     _DrawerItem(
+                      icon: Icons.storefront,
+                      title: 'Tiendas en Catálogo',
+                      route: '/tiendas-catalogo',
+                    ),
+                    _DrawerItem(
                       icon: Icons.admin_panel_settings,
                       title: 'Administradores',
                       route: '/administradores',
@@ -259,6 +264,7 @@ class AppDrawer extends StatelessWidget {
             // Rutas implementadas
             if (item.route == '/dashboard' ||
                 item.route == '/tiendas' ||
+                item.route == '/tiendas-catalogo' ||
                 item.route == '/usuarios' ||
                 item.route == '/administradores' ||
                 item.route == '/almacenes' ||

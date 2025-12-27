@@ -4,15 +4,17 @@ import 'config/app_theme.dart';
 import 'config/supabase_config.dart';
 import 'screens/splash_screen.dart';
 import 'screens/main_screen.dart';
+import 'screens/auth_screen.dart';
+import 'screens/store_management_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,
   );
-  
+
   runApp(const InventtiaMarketplaceApp());
 }
 
@@ -29,6 +31,8 @@ class InventtiaMarketplaceApp extends StatelessWidget {
       routes: {
         '/': (context) => const SplashScreen(),
         '/home': (context) => const MainScreen(),
+        '/auth': (context) => const AuthScreen(),
+        '/store-management': (context) => const StoreManagementScreen(),
       },
     );
   }

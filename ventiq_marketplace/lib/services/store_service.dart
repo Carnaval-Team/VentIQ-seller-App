@@ -44,7 +44,7 @@ class StoreService {
 
       final response = await _supabase
           .from('app_dat_tienda')
-          .select('id, denominacion, ubicacion, imagen_url, direccion')
+          .select('id, denominacion, ubicacion, imagen_url, direccion, phone')
           .eq('mostrar_en_catalogo', true)
           .not('ubicacion', 'is', null);
 

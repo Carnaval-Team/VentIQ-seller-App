@@ -181,6 +181,7 @@ class _StoresScreenState extends State<StoresScreen> {
             'municipio':
                 store['municipio'] ?? '', // TODO: Agregar a la función RPC
             'direccion': store['direccion'] ?? 'Sin dirección',
+            'phone': store['phone'],
             'productCount': (store['total_productos'] as num?)?.toInt() ?? 0,
             'latitude': null, // TODO: Agregar coordenadas a la función RPC
             'longitude': null, // TODO: Agregar coordenadas a la función RPC

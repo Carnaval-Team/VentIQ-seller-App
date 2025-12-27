@@ -1,8 +1,11 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../widgets/product_list_card.dart';
 import '../widgets/carnaval_fab.dart';
+import '../widgets/supabase_image.dart';
 import 'product_detail_screen.dart';
 import '../services/marketplace_service.dart';
 import '../services/rating_service.dart';
@@ -20,9 +23,12 @@ class StoreDetailScreen extends StatefulWidget {
 }
 
 class _StoreDetailScreenState extends State<StoreDetailScreen> {
+  final SupabaseClient _supabase = Supabase.instance.client;
   final MarketplaceService _marketplaceService = MarketplaceService();
   final RatingService _ratingService = RatingService();
   final ScrollController _scrollController = ScrollController();
+
+  String? _storePhone;
 
   List<Map<String, dynamic>> _storeProducts = [];
   List<Map<String, dynamic>> _tpvs = [];
@@ -38,9 +44,39 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _storePhone =
+        widget.store['phone']?.toString() ??
+        widget.store['telefono']?.toString();
     _loadStoreProducts();
     _loadTPVsStatus();
+    _loadStorePhoneIfMissing();
     _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _loadStorePhoneIfMissing() async {
+    try {
+      final current = _storePhone?.trim();
+      if (current != null && current.isNotEmpty) return;
+
+      final storeId = widget.store['id'] as int?;
+      if (storeId == null) return;
+
+      final response = await _supabase
+          .from('app_dat_tienda')
+          .select('phone')
+          .eq('id', storeId)
+          .maybeSingle();
+
+      final phone = response?['phone']?.toString().trim();
+      if (!mounted) return;
+      if (phone == null || phone.isEmpty) return;
+
+      setState(() {
+        _storePhone = phone;
+      });
+    } catch (_) {
+      // ignore
+    }
   }
 
   @override
@@ -188,6 +224,59 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     );
   }
 
+  String _normalizeWhatsappPhone(String raw) {
+    return raw.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  Future<void> _openWhatsApp(String? rawPhone) async {
+    final phone = rawPhone?.toString().trim();
+    if (phone == null || phone.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Teléfono no disponible'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final normalized = _normalizeWhatsappPhone(phone);
+    if (normalized.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Teléfono no válido'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final waAppUri = Uri.parse('whatsapp://send?phone=$normalized');
+    final waWebUri = Uri.parse('https://wa.me/$normalized');
+
+    try {
+      final launchedApp = await launchUrl(
+        waAppUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (launchedApp) return;
+    } catch (_) {}
+
+    try {
+      await launchUrl(waWebUri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo abrir WhatsApp: $e'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
+  }
+
   void _openMap() {
     final ubicacion = widget.store['ubicacion'] as String?;
     if (ubicacion == null || !ubicacion.contains(',')) {
@@ -200,14 +289,35 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
       return;
     }
 
+    final parts = ubicacion.split(',');
+    final lat = parts.length == 2 ? double.tryParse(parts[0].trim()) : null;
+    final lng = parts.length == 2 ? double.tryParse(parts[1].trim()) : null;
+
+    if (lat == null || lng == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ubicación de la tienda no es válida (lat,lng)'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final normalizedStore = {
+      ...widget.store,
+      // Asegurar compatibilidad con MapScreen
+      'denominacion': widget.store['denominacion'] ?? widget.store['nombre'],
+      'imagen_url': widget.store['imagen_url'] ?? widget.store['logoUrl'],
+    };
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => MapScreen(
           stores: [
-            widget.store,
+            normalizedStore,
           ], // Pass only this store, or fetch all if needed context
-          initialStore: widget.store,
+          initialStore: normalizedStore,
         ),
       ),
     );
@@ -298,6 +408,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Widget _buildSliverAppBar() {
+    final screenWidth = MediaQuery.of(context).size.width;
     return SliverAppBar(
       expandedHeight: 250,
       pinned: true,
@@ -350,12 +461,12 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
           children: [
             // Imagen de fondo o gradiente
             widget.store['logoUrl'] != null
-                ? Image.network(
-                    widget.store['logoUrl'],
+                ? SupabaseImage(
+                    imageUrl: widget.store['logoUrl'],
+                    width: screenWidth,
+                    height: 250,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return _buildGradientBackground();
-                    },
+                    errorWidgetOverride: _buildGradientBackground(),
                   )
                 : _buildGradientBackground(),
 
@@ -474,6 +585,18 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
           ),
           const SizedBox(height: 12),
 
+          // WhatsApp
+          if (_storePhone != null && _storePhone!.trim().isNotEmpty) ...[
+            _buildInfoRow(
+              icon: Icons.chat_rounded,
+              iconColor: Colors.green,
+              title: 'WhatsApp',
+              content: _storePhone!.toString(),
+              onTap: () => _openWhatsApp(_storePhone?.toString()),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           // Dirección
           if (widget.store['direccion'] != null)
             _buildInfoRow(
@@ -503,6 +626,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     required String title,
     required String content,
     VoidCallback? onTap,
+    Color? iconColor,
   }) {
     return InkWell(
       onTap: onTap,
@@ -515,7 +639,11 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
               color: AppTheme.primaryColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 20, color: AppTheme.primaryColor),
+            child: Icon(
+              icon,
+              size: 20,
+              color: iconColor ?? AppTheme.primaryColor,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(

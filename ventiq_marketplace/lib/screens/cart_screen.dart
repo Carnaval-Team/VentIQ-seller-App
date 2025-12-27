@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../services/cart_service.dart';
+import '../services/store_service.dart';
 import 'route_plan_screen.dart';
 
 /// Pantalla del carrito de compras
@@ -13,6 +14,7 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   final CartService _cartService = CartService();
+  final StoreService _storeService = StoreService();
   bool _isLoading = false;
 
   @override
@@ -174,23 +176,31 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     // Filter stores with valid location
     final List<Map<String, dynamic>> storesWithLocation = [];
     for (final item in uniqueStores.values) {
-      if (item.storeLocation != null && item.storeLocation!.contains(',')) {
-        storesWithLocation.add({
-          'id': item.storeId,
-          'denominacion': item.storeName,
-          'ubicacion': item.storeLocation,
-          'imagen_url': item
-              .storeLocation, // Using storeLocation as placeholder if needed? No, wait.
-          // CartItem doesn't have store image URL readily available in plain CartItem?
-          // Let's check CartItem definition again.
-          // It has 'storeLocation', 'storeName'. IT DOES NOT HAVE store image URL explicitly in the constructor shown earlier?
-          // Wait, let me check the CartItem definition in step 13.
-          // It DOES NOT have storeImageUrl. It has productImage and productName.
-          // I might need to fetch store details or just use a default icon.
-          // Or I can update CartItem to include it later, but for now let's survive without it or pass null.
-          'direccion': item.storeAddress,
-        });
-      }
+      // Obtener detalles reales para traer imagen_url (logo) y validar coordenadas
+      final storeDetails = await _storeService.getStoreDetails(item.storeId);
+      final ubicacionRaw =
+          (storeDetails?['ubicacion'] as String?) ?? item.storeLocation;
+
+      final parts = ubicacionRaw?.split(',');
+      final lat = (parts != null && parts.length == 2)
+          ? double.tryParse(parts[0].trim())
+          : null;
+      final lng = (parts != null && parts.length == 2)
+          ? double.tryParse(parts[1].trim())
+          : null;
+
+      if (lat == null || lng == null) continue;
+
+      storesWithLocation.add({
+        'id': item.storeId,
+        'denominacion':
+            (storeDetails?['denominacion'] as String?) ?? item.storeName,
+        'ubicacion': ubicacionRaw,
+        'imagen_url': storeDetails?['imagen_url'],
+        'logoUrl': storeDetails?['imagen_url'],
+        'direccion':
+            (storeDetails?['direccion'] as String?) ?? item.storeAddress,
+      });
     }
 
     if (storesWithLocation.isEmpty) {
