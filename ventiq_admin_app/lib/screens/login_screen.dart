@@ -7,7 +7,9 @@ import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../services/subscription_service.dart';
 import '../services/subscription_guard_service.dart';
+import '../services/update_service.dart';
 import '../models/subscription.dart';
+import '../widgets/update_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -513,6 +515,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       print('✅ Login exitoso como $roleName');
 
+      // Verificar actualizaciones obligatorias antes de navegar al dashboard
+      if (mounted) {
+        await _checkAndShowMandatoryUpdate();
+      }
+
       // Verificar suscripción antes de navegar al dashboard
       if (mounted) {
         final hasActiveSubscription = await _subscriptionGuard.hasActiveSubscription(forceRefresh: true);
@@ -877,6 +884,47 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       print('❌ Error verificando expiración de suscripción: $e');
       // No mostrar error al usuario, solo log
+    }
+  }
+
+  /// Verificar si hay actualizaciones obligatorias y mostrar diálogo si es necesario
+  Future<void> _checkAndShowMandatoryUpdate() async {
+    try {
+      print('🔍 Verificando actualizaciones obligatorias...');
+      
+      final updateInfo = await UpdateService.checkForUpdates();
+      
+      if (updateInfo['hay_actualizacion'] == true && mounted) {
+        final isObligatory = updateInfo['obligatoria'] == true;
+        
+        if (isObligatory) {
+          print('⚠️ Actualización obligatoria detectada');
+          
+          // Mostrar diálogo de actualización obligatoria (no se puede cerrar)
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => UpdateDialog(updateInfo: updateInfo),
+          );
+          
+          // Si el usuario descargó, no continuar con el login
+          // El diálogo no permite cerrar sin actualizar
+        } else {
+          print('ℹ️ Actualización opcional disponible');
+          // Para actualizaciones opcionales, mostrar pero permitir continuar
+          if (mounted) {
+            await showDialog(
+              context: context,
+              builder: (context) => UpdateDialog(updateInfo: updateInfo),
+            );
+          }
+        }
+      } else {
+        print('✅ Aplicación está actualizada');
+      }
+    } catch (e) {
+      print('❌ Error verificando actualizaciones: $e');
+      // No bloquear el login si hay error al verificar actualizaciones
     }
   }
 
