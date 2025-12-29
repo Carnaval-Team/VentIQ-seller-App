@@ -177,9 +177,9 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
         // Este precio es independiente de los precios en la tienda consignadora
         final idProducto = p['id_producto'];
         
-        // Obtener precio_venta actual del producto
-        final precioVentaResp = await _supabase.from('app_dat_precio_venta').select('precio_venta_cup').eq('id_producto', idProducto).limit(1);
-        p['precio_venta'] = (precioVentaResp as List).isNotEmpty ? (precioVentaResp[0]['precio_venta_cup'] ?? 0).toDouble() : 0.0;
+        // ⚠️ NO obtener precio_venta del producto original - No se debe tocar
+        // El precio_venta de la tienda consignadora debe permanecer intacto
+        p['precio_venta'] = 0.0; // Inicializar en 0, el consignador lo configurará
 
         // Obtener precio_promedio de la presentación para usar como precio_costo_usd
         double costUSD = 0.0;
