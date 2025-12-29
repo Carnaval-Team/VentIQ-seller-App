@@ -1,8 +1,50 @@
 {
-  "current_version": "1.0.0",
-  "build": 1,
+  "current_version": "1.1.0",
+  "build": 2,
   "app_name": "ventiq_marketplace",
   "changelogs": [
+    {
+      "version": "1.1.0",
+      "date": "2025-12-29",
+      "title": "🧭 Ruta de compra en tiempo real",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Comenzar viaje",
+          "description": "Inicia la navegación en tiempo real desde el plan de ruta con un panel inferior dedicado."
+        },
+        {
+          "type": "feature",
+          "title": "Flecha direccional por GPS",
+          "description": "El marcador del usuario cambia a una flecha que se orienta según el rumbo (heading) para seguir el movimiento en vivo."
+        },
+        {
+          "type": "feature",
+          "title": "Rutas por calles al próximo destino",
+          "description": "La ruta hacia la próxima tienda se traza usando OSRM (no en línea recta) y se actualiza durante el viaje."
+        },
+        {
+          "type": "improvement",
+          "title": "Ruta destacada + resto discontinuo",
+          "description": "El tramo hacia la próxima tienda se muestra más grueso y el resto de tramos se renderiza como línea discontinua."
+        },
+        {
+          "type": "feature",
+          "title": "Aviso de llegada por proximidad (<= 100m)",
+          "description": "Al estar cerca del destino, se muestra un cartel con la tienda y la distancia, y se avanza automáticamente a la siguiente."
+        },
+        {
+          "type": "feature",
+          "title": "Lista de tiendas con distancia",
+          "description": "El panel inferior enumera las tiendas y muestra a cuánta distancia estás de cada una, resaltando la siguiente parada."
+        },
+        {
+          "type": "improvement",
+          "title": "Tiendas visitadas (ARRIBADA)",
+          "description": "Las tiendas completadas se marcan en verde y con etiqueta ARRIBADA tanto en el mapa como en la lista."
+        }
+      ]
+    },
     {
       "version": "1.0.0",
       "date": "2025-12-26",
