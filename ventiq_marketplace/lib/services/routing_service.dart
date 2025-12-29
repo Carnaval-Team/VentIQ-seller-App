@@ -120,10 +120,10 @@ class RoutingService {
           '${start.longitude},${start.latitude};${end.longitude},${end.latitude}';
 
       final url = Uri.parse(
-        '$_osrmBaseUrl/route/v1/driving/$coordinates?geometries=polyline',
+        '$_osrmBaseUrl/route/v1/driving/$coordinates?geometries=polyline&overview=full&alternatives=false&steps=false',
       );
 
-      final response = await http.get(url).timeout(const Duration(seconds: 10));
+      final response = await http.get(url).timeout(const Duration(seconds: 20));
 
       if (response.statusCode != 200) {
         throw Exception('Error en OSRM API: ${response.statusCode}');

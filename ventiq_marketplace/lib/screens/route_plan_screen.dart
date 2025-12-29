@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
@@ -27,6 +28,23 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
   double? _totalDistance;
   double? _totalDuration;
 
+  bool _isTravelActive = false;
+  int _currentStopIndex = 0;
+  List<LatLng>? _currentLegPolyline;
+  bool _isUpdatingLegRoute = false;
+  DateTime? _lastLegRouteUpdateAt;
+  double? _distanceToTargetMeters;
+  String? _arrivalBannerText;
+  Timer? _arrivalBannerTimer;
+  Timer? _travelTickTimer;
+  int? _lastArrivedStopIndex;
+
+  final Set<int> _visitedStopIndices = <int>{};
+
+  bool _isLegRouteFallback = false;
+  bool _isLoadingStoreLegs = false;
+  List<List<LatLng>?> _storeLegPolylines = [];
+
   String? _getStoreImageUrl(Map<String, dynamic> store) {
     final candidates = [
       store['imagen_url'],
@@ -53,8 +71,238 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
   @override
   void dispose() {
     _positionStreamSubscription?.cancel();
+    _arrivalBannerTimer?.cancel();
+    _travelTickTimer?.cancel();
     _mapController.dispose();
     super.dispose();
+  }
+
+  LatLng? _parseUbicacion(dynamic ubicacion) {
+    if (ubicacion == null) return null;
+    final ubicacionStr = ubicacion.toString();
+    if (!ubicacionStr.contains(',')) return null;
+    final parts = ubicacionStr.split(',');
+    if (parts.length != 2) return null;
+    final lat = double.tryParse(parts[0].trim());
+    final lng = double.tryParse(parts[1].trim());
+    if (lat == null || lng == null) return null;
+    return LatLng(lat, lng);
+  }
+
+  LatLng? _getCurrentLatLng() {
+    final pos = _currentPosition;
+    if (pos == null) return null;
+    return LatLng(pos.latitude, pos.longitude);
+  }
+
+  Map<String, dynamic>? _getCurrentTargetStore() {
+    if (_optimizedPath.isEmpty) return null;
+    if (_currentStopIndex < 0 || _currentStopIndex >= _optimizedPath.length) {
+      return null;
+    }
+    return _optimizedPath[_currentStopIndex];
+  }
+
+  LatLng? _getCurrentTargetPoint() {
+    final store = _getCurrentTargetStore();
+    if (store == null) return null;
+    return _parseUbicacion(store['ubicacion']);
+  }
+
+  String _getStoreName(Map<String, dynamic> store) {
+    return (store['denominacion'] ?? store['nombre'] ?? 'Tienda').toString();
+  }
+
+  void _showArrivalBanner({required String storeName, required double meters}) {
+    _arrivalBannerTimer?.cancel();
+
+    final distanceText = meters >= 1000
+        ? '${(meters / 1000).toStringAsFixed(1)} km'
+        : '${meters.toStringAsFixed(0)} m';
+
+    setState(() {
+      _arrivalBannerText = 'Llegaste a $storeName • $distanceText';
+    });
+
+    _arrivalBannerTimer = Timer(const Duration(seconds: 6), () {
+      if (!mounted) return;
+      setState(() {
+        _arrivalBannerText = null;
+      });
+    });
+  }
+
+  Future<void> _startTravel() async {
+    if (_optimizedPath.isEmpty) return;
+
+    setState(() {
+      _isTravelActive = true;
+      _currentStopIndex = 0;
+      _lastArrivedStopIndex = null;
+      _isLegRouteFallback = false;
+      _visitedStopIndices.clear();
+    });
+
+    _travelTickTimer?.cancel();
+    _travelTickTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      if (!_isTravelActive) return;
+      _checkProximity();
+    });
+
+    unawaited(_precomputeStoreLegs());
+    await _updateCurrentLegRoute(force: true);
+
+    _checkProximity();
+
+    final current = _getCurrentLatLng();
+    if (current != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _mapController.move(current, _mapController.camera.zoom);
+      });
+    }
+  }
+
+  void _stopTravel() {
+    _travelTickTimer?.cancel();
+    setState(() {
+      _isTravelActive = false;
+      _currentLegPolyline = null;
+      _distanceToTargetMeters = null;
+      _arrivalBannerText = null;
+      _lastArrivedStopIndex = null;
+      _isLegRouteFallback = false;
+    });
+  }
+
+  Future<void> _precomputeStoreLegs() async {
+    if (!_isTravelActive) return;
+    if (_optimizedPath.length < 2) return;
+    if (_isLoadingStoreLegs) return;
+
+    const maxLegsToPrecompute = 12;
+    final legsToCompute = math.min(
+      _optimizedPath.length - 1,
+      maxLegsToPrecompute,
+    );
+
+    setState(() {
+      _isLoadingStoreLegs = true;
+      _storeLegPolylines = List<List<LatLng>?>.filled(
+        _optimizedPath.length - 1,
+        null,
+      );
+    });
+
+    for (int i = 0; i < legsToCompute; i++) {
+      if (!_isTravelActive) break;
+      final a = _parseUbicacion(_optimizedPath[i]['ubicacion']);
+      final b = _parseUbicacion(_optimizedPath[i + 1]['ubicacion']);
+      if (a == null || b == null) continue;
+
+      try {
+        final polyline = await _routingService.getRouteBetweenPoints(a, b);
+        if (!mounted) return;
+        setState(() {
+          _storeLegPolylines[i] = polyline;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _storeLegPolylines[i] = [a, b];
+        });
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isLoadingStoreLegs = false;
+    });
+  }
+
+  Future<void> _updateCurrentLegRoute({bool force = false}) async {
+    if (!_isTravelActive) return;
+    if (_isUpdatingLegRoute) return;
+
+    final now = DateTime.now();
+    final last = _lastLegRouteUpdateAt;
+    if (!force &&
+        last != null &&
+        now.difference(last) < const Duration(seconds: 15)) {
+      return;
+    }
+
+    final start = _getCurrentLatLng();
+    final end = _getCurrentTargetPoint();
+    if (start == null || end == null) return;
+
+    try {
+      _isUpdatingLegRoute = true;
+      _lastLegRouteUpdateAt = now;
+
+      final polyline = await _routingService.getRouteBetweenPoints(start, end);
+      if (!mounted) return;
+
+      setState(() {
+        _currentLegPolyline = polyline;
+        _isLegRouteFallback = polyline.length <= 2;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _currentLegPolyline = [start, end];
+        _isLegRouteFallback = true;
+      });
+    } finally {
+      _isUpdatingLegRoute = false;
+    }
+  }
+
+  void _checkProximity() {
+    if (!_isTravelActive) return;
+    final pos = _currentPosition;
+    final target = _getCurrentTargetPoint();
+    final store = _getCurrentTargetStore();
+    if (pos == null || target == null || store == null) return;
+
+    final meters = Geolocator.distanceBetween(
+      pos.latitude,
+      pos.longitude,
+      target.latitude,
+      target.longitude,
+    );
+
+    setState(() {
+      _distanceToTargetMeters = meters;
+    });
+
+    final hasArrived = meters <= 100;
+    if (!hasArrived) return;
+
+    if (_lastArrivedStopIndex == _currentStopIndex) return;
+
+    _lastArrivedStopIndex = _currentStopIndex;
+    _visitedStopIndices.add(_currentStopIndex);
+    _showArrivalBanner(storeName: _getStoreName(store), meters: meters);
+
+    if (_currentStopIndex >= _optimizedPath.length - 1) {
+      _arrivalBannerTimer?.cancel();
+      _arrivalBannerTimer = Timer(const Duration(seconds: 6), () {
+        if (!mounted) return;
+        _stopTravel();
+      });
+      return;
+    }
+
+    setState(() {
+      _currentStopIndex += 1;
+      _currentLegPolyline = null;
+      _isLegRouteFallback = false;
+      _distanceToTargetMeters = null;
+    });
+
+    unawaited(_updateCurrentLegRoute(force: true));
   }
 
   /// Inicia el seguimiento de ubicación en tiempo real
@@ -90,6 +338,13 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                 setState(() {
                   _currentPosition = position;
                 });
+
+                if (_isTravelActive) {
+                  final current = LatLng(position.latitude, position.longitude);
+                  _mapController.move(current, _mapController.camera.zoom);
+                  unawaited(_updateCurrentLegRoute());
+                  _checkProximity();
+                }
                 print(
                   '📍 Ubicación actualizada: ${position.latitude}, ${position.longitude}',
                 );
@@ -104,6 +359,12 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
   Future<void> _calculateRoute() async {
     setState(() {
       _isLoading = true;
+      _isTravelActive = false;
+      _currentLegPolyline = null;
+      _distanceToTargetMeters = null;
+      _arrivalBannerText = null;
+      _lastArrivedStopIndex = null;
+      _visitedStopIndices.clear();
     });
 
     // 1. Obtener ubicación actual
@@ -244,38 +505,518 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: LatLng(22.40694, -79.96472), // Default center
-                initialZoom: 13.0,
-              ),
+          : Stack(
               children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.ventiq.marketplace',
-                ),
-                PolylineLayer(
-                  polylines: [
-                    if (_routePolyline != null && _routePolyline!.isNotEmpty)
-                      Polyline(
-                        points: _routePolyline!,
-                        strokeWidth: 4.0,
-                        color: AppTheme.primaryColor,
-                        borderStrokeWidth: 2.0,
-                        borderColor: Colors.white,
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: LatLng(22.40694, -79.96472),
+                    initialZoom: 13.0,
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.ventiq.marketplace',
+                    ),
+                    PolylineLayer(polylines: _buildPolylines()),
+                    MarkerLayer(
+                      key: ValueKey(
+                        '${_currentPosition?.latitude}_${_currentPosition?.longitude}_${_isTravelActive ? 1 : 0}',
                       ),
+                      markers: _buildMarkers(),
+                    ),
                   ],
                 ),
-                MarkerLayer(
-                  key: ValueKey(
-                    '${_currentPosition?.latitude}_${_currentPosition?.longitude}',
+                if (_arrivalBannerText != null)
+                  Positioned(
+                    top: 12,
+                    left: 16,
+                    right: 16,
+                    child: _buildArrivalBanner(_arrivalBannerText!),
                   ),
-                  markers: _buildMarkers(),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _buildBottomControls(context),
                 ),
               ],
             ),
     );
+  }
+
+  Widget _buildArrivalBanner(String text) {
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(14),
+      color: Colors.white,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppTheme.primaryColor.withOpacity(0.25)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle,
+                color: AppTheme.primaryColor,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomControls(BuildContext context) {
+    final hasRoute = _optimizedPath.isNotEmpty;
+    final targetStore = _getCurrentTargetStore();
+
+    final distanceText = (_distanceToTargetMeters == null)
+        ? null
+        : (_distanceToTargetMeters! >= 1000)
+        ? '${(_distanceToTargetMeters! / 1000).toStringAsFixed(1)} km'
+        : '${_distanceToTargetMeters!.toStringAsFixed(0)} m';
+
+    if (!hasRoute) {
+      return const SizedBox.shrink();
+    }
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _isTravelActive
+                        ? (targetStore != null
+                              ? 'Próxima: ${_getStoreName(targetStore)}'
+                              : 'Ruta finalizada')
+                        : 'Ruta optimizada lista',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                if (_isTravelActive && _isLoadingStoreLegs)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                if (_totalDistance != null &&
+                    _totalDuration != null &&
+                    !_isTravelActive)
+                  Text(
+                    '${(_totalDistance! / 1000).toStringAsFixed(1)} km • ${(_totalDuration! / 60).toStringAsFixed(0)} min',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                if (distanceText != null && _isTravelActive)
+                  Text(
+                    distanceText,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
+            ),
+            if (_isTravelActive && _isLegRouteFallback)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Mostrando línea directa (sin ruta por calles). Verifica conexión.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.orange[800],
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            if (_isTravelActive)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: _buildStoresDistanceList(),
+              ),
+            const SizedBox(height: 10),
+            if (!_isTravelActive)
+              ElevatedButton.icon(
+                onPressed: _startTravel,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.play_arrow),
+                label: const Text(
+                  'Comenzar viaje',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: _stopTravel,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.primaryColor,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: const Text(
+                  'Detener viaje',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Polyline> _buildPolylines() {
+    final polylines = <Polyline>[];
+
+    if (!_isTravelActive) {
+      if (_routePolyline != null && _routePolyline!.isNotEmpty) {
+        polylines.add(
+          Polyline(
+            points: _routePolyline!,
+            strokeWidth: 4.0,
+            color: AppTheme.primaryColor,
+            borderStrokeWidth: 2.0,
+            borderColor: Colors.white,
+          ),
+        );
+      }
+      return polylines;
+    }
+
+    if (_currentLegPolyline != null && _currentLegPolyline!.isNotEmpty) {
+      polylines.add(
+        Polyline(
+          points: _currentLegPolyline!,
+          strokeWidth: 6.0,
+          color: AppTheme.primaryColor,
+          borderStrokeWidth: 2.0,
+          borderColor: Colors.white,
+        ),
+      );
+    } else {
+      if (_isLegRouteFallback && !_isUpdatingLegRoute) {
+        final start = _getCurrentLatLng();
+        final end = _getCurrentTargetPoint();
+        if (start != null && end != null) {
+          polylines.add(
+            Polyline(
+              points: [start, end],
+              strokeWidth: 6.0,
+              color: AppTheme.primaryColor,
+              borderStrokeWidth: 2.0,
+              borderColor: Colors.white,
+            ),
+          );
+        }
+      }
+    }
+
+    for (int i = _currentStopIndex; i < _optimizedPath.length - 1; i++) {
+      final a = _parseUbicacion(_optimizedPath[i]['ubicacion']);
+      final b = _parseUbicacion(_optimizedPath[i + 1]['ubicacion']);
+      if (a == null || b == null) continue;
+
+      final cached = (i < _storeLegPolylines.length)
+          ? _storeLegPolylines[i]
+          : null;
+      if (cached != null && cached.length > 1) {
+        polylines.addAll(
+          _buildDashedPolyline(
+            cached,
+            strokeWidth: 3.0,
+            color: AppTheme.primaryColor.withOpacity(0.85),
+          ),
+        );
+      } else {
+        polylines.addAll(
+          _buildDashedSegment(
+            a,
+            b,
+            strokeWidth: 3.0,
+            color: AppTheme.primaryColor.withOpacity(0.85),
+          ),
+        );
+      }
+    }
+
+    return polylines;
+  }
+
+  List<Polyline> _buildDashedPolyline(
+    List<LatLng> points, {
+    required double strokeWidth,
+    required Color color,
+  }) {
+    final polylines = <Polyline>[];
+    if (points.length < 2) return polylines;
+
+    for (int i = 0; i < points.length - 1; i++) {
+      polylines.addAll(
+        _buildDashedSegment(
+          points[i],
+          points[i + 1],
+          strokeWidth: strokeWidth,
+          color: color,
+        ),
+      );
+    }
+
+    return polylines;
+  }
+
+  Widget _buildStoresDistanceList() {
+    final pos = _currentPosition;
+    if (pos == null) {
+      return const SizedBox.shrink();
+    }
+
+    final items = <({int index, String name, double meters})>[];
+    for (int i = 0; i < _optimizedPath.length; i++) {
+      final store = _optimizedPath[i];
+      final point = _parseUbicacion(store['ubicacion']);
+      if (point == null) continue;
+      final meters = Geolocator.distanceBetween(
+        pos.latitude,
+        pos.longitude,
+        point.latitude,
+        point.longitude,
+      );
+      items.add((index: i, name: _getStoreName(store), meters: meters));
+    }
+
+    String fmt(double m) {
+      if (m >= 1000) return '${(m / 1000).toStringAsFixed(1)} km';
+      return '${m.toStringAsFixed(0)} m';
+    }
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 170),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+      ),
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        shrinkWrap: true,
+        itemCount: items.length,
+        separatorBuilder: (_, __) =>
+            Divider(height: 1, color: Colors.grey.withOpacity(0.2)),
+        itemBuilder: (context, idx) {
+          final item = items[idx];
+          final isNext = _isTravelActive && item.index == _currentStopIndex;
+          final isVisited = _visitedStopIndices.contains(item.index);
+          final badgeColor = isVisited
+              ? Colors.green.shade700
+              : (isNext ? AppTheme.primaryColor : AppTheme.primaryColor);
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: (isVisited || isNext)
+                        ? badgeColor
+                        : AppTheme.primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${item.index + 1}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color:
+                          (isVisited || isNext) ? Colors.white : AppTheme.primaryColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: (isNext || isVisited)
+                          ? FontWeight.w800
+                          : FontWeight.w600,
+                      color: isVisited
+                          ? Colors.green.shade800
+                          : (isNext ? AppTheme.primaryColor : Colors.black87),
+                    ),
+                  ),
+                ),
+                if (isVisited)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade700.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.green.shade700.withOpacity(0.35),
+                      ),
+                    ),
+                    child: Text(
+                      'ARRIBADA',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.green.shade800,
+                      ),
+                    ),
+                  )
+                else if (isNext)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppTheme.primaryColor.withOpacity(0.30),
+                      ),
+                    ),
+                    child: const Text(
+                      'SIGUIENTE',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 10),
+                Text(
+                  fmt(item.meters),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: isVisited
+                        ? Colors.green.shade800
+                        : (isNext ? AppTheme.primaryColor : Colors.grey[800]),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  List<Polyline> _buildDashedSegment(
+    LatLng start,
+    LatLng end, {
+    required double strokeWidth,
+    required Color color,
+  }) {
+    const dashLengthMeters = 80.0;
+    const gapLengthMeters = 60.0;
+    final dist = const Distance();
+    final segmentLength = dist.as(LengthUnit.Meter, start, end);
+    if (segmentLength <= 0) return [];
+
+    final polylines = <Polyline>[];
+    double cursor = 0;
+
+    while (cursor < segmentLength) {
+      final dashStart = cursor;
+      final dashEnd = math.min(cursor + dashLengthMeters, segmentLength);
+
+      final startT = dashStart / segmentLength;
+      final endT = dashEnd / segmentLength;
+
+      final p1 = LatLng(
+        start.latitude + (end.latitude - start.latitude) * startT,
+        start.longitude + (end.longitude - start.longitude) * startT,
+      );
+      final p2 = LatLng(
+        start.latitude + (end.latitude - start.latitude) * endT,
+        start.longitude + (end.longitude - start.longitude) * endT,
+      );
+
+      polylines.add(
+        Polyline(
+          points: [p1, p2],
+          strokeWidth: strokeWidth,
+          color: color,
+          borderStrokeWidth: 1.5,
+          borderColor: Colors.white,
+        ),
+      );
+
+      cursor += dashLengthMeters + gapLengthMeters;
+    }
+
+    return polylines;
   }
 
   List<Marker> _buildMarkers() {
@@ -283,6 +1024,10 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
 
     // User marker
     if (_currentPosition != null) {
+      final headingDeg = _currentPosition!.heading;
+      final safeHeadingDeg = (headingDeg.isFinite && headingDeg > 0)
+          ? headingDeg
+          : 0.0;
       markers.add(
         Marker(
           point: LatLng(
@@ -297,7 +1042,16 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
               color: AppTheme.primaryColor.withOpacity(0.2),
               border: Border.all(color: Colors.white, width: 2),
             ),
-            child: const Icon(Icons.my_location, color: AppTheme.primaryColor),
+            child: _isTravelActive
+                ? Transform.rotate(
+                    angle: safeHeadingDeg * math.pi / 180,
+                    child: const Icon(
+                      Icons.navigation,
+                      color: AppTheme.primaryColor,
+                      size: 28,
+                    ),
+                  )
+                : const Icon(Icons.my_location, color: AppTheme.primaryColor),
           ),
         ),
       );
@@ -306,13 +1060,22 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
     // Store markers with order number
     for (int i = 0; i < _optimizedPath.length; i++) {
       final store = _optimizedPath[i];
-      final storeName = (store['denominacion'] ?? store['nombre'] ?? 'Tienda')
-          .toString();
+      final storeName = _getStoreName(store);
       final parts = (store['ubicacion'] as String).split(',');
       final point = LatLng(
         double.parse(parts[0].trim()),
         double.parse(parts[1].trim()),
       );
+
+      final isCurrentTarget = _isTravelActive && i == _currentStopIndex;
+      final isVisited = _visitedStopIndices.contains(i);
+
+      final headerColor = isVisited
+          ? Colors.green.shade700
+          : (isCurrentTarget ? AppTheme.primaryColor : AppTheme.primaryColor);
+      final pinColor = isVisited
+          ? Colors.green.shade700
+          : (isCurrentTarget ? AppTheme.primaryColor : AppTheme.primaryColor);
 
       markers.add(
         Marker(
@@ -333,7 +1096,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                   ),
                   constraints: const BoxConstraints(maxWidth: 180),
                   decoration: BoxDecoration(
-                    color: AppTheme.primaryColor,
+                    color: headerColor,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
@@ -342,16 +1105,68 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                       ),
                     ],
                   ),
-                  child: Text(
-                    '$storeName (${i + 1})',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '$storeName (${i + 1})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      if (isVisited)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.25),
+                            ),
+                          ),
+                          child: const Text(
+                            'ARRIBADA',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 9,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        )
+                      else if (isCurrentTarget)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.25),
+                            ),
+                          ),
+                          child: const Text(
+                            'SIGUIENTE',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 9,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -361,7 +1176,10 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppTheme.primaryColor, width: 2),
+                    border: Border.all(
+                      color: pinColor,
+                      width: 2,
+                    ),
                   ),
                   child: ClipOval(
                     child: _getStoreImageUrl(store) != null
@@ -388,7 +1206,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                   child: Container(
                     width: 14,
                     height: 10,
-                    color: AppTheme.primaryColor,
+                    color: pinColor,
                   ),
                 ),
               ],
