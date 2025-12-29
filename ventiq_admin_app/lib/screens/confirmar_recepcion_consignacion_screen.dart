@@ -43,11 +43,6 @@ class _ConfirmarRecepcionConsignacionScreenState
   // Mapa para guardar TextEditingControllers: {idProductoConsignacion: TextEditingController}
   final Map<int, TextEditingController> _precioControllers = {};
   
-  // Mapa para guardar margen %: {idProductoConsignacion: margenPorcentaje}
-  final Map<int, double> _margenPorcentaje = {};
-  
-  // Mapa para guardar controladores de margen: {idProductoConsignacion: TextEditingController}
-  final Map<int, TextEditingController> _margenControllers = {};
   
   // Tasa de cambio USD a CUP
   double _tasaCambio = 440.0;
@@ -77,10 +72,6 @@ class _ConfirmarRecepcionConsignacionScreenState
   void dispose() {
     // Limpiar todos los TextEditingControllers de precio
     for (final controller in _precioControllers.values) {
-      controller.dispose();
-    }
-    // Limpiar todos los TextEditingControllers de margen
-    for (final controller in _margenControllers.values) {
       controller.dispose();
     }
     super.dispose();
@@ -382,16 +373,16 @@ class _ConfirmarRecepcionConsignacionScreenState
                     ],
                   ),
                   const SizedBox(height: 12),
-                  // Fila 2: Precio de costo (informativo), margen % y precio de venta
+                  // Fila 2: Precio de costo, precio de venta y ganancias
                   Row(
                     children: [
                       Expanded(
-                        flex: 3,
+                        flex: 2,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Precio Costo (del Consignador)',
+                              'Precio Costo',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -410,51 +401,21 @@ class _ConfirmarRecepcionConsignacionScreenState
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Precio Costo Original (USD)',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.blue[700],
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
                                     '\$${precioCostoUSD.toStringAsFixed(2)} USD',
                                     style: const TextStyle(
-                                      fontSize: 16,
+                                      fontSize: 14,
                                       fontWeight: FontWeight.bold,
                                       color: Colors.blue,
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 4),
                                   Text(
-                                    'Precio Costo Consignación (CUP)',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.blue[700],
-                                      fontWeight: FontWeight.w500,
+                                    '\$${precioCostoCUP.toStringAsFixed(2)} CUP',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
                                     ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        '\$${precioCostoCUP.toStringAsFixed(2)} CUP',
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.blue,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        '(\$${precioCostoUSD.toStringAsFixed(2)} USD)',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.blue[600],
-                                        ),
-                                      ),
-                                    ],
                                   ),
                                 ],
                               ),
@@ -464,30 +425,12 @@ class _ConfirmarRecepcionConsignacionScreenState
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        flex: 3,
+                        flex: 2,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Margen %',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[700],
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 3,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Precio de Venta * CUP',
+                              'Precio de Venta (CUP)',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -501,6 +444,15 @@ class _ConfirmarRecepcionConsignacionScreenState
                               puedeModificarPrecio,
                             ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: _buildGananciasColumn(
+                          idProductoConsignacion,
+                          precioCostoCUP,
+                          precioCostoUSD,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -530,7 +482,7 @@ class _ConfirmarRecepcionConsignacionScreenState
 
   /// Construye el TextField para el precio de venta con controller persistente
   /// El consignatario configura el precio de venta en CUP
-  /// El precio sugerido ya viene en CUP (precio_costo_cup del consignador)
+  /// SIN precio preconfigurado - El consignatario debe ingresar el precio
   Widget _buildPrecioTextField(
     int idProductoConsignacion,
     double precioCostoCUP,
@@ -538,15 +490,8 @@ class _ConfirmarRecepcionConsignacionScreenState
   ) {
     // Obtener o crear el controller
     if (!_precioControllers.containsKey(idProductoConsignacion)) {
-      // ✅ El precio ya está en CUP, no necesita conversión
-      final precioInicial = _preciosVentaConfigurables[idProductoConsignacion] ?? precioCostoCUP;
-      _precioControllers[idProductoConsignacion] = TextEditingController(
-        text: precioInicial > 0 ? precioInicial.toStringAsFixed(2) : precioCostoCUP.toStringAsFixed(2),
-      );
-      // Guardar el precio inicial en el mapa (en CUP)
-      if (!_preciosVentaConfigurables.containsKey(idProductoConsignacion)) {
-        _preciosVentaConfigurables[idProductoConsignacion] = precioInicial > 0 ? precioInicial : precioCostoCUP;
-      }
+      // ✅ SIN precio preconfigurado - Campo vacío para que el consignatario ingrese el precio
+      _precioControllers[idProductoConsignacion] = TextEditingController(text: '');
     }
 
     final controller = _precioControllers[idProductoConsignacion]!;
@@ -557,7 +502,7 @@ class _ConfirmarRecepcionConsignacionScreenState
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       controller: controller,
       decoration: InputDecoration(
-        hintText: precioCostoCUP.toStringAsFixed(2),
+        hintText: 'Ingrese precio',
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),
           borderSide: BorderSide(
@@ -593,7 +538,74 @@ class _ConfirmarRecepcionConsignacionScreenState
     );
   }
 
-  /// Construye el TextField para el margen % con cálculo automático de precio
+  /// Construye la columna de ganancias con cálculos en USD, CUP y porcentaje
+  Widget _buildGananciasColumn(
+    int idProductoConsignacion,
+    double precioCostoCUP,
+    double precioCostoUSD,
+  ) {
+    final precioVentaCUP = _preciosVentaConfigurables[idProductoConsignacion] ?? 0.0;
+    final precioVentaUSD = precioVentaCUP > 0 ? precioVentaCUP / _tasaCambio : 0.0;
+    final gananciaUSD = precioVentaUSD - precioCostoUSD;
+    final gananciaCUP = precioVentaCUP - precioCostoCUP;
+    final porcentajeGanancia = precioCostoCUP > 0 ? ((gananciaCUP / precioCostoCUP) * 100) : 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ganancias',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey[700],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: gananciaUSD >= 0 ? Colors.green[50] : Colors.red[50],
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: gananciaUSD >= 0 ? Colors.green.withOpacity(0.3) : Colors.red.withOpacity(0.3),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '\$${gananciaUSD.toStringAsFixed(2)} USD',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '\$${gananciaCUP.toStringAsFixed(2)} CUP',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${porcentajeGanancia.toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
  
   Widget _buildBotonesAccion() {
     return Column(

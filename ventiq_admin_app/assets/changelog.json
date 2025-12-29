@@ -1,8 +1,40 @@
 {
-  "current_version": "1.6.4",
-  "build": 164,
+  "current_version": "1.6.5",
+  "build": 165,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.6.5",
+      "date": "2025-12-29",
+      "title": "💰 Cálculo de Ganancias en Confirmación de Envíos de Consignación",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Columna de Ganancias en Confirmación de Envíos",
+          "description": "Nueva columna que calcula automáticamente las ganancias esperadas en USD, CUP y porcentaje basado en el precio de venta configurado por el consignatario"
+        },
+        {
+          "type": "improvement",
+          "title": "Eliminación de Sección de Margen %",
+          "description": "Removida la sección de cálculo de margen porcentual para simplificar la interfaz y enfocarse en el precio de venta final"
+        },
+        {
+          "type": "improvement",
+          "title": "Campo de Precio de Venta Sin Preconfiguración",
+          "description": "El campo de precio de venta ahora está vacío sin valor preconfigurado, permitiendo que el consignatario ingrese libremente el precio deseado"
+        },
+        {
+          "type": "improvement",
+          "title": "Visualización de Ganancias en Tiempo Real",
+          "description": "Las ganancias se actualizan automáticamente conforme el consignatario ingresa el precio de venta, mostrando indicadores visuales de ganancia positiva (verde) o negativa (rojo)"
+        },
+        {
+          "type": "improvement",
+          "title": "Desglose de Ganancias en Múltiples Monedas",
+          "description": "Las ganancias se muestran en USD, CUP y porcentaje para dar visibilidad completa de la rentabilidad esperada en ambas monedas"
+        }
+      ]
+    },
     {
       "version": "1.6.4",
       "date": "2025-12-26",
