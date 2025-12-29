@@ -2,7 +2,7 @@ name: ventiq_admin_app
 description: "Inventtia Admin - Sistema de administración para gestión de inventarios, productos y ventas."
 publish_to: 'none'
 
-version: 1.6.4+164
+version: 1.6.5+165
 
 environment:
   sdk: ^3.7.0
