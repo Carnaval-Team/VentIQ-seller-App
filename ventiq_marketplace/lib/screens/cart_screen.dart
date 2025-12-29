@@ -9,10 +9,10 @@ class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
 
   @override
-  State<CartScreen> createState() => _CartScreenState();
+  State<CartScreen> createState() => CartScreenState();
 }
 
-class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
+class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   final CartService _cartService = CartService();
   final StoreService _storeService = StoreService();
   bool _isLoading = false;
@@ -68,6 +68,10 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
 
   Future<void> _refreshCart() async {
     print('🔄 Pull to refresh - Recargando carrito...');
+    await _loadCart();
+  }
+
+  Future<void> refreshCart() async {
     await _loadCart();
   }
 
@@ -175,6 +179,12 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
 
     // Filter stores with valid location
     final List<Map<String, dynamic>> storesWithLocation = [];
+    final Map<int, List<CartItem>> itemsByStore = {};
+
+    for (final item in _cartService.items) {
+      itemsByStore.putIfAbsent(item.storeId, () => []).add(item);
+    }
+
     for (final item in uniqueStores.values) {
       // Obtener detalles reales para traer imagen_url (logo) y validar coordenadas
       final storeDetails = await _storeService.getStoreDetails(item.storeId);
@@ -217,7 +227,10 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => RoutePlanScreen(stores: storesWithLocation),
+        builder: (context) => RoutePlanScreen(
+          stores: storesWithLocation,
+          itemsByStore: itemsByStore,
+        ),
       ),
     );
   }

@@ -40,6 +40,159 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   // Variante seleccionada en el dropdown
   Map<String, dynamic>? _selectedVariant;
 
+  Future<void> _showPostAddDialog(int totalItems) async {
+    if (!mounted) return;
+
+    final action = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 24,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusXL),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppTheme.radiusXL),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                  decoration: const BoxDecoration(
+                    gradient: AppTheme.primaryGradient,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.22),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.25),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.check_circle_rounded,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Agregado al plan',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$totalItems ${totalItems == 1 ? 'producto' : 'productos'} agregado${totalItems == 1 ? '' : 's'}',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.9),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(null),
+                        icon: const Icon(Icons.close_rounded),
+                        color: Colors.white,
+                        tooltip: 'Cerrar',
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '¿Qué deseas hacer ahora?',
+                        style: TextStyle(
+                          color: AppTheme.textPrimary.withOpacity(0.9),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).pop('continue'),
+                        icon: const Icon(Icons.grid_view_rounded),
+                        label: const Text('Continuar comprando'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.primaryColor,
+                          side: BorderSide(
+                            color: AppTheme.primaryColor.withOpacity(0.35),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.of(context).pop('plan'),
+                        icon: const Icon(Icons.shopping_cart_rounded),
+                        label: const Text('Ir al plan'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.accentColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || action == null) return;
+
+    final initialTabIndex = action == 'plan' ? 3 : 2;
+
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/home',
+      (route) => false,
+      arguments: initialTabIndex,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -332,33 +485,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         (sum, qty) => sum + qty,
       );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    '$totalItems ${totalItems == 1 ? 'producto agregado' : 'productos agregados'} al plan',
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: AppTheme.successColor,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      }
+      print(
+        '✅ $totalItems ${totalItems == 1 ? 'producto agregado' : 'productos agregados'} al plan',
+      );
 
       // Limpiar selecciones
       setState(() {
         _selectedQuantities.clear();
       });
+
+      if (mounted) {
+        await _showPostAddDialog(totalItems);
+      }
     } catch (e) {
       print('❌ Error agregando al carrito: $e');
       if (mounted) {

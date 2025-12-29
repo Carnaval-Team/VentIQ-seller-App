@@ -387,95 +387,208 @@ class _TiendasCatalogoScreenState extends State<TiendasCatalogoScreen> {
   Widget _buildDesktopTable() {
     return Card(
       margin: EdgeInsets.zero,
-      child: SingleChildScrollView(
-        child: DataTable(
-          columns: const [
-            DataColumn(label: Text('Tienda')),
-            DataColumn(label: Text('Ubicación')),
-            DataColumn(label: Text('Validada')),
-            DataColumn(label: Text('Mostrar en catálogo')),
-            DataColumn(label: Text('Contacto')),
-          ],
-          rows:
-              _filteredStores.map((store) {
-                final isUpdating = _updatingStoreIds.contains(store.id);
-
-                return DataRow(
-                  cells: [
-                    DataCell(
-                      Row(
-                        children: [
-                          _buildStoreAvatar(store),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  store.denominacion,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  store.phone?.isNotEmpty == true
-                                      ? store.phone!
-                                      : 'Sin teléfono',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceVariant,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.storefront, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Tiendas en Catálogo (${_filteredStores.length})',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                    child: SingleChildScrollView(
+                      child: DataTable(
+                        showCheckboxColumn: false,
+                        columnSpacing: 24,
+                        horizontalMargin: 16,
+                        headingRowHeight: 56,
+                        dataRowHeight: 76,
+                        columns: const [
+                          DataColumn(
+                            label: Text(
+                              'Tienda',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          DataColumn(
+                            label: Text(
+                              'Ubicación',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          DataColumn(
+                            label: Text(
+                              'Validada',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          DataColumn(
+                            label: Text(
+                              'Mostrar en catálogo',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          DataColumn(
+                            label: Text(
+                              'Contacto',
+                              style: TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
+                        rows:
+                            _filteredStores.map((store) {
+                              final isUpdating = _updatingStoreIds.contains(
+                                store.id,
+                              );
+
+                              return DataRow(
+                                cells: [
+                                  DataCell(
+                                    SizedBox(
+                                      width: 340,
+                                      child: Row(
+                                        children: [
+                                          _buildStoreAvatar(store),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Text(
+                                                  store.denominacion,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  store.phone?.isNotEmpty ==
+                                                          true
+                                                      ? store.phone!
+                                                      : 'Sin teléfono',
+                                                  style:
+                                                      Theme.of(
+                                                        context,
+                                                      ).textTheme.bodySmall,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  DataCell(
+                                    SizedBox(
+                                      width: 520,
+                                      child: Text(
+                                        store.ubicacionCompleta,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ),
+                                  DataCell(
+                                    Center(
+                                      child:
+                                          isUpdating
+                                              ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                              : Switch(
+                                                value: store.validada,
+                                                onChanged:
+                                                    (v) => _toggleValidada(
+                                                      store,
+                                                      v,
+                                                    ),
+                                              ),
+                                    ),
+                                  ),
+                                  DataCell(
+                                    Center(
+                                      child:
+                                          isUpdating
+                                              ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                              : Switch(
+                                                value: store.mostrarEnCatalogo,
+                                                onChanged:
+                                                    (v) =>
+                                                        _toggleMostrarEnCatalogo(
+                                                          store,
+                                                          v,
+                                                        ),
+                                              ),
+                                    ),
+                                  ),
+                                  DataCell(
+                                    Center(
+                                      child: IconButton(
+                                        tooltip: 'WhatsApp',
+                                        onPressed:
+                                            isUpdating
+                                                ? null
+                                                : () => _openWhatsApp(store),
+                                        icon: const Icon(
+                                          Icons.chat,
+                                          color: AppColors.success,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }).toList(),
                       ),
                     ),
-                    DataCell(
-                      Text(
-                        store.ubicacionCompleta,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    DataCell(
-                      isUpdating
-                          ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                          : Switch(
-                            value: store.validada,
-                            onChanged: (v) => _toggleValidada(store, v),
-                          ),
-                    ),
-                    DataCell(
-                      isUpdating
-                          ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                          : Switch(
-                            value: store.mostrarEnCatalogo,
-                            onChanged:
-                                (v) => _toggleMostrarEnCatalogo(store, v),
-                          ),
-                    ),
-                    DataCell(
-                      IconButton(
-                        tooltip: 'WhatsApp',
-                        onPressed:
-                            isUpdating ? null : () => _openWhatsApp(store),
-                        icon: const Icon(Icons.chat, color: AppColors.success),
-                      ),
-                    ),
-                  ],
+                  ),
                 );
-              }).toList(),
-        ),
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

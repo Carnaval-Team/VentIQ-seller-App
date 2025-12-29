@@ -5,13 +5,19 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:geolocator/geolocator.dart';
 import '../config/app_theme.dart';
+import '../services/cart_service.dart';
 import '../services/routing_service.dart';
 import '../widgets/supabase_image.dart';
 
 class RoutePlanScreen extends StatefulWidget {
   final List<Map<String, dynamic>> stores;
+  final Map<int, List<CartItem>> itemsByStore;
 
-  const RoutePlanScreen({super.key, required this.stores});
+  const RoutePlanScreen({
+    super.key,
+    required this.stores,
+    required this.itemsByStore,
+  });
 
   @override
   State<RoutePlanScreen> createState() => _RoutePlanScreenState();
@@ -27,6 +33,9 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
   bool _isLoading = true;
   double? _totalDistance;
   double? _totalDuration;
+
+  bool _isBottomPanelExpanded = true;
+  bool _isStoreItemsPanelExpanded = true;
 
   bool _isTravelActive = false;
   int _currentStopIndex = 0;
@@ -101,6 +110,24 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
       return null;
     }
     return _optimizedPath[_currentStopIndex];
+  }
+
+  int? _getStoreId(Map<String, dynamic> store) {
+    final raw = store['id'] ?? store['id_tienda'];
+    if (raw is int) return raw;
+    if (raw == null) return null;
+    return int.tryParse(raw.toString());
+  }
+
+  List<CartItem> _getItemsForStore(Map<String, dynamic>? store) {
+    if (store == null) return const [];
+    final storeId = _getStoreId(store);
+    if (storeId == null) return const [];
+    return widget.itemsByStore[storeId] ?? const [];
+  }
+
+  double _getTotalForItems(List<CartItem> items) {
+    return items.fold(0.0, (sum, item) => sum + item.subtotal);
   }
 
   LatLng? _getCurrentTargetPoint() {
@@ -594,6 +621,32 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
     final hasRoute = _optimizedPath.isNotEmpty;
     final targetStore = _getCurrentTargetStore();
 
+    Map<String, dynamic>? productsStore;
+    if (_isTravelActive && _lastArrivedStopIndex != null) {
+      final pos = _getCurrentLatLng();
+      final idx = _lastArrivedStopIndex!;
+      if (pos != null && idx >= 0 && idx < _optimizedPath.length) {
+        final arrivedStore = _optimizedPath[idx];
+        final arrivedPoint = _parseUbicacion(arrivedStore['ubicacion']);
+        if (arrivedPoint != null) {
+          final meters = Geolocator.distanceBetween(
+            pos.latitude,
+            pos.longitude,
+            arrivedPoint.latitude,
+            arrivedPoint.longitude,
+          );
+
+          if (meters <= 200) {
+            productsStore = arrivedStore;
+          }
+        }
+      }
+    }
+
+    productsStore ??= targetStore;
+    final storeItems = _getItemsForStore(productsStore);
+    final storeTotal = _getTotalForItems(storeItems);
+
     final distanceText = (_distanceToTargetMeters == null)
         ? null
         : (_distanceToTargetMeters! >= 1000)
@@ -623,107 +676,343 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _isTravelActive
-                        ? (targetStore != null
-                              ? 'Próxima: ${_getStoreName(targetStore)}'
-                              : 'Ruta finalizada')
-                        : 'Ruta optimizada lista',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  setState(() {
+                    _isBottomPanelExpanded = !_isBottomPanelExpanded;
+                  });
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _isTravelActive
+                              ? (targetStore != null
+                                    ? 'Próxima: ${_getStoreName(targetStore)}'
+                                    : 'Ruta finalizada')
+                              : 'Ruta optimizada lista',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      if (_isTravelActive && _isLoadingStoreLegs)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      if (_totalDistance != null &&
+                          _totalDuration != null &&
+                          !_isTravelActive)
+                        Text(
+                          '${(_totalDistance! / 1000).toStringAsFixed(1)} km • ${(_totalDuration! / 60).toStringAsFixed(0)} min',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      if (distanceText != null && _isTravelActive)
+                        Text(
+                          distanceText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        _isBottomPanelExpanded
+                            ? Icons.keyboard_arrow_down_rounded
+                            : Icons.keyboard_arrow_up_rounded,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ],
                   ),
                 ),
-                if (_isTravelActive && _isLoadingStoreLegs)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                if (_totalDistance != null &&
-                    _totalDuration != null &&
-                    !_isTravelActive)
-                  Text(
-                    '${(_totalDistance! / 1000).toStringAsFixed(1)} km • ${(_totalDuration! / 60).toStringAsFixed(0)} min',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[700],
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                if (distanceText != null && _isTravelActive)
-                  Text(
-                    distanceText,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[700],
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-              ],
+              ),
             ),
-            if (_isTravelActive && _isLegRouteFallback)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  'Mostrando línea directa (sin ruta por calles). Verifica conexión.',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.orange[800],
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+            AnimatedCrossFade(
+              firstChild: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (storeItems.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: _buildStoreItemsPanel(
+                        store: productsStore,
+                        items: storeItems,
+                        total: storeTotal,
+                      ),
+                    ),
+                  if (_isTravelActive && _isLegRouteFallback)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Mostrando línea directa (sin ruta por calles). Verifica conexión.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.orange[800],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  if (_isTravelActive)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: _buildStoresDistanceList(),
+                    ),
+                  const SizedBox(height: 10),
+                  if (!_isTravelActive)
+                    ElevatedButton.icon(
+                      onPressed: _startTravel,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text(
+                        'Comenzar viaje',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      onPressed: _stopTravel,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primaryColor,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      icon: const Icon(Icons.stop_circle_outlined),
+                      label: const Text(
+                        'Detener viaje',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                ],
               ),
-            if (_isTravelActive)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: _buildStoresDistanceList(),
-              ),
-            const SizedBox(height: 10),
-            if (!_isTravelActive)
-              ElevatedButton.icon(
-                onPressed: _startTravel,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                icon: const Icon(Icons.play_arrow),
-                label: const Text(
-                  'Comenzar viaje',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              )
-            else
-              OutlinedButton.icon(
-                onPressed: _stopTravel,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primaryColor,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                icon: const Icon(Icons.stop_circle_outlined),
-                label: const Text(
-                  'Detener viaje',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
+              secondChild: const SizedBox.shrink(),
+              crossFadeState: _isBottomPanelExpanded
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              duration: const Duration(milliseconds: 180),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStoreItemsPanel({
+    required Map<String, dynamic>? store,
+    required List<CartItem> items,
+    required double total,
+  }) {
+    final storeName = store == null ? 'Tienda' : _getStoreName(store);
+
+    final isExpanded = _isStoreItemsPanelExpanded;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.withOpacity(0.18)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _isStoreItemsPanelExpanded = !_isStoreItemsPanelExpanded;
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.shopping_bag_rounded,
+                        color: AppTheme.primaryColor,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            storeName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            'Productos a comprar: ${items.length}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                              color: AppTheme.textSecondary.withOpacity(0.9),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.successColor.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: AppTheme.successColor.withOpacity(0.18),
+                        ),
+                      ),
+                      child: Text(
+                        '\$${total.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                          color: AppTheme.successColor,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_down_rounded
+                            : Icons.keyboard_arrow_up_rounded,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Divider(height: 1, color: Colors.grey.withOpacity(0.15)),
+          AnimatedCrossFade(
+            firstChild: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 180),
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                shrinkWrap: true,
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.withOpacity(0.10)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.productName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                  color: AppTheme.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${item.variantName} • ${item.presentacion}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
+                                  color: AppTheme.textSecondary.withOpacity(
+                                    0.9,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: AppTheme.primaryColor.withOpacity(0.18),
+                            ),
+                          ),
+                          child: Text(
+                            'x${item.quantity}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            secondChild: const SizedBox.shrink(),
+            crossFadeState: isExpanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            duration: const Duration(milliseconds: 180),
+          ),
+        ],
       ),
     );
   }
@@ -891,8 +1180,9 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
-                      color:
-                          (isVisited || isNext) ? Colors.white : AppTheme.primaryColor,
+                      color: (isVisited || isNext)
+                          ? Colors.white
+                          : AppTheme.primaryColor,
                     ),
                   ),
                 ),
@@ -915,8 +1205,10 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                 ),
                 if (isVisited)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.green.shade700.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(999),
@@ -935,8 +1227,10 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                   )
                 else if (isNext)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.primaryColor.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(999),
@@ -1176,10 +1470,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: pinColor,
-                      width: 2,
-                    ),
+                    border: Border.all(color: pinColor, width: 2),
                   ),
                   child: ClipOval(
                     child: _getStoreImageUrl(store) != null
@@ -1203,11 +1494,7 @@ class _RoutePlanScreenState extends State<RoutePlanScreen> {
                 ),
                 ClipPath(
                   clipper: TriangleClipper(),
-                  child: Container(
-                    width: 14,
-                    height: 10,
-                    color: pinColor,
-                  ),
+                  child: Container(width: 14, height: 10, color: pinColor),
                 ),
               ],
             ),

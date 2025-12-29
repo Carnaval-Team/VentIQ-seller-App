@@ -1,8 +1,45 @@
 {
-  "current_version": "1.1.0",
-  "build": 2,
+  "current_version": "1.2.0",
+  "build": 3,
   "app_name": "ventiq_marketplace",
   "changelogs": [
+    {
+      "version": "1.2.0",
+      "date": "2025-12-29",
+      "title": "🛒 Mejoras del plan y la ruta",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Diálogo moderno al agregar al plan",
+          "description": "Al agregar productos, ahora aparece un diálogo con opciones para continuar comprando o ir al plan, con diseño consistente con la app."
+        },
+        {
+          "type": "improvement",
+          "title": "Navegación directa a Productos o Plan",
+          "description": "Desde el diálogo, la app navega directamente al tab correcto (Productos o Plan) en la pantalla principal."
+        },
+        {
+          "type": "improvement",
+          "title": "Refresh automático del plan",
+          "description": "Al entrar al tab Plan, el carrito se actualiza automáticamente para reflejar productos recién agregados sin necesidad de refrescar manualmente."
+        },
+        {
+          "type": "feature",
+          "title": "Productos por destino en la ruta",
+          "description": "En la Ruta de Compra, el panel inferior muestra los productos a comprar en la tienda/destino actual (agrupados por tienda)."
+        },
+        {
+          "type": "improvement",
+          "title": "Panel de productos colapsable",
+          "description": "El panel de productos por tienda se puede expandir u ocultar para mejorar la visibilidad del mapa."
+        },
+        {
+          "type": "improvement",
+          "title": "Panel inferior completo colapsable",
+          "description": "Todo el panel inferior de la ruta (controles y listas) ahora es colapsable para maximizar el área visible del mapa cuando sea necesario."
+        }
+      ]
+    },
     {
       "version": "1.1.0",
       "date": "2025-12-29",
