@@ -11,6 +11,25 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  int? _parseStoreIdFromUrl() {
+    final base = Uri.base;
+
+    final direct = (base.queryParameters['storeId'] ?? '').toString();
+    final directId = int.tryParse(direct);
+    if (directId != null && directId > 0) return directId;
+
+    final fragment = base.fragment;
+    if (fragment.isEmpty) return null;
+
+    final fragPath = fragment.startsWith('/') ? fragment : '/$fragment';
+    final fragUri = Uri.tryParse('http://localhost$fragPath');
+    final fragRaw = (fragUri?.queryParameters['storeId'] ?? '').toString();
+    final fragId = int.tryParse(fragRaw);
+    if (fragId != null && fragId > 0) return fragId;
+
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -19,6 +38,8 @@ class _SplashScreenState extends State<SplashScreen> {
 
   /// Navegar a la pantalla principal después de 2 segundos
   Future<void> _navigateToHome() async {
+    final storeIdFromLink = _parseStoreIdFromUrl();
+
     await Future.delayed(const Duration(seconds: 2));
 
     try {
@@ -27,7 +48,12 @@ class _SplashScreenState extends State<SplashScreen> {
     } catch (_) {}
 
     if (mounted) {
-      Navigator.of(context).pushReplacementNamed('/home');
+      Navigator.of(context).pushReplacementNamed(
+        '/home',
+        arguments: storeIdFromLink == null
+            ? null
+            : {'storeId': storeIdFromLink},
+      );
     }
   }
 
