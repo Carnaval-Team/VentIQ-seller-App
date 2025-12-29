@@ -1,8 +1,50 @@
 {
-  "current_version": "1.6.3",
-  "build": 163,
+  "current_version": "1.6.4",
+  "build": 164,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.6.4",
+      "date": "2025-12-26",
+      "title": "🔄 Lógica de Estados de Consignación y Búsqueda Eficiente",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Validación de Dependencias en Operaciones de Consignación",
+          "description": "Sistema que valida que la operación de extracción esté completada antes de permitir completar la operación de recepción en envíos de consignación"
+        },
+        {
+          "type": "feature",
+          "title": "Búsqueda Eficiente en Pantalla de Consignación",
+          "description": "Implementado sistema de búsqueda con filtrado en base de datos, búsqueda en tiempo real y paginación para mejorar rendimiento en listados grandes"
+        },
+        {
+          "type": "feature",
+          "title": "Filtrado por Estado de Confirmación",
+          "description": "Agregados chips de filtro para filtrar contratos de consignación por estado: Pendientes, Confirmados y Cancelados"
+        },
+        {
+          "type": "feature",
+          "title": "Paginación con Botón 'Cargar Más'",
+          "description": "Sistema de paginación que carga 20 registros inicialmente y permite cargar más mediante botón 'Cargar más' para mejor rendimiento"
+        },
+        {
+          "type": "improvement",
+          "title": "Verificación de Actualización Diferenciada por Plataforma",
+          "description": "Sistema inteligente que detecta si la aplicación se ejecuta en web o APK y muestra diferentes opciones de actualización según la plataforma"
+        },
+        {
+          "type": "improvement",
+          "title": "Actualización Obligatoria en Web con Limpieza de Cache",
+          "description": "En web, la actualización es obligatoria y guía al usuario a limpiar el cache del navegador con instrucciones paso a paso (Ctrl+Shift+Delete)"
+        },
+        {
+          "type": "improvement",
+          "title": "Actualización Obligatoria en APK",
+          "description": "En APK, mantiene el sistema de actualización obligatoria con descarga directa del archivo APK"
+        }
+      ]
+    },
     {
       "version": "1.6.3",
       "date": "2025-12-24",

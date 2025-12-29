@@ -27,12 +27,6 @@ class _ConsignacionEnvioDetallesScreenState
   late Future<Map<String, dynamic>?> _detallesFuture;
   late Future<List<Map<String, dynamic>>> _productosFuture;
   
-  // Mapas para lógica de edición de precios (estilo ConfirmarRecepcion)
-  final Map<int, double> _preciosVentaConfigurables = {};
-  final Map<int, TextEditingController> _precioVentaControllers = {};
-  final Map<int, double> _margenPorcentaje = {};
-  final Map<int, TextEditingController> _margenControllers = {};
-  
   double _tasaCambio = 440.0; // Valor por defecto
   bool _isLoadingTasa = true;
   bool _isAccepting = false;
@@ -63,14 +57,6 @@ class _ConsignacionEnvioDetallesScreenState
 
   @override
   void dispose() {
-    for (final controller in _precioVentaControllers.values) {
-      controller.dispose();
-    }
-    for (final controller in _margenControllers.values) {
-      controller.dispose();
-    }
-    _precioVentaControllers.clear();
-    _margenControllers.clear();
     super.dispose();
   }
 
@@ -138,11 +124,11 @@ class _ConsignacionEnvioDetallesScreenState
               : int.tryParse(tipoEnvioRaw?.toString() ?? '') ?? 1;
 
           // Lógica de permisos de edición
-          // El consignatario NO edita precios en la pantalla de detalles cuando está PROPUESTO
-          // En su lugar, debe ir a ConfirmarRecepcionConsignacionScreen
-          
+          // El consignatario PUEDE editar precios en PROPUESTO y EN_TRANSITO
           bool puedeEditar = false;
-          if (tipoEnvio == 1 && widget.rol == 'consignatario' && estadoEnvio == ConsignacionEnvioListadoService.ESTADO_EN_TRANSITO) {
+          if (tipoEnvio == 1 && widget.rol == 'consignatario' && 
+              (estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO || 
+               estadoEnvio == ConsignacionEnvioListadoService.ESTADO_EN_TRANSITO)) {
             puedeEditar = true;
           }
 
@@ -175,10 +161,6 @@ class _ConsignacionEnvioDetallesScreenState
                   _buildBotonVerificarEnvio(detalles),
                 ],
                 
-                if (puedeEditar) ...[
-                  const SizedBox(height: 24),
-                  _buildBotonesEdicionPrecios(),
-                ],
                 
                 if (puedeGestionarEnvioConsignatario) ...[
                   const SizedBox(height: 24),
@@ -203,11 +185,6 @@ class _ConsignacionEnvioDetallesScreenState
   }
 
   Widget _buildSeccionDetalles(Map<String, dynamic> detalles) {
-    final valorTotalCostoRaw = detalles['valor_total_costo'];
-    final valorTotalCosto = valorTotalCostoRaw is num
-        ? valorTotalCostoRaw.toDouble()
-        : double.tryParse(valorTotalCostoRaw?.toString() ?? '') ?? 0;
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -226,17 +203,18 @@ class _ConsignacionEnvioDetallesScreenState
             _buildFilaDetalle('Almacén Origen', detalles['almacen_origen'] ?? 'N/A'),
             _buildFilaDetalle('Almacén Destino', detalles['almacen_destino'] ?? 'N/A'),
             _buildFilaDetalle(
-              'Cantidad Total',
-              '${detalles['cantidad_total_unidades']} unidades',
+              'Cantidad Total Unidades',
+              '${(detalles['cantidad_total_unidades'] as num?)?.toStringAsFixed(0) ?? '0'} u.',
             ),
             _buildFilaDetalle(
-              'Valor Total',
-              '\$${valorTotalCosto.toStringAsFixed(2)}',
+              'Valor Total Costo (USD)',
+              '\$${((detalles['valor_total_costo'] as num?) ?? 0).toStringAsFixed(2)} USD',
             ),
-            _buildFilaDetalle(
-              'Comisión',
-              '${detalles['porcentaje_comision']}%',
-            ),
+            if (((detalles['valor_total_venta'] as num?) ?? 0) > 0)
+              _buildFilaDetalle(
+                'Valor Total Venta (CUP)',
+                '\$${((detalles['valor_total_venta'] as num?) ?? 0).toStringAsFixed(2)} CUP',
+              ),
             const SizedBox(height: 16),
             const Text(
               'Fechas',
@@ -293,19 +271,45 @@ class _ConsignacionEnvioDetallesScreenState
         FutureBuilder<List<Map<String, dynamic>>>(
           future: _productosFuture,
           builder: (context, snapshot) {
+            debugPrint('🔍 Estado FutureBuilder productos: ${snapshot.connectionState}');
+            
             if (snapshot.connectionState == ConnectionState.waiting) {
+              debugPrint('⏳ Cargando productos...');
               return const Center(child: CircularProgressIndicator());
             }
 
             if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
+              debugPrint('❌ Error en FutureBuilder: ${snapshot.error}');
+              debugPrint('   Stack trace: ${snapshot.stackTrace}');
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                    const SizedBox(height: 8),
+                    Text('Error: ${snapshot.error}'),
+                  ],
+                ),
+              );
             }
 
             final productos = snapshot.data ?? [];
+            debugPrint('📦 Productos recibidos: ${productos.length}');
+            
+            if (productos.isNotEmpty) {
+              debugPrint('📋 Primer producto: ${productos[0]}');
+            }
 
             if (productos.isEmpty) {
-              return const Center(
-                child: Text('No hay productos en este envío'),
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.inbox_outlined, size: 48, color: Colors.grey),
+                    const SizedBox(height: 8),
+                    const Text('No hay productos en este envío'),
+                  ],
+                ),
               );
             }
 
@@ -327,72 +331,15 @@ class _ConsignacionEnvioDetallesScreenState
     );
   }
 
-  // Versión refinada al estilo ConfirmarRecepcionConsignacionScreen
+  // Versión simplificada para PROPUESTO y EN_TRANSITO
   Widget _buildProductoItemRefinado(
     Map<String, dynamic> producto, {
     required bool puedeEditar,
   }) {
-    // Extracción de datos con seguridad de tipos
-    final idEnvioProductoRaw = producto['id_envio_producto'];
-    final idEnvioProducto = idEnvioProductoRaw is num 
-        ? idEnvioProductoRaw.toInt() 
-        : int.tryParse(idEnvioProductoRaw?.toString() ?? '') ?? 0;
-
-    final precioCostoUsdRaw = producto['precio_costo_usd'];
-    final precioCostoUsd = precioCostoUsdRaw is num
-        ? precioCostoUsdRaw.toDouble()
-        : double.tryParse(precioCostoUsdRaw?.toString() ?? '') ?? 0;
-    
-    // Precio de costo configurado en la consignación (lo que pagará la consignataria)
-    final precioCostoCupRaw = producto['precio_costo_cup'];
-    final precioCostoCup = precioCostoCupRaw is num
-        ? precioCostoCupRaw.toDouble()
-        : double.tryParse(precioCostoCupRaw?.toString() ?? '') ?? 0;
-    
-    // Si viene tasa de cambio en producto, usarla, si no usar global
-    final tasaCambioProdRaw = producto['tasa_cambio'];
-    double tasaCambioProd = tasaCambioProdRaw is num
-        ? tasaCambioProdRaw.toDouble()
-        : double.tryParse(tasaCambioProdRaw?.toString() ?? '') ?? 0;
-    
-    if (tasaCambioProd <= 0) tasaCambioProd = _tasaCambio;
-
-    final precioVentaCupRaw = producto['precio_venta_cup'];
-    final precioVentaCupGuardado = precioVentaCupRaw is num
-        ? precioVentaCupRaw.toDouble()
-        : double.tryParse(precioVentaCupRaw?.toString() ?? '') ?? 0;
-
-    // Nombre y SKU
     final nombreProducto = producto['nombre_producto'] as String? ?? 'N/A';
     final sku = producto['sku'] as String? ?? 'N/A';
     final cantidad = producto['cantidad_propuesta'] ?? 0;
-    
-    // Obtener tipo de envío para determinar si es devolución
-    final tipoEnvioRaw = producto['tipo_envio'];
-    final tipoEnvio = tipoEnvioRaw is num
-        ? tipoEnvioRaw.toInt()
-        : int.tryParse(tipoEnvioRaw?.toString() ?? '') ?? 1;
-    final esDevolucion = tipoEnvio == 2;
-
-    // Inicialización de controladores si es editable
-    if (puedeEditar && idEnvioProducto != 0) {
-      if (!_preciosVentaConfigurables.containsKey(idEnvioProducto)) {
-        // Sugerir precio de venta basado en precio_costo_cup del envío
-        // Si ya hay precio_venta_cup guardado, usarlo; si no, usar precio_costo_cup como base
-        double precioSug = precioVentaCupGuardado > 0 
-            ? precioVentaCupGuardado 
-            : precioCostoCup;  // Usar precio_costo_cup del envío como base
-            
-        _preciosVentaConfigurables[idEnvioProducto] = precioSug;
-        _precioVentaControllers[idEnvioProducto] = TextEditingController(
-          text: precioSug.toStringAsFixed(2)
-        );
-      }
-      
-      if (!_margenControllers.containsKey(idEnvioProducto)) {
-        _margenControllers[idEnvioProducto] = TextEditingController(text: '');
-      }
-    }
+    final precioCostoUsd = (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -406,7 +353,6 @@ class _ConsignacionEnvioDetallesScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Fila 1: Icono, Nombre/SKU, Cantidad
             Row(
               children: [
                 Container(
@@ -460,284 +406,28 @@ class _ConsignacionEnvioDetallesScreenState
                 ),
               ],
             ),
-            
-            const SizedBox(height: 12),
-            
-            // Fila 2: Precios y controles (NO mostrar en devoluciones)
-            if (!esDevolucion) ...[
-              if (puedeEditar)
-                Row(
-                  children: [
-                    // Col 1: Precios de Costo del Envío
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Costo Consignación',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.blue[50],
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Precio en USD convertido a CUP usando tasa del envío
-                                Text(
-                                  '\$${precioCostoUsd.toStringAsFixed(2)} USD',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue,
-                                  ),
-                                ),
-                                Text(
-                                  '≈ \$${(precioCostoUsd * tasaCambioProd).toStringAsFixed(0)} CUP',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.blue[700],
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                // Precio de costo CUP configurado en el envío
-                                Text(
-                                  'Costo Envío: \$${precioCostoCup.toStringAsFixed(2)} CUP',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green[700],
-                                    backgroundColor: Colors.green[50],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    
-                    // Col 2: Margen %
-                    Expanded(
-                      flex: 2,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Margen %',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                           _buildMargenTextField(idEnvioProducto, precioCostoCup),
-                        ],
-                      ),
-                    ),
-                    
-                    const SizedBox(width: 8),
-                    
-                    // Col 3: Precio Venta
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Precio Venta * CUP',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          _buildPrecioTextField(idEnvioProducto),
-                        ],
-                      ),
-                    ),
-                    
-                    // Col 4: Botón Rechazar (Guardar es implícito/global ahora)
-                    Column(
-                      children: [
-                         // Podríamos dejar el botón de guardar individual opcional
-                        IconButton(
-                          icon: const Icon(Icons.cancel_outlined, color: Colors.red),
-                          onPressed: () => _rechazarProducto(idEnvioProducto: idEnvioProducto),
-                          tooltip: 'Rechazar Producto',
-                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
-                    )
-                  ],
-                )
-              else
-                // Vista Solo Lectura (sin edición) - Mostrar precios del envío
-                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                     _buildProductoInfo(
-                      'Costo USD',
-                      '\$${precioCostoUsd.toStringAsFixed(2)}',
-                    ),
-                    _buildProductoInfo(
-                      'Costo Envío CUP',
-                      '\$${precioCostoCup.toStringAsFixed(2)}',
-                    ),
-                    _buildProductoInfo(
-                      'Precio Venta',
-                      precioVentaCupGuardado > 0 ? '\$${precioVentaCupGuardado.toStringAsFixed(2)}' : '-',
-                    ),
-                    _buildProductoInfo(
-                      'Estado',
-                      producto['estado_producto_texto'] ?? 'N/A',
-                    ),
-                  ],
-                ),
-            ] else
-              // Devolución: Solo mostrar cantidad, sin costos ni precios
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.orange[50],
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.orange[200]!),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.orange[700], size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Devolución - No requiere configuración de precios',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.orange[800],
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ),
-                  ],
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Costo: \$${precioCostoUsd.toStringAsFixed(2)} USD',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.orange[700],
+                  fontWeight: FontWeight.w500,
                 ),
               ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildMargenTextField(int idEnvioProducto, double precioCostoCup) {
-    return TextField(
-      controller: _margenControllers[idEnvioProducto],
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      style: const TextStyle(fontSize: 12),
-      decoration: InputDecoration(
-        hintText: '0',
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        isDense: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-        suffixText: '%',
-      ),
-      onChanged: (value) {
-        final margen = double.tryParse(value);
-        if (margen != null) {
-          // Calcular precio de venta basado en precio_costo_cup del envío
-          final precioFinal = precioCostoCup * (1 + (margen / 100));
-          setState(() {
-            _preciosVentaConfigurables[idEnvioProducto] = precioFinal;
-            _precioVentaControllers[idEnvioProducto]?.text = precioFinal.toStringAsFixed(2);
-          });
-        }
-      },
-    );
-  }
-
-  Widget _buildPrecioTextField(int idEnvioProducto) {
-    return TextField(
-      controller: _precioVentaControllers[idEnvioProducto],
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-      decoration: InputDecoration(
-        prefixText: '\$ ',
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        isDense: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-      ),
-      onChanged: (value) {
-        final precio = double.tryParse(value);
-        if (precio != null) {
-          _preciosVentaConfigurables[idEnvioProducto] = precio;
-        }
-      },
-    );
-  }
-
-  Widget _buildBotonesEdicionPrecios() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: _isAccepting ? null : _guardarPreciosSolo,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-        ),
-        icon: const Icon(Icons.save),
-        label: const Text(
-          'Guardar Configuración de Precios',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _guardarPreciosSolo() async {
-    if (_preciosVentaConfigurables.isEmpty) return;
-    
-    setState(() => _isAccepting = true);
-    try {
-      final userId = await UserPreferencesService().getUserId();
-      if (userId == null) return;
-
-      final productosParaActualizar = _preciosVentaConfigurables.entries.map((entry) {
-        return {
-          'id_envio_producto': entry.key,
-          'precio_venta_cup': entry.value,
-        };
-      }).toList();
-
-      final updated = await ConsignacionEnvioService.actualizarPrecios(
-        idEnvio: widget.idEnvio,
-        idUsuario: userId,
-        productos: productosParaActualizar,
-      );
-
-      if (updated && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Precios guardados'), backgroundColor: Colors.green),
-        );
-        _refrescar();
-      }
-    } catch (e) {
-      debugPrint(e.toString());
-    } finally {
-      if (mounted) setState(() => _isAccepting = false);
-    }
-  }
   
   Widget _buildProductoInfo(String label, String valor) {
     return Column(
@@ -838,27 +528,12 @@ class _ConsignacionEnvioDetallesScreenState
   // --- Funciones de Acción ---
 
   Future<void> _aceptarEnvioCompleto() async {
-    // 1. Validar precios
-    if (_preciosVentaConfigurables.isEmpty) {
-        // En teoría podría estar vacío si no hay productos o no se editó nada
-        // pero validaremos que todos los productos "visibles" tengan precio.
-    }
-    
-    // Verificamos si hay algún precio en 0. Si el usuario no tocó nada,
-    // debemos asegurarnos que _preciosVentaConfigurables tenga valores por defecto
-    // aunque mi lógica actual solo los mete allí si se buildearon. (item builder)
-    
-    // Para simplificar, asumiremos que si está en el mapa, es válido, o si el usuario
-    // quiere aceptar, confía en lo que vio.
-    // Una mejora sería iterar sobre _productosFuture data si está disponible.
-    
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmar Recepción'),
         content: const Text(
-          'Se aceptarán los productos restantes del envío y se creará la operación de recepción.\n\n'
-          'Asegúrate de haber configurado correctamente los precios de venta en CUP.',
+          'Se aceptarán los productos restantes del envío y se creará la operación de recepción.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
@@ -878,31 +553,19 @@ class _ConsignacionEnvioDetallesScreenState
     }
 
     try {
-      // 2. Guardar precios masivamente
-      // Convertimos el mapa a lista de objetos para el servicio
-      if (_preciosVentaConfigurables.isNotEmpty) {
-        final productosParaActualizar = _preciosVentaConfigurables.entries.map((entry) {
-          return {
-            'id_envio_producto': entry.key,
-            'precio_venta_cup': entry.value,
-          };
-        }).toList();
-
-        final updated = await ConsignacionEnvioService.actualizarPrecios(
-          idEnvio: widget.idEnvio,
-          idUsuario: userId,
-          productos: productosParaActualizar,
-        );
-
-        if (!updated) {
-          throw Exception('Error guardando precios');
-        }
+      // Obtener detalles para obtener idTiendaDestino
+      final detalles = await ConsignacionEnvioListadoService.obtenerDetallesEnvio(widget.idEnvio);
+      final idTiendaDestino = detalles?['id_tienda_consignataria'] as int? ?? 0;
+      
+      if (idTiendaDestino == 0) {
+        throw Exception('No se pudo obtener la tienda consignataria');
       }
-
-      // 3. Aceptar envío (genera recepción)
+      
+      // Aceptar envío (genera recepción)
       final result = await ConsignacionEnvioService.aceptarEnvio(
         idEnvio: widget.idEnvio,
         idUsuario: userId,
+        idTiendaDestino: idTiendaDestino,
       );
 
       if (result != null) {

@@ -94,7 +94,19 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     });
   }
 
-  void _actualizarCantidad(int idInventario, double cantidad) {
+  void _actualizarCantidad(int idInventario, double cantidad, double cantidadDisponible) {
+    // Validar que la cantidad no exceda la disponible
+    if (cantidad > cantidadDisponible) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('La cantidad no puede exceder $cantidadDisponible unidades disponibles'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    
     setState(() {
       if (_productosSeleccionados[idInventario] == null) {
         _productosSeleccionados[idInventario] = {'seleccionado': false, 'cantidad': cantidad};
@@ -161,16 +173,44 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
         p['cantidad_seleccionada'] = cantSel;
         p['tasa_cambio'] = tasaCambio;
 
-        // Precios
+        // Precios: El consignador configura el precio_costo_usd que quiere cobrar
+        // Este precio es independiente de los precios en la tienda consignadora
         final idProducto = p['id_producto'];
+        
+        // Obtener precio_venta actual del producto
         final precioVentaResp = await _supabase.from('app_dat_precio_venta').select('precio_venta_cup').eq('id_producto', idProducto).limit(1);
         p['precio_venta'] = (precioVentaResp as List).isNotEmpty ? (precioVentaResp[0]['precio_venta_cup'] ?? 0).toDouble() : 0.0;
 
-        final pres = p['app_dat_producto_presentacion'];
+        // Obtener precio_promedio de la presentación para usar como precio_costo_usd
         double costUSD = 0.0;
-        if (pres != null) {
-          costUSD = (pres is List && pres.isNotEmpty) ? (pres[0]['precio_promedio'] ?? 0).toDouble() : (pres is Map ? (pres['precio_promedio'] ?? 0).toDouble() : 0.0);
+        final idPresentacion = p['id_presentacion'];
+        if (idPresentacion != null) {
+          final presResp = await _supabase
+              .from('app_dat_producto_presentacion')
+              .select('precio_promedio')
+              .eq('id_producto', idProducto)
+              .eq('id_presentacion', idPresentacion)
+              .limit(1);
+          
+          if ((presResp as List).isNotEmpty) {
+            costUSD = (presResp[0]['precio_promedio'] ?? 0).toDouble();
+          }
         }
+        
+        // Si no hay precio_promedio en la presentación, intentar obtener del producto base
+        if (costUSD == 0.0) {
+          final presBaseResp = await _supabase
+              .from('app_dat_producto_presentacion')
+              .select('precio_promedio')
+              .eq('id_producto', idProducto)
+              .eq('es_base', true)
+              .limit(1);
+          
+          if ((presBaseResp as List).isNotEmpty) {
+            costUSD = (presBaseResp[0]['precio_promedio'] ?? 0).toDouble();
+          }
+        }
+        
         p['precio_costo_usd'] = costUSD;
         p['precio_costo_cup'] = costUSD * tasaCambio;
       }
@@ -405,6 +445,7 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     final idInv = producto['id'] as int;
     final isSelected = _productosSeleccionados[idInv]?['seleccionado'] == true;
     final cant = _productosSeleccionados[idInv]?['cantidad'] as double? ?? 0.0;
+    final cantidadDisponible = (producto['cantidad_final'] as num?)?.toDouble() ?? 0.0;
     
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -433,11 +474,11 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
                 initialValue: cant > 0 ? cant.toString() : '',
                 decoration: const InputDecoration(isDense: true, labelText: 'Cant.', contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                onChanged: (val) => _actualizarCantidad(idInv, double.tryParse(val) ?? 0.0),
+                onChanged: (val) => _actualizarCantidad(idInv, double.tryParse(val) ?? 0.0, cantidadDisponible),
               ),
             ),
           const SizedBox(width: 8),
-          Text('${(producto['cantidad_final'] ?? 0).toInt()}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text('${cantidadDisponible.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
