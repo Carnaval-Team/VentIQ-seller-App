@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/app_colors.dart';
 import '../models/catalog_store.dart';
@@ -19,6 +20,57 @@ class _TiendasCatalogoScreenState extends State<TiendasCatalogoScreen> {
   bool _isLoading = true;
   String _searchQuery = '';
   final Set<int> _updatingStoreIds = <int>{};
+
+  Future<int?> _askValidationDays(CatalogStore store) async {
+    final controller = TextEditingController();
+
+    final result = await showDialog<int>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Validar "${store.denominacion}"'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('¿Cuántos días estará validada en el catálogo?'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Días de validación',
+                    hintText: 'Ej: 30',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final days = int.tryParse(controller.text.trim());
+                Navigator.of(context).pop(days);
+              },
+              child: const Text('Confirmar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+    return result;
+  }
 
   @override
   void initState() {
@@ -80,7 +132,84 @@ class _TiendasCatalogoScreenState extends State<TiendasCatalogoScreen> {
   }
 
   Future<void> _toggleValidada(CatalogStore store, bool value) async {
-    await _updateStoreFlags(store, validada: value);
+    if (_updatingStoreIds.contains(store.id)) return;
+
+    if (!value) {
+      await _updateStoreFlags(store, validada: false);
+      return;
+    }
+
+    final days = await _askValidationDays(store);
+    if (days == null) return;
+    if (days <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Los días de validación deben ser mayores que 0.'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _updatingStoreIds.add(store.id);
+      _stores =
+          _stores
+              .map((s) => s.id == store.id ? s.copyWith(validada: true) : s)
+              .toList();
+    });
+    _applyFilters();
+
+    final subscriptionOk = await CatalogStoreService.renewCatalogSubscription(
+      storeId: store.id,
+      tiempoSuscripcionDias: days,
+    );
+
+    final storeOk =
+        subscriptionOk
+            ? await CatalogStoreService.updateCatalogStore(store.id, {
+              'validada': true,
+            })
+            : false;
+
+    if (!mounted) return;
+
+    if (!subscriptionOk || !storeOk) {
+      if (subscriptionOk && !storeOk) {
+        final latestId =
+            await CatalogStoreService.getLatestActiveCatalogSubscriptionId(
+              store.id,
+            );
+        if (latestId != null) {
+          await CatalogStoreService.expireCatalogSubscriptionById(latestId);
+        }
+      }
+
+      setState(() {
+        _stores =
+            _stores
+                .map(
+                  (s) =>
+                      s.id == store.id
+                          ? s.copyWith(validada: store.validada)
+                          : s,
+                )
+                .toList();
+      });
+      _applyFilters();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo validar la tienda. Intenta nuevamente.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+
+    setState(() {
+      _updatingStoreIds.remove(store.id);
+    });
   }
 
   Future<void> _toggleMostrarEnCatalogo(CatalogStore store, bool value) async {

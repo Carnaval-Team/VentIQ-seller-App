@@ -38,4 +38,90 @@ class CatalogStoreService {
       return false;
     }
   }
+
+  static Future<int?> getLatestActiveCatalogSubscriptionId(int storeId) async {
+    try {
+      final response = await _supabase
+          .from('app_dat_suscripcion_catalogo')
+          .select('id')
+          .eq('id_tienda', storeId)
+          .or('vencido.is.null,vencido.eq.false')
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      if (response.isNotEmpty) {
+        final first = response.first;
+        final id = first['id'];
+        if (id is int) return id;
+        return int.tryParse(id.toString());
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('❌ Error obteniendo suscripción activa: $e');
+      return null;
+    }
+  }
+
+  static Future<bool> expireCatalogSubscriptionById(int subscriptionId) async {
+    try {
+      await _supabase
+          .from('app_dat_suscripcion_catalogo')
+          .update({'vencido': true})
+          .eq('id', subscriptionId);
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error venciendo suscripción catálogo: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> expireActiveCatalogSubscriptions(int storeId) async {
+    try {
+      await _supabase
+          .from('app_dat_suscripcion_catalogo')
+          .update({'vencido': true})
+          .eq('id_tienda', storeId)
+          .or('vencido.is.null,vencido.eq.false');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error venciendo suscripciones activas: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> createCatalogSubscription({
+    required int storeId,
+    required num tiempoSuscripcionDias,
+  }) async {
+    try {
+      await _supabase.from('app_dat_suscripcion_catalogo').insert({
+        'id_tienda': storeId,
+        'tiempo_suscripcion': tiempoSuscripcionDias,
+        'vencido': false,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('❌ Error creando suscripción catálogo: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> renewCatalogSubscription({
+    required int storeId,
+    required num tiempoSuscripcionDias,
+  }) async {
+    try {
+      final expired = await expireActiveCatalogSubscriptions(storeId);
+      if (!expired) return false;
+
+      return await createCatalogSubscription(
+        storeId: storeId,
+        tiempoSuscripcionDias: tiempoSuscripcionDias,
+      );
+    } catch (e) {
+      debugPrint('❌ Error renovando suscripción catálogo: $e');
+      return false;
+    }
+  }
 }

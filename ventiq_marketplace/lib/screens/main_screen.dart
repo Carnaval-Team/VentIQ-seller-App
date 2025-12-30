@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'home_screen.dart';
 import 'stores_screen.dart';
 import 'products_screen.dart';
 import 'cart_screen.dart';
 import '../widgets/carnaval_fab.dart';
+import '../services/store_service.dart';
+import 'store_detail_screen.dart';
 
 /// Pantalla principal con navegación inferior
 class MainScreen extends StatefulWidget {
@@ -16,6 +19,26 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   bool _didApplyInitialTab = false;
+  bool _didHandleDeepLinkStore = false;
+
+  int? _parseStoreIdFromUrl() {
+    final base = Uri.base;
+
+    final direct = (base.queryParameters['storeId'] ?? '').toString();
+    final directId = int.tryParse(direct);
+    if (directId != null && directId > 0) return directId;
+
+    final fragment = base.fragment;
+    if (fragment.isEmpty) return null;
+
+    final fragPath = fragment.startsWith('/') ? fragment : '/$fragment';
+    final fragUri = Uri.tryParse('http://localhost$fragPath');
+    final fragRaw = (fragUri?.queryParameters['storeId'] ?? '').toString();
+    final fragId = int.tryParse(fragRaw);
+    if (fragId != null && fragId > 0) return fragId;
+
+    return null;
+  }
 
   final GlobalKey<CartScreenState> _cartScreenKey =
       GlobalKey<CartScreenState>();
@@ -39,32 +62,148 @@ class _MainScreenState extends State<MainScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    if (_didApplyInitialTab) return;
-
     final args = ModalRoute.of(context)?.settings.arguments;
 
-    int? initialTabIndex;
-    if (args is int) {
-      initialTabIndex = args;
-    } else if (args is Map) {
-      final raw = args['initialTabIndex'];
-      if (raw is int) {
-        initialTabIndex = raw;
-      } else if (raw != null) {
-        initialTabIndex = int.tryParse(raw.toString());
+    if (!_didApplyInitialTab) {
+      int? initialTabIndex;
+      if (args is int) {
+        initialTabIndex = args;
+      } else if (args is Map) {
+        final raw = args['initialTabIndex'];
+        if (raw is int) {
+          initialTabIndex = raw;
+        } else if (raw != null) {
+          initialTabIndex = int.tryParse(raw.toString());
+        }
+      }
+
+      if (initialTabIndex != null &&
+          initialTabIndex >= 0 &&
+          initialTabIndex <= 3) {
+        _didApplyInitialTab = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _setTab(initialTabIndex!);
+        });
+      } else {
+        _didApplyInitialTab = true;
       }
     }
 
-    if (initialTabIndex != null &&
-        initialTabIndex >= 0 &&
-        initialTabIndex <= 3) {
-      _didApplyInitialTab = true;
+    if (_didHandleDeepLinkStore) return;
+    int? storeId;
+    if (args is Map) {
+      final raw = args['storeId'];
+      if (raw is int) {
+        storeId = raw;
+      } else if (raw != null) {
+        storeId = int.tryParse(raw.toString());
+      }
+    }
+
+    storeId ??= _parseStoreIdFromUrl();
+
+    if (storeId != null && storeId > 0) {
+      _didHandleDeepLinkStore = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _setTab(initialTabIndex!);
+        _openStoreFromDeepLink(storeId!);
       });
-    } else {
-      _didApplyInitialTab = true;
+    }
+  }
+
+  Future<void> _openStoreFromDeepLink(int storeId) async {
+    try {
+      final store = await StoreService().getStoreDetails(storeId);
+      if (!mounted) return;
+
+      if (store == null) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Tienda no disponible'),
+              content: const Text('No se pudo cargar la tienda del QR'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Aceptar'),
+                ),
+              ],
+            );
+          },
+        );
+        return;
+      }
+
+      final isValidated = store['validada'] == true;
+      final isVisibleInCatalog = store['mostrar_en_catalogo'] == true;
+      final effectiveVisible = isValidated && isVisibleInCatalog;
+
+      if (!effectiveVisible) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Tienda no disponible'),
+              content: const Text('La tienda que buscas no está validada'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Aceptar'),
+                ),
+              ],
+            );
+          },
+        );
+        return;
+      }
+
+      _setTab(1);
+
+      int productCount = 0;
+      try {
+        final response = await Supabase.instance.client
+            .from('app_dat_producto')
+            .select('id')
+            .eq('id_tienda', storeId)
+            .isFilter('deleted_at', null)
+            .eq('es_vendible', true)
+            .count(CountOption.exact);
+        productCount = response.count;
+      } catch (_) {
+        productCount = 0;
+      }
+
+      final normalizedStore = <String, dynamic>{
+        ...store,
+        'nombre': store['nombre'] ?? store['denominacion'] ?? 'Tienda',
+        'logoUrl': store['logoUrl'] ?? store['imagen_url'],
+        'productCount': store['productCount'] ?? productCount,
+      };
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => StoreDetailScreen(store: normalizedStore),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Tienda no disponible'),
+            content: const Text('Error abriendo la tienda del QR'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Aceptar'),
+              ),
+            ],
+          );
+        },
+      );
     }
   }
 

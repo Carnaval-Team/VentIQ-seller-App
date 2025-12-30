@@ -1,12 +1,17 @@
 import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart' hide Path;
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_theme.dart';
+import '../services/catalog_qr_print_service.dart';
 import '../services/store_management_service.dart';
 import '../services/user_session_service.dart';
 import '../widgets/supabase_image.dart';
@@ -35,6 +40,10 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   bool _isProductsLoading = false;
   String? _productsErrorMessage;
   List<Map<String, dynamic>> _products = [];
+
+  bool _isSubscriptionLoading = false;
+  String? _subscriptionErrorMessage;
+  Map<String, dynamic>? _subscriptionCatalog;
 
   final _createFormKey = GlobalKey<FormState>();
   final _editFormKey = GlobalKey<FormState>();
@@ -108,10 +117,56 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
       });
 
       await _loadProductsForSelectedStore();
+      await _loadSubscriptionForSelectedStore();
     } catch (e) {
       setState(() {
         _isLoading = false;
         _errorMessage = 'Error cargando tu tienda: $e';
+      });
+    }
+  }
+
+  Future<void> _loadSubscriptionForSelectedStore() async {
+    final storeId = _getSelectedStoreId();
+    if (storeId == null) {
+      if (!mounted) return;
+      setState(() {
+        _isSubscriptionLoading = false;
+        _subscriptionErrorMessage = null;
+        _subscriptionCatalog = null;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isSubscriptionLoading = true;
+      _subscriptionErrorMessage = null;
+      _subscriptionCatalog = null;
+    });
+
+    try {
+      final response = await _supabase
+          .from('app_dat_suscripcion_catalogo')
+          .select('id, created_at, tiempo_suscripcion, vencido')
+          .eq('id_tienda', storeId)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (!mounted) return;
+      setState(() {
+        _isSubscriptionLoading = false;
+        _subscriptionCatalog = response == null
+            ? null
+            : Map<String, dynamic>.from(response as Map);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSubscriptionLoading = false;
+        _subscriptionErrorMessage = 'Error cargando suscripción: $e';
+        _subscriptionCatalog = null;
       });
     }
   }
@@ -831,6 +886,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
           if (v == null) return;
           setState(() => _selectedStoreIndex = v);
           _loadProductsForSelectedStore();
+          _loadSubscriptionForSelectedStore();
         },
       ),
     );
@@ -855,6 +911,9 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     final isValidated = store['validada'] == true;
     final isVisibleInCatalog = store['mostrar_en_catalogo'] == true;
     final effectiveVisible = isValidated && isVisibleInCatalog;
+    final catalogUrl = storeId == null
+        ? null
+        : 'https://inventtia-catalogo.netlify.app/#/?${Uri(queryParameters: {'storeId': storeId.toString()}).query}';
 
     return RefreshIndicator(
       onRefresh: _loadStores,
@@ -1062,6 +1121,14 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                             ],
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        _buildSubscriptionCard(),
+                        const SizedBox(height: 12),
+                        _buildCatalogQrCard(
+                          catalogUrl: catalogUrl,
+                          storeName: denominacion,
+                          isStoreEffectivelyActive: effectiveVisible,
+                        ),
                       ],
                     ),
                   ),
@@ -1070,6 +1137,409 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionCard() {
+    final sub = _subscriptionCatalog;
+
+    if (_isSubscriptionLoading) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.withOpacity(0.18)),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Cargando suscripción del catálogo...',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_subscriptionErrorMessage != null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppTheme.errorColor.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline, color: AppTheme.errorColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _subscriptionErrorMessage!,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: _loadSubscriptionForSelectedStore,
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Reintentar',
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (sub == null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.withOpacity(0.18)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.subscriptions_outlined, color: AppTheme.textSecondary),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Suscripción del catálogo: no se ha creado aún.',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final tiempoSuscripcion = (sub['tiempo_suscripcion'] is num)
+        ? (sub['tiempo_suscripcion'] as num).toDouble()
+        : 0.0;
+    final createdAtRaw = sub['created_at']?.toString();
+    final createdAt = createdAtRaw == null
+        ? null
+        : DateTime.tryParse(createdAtRaw);
+    final now = DateTime.now();
+    final elapsedDays = createdAt == null
+        ? 0.0
+        : now.difference(createdAt).inSeconds / (60 * 60 * 24);
+    final remainingDays = math.max(0.0, tiempoSuscripcion - elapsedDays);
+    final isExpired = (sub['vencido'] == true) || remainingDays <= 0.0;
+
+    final statusColor = isExpired
+        ? AppTheme.warningColor
+        : AppTheme.successColor;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: statusColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.subscriptions_outlined, color: statusColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Suscripción del catálogo',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isExpired
+                      ? 'Tiempo disponible: 0 días'
+                      : 'Tiempo disponible: ${remainingDays.toStringAsFixed(1)} días',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCatalogQrCard({
+    required String? catalogUrl,
+    required String storeName,
+    required bool isStoreEffectivelyActive,
+  }) {
+    final canShowQr = catalogUrl != null && catalogUrl.trim().isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.qr_code_2_rounded, color: AppTheme.primaryColor),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'QR del catálogo',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: canShowQr
+                    ? () {
+                        final url = catalogUrl.trim();
+                        showDialog<void>(
+                          context: context,
+                          builder: (context) {
+                            return Dialog(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 420,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      const Text(
+                                        'QR del catálogo',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 18,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        storeName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Center(
+                                        child: QrImageView(
+                                          data: url,
+                                          size: 280,
+                                          backgroundColor: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      SelectableText(
+                                        url,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton(
+                                              onPressed: () =>
+                                                  Navigator.of(context).pop(),
+                                              child: const Text('Cerrar'),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: FilledButton(
+                                              onPressed: () async {
+                                                await Clipboard.setData(
+                                                  ClipboardData(text: url),
+                                                );
+                                                if (!context.mounted) return;
+                                                Navigator.of(context).pop();
+                                                ScaffoldMessenger.of(
+                                                  this.context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Enlace copiado',
+                                                    ),
+                                                    backgroundColor:
+                                                        AppTheme.successColor,
+                                                  ),
+                                                );
+                                              },
+                                              child: const Text(
+                                                'Copiar enlace',
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      }
+                    : null,
+                icon: const Icon(Icons.open_in_full_rounded),
+                tooltip: 'Ampliar',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (!isStoreEffectivelyActive)
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.warningColor.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: AppTheme.warningColor),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Tu tienda no está activa en el catálogo. El QR abrirá el enlace, pero puede que la tienda no sea visible para los clientes.',
+                      style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 10),
+          if (canShowQr)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.backgroundColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.withOpacity(0.16)),
+                  ),
+                  child: QrImageView(
+                    data: catalogUrl,
+                    size: 120,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Escanéalo para abrir tu tienda en el catálogo.',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await Clipboard.setData(
+                            ClipboardData(text: catalogUrl),
+                          );
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Enlace copiado'),
+                              backgroundColor: AppTheme.successColor,
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.copy_rounded),
+                        label: const Text('Copiar enlace'),
+                      ),
+                      const SizedBox(height: 8),
+                      FilledButton.icon(
+                        onPressed: () async {
+                          final uri = Uri.tryParse(catalogUrl);
+                          if (uri == null) return;
+                          try {
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          } catch (_) {}
+                        },
+                        icon: const Icon(Icons.open_in_new_rounded),
+                        label: const Text('Abrir catálogo'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final ok = await CatalogQrPrintService().printQr(
+                            title: storeName,
+                            data: catalogUrl,
+                          );
+                          if (!mounted) return;
+                          if (!ok) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Impresión disponible solo en web',
+                                ),
+                                backgroundColor: AppTheme.warningColor,
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.print_outlined),
+                        label: const Text('Imprimir QR'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          else
+            const Text(
+              'Selecciona una tienda para generar el QR.',
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+        ],
       ),
     );
   }
