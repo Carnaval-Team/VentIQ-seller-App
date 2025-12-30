@@ -770,14 +770,17 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
         longitude: lng,
       );
 
+      int? storeIdInt;
       final storeId = tienda['id'];
       if (storeId is int) {
-        await _storeService.ensureGerenteLink(uuid: uuid, storeId: storeId);
+        storeIdInt = storeId;
       } else if (storeId is num) {
-        await _storeService.ensureGerenteLink(
-          uuid: uuid,
-          storeId: storeId.toInt(),
-        );
+        storeIdInt = storeId.toInt();
+      }
+
+      if (storeIdInt != null) {
+        await _storeService.ensureGerenteLink(uuid: uuid, storeId: storeIdInt);
+        await _storeService.createDefaultSubscription(storeIdInt, uuid);
       }
 
       if (!mounted) return;
