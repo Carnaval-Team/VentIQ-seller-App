@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Abrir tienda</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f7f9fc;
+        color: #0f172a;
+      }
+      .wrap {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        text-align: center;
+        gap: 10px;
+      }
+      .spinner {
+        width: 44px;
+        height: 44px;
+        border: 4px solid rgba(15, 23, 42, 0.15);
+        border-top-color: rgba(15, 23, 42, 0.8);
+        border-radius: 999px;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0;
+      }
+      p {
+        margin: 0;
+        font-size: 13px;
+        color: rgba(15, 23, 42, 0.75);
+        max-width: 520px;
+      }
+      .hint {
+        margin-top: 10px;
+        font-size: 12px;
+        color: rgba(15, 23, 42, 0.6);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="spinner"></div>
+      <h1>Abriendo tienda…</h1>
+      <p id="status">Preparando redirección</p>
+      <div class="hint">Si la app está instalada, se abrirá automáticamente.</div>
+    </div>
+
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var storeId = (params.get('storeId') || '').trim();
+
+        var fallbackPath = storeId
+          ? '/#/?storeId=' + encodeURIComponent(storeId)
+          : '/#/';
+        var fallbackUrl = window.location.origin + fallbackPath;
+
+        var appScheme = 'ventiqmarketplace';
+        var appHostPath = 'open';
+        var appUrl = appScheme + '://' + appHostPath + (storeId ? ('?storeId=' + encodeURIComponent(storeId)) : '');
+
+        var ua = navigator.userAgent || '';
+        var isAndroid = /Android/i.test(ua);
+        var isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+        var statusEl = document.getElementById('status');
+
+        if (!storeId) {
+          statusEl.textContent = 'No se recibió storeId. Abriendo catálogo…';
+          window.location.replace(fallbackUrl);
+          return;
+        }
+
+        if (isAndroid) {
+          statusEl.textContent = 'Detectado Android: intentando abrir la app…';
+
+          var intentUrl =
+            'intent://' +
+            appHostPath +
+            '?storeId=' +
+            encodeURIComponent(storeId) +
+            '#Intent;scheme=' +
+            appScheme +
+            ';S.browser_fallback_url=' +
+            encodeURIComponent(fallbackUrl) +
+            ';end';
+
+          window.location.replace(intentUrl);
+          return;
+        }
+
+        if (isIOS) {
+          statusEl.textContent = 'Detectado iOS: intentando abrir la app…';
+
+          window.location.href = appUrl;
+          setTimeout(function () {
+            window.location.replace(fallbackUrl);
+          }, 1400);
+          return;
+        }
+
+        statusEl.textContent = 'Abriendo en navegador…';
+        window.location.replace(fallbackUrl);
+      })();
+    </script>
+  </body>
+</html>

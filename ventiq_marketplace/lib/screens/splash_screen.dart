@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:app_links/app_links.dart';
 import '../config/app_theme.dart';
 import '../services/auth_service.dart';
 
@@ -11,6 +12,14 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  int? _parseStoreIdFromUri(Uri? uri) {
+    if (uri == null) return null;
+    final raw = (uri.queryParameters['storeId'] ?? '').toString();
+    final id = int.tryParse(raw);
+    if (id != null && id > 0) return id;
+    return null;
+  }
+
   int? _parseStoreIdFromUrl() {
     final base = Uri.base;
 
@@ -38,7 +47,16 @@ class _SplashScreenState extends State<SplashScreen> {
 
   /// Navegar a la pantalla principal después de 2 segundos
   Future<void> _navigateToHome() async {
-    final storeIdFromLink = _parseStoreIdFromUrl();
+    int? storeIdFromLink = _parseStoreIdFromUrl();
+
+    if (storeIdFromLink == null) {
+      try {
+        final uri = await AppLinks().getInitialLink();
+        storeIdFromLink = _parseStoreIdFromUri(uri);
+      } catch (_) {
+        storeIdFromLink = null;
+      }
+    }
 
     await Future.delayed(const Duration(seconds: 2));
 

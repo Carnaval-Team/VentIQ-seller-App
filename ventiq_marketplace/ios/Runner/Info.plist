@@ -49,5 +49,16 @@
 	<string>Necesitamos tu ubicación para mostrarte las tiendas cercanas en el mapa.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Necesitamos tu ubicación para mostrarte las tiendas cercanas en el mapa.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ventiqmarketplace</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

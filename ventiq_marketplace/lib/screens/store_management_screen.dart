@@ -913,7 +913,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     final effectiveVisible = isValidated && isVisibleInCatalog;
     final catalogUrl = storeId == null
         ? null
-        : 'https://inventtia-catalogo.netlify.app/#/?${Uri(queryParameters: {'storeId': storeId.toString()}).query}';
+        : 'https://inventtia-catalogo.netlify.app/open.html?${Uri(queryParameters: {'storeId': storeId.toString()}).query}';
 
     return RefreshIndicator(
       onRefresh: _loadStores,
