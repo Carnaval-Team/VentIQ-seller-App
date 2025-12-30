@@ -1,8 +1,20 @@
 {
-  "current_version": "1.2.0",
-  "build": 3,
+  "current_version": "1.2.1",
+  "build": 4,
   "app_name": "ventiq_marketplace",
   "changelogs": [
+    {
+      "version": "1.2.1",
+      "date": "2025-12-30",
+      "title": "📱 QR abre tu tienda automáticamente",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Escaneo de QR más cómodo en Android y iPhone",
+          "description": "Al escanear el QR de una tienda desde el teléfono, si tienes la app instalada se abrirá directamente en esa tienda. Si no la tienes instalada, se abrirá el catálogo en el navegador."
+        }
+      ]
+    },
     {
       "version": "1.2.0",
       "date": "2025-12-29",
