@@ -73,11 +73,17 @@ class _InventoryExtractionScreenState extends State<InventoryExtractionScreen> {
       return;
     }
 
+    // Asegurar que el producto tiene el campo 'id' (puede venir como 'id_producto')
+    final productWithId = Map<String, dynamic>.from(product);
+    if (productWithId['id'] == null && productWithId['id_producto'] != null) {
+      productWithId['id'] = productWithId['id_producto'];
+    }
+
     showDialog(
       context: context,
       builder:
           (context) => _ProductQuantityDialog(
-            product: product,
+            product: productWithId,
             sourceLocation: _selectedSourceLocation,
             onProductAdded: (productData) {
               setState(() {
@@ -1012,8 +1018,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
   @override
   void initState() {
     super.initState();
-    _maxAvailableStock =
-        (widget.product['stock_disponible'] as num?)?.toDouble() ?? 0.0;
+    _maxAvailableStock = 0.0;
     print('🔍 DEBUG: Stock inicial del producto: $_maxAvailableStock');
     _loadLocationSpecificVariants();
     _loadAvailablePresentations(); // NUEVO: Cargar presentaciones disponibles
@@ -1050,17 +1055,18 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     } catch (e) {
       setState(() => _isLoadingVariants = false);
       // Fallback data if service fails
+      final fallbackStock = (widget.product['stock_disponible'] as num?)?.toDouble() ?? 0.0;
       _availableVariants = [
         {
           'id_variante': null,
           'variante': 'Estándar',
           'id_presentacion': null,
           'presentacion': 'Unidad',
-          'stock_disponible': 100.0,
+          'stock_disponible': fallbackStock,
         },
       ];
       _selectedVariant = _availableVariants.first;
-      _maxAvailableStock = 100.0;
+      _maxAvailableStock = fallbackStock;
     }
   }
 
@@ -1099,6 +1105,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
         } else {
           // Si no hay presentaciones, usar fallback con presentación base
           print('⚠️ No hay presentaciones disponibles, usando fallback');
+          final stockFromVariant = _selectedVariant?['stock_disponible']?.toDouble() ?? _maxAvailableStock;
           _availablePresentations = [
             {
               'id':
@@ -1106,7 +1113,7 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                   1, // Fallback a ID 1 (Unidad)
               'denominacion': widget.product['presentacion'] ?? 'Unidad',
               'cantidad': 1.0,
-              'stock_disponible': _maxAvailableStock,
+              'stock_disponible': stockFromVariant,
             },
           ];
           _selectedPresentation = _availablePresentations.first;
@@ -1120,12 +1127,13 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
       setState(() => _isLoadingPresentations = false);
 
       // Fallback: usar presentación del producto
+      final stockFromVariant = _selectedVariant?['stock_disponible']?.toDouble() ?? _maxAvailableStock;
       _availablePresentations = [
         {
           'id': widget.product['id_presentacion'],
           'denominacion': widget.product['presentacion'] ?? 'Unidad',
           'cantidad': 1.0,
-          'stock_disponible': _maxAvailableStock,
+          'stock_disponible': stockFromVariant,
         },
       ];
       _selectedPresentation = _availablePresentations.first;
@@ -1251,14 +1259,10 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
                           const SizedBox(height: 12),
                           _buildInfoRow('SKU', widget.product['sku'] ?? 'N/A'),
                           _buildInfoRow(
-                            'Stock Total',
-                            ((widget.product['stock_disponible'] as num?) ?? 0)
-                                .toInt()
-                                .toString(),
+                            'Stock en Ubicación',
+                            _maxAvailableStock.toStringAsFixed(1),
                             valueColor:
-                                ((widget.product['stock_disponible'] as num?) ??
-                                            0) >
-                                        0
+                                _maxAvailableStock > 0
                                     ? AppColors.success
                                     : AppColors.error,
                           ),

@@ -2,14 +2,43 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Servicio para obtener detalles de productos del marketplace
 class ProductDetailService {
-  static final ProductDetailService _instance = ProductDetailService._internal();
+  static final ProductDetailService _instance =
+      ProductDetailService._internal();
   factory ProductDetailService() => _instance;
   ProductDetailService._internal();
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
+  Future<List<Map<String, dynamic>>> getRelatedProducts(
+    int productId, {
+    int limit = 10,
+    int offset = 0,
+  }) async {
+    try {
+      final response = await _supabase.rpc(
+        'fn_productos_relacionados',
+        params: {
+          'id_producto_param': productId,
+          'limit_param': limit,
+          'offset_param': offset,
+        },
+      );
+
+      if (response == null) return <Map<String, dynamic>>[];
+
+      final list = response as List<dynamic>;
+      return list
+          .whereType<Map<String, dynamic>>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (e) {
+      print('❌ Error obteniendo productos relacionados: $e');
+      return <Map<String, dynamic>>[];
+    }
+  }
+
   /// Obtiene los detalles completos de un producto
-  /// 
+  ///
   /// Usa el RPC get_productos_marketplace para obtener el producto con sus presentaciones
   /// y calcula el rating promedio
   Future<Map<String, dynamic>> getProductDetail(int productId) async {
@@ -30,7 +59,22 @@ class ProductDetailService {
       final responseMap = response as Map<String, dynamic>;
       final product = responseMap['producto'] as Map<String, dynamic>;
       final inventario = responseMap['inventario'] as List<dynamic>? ?? [];
-      
+
+      // 🚨 FIX: Si el RPC no devuelve 'id_tienda', lo buscamos manualmente
+      if (product['id_tienda'] == null) {
+        try {
+          final productData = await _supabase
+              .from('app_dat_producto')
+              .select('id_tienda')
+              .eq('id', productId)
+              .single();
+          product['id_tienda'] = productData['id_tienda'];
+          print('🔄 ID Tienda recuperado manualmente: ${product['id_tienda']}');
+        } catch (e) {
+          print('⚠️ No se pudo recuperar id_tienda: $e');
+        }
+      }
+
       print('📦 Producto encontrado: ${product['denominacion']}');
       print('📦 Inventario: ${inventario.length} items');
 
@@ -55,10 +99,7 @@ class ProductDetailService {
           .eq('id_producto', productId);
 
       if (response.isEmpty) {
-        return {
-          'rating_promedio': 0.0,
-          'total_ratings': 0,
-        };
+        return {'rating_promedio': 0.0, 'total_ratings': 0};
       }
 
       final ratings = List<Map<String, dynamic>>.from(response);
@@ -71,16 +112,10 @@ class ProductDetailService {
 
       print('⭐ Rating: $avgRating ($totalRatings ratings)');
 
-      return {
-        'rating_promedio': avgRating,
-        'total_ratings': totalRatings,
-      };
+      return {'rating_promedio': avgRating, 'total_ratings': totalRatings};
     } catch (e) {
       print('⚠️ Error obteniendo rating: $e');
-      return {
-        'rating_promedio': 0.0,
-        'total_ratings': 0,
-      };
+      return {'rating_promedio': 0.0, 'total_ratings': 0};
     }
   }
 
@@ -101,21 +136,19 @@ class ProductDetailService {
     final precioActual = (product['precio_actual'] as num?)?.toDouble() ?? 0.0;
     final esRefrigerado = product['es_refrigerado'] as bool? ?? false;
     final esFragil = product['es_fragil'] as bool? ?? false;
-    
+
     // Calcular stock total desde el inventario
-    final stockTotal = inventario.fold<int>(
-      0,
-      (sum, item) {
-        final cantidad = (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
-        return sum + cantidad;
-      },
-    );
-    
+    final stockTotal = inventario.fold<int>(0, (sum, item) {
+      final cantidad = (item['cantidad_disponible'] as num?)?.toInt() ?? 0;
+      return sum + cantidad;
+    });
+
     print('📦 Stock total calculado: $stockTotal');
-    
+
     // Categoría
     final categoria = product['categoria'] as Map<String, dynamic>?;
-    final categoryName = categoria?['denominacion'] as String? ?? 'Sin categoría';
+    final categoryName =
+        categoria?['denominacion'] as String? ?? 'Sin categoría';
 
     // Imagen del producto
     String? imageUrl;
@@ -126,7 +159,7 @@ class ProductDetailService {
         imageUrl = firstMedia['url'];
       }
     }
-    
+
     // Fallback a foto si no hay multimedias
     if (imageUrl == null) {
       final foto = product['foto'];
@@ -136,41 +169,43 @@ class ProductDetailService {
     }
 
     // Obtener presentaciones del producto
-    final presentacionesList = product['presentaciones'] as List<dynamic>? ?? [];
-    
+    final presentacionesList =
+        product['presentaciones'] as List<dynamic>? ?? [];
+
     print('📋 PRESENTACIONES DEL PRODUCTO:');
     print('Total: ${presentacionesList.length}');
     for (var p in presentacionesList) {
       print('  - ${p}');
     }
 
-
     // Crear variantes a partir de las presentaciones
     final List<Map<String, dynamic>> variants = [];
-    
+
     for (var presentacion in presentacionesList) {
       final presentacionMap = presentacion as Map<String, dynamic>;
       final presentacionId = presentacionMap['id'] as int;
-      final presentacionNombre = presentacionMap['presentacion'] as String? ?? 'Presentación';
+      final presentacionNombre =
+          presentacionMap['presentacion'] as String? ?? 'Presentación';
       final cantidad = (presentacionMap['cantidad'] as num?)?.toDouble() ?? 1.0;
       final esBase = presentacionMap['es_base'] as bool? ?? false;
       final skuCodigo = presentacionMap['sku_codigo'] as String?;
-      
+
       // Calcular precio por presentación (precio base * cantidad)
       final precioPresentacion = precioActual * cantidad;
-      
+
       // Descripción de la presentación
       String descripcion = '';
       if (cantidad > 1) {
         descripcion = 'Presentación de ${cantidad.toStringAsFixed(0)} unidades';
       }
-      
+
       variants.add({
         'id': presentacionId.toString(),
         'nombre': presentacionNombre,
         'descripcion': descripcion.isNotEmpty ? descripcion : null,
         'precio': precioPresentacion,
-        'cantidad_total': stockTotal, // Todo el stock disponible para cada presentación
+        'cantidad_total':
+            stockTotal, // Todo el stock disponible para cada presentación
         'id_presentacion': presentacionId,
         'presentacion_nombre': presentacionNombre,
         'presentacion_cantidad': cantidad,
@@ -178,10 +213,12 @@ class ProductDetailService {
         'sku_codigo': skuCodigo,
       });
     }
-    
+
     // Ordenar: presentaciones base primero
     variants.sort((a, b) {
-      final baseCompare = (b['es_base'] as bool ? 1 : 0).compareTo(a['es_base'] as bool ? 1 : 0);
+      final baseCompare = (b['es_base'] as bool ? 1 : 0).compareTo(
+        a['es_base'] as bool ? 1 : 0,
+      );
       if (baseCompare != 0) return baseCompare;
       return (a['nombre'] as String).compareTo(b['nombre'] as String);
     });
@@ -190,15 +227,23 @@ class ProductDetailService {
     print('  - Nombre: $denominacion');
     print('  - Presentaciones: ${variants.length}');
     print('  - Stock total: $stockTotal');
-    print('  - Rating: ${rating['rating_promedio']} (${rating['total_ratings']} ratings)');
+    print(
+      '  - Rating: ${rating['rating_promedio']} (${rating['total_ratings']} ratings)',
+    );
     print('\n📋 PRESENTACIONES FINALES:');
     for (var v in variants) {
-      print('  - ${v['nombre']} | Precio: ${v['precio']} | Stock: ${v['cantidad_total']} | Base: ${v['es_base']}');
+      print(
+        '  - ${v['nombre']} | Precio: ${v['precio']} | Stock: ${v['cantidad_total']} | Base: ${v['es_base']}',
+      );
     }
     print('═' * 80);
 
+    // ID de la tienda
+    final storeId = product['id_tienda'] as int?;
+
     return {
       'id': id,
+      'id_tienda': storeId, // Agregado
       'denominacion': denominacion,
       'nombre_comercial': product['nombre_comercial'],
       'sku': product['sku'],

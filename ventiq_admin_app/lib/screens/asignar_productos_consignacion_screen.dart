@@ -94,7 +94,19 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     });
   }
 
-  void _actualizarCantidad(int idInventario, double cantidad) {
+  void _actualizarCantidad(int idInventario, double cantidad, double cantidadDisponible) {
+    // Validar que la cantidad no exceda la disponible
+    if (cantidad > cantidadDisponible) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('La cantidad no puede exceder $cantidadDisponible unidades disponibles'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    
     setState(() {
       if (_productosSeleccionados[idInventario] == null) {
         _productosSeleccionados[idInventario] = {'seleccionado': false, 'cantidad': cantidad};
@@ -161,16 +173,44 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
         p['cantidad_seleccionada'] = cantSel;
         p['tasa_cambio'] = tasaCambio;
 
-        // Precios
+        // Precios: El consignador configura el precio_costo_usd que quiere cobrar
+        // Este precio es independiente de los precios en la tienda consignadora
         final idProducto = p['id_producto'];
-        final precioVentaResp = await _supabase.from('app_dat_precio_venta').select('precio_venta_cup').eq('id_producto', idProducto).limit(1);
-        p['precio_venta'] = (precioVentaResp as List).isNotEmpty ? (precioVentaResp[0]['precio_venta_cup'] ?? 0).toDouble() : 0.0;
+        
+        // ⚠️ NO obtener precio_venta del producto original - No se debe tocar
+        // El precio_venta de la tienda consignadora debe permanecer intacto
+        p['precio_venta'] = 0.0; // Inicializar en 0, el consignador lo configurará
 
-        final pres = p['app_dat_producto_presentacion'];
+        // Obtener precio_promedio de la presentación para usar como precio_costo_usd
         double costUSD = 0.0;
-        if (pres != null) {
-          costUSD = (pres is List && pres.isNotEmpty) ? (pres[0]['precio_promedio'] ?? 0).toDouble() : (pres is Map ? (pres['precio_promedio'] ?? 0).toDouble() : 0.0);
+        final idPresentacion = p['id_presentacion'];
+        if (idPresentacion != null) {
+          final presResp = await _supabase
+              .from('app_dat_producto_presentacion')
+              .select('precio_promedio')
+              .eq('id_producto', idProducto)
+              .eq('id_presentacion', idPresentacion)
+              .limit(1);
+          
+          if ((presResp as List).isNotEmpty) {
+            costUSD = (presResp[0]['precio_promedio'] ?? 0).toDouble();
+          }
         }
+        
+        // Si no hay precio_promedio en la presentación, intentar obtener del producto base
+        if (costUSD == 0.0) {
+          final presBaseResp = await _supabase
+              .from('app_dat_producto_presentacion')
+              .select('precio_promedio')
+              .eq('id_producto', idProducto)
+              .eq('es_base', true)
+              .limit(1);
+          
+          if ((presBaseResp as List).isNotEmpty) {
+            costUSD = (presBaseResp[0]['precio_promedio'] ?? 0).toDouble();
+          }
+        }
+        
         p['precio_costo_usd'] = costUSD;
         p['precio_costo_cup'] = costUSD * tasaCambio;
       }
@@ -405,6 +445,7 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     final idInv = producto['id'] as int;
     final isSelected = _productosSeleccionados[idInv]?['seleccionado'] == true;
     final cant = _productosSeleccionados[idInv]?['cantidad'] as double? ?? 0.0;
+    final cantidadDisponible = (producto['cantidad_final'] as num?)?.toDouble() ?? 0.0;
     
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -433,11 +474,11 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
                 initialValue: cant > 0 ? cant.toString() : '',
                 decoration: const InputDecoration(isDense: true, labelText: 'Cant.', contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                onChanged: (val) => _actualizarCantidad(idInv, double.tryParse(val) ?? 0.0),
+                onChanged: (val) => _actualizarCantidad(idInv, double.tryParse(val) ?? 0.0, cantidadDisponible),
               ),
             ),
           const SizedBox(width: 8),
-          Text('${(producto['cantidad_final'] ?? 0).toInt()}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text('${cantidadDisponible.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -487,18 +528,38 @@ class ConsignacionProductosConfigScreen extends StatefulWidget {
 
 class _ConsignacionProductosConfigScreenState extends State<ConsignacionProductosConfigScreen> {
   late Map<int, Map<String, dynamic>> _productosConfig;
+  late Map<int, TextEditingController> _precioVentaControllers;
   bool _guardando = false;
+  double _tasaCambio = 440.0;
 
   @override
   void initState() {
     super.initState();
     _productosConfig = {};
+    _precioVentaControllers = {};
     for (var p in widget.productos) {
       _productosConfig[p['id']] = {
         'cantidad': p['cantidad_seleccionada'],
         'precio_venta': p['precio_venta'] > 0 ? p['precio_venta'] : null,
+        'margen_porcentaje': 1.0,
       };
+      // Crear controller para cada producto
+      final precioInicial = (p['precio_venta'] > 0 ? p['precio_venta'] : '').toString();
+      _precioVentaControllers[p['id']] = TextEditingController(text: precioInicial);
+      
+      // Obtener tasa de cambio del primer producto
+      if (_tasaCambio == 440.0 && p['tasa_cambio'] != null) {
+        _tasaCambio = (p['tasa_cambio'] as num).toDouble();
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    for (var controller in _precioVentaControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   void _confirmar() {
@@ -509,18 +570,20 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
       }
     }
 
+    // Construir productos en el formato que espera ConsignacionEnvioService.crearEnvio()
     final finalProds = widget.productos.map((p) {
       final config = _productosConfig[p['id']]!;
-      final tasa = p['tasa_cambio'] ?? 440.0;
       return {
+        'id_inventario': p['id'],
         'id_producto': p['id_producto'],
         'id_variante': p['id_variante'],
-        'id_ubicacion': p['id_ubicacion'],
         'id_presentacion': p['id_presentacion'],
+        'id_ubicacion': p['id_ubicacion'],
         'cantidad': config['cantidad'],
-        'precio_costo_unitario': (config['precio_venta'] as double) / tasa,
-        'puede_modificar_precio': false,
-        'nombre_producto': p['app_dat_producto']?['denominacion'] ?? 'Producto',
+        'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
+        'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
+        'tasa_cambio': p['tasa_cambio'] ?? 440.0,
+        'precio_venta': config['precio_venta'],
       };
     }).toList();
 
@@ -540,6 +603,13 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
               itemBuilder: (context, index) {
                 final p = widget.productos[index];
                 final config = _productosConfig[p['id']]!;
+                final precioCostoUSD = (p['precio_costo_usd'] ?? 0).toDouble();
+                final precioCostoCUP = (p['precio_costo_cup'] ?? 0).toDouble();
+                final precioVentaCUP = (config['precio_venta'] ?? 0).toDouble();
+                final precioVentaUSD = precioVentaCUP > 0 ? precioVentaCUP / _tasaCambio : 0.0;
+                final gananciaUSD = precioVentaUSD - precioCostoUSD;
+                final margenPorcentaje = config['margen_porcentaje'] ?? 0.0;
+                
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   child: Padding(
@@ -548,15 +618,137 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(p['app_dat_producto']?['denominacion'] ?? 'Producto', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        const SizedBox(height: 8),
-                        Text('Precio Costo Sugerido: \$${(p['precio_costo_cup'] ?? 0).toStringAsFixed(2)} CUP'),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          initialValue: config['precio_venta']?.toString() ?? '',
-                          decoration: const InputDecoration(labelText: 'Precio de Venta Final (CUP)', border: OutlineInputBorder(), prefixIcon: Icon(Icons.attach_money)),
+                        // Sección de Precio Costo
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Precio Costo Original (USD)',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.blue[700]),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '\$${precioCostoUSD.toStringAsFixed(2)} USD',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Precio Costo en CUP',
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.blue[700]),
+                                  ),
+                                  Text(
+                                    '% Diferencia',
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.blue[700]),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    flex: 2,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '\$${precioCostoCUP.toStringAsFixed(2)} CUP',
+                                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+                                        ),
+                                        /* Text(
+                                          '(\$${precioCostoUSD.toStringAsFixed(2)} USD)',
+                                          style: TextStyle(fontSize: 11, color: Colors.blue[600]),
+                                        ), */
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    flex: 1,
+                                    child: DropdownButton<double>(
+                                      isExpanded: true,
+                                      value: margenPorcentaje,
+                                      items: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+                                          .map((val) => DropdownMenuItem<double>(
+                                            value: val.toDouble(),
+                                            child: Text('${val}%', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
+                                          ))
+                                          .toList(),
+                                      onChanged: (newVal) {
+                                        if (newVal != null) {
+                                          setState(() {
+                                            config['margen_porcentaje'] = newVal;
+                                            // Calcular precio de venta: precio_costo_cup * (1 + porcentaje/100)
+                                            final precioVentaCalculado = precioCostoCUP * (1 + (newVal / 100));
+                                            config['precio_venta'] = precioVentaCalculado;
+                                            // Actualizar el controller del TextField
+                                            _precioVentaControllers[p['id']]?.text = precioVentaCalculado.toStringAsFixed(2);
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // Campo de Precio de Venta
+                        TextField(
+                          controller: _precioVentaControllers[p['id']],
+                          decoration: const InputDecoration(
+                            labelText: 'Precio de Venta Final (CUP)',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.attach_money),
+                          ),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           onChanged: (val) => setState(() => config['precio_venta'] = double.tryParse(val)),
                         ),
+                        const SizedBox(height: 8),
+                        // Información de Precio de Venta en USD y Ganancia
+                        if (precioVentaCUP > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  'En USD: \$${precioVentaUSD.toStringAsFixed(2)}',
+                                  style: TextStyle(fontSize: 11, color: Colors.grey[700], fontWeight: FontWeight.w500),
+                                ),
+                                const SizedBox(width: 12),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: gananciaUSD >= 0 ? Colors.green[100] : Colors.red[100],
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'Ganancia: \$${gananciaUSD.toStringAsFixed(2)} USD',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),

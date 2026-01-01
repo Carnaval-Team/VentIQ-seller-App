@@ -1296,6 +1296,7 @@ class ExportService {
     bool includeNombreCorto = false,
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
+    bool includeDescripcion = false,
   }) async {
     try {
       final now = DateTime.now();
@@ -1315,6 +1316,7 @@ class ExportService {
           includeNombreCorto: includeNombreCorto,
           includeMarca: includeMarca,
           includeDescripcionCorta: includeDescripcionCorta,
+          includeDescripcion: includeDescripcion,
         );
         mimeType =
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -1691,6 +1693,7 @@ class ExportService {
     bool includeNombreCorto = false,
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
+    bool includeDescripcion = false,
   }) async {
     final excel = Excel.createExcel();
 
@@ -1729,6 +1732,7 @@ class ExportService {
           includeNombreCorto: includeNombreCorto,
           includeMarca: includeMarca,
           includeDescripcionCorta: includeDescripcionCorta,
+          includeDescripcion: includeDescripcion,
         );
       }
     }
@@ -1892,6 +1896,7 @@ class ExportService {
     bool includeNombreCorto = false,
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
+    bool includeDescripcion = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
@@ -2091,6 +2096,7 @@ class ExportService {
     bool includeNombreCorto = false,
     bool includeMarca = false,
     bool includeDescripcionCorta = false,
+    bool includeDescripcion = false,
   }) {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];

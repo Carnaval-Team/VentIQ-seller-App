@@ -65,6 +65,7 @@ class ProductService {
             )
           ''')
           .eq('id', productId)
+          .eq('app_dat_producto.mostrar_en_catalogo', true)
           .isFilter('deleted_at', null)
           .single();
 

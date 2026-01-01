@@ -44,7 +44,8 @@ class StoreService {
 
       final response = await _supabase
           .from('app_dat_tienda')
-          .select('id, denominacion, ubicacion, imagen_url, direccion')
+          .select('id, denominacion, ubicacion, imagen_url, direccion, phone')
+          .eq('mostrar_en_catalogo', true)
           .not('ubicacion', 'is', null);
 
       print('✅ ${response.length} tiendas con ubicación encontradas');
@@ -156,6 +157,7 @@ class StoreService {
       final response = await _supabase
           .from('app_dat_tienda')
           .select('*')
+          .eq('mostrar_en_catalogo', true)
           .or('denominacion.ilike.%$query%,ubicacion.ilike.%$query%')
           .limit(limit);
 
@@ -183,6 +185,7 @@ class StoreService {
             )
           ''')
           .eq('id_tienda', storeId)
+          .eq('mostrar_en_catalogo', true)
           .isFilter('deleted_at', null);
 
       // Eliminar duplicados

@@ -616,63 +616,85 @@ class _AdminDrawerState extends State<AdminDrawer> {
   void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Cerrar Sesión'),
-          content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.of(context).pop(); // Cerrar diálogo
-                await _performLogout(context);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Cerrar Sesión'),
-            ),
-          ],
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext builderContext, StateSetter setState) {
+            bool isLoading = false;
+
+            return AlertDialog(
+              title: const Text('Cerrar Sesión'),
+              content: isLoading
+                  ? const SizedBox(
+                      height: 50,
+                      child: Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  : const Text('¿Estás seguro de que deseas cerrar sesión?'),
+              actions: [
+                if (!isLoading)
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Cancelar'),
+                  ),
+                ElevatedButton(
+                  onPressed: isLoading
+                      ? null
+                      : () async {
+                          setState(() => isLoading = true);
+                          // Hacer logout
+                          await _performLogout();
+                          // Cerrar diálogo
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
+                          // Navegar a splash que detectará que no hay sesión
+                          if (context.mounted) {
+                            Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
+                              '/',
+                              (route) => false,
+                            );
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text('Cerrar Sesión'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
   }
 
-  // Realizar logout y navegar al login
-  Future<void> _performLogout(BuildContext context) async {
+  // Realizar logout
+  Future<void> _performLogout() async {
     try {
+      print('🔐 Iniciando logout...');
       final authService = AuthService();
 
       // Usar AuthService.signOut() que limpia TODO correctamente
       await authService.signOut();
 
-      // Navegar al login y limpiar stack de navegación
-      if (context.mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-      }
+      // Pequeña espera para asegurar que la limpieza se complete
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      print('✅ Logout completado');
     } catch (e) {
       print('❌ Error durante logout: $e');
-      // A pesar del error, intentar navegar al login para forzar salida
-      if (context.mounted) {
-        // Mostrar aviso de error pero navegar de todos modos
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Cierre de sesión con advertencias. Redirigiendo...'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        
-        // Pequeña espera para que se vea el SnackBar un momento
-        await Future.delayed(const Duration(milliseconds: 500));
-        
-        if (context.mounted) {
-          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-        }
-      }
     }
   }
 

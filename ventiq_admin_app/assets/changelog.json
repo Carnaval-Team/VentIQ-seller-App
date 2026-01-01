@@ -1,8 +1,173 @@
 {
-  "current_version": "1.6.0",
-  "build": 160,
+  "current_version": "1.6.5",
+  "build": 165,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.6.5",
+      "date": "2025-12-29",
+      "title": "💰 Cálculo de Ganancias en Confirmación de Envíos de Consignación",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Columna de Ganancias en Confirmación de Envíos",
+          "description": "Nueva columna que calcula automáticamente las ganancias esperadas en USD, CUP y porcentaje basado en el precio de venta configurado por el consignatario"
+        },
+        {
+          "type": "improvement",
+          "title": "Eliminación de Sección de Margen %",
+          "description": "Removida la sección de cálculo de margen porcentual para simplificar la interfaz y enfocarse en el precio de venta final"
+        },
+        {
+          "type": "improvement",
+          "title": "Campo de Precio de Venta Sin Preconfiguración",
+          "description": "El campo de precio de venta ahora está vacío sin valor preconfigurado, permitiendo que el consignatario ingrese libremente el precio deseado"
+        },
+        {
+          "type": "improvement",
+          "title": "Visualización de Ganancias en Tiempo Real",
+          "description": "Las ganancias se actualizan automáticamente conforme el consignatario ingresa el precio de venta, mostrando indicadores visuales de ganancia positiva (verde) o negativa (rojo)"
+        },
+        {
+          "type": "improvement",
+          "title": "Desglose de Ganancias en Múltiples Monedas",
+          "description": "Las ganancias se muestran en USD, CUP y porcentaje para dar visibilidad completa de la rentabilidad esperada en ambas monedas"
+        }
+      ]
+    },
+    {
+      "version": "1.6.4",
+      "date": "2025-12-26",
+      "title": "🔄 Lógica de Estados de Consignación y Búsqueda Eficiente",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Validación de Dependencias en Operaciones de Consignación",
+          "description": "Sistema que valida que la operación de extracción esté completada antes de permitir completar la operación de recepción en envíos de consignación"
+        },
+        {
+          "type": "feature",
+          "title": "Búsqueda Eficiente en Pantalla de Consignación",
+          "description": "Implementado sistema de búsqueda con filtrado en base de datos, búsqueda en tiempo real y paginación para mejorar rendimiento en listados grandes"
+        },
+        {
+          "type": "feature",
+          "title": "Filtrado por Estado de Confirmación",
+          "description": "Agregados chips de filtro para filtrar contratos de consignación por estado: Pendientes, Confirmados y Cancelados"
+        },
+        {
+          "type": "feature",
+          "title": "Paginación con Botón 'Cargar Más'",
+          "description": "Sistema de paginación que carga 20 registros inicialmente y permite cargar más mediante botón 'Cargar más' para mejor rendimiento"
+        },
+        {
+          "type": "improvement",
+          "title": "Verificación de Actualización Diferenciada por Plataforma",
+          "description": "Sistema inteligente que detecta si la aplicación se ejecuta en web o APK y muestra diferentes opciones de actualización según la plataforma"
+        },
+        {
+          "type": "improvement",
+          "title": "Actualización Obligatoria en Web con Limpieza de Cache",
+          "description": "En web, la actualización es obligatoria y guía al usuario a limpiar el cache del navegador con instrucciones paso a paso (Ctrl+Shift+Delete)"
+        },
+        {
+          "type": "improvement",
+          "title": "Actualización Obligatoria en APK",
+          "description": "En APK, mantiene el sistema de actualización obligatoria con descarga directa del archivo APK"
+        }
+      ]
+    },
+    {
+      "version": "1.6.3",
+      "date": "2025-12-24",
+      "title": "📦 Paginado de Movimientos y Mejoras en Consignación",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Paginado Infinito en Movimientos de Productos",
+          "description": "Implementado sistema de paginado con infinite scroll en la pantalla de movimientos de productos. Carga inicial de 20 elementos con carga progresiva al llegar al final de la lista."
+        },
+        {
+          "type": "improvement",
+          "title": "Dropdown de Margen en Consignación",
+          "description": "Agregado dropdown con opciones de margen (1-15%) al lado del precio costo en CUP en asignar_productos_consignacion_screen. Calcula automáticamente el precio de venta final."
+        },
+        {
+          "type": "improvement",
+          "title": "Visualización de Precios en Consignación",
+          "description": "Consignador ve precio costo en USD y CUP, margen seleccionable, precio de venta final en CUP, equivalente en USD y ganancia en USD."
+        }
+      ]
+    },
+    {
+      "version": "1.6.2",
+      "date": "2025-12-23",
+      "title": "🔧 Correcciones en Interacciones, Extracción y UI",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Manejo de Valores Nulos en Ratings de Productos",
+          "description": "Corregido manejo de valores nulos en estadísticas de ratings de productos para evitar errores de tipo cast. Ahora todos los campos numéricos se convierten a 0 si son nulos."
+        },
+        {
+          "type": "fix",
+          "title": "Optimización de Transferencia de Inventario",
+          "description": "Eliminadas llamadas innecesarias a RPC por cada producto en transferencias de inventario para evitar timeouts. Ahora se procesan todos los productos de una sola vez."
+        },
+        {
+          "type": "fix",
+          "title": "Overflow en Tarjeta de Módulos del CRM",
+          "description": "Corregido desbordamiento visual en tarjetas de módulos del dashboard CRM ajustando padding, tamaños de fuente e iconos. Texto ahora se adapta correctamente sin desbordarse."
+        },
+        {
+          "type": "fix",
+          "title": "Overflow en Row de KPI Cards",
+          "description": "Envuelto Row de detalles en SingleChildScrollView para permitir scroll horizontal cuando el contenido no cabe en pantallas pequeñas."
+        },
+        {
+          "type": "improvement",
+          "title": "Distribución de Estrellas en Ratings de Productos",
+          "description": "Extendido RPC get_estadisticas_productos_rating para retornar cantidad de cada rating (1-5 estrellas). Ahora se muestra la distribución visual completa en el resumen de productos."
+        },
+        {
+          "type": "improvement",
+          "title": "Navegación desde Card de Ratings de Productos",
+          "description": "Card de calificación promedio de productos ahora es clickeable y navega al listado detallado de ratings de productos."
+        },
+        {
+          "type": "improvement",
+          "title": "Remoción de Información del Usuario en Ratings",
+          "description": "Eliminado campo usuario_email de todas las RPCs de interacciones. Ahora solo se muestran rating, comentario y fecha sin información del usuario."
+        },
+        {
+          "type": "fix",
+          "title": "Loading State en Diálogo de Cerrar Sesión",
+          "description": "Agregado estado loading al diálogo de cerrar sesión. Ahora muestra spinner y deshabilita botones mientras se procesa el logout, evitando múltiples clics."
+        },
+        {
+          "type": "fix",
+          "title": "Cantidades Incorrectas en Extracción de Inventario",
+          "description": "Corregido cálculo de stock disponible en diálogo de extracción. Ahora muestra correctamente el stock en la ubicación seleccionada, no el stock total del producto."
+        },
+        {
+          "type": "fix",
+          "title": "Campo id_producto Nulo en Extracción",
+          "description": "Agregado mapeo de id_producto a id en _addProductToExtraction para asegurar que el producto seleccionado tenga el campo id requerido por la RPC."
+        }
+      ]
+    },
+    {
+      "version": "1.6.1",
+      "date": "2025-12-23",
+      "title": "🔧 Correcciones y Estabilidad",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Correcciones en Catálogo y Mejoras Generales",
+          "description": "Se han realizado correcciones en el catálogo de productos y mejoras generales de estabilidad y rendimiento."
+        }
+      ]
+    },
     {
       "version": "1.6.0",
       "date": "2025-12-22",

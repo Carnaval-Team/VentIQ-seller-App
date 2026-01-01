@@ -45,7 +45,8 @@ class AuthService {
     try {
       // Intentar cerrar sesión en Supabase (puede fallar por red o sesión ya expirada)
       try {
-        await _supabase.auth.signOut();
+        await _supabase.auth.signOut(scope: SignOutScope.local);
+        print('✅ Supabase auth signOut completed');
       } catch (authError) {
         print('⚠️ Supabase auth signOut warning: $authError');
         // Continuamos con la limpieza local sin rethrow

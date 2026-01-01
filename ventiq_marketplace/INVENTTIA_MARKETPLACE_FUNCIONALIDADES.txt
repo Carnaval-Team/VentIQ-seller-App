@@ -1,0 +1,149 @@
+INVENTTIA (CATÁLOGO / MARKETPLACE)
+Resumen de funcionalidades (para presentar al cliente)
+
+1) ¿Qué es Inventtia Catálogo?
+Inventtia es una aplicación de catálogo donde los clientes pueden descubrir productos y tiendas disponibles, armar un plan de compra y organizar una ruta para visitar los puntos de venta.
+
+2) Para compradores / clientes finales
+
+2.1 Explorar productos fácilmente
+- Ver un catálogo de productos con fotos, precio y disponibilidad.
+- Buscar productos por nombre.
+- Filtrar por categorías para encontrar más rápido lo que necesitas.
+- Ver productos “destacados” y recomendaciones según popularidad.
+
+2.2 Ver detalles completos de cada producto
+- Foto y descripción del producto.
+- Diferentes presentaciones (por ejemplo: unidad, caja, etc.), con su precio.
+- Stock disponible.
+- Calificación del producto (opiniones y puntuación promedio).
+- Productos relacionados para descubrir alternativas.
+
+2.3 Descubrir tiendas
+- Listado de tiendas disponibles con información básica.
+- Búsqueda rápida dentro del listado de tiendas.
+- Ver tiendas destacadas desde el inicio.
+
+2.4 Ver detalles de cada tienda
+- Información principal de la tienda: ubicación, dirección y productos disponibles.
+- Estado de disponibilidad (abierta/cerrada) según sus puntos de venta.
+- Ver todos los productos disponibles de esa tienda.
+- Acceso directo al contacto de WhatsApp de la tienda (abre WhatsApp o el navegador para iniciar conversación).
+
+2.5 Mapa y ubicación
+- Ver tiendas en un mapa.
+- Ver tu ubicación actual (si otorgas permiso).
+- Trazar una ruta hacia una tienda.
+- Abrir el mapa desde los detalles de tienda o producto.
+
+2.6 Plan de compra (carrito)
+- Agregar productos al plan y ajustar cantidades.
+- Ver el plan organizado por tiendas.
+- Vaciar el plan cuando lo necesites.
+- Generar una ruta con las tiendas que tengas en tu plan (si tienen ubicación registrada).
+
+2.7 Planificación de ruta (ideal para compras presenciales)
+- Muestra un mapa con las tiendas de tu plan.
+- Propone un orden de visita para ahorrar tiempo en el recorrido.
+- Muestra distancia y tiempo estimado cuando está disponible.
+
+2.8 Calificaciones
+- Calificar productos y tiendas para mejorar la confianza.
+- Ver calificaciones promedio para tomar decisiones más rápido.
+
+3) Para dueños de tienda / gestión del catálogo (cuando inician sesión)
+
+3.1 Registro e inicio de sesión
+- Crear cuenta y acceder con correo y contraseña.
+- Guardado del usuario en el dispositivo para una experiencia más fluida.
+
+3.2 Crear y administrar tu tienda
+- Crear tu tienda con:
+  - Nombre comercial
+  - Dirección
+  - Ubicación en el mapa
+  - Foto/imagen de la tienda
+  - Teléfono de contacto (WhatsApp)
+  - Horario de apertura y cierre
+- Editar los datos de tu tienda cuando lo necesites.
+- Control de visibilidad: activar o desactivar si tu tienda aparece en el catálogo (según validación).
+
+3.3 Crear y administrar productos
+- Crear productos con:
+  - Nombre
+  - Foto del producto
+  - Precio
+  - Cantidad/stock inicial
+  - Categoría
+- Editar productos existentes:
+  - Cambiar foto
+  - Cambiar nombre
+  - Cambiar categoría
+  - Actualizar precio
+  - Actualizar cantidad/stock
+- Controlar si un producto se muestra o no en el catálogo (cuando la tienda está activa).
+
+4) Experiencia de la aplicación
+
+4.1 Interfaz moderna y clara
+- Navegación inferior por secciones: inicio, tiendas, productos y plan.
+- Diseño pensado para que cualquier usuario lo entienda rápido.
+
+4.2 Actualizaciones y novedades
+- Aviso de actualizaciones disponibles para mantener la app al día.
+- Ventana de novedades (changelog) para comunicar mejoras de forma clara.
+
+4.3 Acceso a compra en Carnaval App (opcional)
+- Botón informativo para redirigir a Carnaval App cuando aplique.
+
+5) Beneficios Clave
+
+5.1 Para Compradores (Totalmente Gratis)
+- Catálogo completo sin costo alguno
+- Búsqueda y comparación de productos ilimitada
+- Planificación de rutas de compra
+- Acceso a promociones exclusivas
+- Contacto directo con vendedores
+- Reseñas y calificaciones verificadas
+
+5.2 Para Vendedores (Solo 6,000 CUP/año)
+
+🌟 Plan Premium de Vendedor incluye:
+
+📱 Gestión Completa de Tienda
+  - Publicación ilimitada de productos
+  - Panel de control fácil de usar
+  - Estadísticas de visualizaciones
+  - Gestión de inventario en tiempo real
+
+💼 Herramientas Profesionales
+  - Perfil de tienda verificada
+  - Destacado en búsquedas
+  - Acceso a datos de mercado
+  - Plantillas para productos
+
+🛠️ Soporte Prioritario
+  - Asistencia técnica 24/7
+  - Respuesta en menos de 2 horas
+  - Capacitación personalizada
+  - Guías y tutoriales exclusivos
+
+📈 Crecimiento Garantizado
+  - Asesoría de marketing digital
+  - Estrategias para aumentar ventas
+  - Acceso a webinars exclusivos
+  - Informes de rendimiento mensuales
+
+💰 Excelente Relación Costo-Beneficio
+  - Menos de 500 CUP al mes
+  - Sin comisiones por ventas
+  - Facturación electrónica incluida
+  - Período de prueba gratuito
+
+💡 ¿Por qué elegirnos?
+- Plataforma segura y confiable
+- Tecnología de última generación
+- Comunidad activa de compradores
+- Crecimiento constante de usuarios
+- Actualizaciones automáticas mensuales con mejoras
+

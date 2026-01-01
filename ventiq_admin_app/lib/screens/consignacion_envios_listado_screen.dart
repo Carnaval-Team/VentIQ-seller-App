@@ -339,7 +339,7 @@ class _ConsignacionEnviosListadoScreenState
               children: [
                 _buildInfoItem('📦', '$cantidadProductos prod.'),
                 _buildInfoItem('📊', '${cantidadTotal.toStringAsFixed(0)} u.'),
-                _buildInfoItem('💰', '\$${valorTotal.toStringAsFixed(2)}'),
+                _buildInfoItem('💵', '\$${valorTotal.toStringAsFixed(2)} USD'),
               ],
             ),
             const SizedBox(height: 12),

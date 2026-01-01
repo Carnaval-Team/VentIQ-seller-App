@@ -1,0 +1,150 @@
+{
+  "current_version": "1.2.1",
+  "build": 4,
+  "app_name": "ventiq_marketplace",
+  "changelogs": [
+    {
+      "version": "1.2.1",
+      "date": "2025-12-30",
+      "title": "📱 QR abre tu tienda automáticamente",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Escaneo de QR más cómodo en Android y iPhone",
+          "description": "Al escanear el QR de una tienda desde el teléfono, si tienes la app instalada se abrirá directamente en esa tienda. Si no la tienes instalada, se abrirá el catálogo en el navegador."
+        }
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "date": "2025-12-29",
+      "title": "🛒 Mejoras del plan y la ruta",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Diálogo moderno al agregar al plan",
+          "description": "Al agregar productos, ahora aparece un diálogo con opciones para continuar comprando o ir al plan, con diseño consistente con la app."
+        },
+        {
+          "type": "improvement",
+          "title": "Navegación directa a Productos o Plan",
+          "description": "Desde el diálogo, la app navega directamente al tab correcto (Productos o Plan) en la pantalla principal."
+        },
+        {
+          "type": "improvement",
+          "title": "Refresh automático del plan",
+          "description": "Al entrar al tab Plan, el carrito se actualiza automáticamente para reflejar productos recién agregados sin necesidad de refrescar manualmente."
+        },
+        {
+          "type": "feature",
+          "title": "Productos por destino en la ruta",
+          "description": "En la Ruta de Compra, el panel inferior muestra los productos a comprar en la tienda/destino actual (agrupados por tienda)."
+        },
+        {
+          "type": "improvement",
+          "title": "Panel de productos colapsable",
+          "description": "El panel de productos por tienda se puede expandir u ocultar para mejorar la visibilidad del mapa."
+        },
+        {
+          "type": "improvement",
+          "title": "Panel inferior completo colapsable",
+          "description": "Todo el panel inferior de la ruta (controles y listas) ahora es colapsable para maximizar el área visible del mapa cuando sea necesario."
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2025-12-29",
+      "title": "🧭 Ruta de compra en tiempo real",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Comenzar viaje",
+          "description": "Inicia la navegación en tiempo real desde el plan de ruta con un panel inferior dedicado."
+        },
+        {
+          "type": "feature",
+          "title": "Flecha direccional por GPS",
+          "description": "El marcador del usuario cambia a una flecha que se orienta según el rumbo (heading) para seguir el movimiento en vivo."
+        },
+        {
+          "type": "feature",
+          "title": "Rutas por calles al próximo destino",
+          "description": "La ruta hacia la próxima tienda se traza usando OSRM (no en línea recta) y se actualiza durante el viaje."
+        },
+        {
+          "type": "improvement",
+          "title": "Ruta destacada + resto discontinuo",
+          "description": "El tramo hacia la próxima tienda se muestra más grueso y el resto de tramos se renderiza como línea discontinua."
+        },
+        {
+          "type": "feature",
+          "title": "Aviso de llegada por proximidad (<= 100m)",
+          "description": "Al estar cerca del destino, se muestra un cartel con la tienda y la distancia, y se avanza automáticamente a la siguiente."
+        },
+        {
+          "type": "feature",
+          "title": "Lista de tiendas con distancia",
+          "description": "El panel inferior enumera las tiendas y muestra a cuánta distancia estás de cada una, resaltando la siguiente parada."
+        },
+        {
+          "type": "improvement",
+          "title": "Tiendas visitadas (ARRIBADA)",
+          "description": "Las tiendas completadas se marcan en verde y con etiqueta ARRIBADA tanto en el mapa como en la lista."
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2025-12-26",
+      "title": "🚀 Bienvenido a Inventtia Catálogo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Explora tiendas y productos",
+          "description": "Navega por el marketplace, descubre tiendas destacadas y revisa productos con imágenes y detalles." 
+        },
+        {
+          "type": "feature",
+          "title": "Búsqueda rápida",
+          "description": "Busca tiendas y productos desde la pantalla principal con resultados instantáneos." 
+        },
+        {
+          "type": "feature",
+          "title": "Detalles de producto",
+          "description": "Accede a la ficha del producto con información esencial (imagen, nombre, precio y más)."
+        },
+        {
+          "type": "feature",
+          "title": "Carrito / Plan",
+          "description": "Agrega productos al plan y gestiona tu selección para preparar compras o pedidos." 
+        },
+        {
+          "type": "feature",
+          "title": "Autenticación",
+          "description": "Crea cuenta o inicia sesión con correo y contraseña para acceder a funciones avanzadas." 
+        },
+        {
+          "type": "feature",
+          "title": "Administración de tienda",
+          "description": "Si eres dueño/administrador, puedes acceder a “Administrar mi tienda” y gestionar información y visibilidad." 
+        },
+        {
+          "type": "feature",
+          "title": "Gestión de productos de la tienda",
+          "description": "Crea productos con nombre, imagen, categoría, precio y cantidad inicial; y edítalos cuando lo necesites." 
+        },
+        {
+          "type": "improvement",
+          "title": "Pull-to-refresh",
+          "description": "Actualiza el estado de validación de la tienda y la lista de productos con solo deslizar hacia abajo." 
+        },
+        {
+          "type": "improvement",
+          "title": "Control de visibilidad en catálogo",
+          "description": "Activa o desactiva si un producto se muestra en catálogo, respetando las restricciones cuando la tienda está en validación." 
+        }
+      ]
+    }
+  ]
+}

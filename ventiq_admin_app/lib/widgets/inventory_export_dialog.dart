@@ -34,6 +34,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   bool _includeNombreCorto = false;
   bool _includeMarca = false;
   bool _includeDescripcionCorta = false;
+  bool _includeDescripcion = false;
   
   // Opciones de filtrado
   bool _includeZeroStock = false; // Incluir productos con stock cero
@@ -141,6 +142,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         includeNombreCorto: _includeNombreCorto,
         includeMarca: _includeMarca,
         includeDescripcionCorta: _includeDescripcionCorta,
+        includeDescripcion: _includeDescripcion,
       );
 
       // Cerrar el diálogo después de la exportación exitosa
@@ -593,6 +595,30 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             onChanged: (value) {
                               setState(() {
                                 _includeDescripcionCorta = value ?? false;
+                              });
+                            },
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          CheckboxListTile(
+                            title: const Text(
+                              'Descripción',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Descripción completa del producto',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            value: _includeDescripcion,
+                            onChanged: (value) {
+                              setState(() {
+                                _includeDescripcion = value ?? false;
                               });
                             },
                             activeColor: AppColors.primary,

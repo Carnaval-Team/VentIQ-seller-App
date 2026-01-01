@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import 'marquee_text.dart';
+import 'supabase_image.dart';
 
 /// Tarjeta de producto para el marketplace
 class ProductCard extends StatelessWidget {
@@ -67,20 +68,11 @@ class ProductCard extends StatelessWidget {
                       topRight: Radius.circular(AppTheme.radiusL),
                     ),
                     child: imageUrl != null
-                        ? Image.network(
-                            imageUrl!,
+                        ? SupabaseImage(
+                            imageUrl: imageUrl!,
                             fit: BoxFit.cover,
                             width: double.infinity,
                             height: double.infinity,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Center(
-                                child: Icon(
-                                  Icons.image_not_supported_outlined,
-                                  size: 50,
-                                  color: Colors.grey[400],
-                                ),
-                              );
-                            },
                           )
                         : Center(
                             child: Icon(

@@ -59,6 +59,7 @@ class StoreConfigService {
     bool? manejaInventario,
     bool? permiteVenderAunSinDisponibilidad,
     bool? noSolicitarCliente,
+    bool? allowDiscountOnVendedor,
     Map<String, dynamic>? tpvTrabajadorEncargadoCarnaval,
   }) async {
     try {
@@ -106,6 +107,11 @@ class StoreConfigService {
       if (noSolicitarCliente != null) {
         updateData['no_solicitar_cliente'] = noSolicitarCliente;
         print('  - no_solicitar_cliente: $noSolicitarCliente');
+      }
+
+      if (allowDiscountOnVendedor != null) {
+        updateData['allow_discount_on_vendedor'] = allowDiscountOnVendedor;
+        print('  - allow_discount_on_vendedor: $allowDiscountOnVendedor');
       }
 
       if (tpvTrabajadorEncargadoCarnaval != null) {
@@ -250,6 +256,23 @@ class StoreConfigService {
   /// Actualiza solo no_solicitar_cliente
   static Future<void> updateNoSolicitarCliente(int storeId, bool value) async {
     await updateStoreConfig(storeId, noSolicitarCliente: value);
+  }
+
+  static Future<bool> getAllowDiscountOnVendedor(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      return config['allow_discount_on_vendedor'] ?? false;
+    } catch (e) {
+      print('❌ Error al obtener allow_discount_on_vendedor: $e');
+      return false;
+    }
+  }
+
+  static Future<void> updateAllowDiscountOnVendedor(
+    int storeId,
+    bool value,
+  ) async {
+    await updateStoreConfig(storeId, allowDiscountOnVendedor: value);
   }
 
   /// Obtiene solo el valor de tpv_trabajador_encargado_carnaval

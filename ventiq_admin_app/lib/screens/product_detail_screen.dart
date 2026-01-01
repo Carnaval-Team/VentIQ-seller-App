@@ -11,6 +11,7 @@ import '../services/permissions_service.dart';
 import '../widgets/marketing_menu_widget.dart';
 import '../screens/add_product_screen.dart';
 import '../widgets/reception_edit_dialog.dart';
+import '../screens/product_movements_screen.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final Product product;
@@ -697,6 +698,32 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       title: 'Operaciones de Entrada',
       icon: Icons.input,
       children: [
+        // Botón para ver todos los movimientos
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProductMovementsScreen(
+                      product: _product,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.history),
+              label: const Text('Ver Todos los Movimientos'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ),
         if (_isLoadingOperations)
           const Center(child: CircularProgressIndicator())
         else if (_receptionOperations.isEmpty)

@@ -11,6 +11,15 @@ import 'map_screen.dart';
 import '../services/product_service.dart';
 import '../services/store_service.dart';
 import '../services/marketplace_service.dart'; // Added for searchProducts
+import '../services/user_session_service.dart';
+import '../services/auth_service.dart';
+import '../services/store_management_service.dart';
+import '../services/changelog_service.dart';
+import '../services/user_preferences_service.dart';
+import '../services/update_service.dart';
+import '../widgets/changelog_dialog.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 
 /// Pantalla principal del marketplace
 class HomeScreen extends StatefulWidget {
@@ -28,6 +37,12 @@ class _HomeScreenState extends State<HomeScreen> {
   final StoreService _storeService = StoreService();
   final MarketplaceService _marketplaceService =
       MarketplaceService(); // Instance for searching products
+  final UserSessionService _userSessionService = UserSessionService();
+  final AuthService _authService = AuthService();
+  final StoreManagementService _storeManagementService =
+      StoreManagementService();
+  final ChangelogService _changelogService = ChangelogService();
+  final UserPreferencesService _preferencesService = UserPreferencesService();
 
   List<Map<String, dynamic>> _bestSellingProducts = [];
   List<Map<String, dynamic>> _featuredStores = [];
@@ -41,17 +56,424 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _searchResultsProducts = [];
   Timer? _debounceTimer;
 
+  // Banner state
+  bool _showBanner = true;
+  Timer? _bannerTimer;
+  final GlobalKey<_MarqueeTextState> _marqueeKey =
+      GlobalKey<_MarqueeTextState>();
+
   @override
   void initState() {
     super.initState();
     _loadData();
+    _startBannerTimer();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForChangelog();
+      _checkForUpdatesAfterNavigation();
+    });
+  }
+
+  Future<void> _checkForChangelog() async {
+    try {
+      final changelog = await _changelogService.getLatestChangelog();
+      if (changelog == null) return;
+
+      final shouldShow = await _preferencesService.isFirstTimeOpening(
+        changelog.version,
+      );
+      if (!shouldShow) return;
+
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ChangelogDialog(changelog: changelog),
+      );
+
+      await _preferencesService.saveAppVersion(changelog.version);
+    } catch (_) {}
+  }
+
+  Future<void> _checkForUpdatesAfterNavigation() async {
+    await Future.delayed(const Duration(seconds: 3));
+
+    try {
+      if (!mounted) return;
+
+      final shouldShow = await _preferencesService.shouldShowUpdateDialog();
+      if (!shouldShow) return;
+
+      final updateInfo = await UpdateService.checkForUpdates();
+      if (updateInfo['hay_actualizacion'] == true && mounted) {
+        _showUpdateAvailableDialog(updateInfo);
+      }
+    } catch (_) {}
+  }
+
+  void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
+    final bool isObligatory = updateInfo['obligatoria'] ?? false;
+    final String newVersion = updateInfo['version_disponible'] ?? 'Desconocida';
+    final String currentVersion =
+        updateInfo['current_version'] ?? 'Desconocida';
+
+    if (!mounted) return;
+
+    _preferencesService.markUpdateDialogShown();
+
+    showDialog(
+      context: context,
+      barrierDismissible: !isObligatory,
+      builder: (context) => WillPopScope(
+        onWillPop: () async => !isObligatory,
+        child: AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                isObligatory ? Icons.warning : Icons.system_update,
+                color: isObligatory ? Colors.orange : Colors.blue,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isObligatory
+                      ? 'Actualización Obligatoria'
+                      : 'Nueva Versión Disponible',
+                  style: const TextStyle(fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Nueva versión disponible: $newVersion'),
+              Text('Versión actual: $currentVersion'),
+              const SizedBox(height: 16),
+              if (isObligatory)
+                const Text(
+                  'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
+                  style: TextStyle(
+                    color: Colors.orange,
+                    fontWeight: FontWeight.w500,
+                  ),
+                )
+              else
+                const Text(
+                  'Se recomienda actualizar para obtener las últimas mejoras y correcciones.',
+                ),
+            ],
+          ),
+          actions: [
+            if (!isObligatory)
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Más tarde'),
+              ),
+            ElevatedButton(
+              onPressed: _downloadUpdate,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isObligatory ? Colors.orange : Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Descargar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadUpdate() async {
+    try {
+      final url = Uri.parse(UpdateService.downloadUrl);
+      bool launched = false;
+
+      try {
+        launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+
+      if (!launched) {
+        try {
+          launched = await launchUrl(url, mode: LaunchMode.inAppWebView);
+        } catch (_) {}
+      }
+
+      if (!launched) {
+        try {
+          launched = await launchUrl(url);
+        } catch (_) {}
+      }
+
+      if (launched) {
+        if (mounted) Navigator.of(context).pop();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📱 Descarga iniciada - Instala la nueva versión'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      } else {
+        _showManualDownloadDialog();
+      }
+    } catch (_) {
+      _showManualDownloadDialog();
+    }
+  }
+
+  void _showManualDownloadDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.download, color: Colors.blue),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Descarga Manual',
+                style: TextStyle(fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'No se pudo abrir automáticamente el enlace de descarga.',
+            ),
+            const SizedBox(height: 16),
+            SelectableText(UpdateService.downloadUrl),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              try {
+                await Clipboard.setData(
+                  const ClipboardData(text: UpdateService.downloadUrl),
+                );
+              } catch (_) {}
+              if (!context.mounted) return;
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✅ Enlace copiado al portapapeles'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: const Text('Copiar enlace'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onProfilePressed() async {
+    final isLoggedIn = await _userSessionService.isLoggedIn();
+    if (!mounted) return;
+
+    if (!isLoggedIn) {
+      final goToLogin =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              return AlertDialog(
+                title: const Text('Iniciar sesión'),
+                content: const Text(
+                  'Para continuar necesitas iniciar sesión o registrarte.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Ir a login'),
+                  ),
+                ],
+              );
+            },
+          ) ??
+          false;
+
+      if (!goToLogin || !mounted) return;
+
+      final result = await Navigator.of(context).pushNamed('/auth');
+      if (!mounted) return;
+      if (result == true) {
+        setState(() {});
+      }
+      return;
+    }
+
+    final user = await _userSessionService.getUser();
+    final uuid = await _userSessionService.getUserId();
+    if (!mounted) return;
+
+    bool hasManagedStore = false;
+    if (uuid != null) {
+      try {
+        final storeIds = await _storeManagementService.getManagedStoreIds(
+          uuid: uuid,
+        );
+        hasManagedStore = storeIds.isNotEmpty;
+      } catch (_) {
+        hasManagedStore = false;
+      }
+    }
+
+    final nombres = (user?['nombres'] as String?)?.trim();
+    final apellidos = (user?['apellidos'] as String?)?.trim();
+    final email = (user?['email'] as String?)?.trim();
+    final telefono = (user?['telefono'] as String?)?.trim();
+
+    final displayName = [
+      if (nombres != null && nombres.isNotEmpty) nombres,
+      if (apellidos != null && apellidos.isNotEmpty) apellidos,
+    ].join(' ');
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(AppTheme.paddingM),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.primaryGradient,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.account_circle_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName.isNotEmpty ? displayName : 'Mi cuenta',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          if (email != null && email.isNotEmpty)
+                            Text(
+                              email,
+                              style: const TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          if (telefono != null && telefono.isNotEmpty)
+                            Text(
+                              telefono,
+                              style: const TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.storefront_outlined),
+                  title: Text(
+                    hasManagedStore
+                        ? 'Ir a mi tienda'
+                        : 'Administrar mi tienda',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    if (!mounted) return;
+                    await Navigator.of(context).pushNamed('/store-management');
+                    if (mounted) setState(() {});
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.logout_rounded,
+                    color: AppTheme.errorColor,
+                  ),
+                  title: const Text(
+                    'Cerrar sesión',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () async {
+                    try {
+                      await _authService.signOut();
+                    } catch (_) {}
+                    if (context.mounted) Navigator.of(context).pop();
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _debounceTimer?.cancel();
+    _bannerTimer?.cancel();
     super.dispose();
+  }
+
+  /// Iniciar timer para mostrar/ocultar banner
+  void _startBannerTimer() {
+    _bannerTimer = Timer.periodic(const Duration(seconds: 90), (timer) {
+      if (mounted) {
+        setState(() {
+          _showBanner = !_showBanner;
+        });
+      }
+    });
   }
 
   /// Cargar datos desde Supabase
@@ -214,6 +636,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
+            // Banner informativo sobre Carnaval App
+            SliverToBoxAdapter(child: _buildCarnavalInfoBanner()),
+
             if (_isSearching) _buildSearchResults() else _buildHomeContent(),
           ],
         ),
@@ -312,6 +737,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           'logoUrl': store['imagen_url'],
                           'ubicacion': store['ubicacion'],
                           'direccion': store['direccion'],
+                          'phone': store['phone'] ?? store['telefono'],
                         },
                       ),
                     ),
@@ -354,18 +780,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ProductDetailScreen(
-                        product: {
-                          'id': product['id'],
-                          'nombre': product['denominacion'],
-                          'precio':
-                              (product['app_dat_precio_venta']?[0]?['precio_venta'] ??
-                              product['precio_venta'] ??
-                              0),
-                          'imageUrl': product['imagen'],
-                          // Add other necessary fields
-                        },
-                      ),
+                      builder: (context) =>
+                          ProductDetailScreen(product: product),
                     ),
                   );
                 },
@@ -484,7 +900,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: IconButton(
                           icon: const Icon(Icons.account_circle_outlined),
                           color: Colors.white,
-                          onPressed: () {},
+                          onPressed: _onProfilePressed,
                         ),
                       ),
                     ],
@@ -552,6 +968,80 @@ class _HomeScreenState extends State<HomeScreen> {
               horizontal: 20,
               vertical: 16,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Banner informativo sobre Carnaval App con efecto marquee
+  Widget _buildCarnavalInfoBanner() {
+    if (!_showBanner) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTheme.paddingM,
+        AppTheme.paddingS,
+        AppTheme.paddingM,
+        AppTheme.paddingS,
+      ),
+      child: GestureDetector(
+        onTap: () {
+          // Reiniciar animación del marquee
+          _marqueeKey.currentState?.resetAnimation();
+        },
+        child: Container(
+          height: 36,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.blue.shade50, Colors.blue.shade100],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue.shade200, width: 1),
+          ),
+          child: Row(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Icon(
+                  Icons.info_outline,
+                  color: Colors.blue.shade600,
+                  size: 20,
+                ),
+              ),
+              Expanded(
+                child: _MarqueeText(
+                  key: _marqueeKey,
+                  textSpan: TextSpan(
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.blue.shade900,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    children: [
+                      const TextSpan(
+                        text:
+                            'Algunos de los productos que aparecen en el catálogo se pueden comprar en línea a través de Carnaval App con ',
+                      ),
+                      TextSpan(
+                        text: 'envío a domicilio gratis',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14, // Más grande
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                      const TextSpan(
+                        text:
+                            '. El precio puede diferir por temas logísticos y de preparación hasta en un 5%. Para ir a comprar haga click en el botón rojo en la parte inferior derecha.',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -829,18 +1319,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ProductDetailScreen(
-                                product: {
-                                  'id': product['id_producto'],
-                                  'nombre': product['nombre'],
-                                  'precio': product['precio_venta'],
-                                  'categoria': product['categoria_nombre'],
-                                  'imageUrl': product['imagen'],
-                                  'tienda': product['tienda_nombre'],
-                                  'rating': product['rating_promedio'],
-                                  'stock': product['stock_disponible'],
-                                },
-                              ),
+                              builder: (context) =>
+                                  ProductDetailScreen(product: product),
                             ),
                           );
                         },
@@ -1028,6 +1508,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   'municipio': 'Santo Domingo Este',
                                   'direccion':
                                       store['direccion'] ?? 'Sin dirección',
+                                  'phone': store['phone'] ?? store['telefono'],
                                   'productCount': store['total_productos'],
                                   'latitude': 18.4861,
                                   'longitude': -69.9312,
@@ -1042,6 +1523,85 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// Widget de texto con efecto marquee (desplazamiento horizontal)
+/// Widget de texto con efecto marquee (desplazamiento horizontal)
+class _MarqueeText extends StatefulWidget {
+  final TextSpan textSpan;
+
+  const _MarqueeText({super.key, required this.textSpan});
+
+  @override
+  State<_MarqueeText> createState() => _MarqueeTextState();
+}
+
+class _MarqueeTextState extends State<_MarqueeText>
+    with SingleTickerProviderStateMixin {
+  late ScrollController _scrollController;
+  late Timer _timer;
+  double _offset = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+
+    // Iniciar animación después de un pequeño delay
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        _startScrolling();
+      }
+    });
+  }
+
+  void resetAnimation() {
+    _offset = 0;
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+  }
+
+  void _startScrolling() {
+    _timer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (!mounted || !_scrollController.hasClients) {
+        timer.cancel();
+        return;
+      }
+
+      _offset += 1.5;
+
+      // Si llegamos al final, volver al inicio
+      if (_offset >= _scrollController.position.maxScrollExtent) {
+        _offset = 0;
+      }
+
+      _scrollController.jumpTo(_offset);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      physics: const NeverScrollableScrollPhysics(),
+      child: Row(
+        children: [
+          Text.rich(widget.textSpan),
+          const SizedBox(width: 100), // Espacio antes de repetir
+          Text.rich(widget.textSpan),
+        ],
+      ),
     );
   }
 }

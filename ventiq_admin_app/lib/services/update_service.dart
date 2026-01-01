@@ -1,9 +1,29 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UpdateService {
   static final _supabase = Supabase.instance.client;
+
+  /// Detectar si la aplicación se ejecuta en web
+  static bool isWeb() {
+    try {
+      return !Platform.isAndroid && !Platform.isIOS;
+    } catch (e) {
+      // En web, Platform.isAndroid y Platform.isIOS lanzan excepción
+      return true;
+    }
+  }
+
+  /// Detectar si la aplicación se ejecuta en APK (Android)
+  static bool isAPK() {
+    try {
+      return Platform.isAndroid;
+    } catch (e) {
+      return false;
+    }
+  }
 
   /// Obtener información de la versión actual desde changelog.json
   static Future<Map<String, dynamic>> getCurrentVersionInfo() async {
@@ -28,6 +48,8 @@ class UpdateService {
   }
 
   /// Verificar si hay actualizaciones disponibles
+  /// Para APK: Retorna actualización obligatoria si hay cambios
+  /// Para Web: Retorna información para mostrar diálogo informativo
   static Future<Map<String, dynamic>> checkForUpdates() async {
     try {
       print('🔍 Verificando actualizaciones disponibles...');
@@ -39,6 +61,7 @@ class UpdateService {
       final int currentBuild = currentInfo['build'];
       
       print('📱 Versión actual: $currentVersion (build $currentBuild)');
+      print('🌐 Plataforma: ${isWeb() ? 'WEB' : 'APK'}');
       
       // Llamar a la función RPC para verificar actualizaciones
       final response = await _supabase.rpc('fn_check_update', params: {
@@ -56,10 +79,23 @@ class UpdateService {
         updateInfo['current_version'] = currentVersion;
         updateInfo['current_build'] = currentBuild;
         updateInfo['app_name'] = appName;
+        updateInfo['is_web'] = isWeb();
+        updateInfo['is_apk'] = isAPK();
         
         if (updateInfo['hay_actualizacion'] == true) {
           print('🆕 Nueva versión disponible: ${updateInfo['version_disponible']}');
-          print('⚠️ Actualización obligatoria: ${updateInfo['obligatoria']}');
+          
+          if (isWeb()) {
+            // Para WEB: Mostrar como informativo (no obligatorio)
+            print('ℹ️ En WEB: Mostrar diálogo informativo para limpiar cache');
+            updateInfo['obligatoria'] = false;
+            updateInfo['es_web'] = true;
+          } else if (isAPK()) {
+            // Para APK: Mantener como obligatorio
+            print('⚠️ En APK: Actualización obligatoria');
+            updateInfo['obligatoria'] = true;
+            updateInfo['es_apk'] = true;
+          }
         } else {
           print('✅ La aplicación está actualizada');
         }

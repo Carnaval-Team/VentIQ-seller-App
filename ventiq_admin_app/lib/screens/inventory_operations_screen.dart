@@ -984,6 +984,32 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       ],
                     ),
                   ),
+                  if (observaciones.toString().contains('Venta desde orden')) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.shopping_bag, size: 10, color: Colors.purple),
+                          SizedBox(width: 4),
+                          Text(
+                            'Carnaval App',
+                            style: TextStyle(
+                              color: Colors.purple,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -1002,6 +1028,7 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                       ),
                     ),
                   ),
+                  
                 ],
               ),
               const SizedBox(height: 12),
@@ -1186,13 +1213,43 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Expanded(
-                              child: Text(
-                                'Operación #${operation['id']}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                ),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    'Operación #${operation['id']}',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1F2937),
+                                    ),
+                                  ),
+                                  if ((operation['observaciones'] ?? '').toString().contains('Venta desde orden')) ...[
+                                    const SizedBox(width: 12),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.purple.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.shopping_bag, size: 12, color: Colors.purple),
+                                          SizedBox(width: 6),
+                                          Text(
+                                            'Carnaval App',
+                                            style: TextStyle(
+                                              color: Colors.purple,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                             IconButton(
@@ -1388,6 +1445,8 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     if (especificos == null) return const Text('Sin información específica');
 
     if (especificos is Map<String, dynamic>) {
+      final clienteInfo = especificos['cliente_info'];
+      
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -1397,32 +1456,89 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children:
-              especificos.entries.map((entry) {
-                String label = _formatFieldLabel(entry.key);
-                String value = _formatFieldValue(entry.value);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 120,
-                        child: Text(
-                          '$label:',
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
+          children: [
+            ...especificos.entries.where((e) => e.key != 'cliente_info').map((entry) {
+              String label = _formatFieldLabel(entry.key);
+              String value = _formatFieldValue(entry.value);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 120,
+                      child: Text(
+                        '$label:',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
-                      Expanded(child: Text(value)),
-                    ],
+                    ),
+                    Expanded(child: Text(value)),
+                  ],
+                ),
+              );
+            }).toList(),
+            
+            if (clienteInfo != null && clienteInfo is Map<String, dynamic>) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: Divider(),
+              ),
+              const Row(
+                children: [
+                  Icon(Icons.person, size: 16, color: Color(0xFF4A90E2)),
+                  SizedBox(width: 8),
+                  Text(
+                    'Información del Cliente:',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF4A90E2)),
                   ),
-                );
-              }).toList(),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildClientInfoTile(clienteInfo),
+            ],
+          ],
         ),
       );
     }
 
     return Text(especificos.toString());
+  }
+
+  Widget _buildClientInfoTile(Map<String, dynamic> info) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildInfoItem('Nombre:', info['nombre_completo'] ?? info['nombre'] ?? 'N/A'),
+        _buildInfoItem('Código:', info['codigo_cliente'] ?? 'N/A'),
+        _buildInfoItem('Teléfono:', info['telefono'] ?? 'N/A'),
+        _buildInfoItem('Email:', info['email'] ?? 'N/A'),
+        if (info['documento_identidad'] != null)
+          _buildInfoItem('Doc. Ident.:', info['documento_identidad']),
+      ],
+    );
+  }
+
+  Widget _buildInfoItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 13, color: Colors.grey[600], fontWeight: FontWeight.w500),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildProductsList(List<dynamic> items) {
@@ -1505,31 +1621,58 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
                                   ),
                                 ),
                               ],
+                              if (item['precio_unitario'] != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Precio: \$${_formatFieldValue(item['precio_unitario'])}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
                         const SizedBox(width: 12),
-                        // Quantity counted
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4A90E2).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: const Color(0xFF4A90E2).withOpacity(0.3),
+                        // Quantity and Subtotal
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF4A90E2).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(0xFF4A90E2).withOpacity(0.3),
+                                ),
+                              ),
+                              child: Text(
+                                'Cant: ${item['cantidad_fisica'] ?? item['cantidad'] ?? 0}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF4A90E2),
+                                ),
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            '${item['cantidad_fisica'] ?? item['cantidad'] ?? 0}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF4A90E2),
-                            ),
-                          ),
+                            if (item['importe'] != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                '\$${_formatFieldValue(item['importe'])}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1F2937),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),

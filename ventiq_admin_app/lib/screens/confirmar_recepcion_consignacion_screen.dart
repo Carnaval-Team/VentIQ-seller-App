@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
 import '../services/consignacion_envio_service.dart';
+import '../services/consignacion_envio_listado_service.dart';
 import '../services/currency_display_service.dart';
 
 class ConfirmarRecepcionConsignacionScreen extends StatefulWidget {
@@ -11,6 +12,7 @@ class ConfirmarRecepcionConsignacionScreen extends StatefulWidget {
   final int idTiendaDestino;
   final int idAlmacenOrigen;
   final int idAlmacenDestino;
+  final int? idEnvio; // Opcional: si viene de un envío específico
 
   const ConfirmarRecepcionConsignacionScreen({
     Key? key,
@@ -19,6 +21,7 @@ class ConfirmarRecepcionConsignacionScreen extends StatefulWidget {
     required this.idTiendaDestino,
     required this.idAlmacenOrigen,
     required this.idAlmacenDestino,
+    this.idEnvio,
   }) : super(key: key);
 
   @override
@@ -40,11 +43,6 @@ class _ConfirmarRecepcionConsignacionScreenState
   // Mapa para guardar TextEditingControllers: {idProductoConsignacion: TextEditingController}
   final Map<int, TextEditingController> _precioControllers = {};
   
-  // Mapa para guardar margen %: {idProductoConsignacion: margenPorcentaje}
-  final Map<int, double> _margenPorcentaje = {};
-  
-  // Mapa para guardar controladores de margen: {idProductoConsignacion: TextEditingController}
-  final Map<int, TextEditingController> _margenControllers = {};
   
   // Tasa de cambio USD a CUP
   double _tasaCambio = 440.0;
@@ -76,10 +74,6 @@ class _ConfirmarRecepcionConsignacionScreenState
     for (final controller in _precioControllers.values) {
       controller.dispose();
     }
-    // Limpiar todos los TextEditingControllers de margen
-    for (final controller in _margenControllers.values) {
-      controller.dispose();
-    }
     super.dispose();
   }
 
@@ -87,8 +81,50 @@ class _ConfirmarRecepcionConsignacionScreenState
     setState(() => _isLoading = true);
 
     try {
-      final productos = await ConsignacionService
-          .getProductosPendientesConsignacion(widget.idContrato);
+      List<Map<String, dynamic>> productos;
+      
+      if (widget.idEnvio != null) {
+        // Si viene de un envío específico, obtener productos del envío
+        final productosEnvio = await ConsignacionEnvioListadoService.obtenerProductosEnvio(widget.idEnvio!);
+        
+        debugPrint('📦 Productos obtenidos del envío: ${productosEnvio.length}');
+        if (productosEnvio.isNotEmpty) {
+          debugPrint('📋 Campos disponibles: ${productosEnvio[0].keys.toList()}');
+        }
+        
+        // Transformar formato de productos del envío al formato esperado
+        productos = productosEnvio.map((p) {
+          final idEnvioProducto = (p['id_envio_producto'] as num?)?.toInt() ?? 0;
+          final idProducto = (p['id_producto'] as num?)?.toInt() ?? 0;
+          final nombreProducto = (p['nombre_producto'] as String?) ?? 'Producto sin nombre';
+          final sku = (p['sku'] as String?) ?? 'N/A';
+          final cantidadPropuesta = (p['cantidad_propuesta'] as num?)?.toDouble() ?? 0;
+          final precioCostoCup = (p['precio_costo_cup'] as num?)?.toDouble() ?? 0;
+          final precioCostoUsd = (p['precio_costo_usd'] as num?)?.toDouble() ?? 0;
+          final precioVentaCup = (p['precio_venta_cup'] as num?)?.toDouble() ?? 0;
+          
+          debugPrint('✅ Producto mapeado: id=$idEnvioProducto, nombre=$nombreProducto, cantidad=$cantidadPropuesta');
+          
+          return {
+            'id': idEnvioProducto,
+            'id_producto': idProducto,
+            'cantidad_enviada': cantidadPropuesta,
+            'precio_costo_unitario': precioCostoCup,
+            'precio_costo_usd': precioCostoUsd,
+            'precio_venta_sugerido': precioCostoCup,
+            'precio_venta_cup': precioVentaCup, // Agregar precio_venta_cup si ya está configurado
+            'puede_modificar_precio': true,
+            'producto': {
+              'id': idProducto,
+              'denominacion': nombreProducto,
+              'sku': sku,
+            },
+          };
+        }).toList();
+      } else {
+        // Flujo antiguo: obtener productos pendientes del contrato
+        productos = await ConsignacionService.getProductosPendientesConsignacion(widget.idContrato);
+      }
 
       setState(() {
         _productosPendientes = productos;
@@ -252,18 +288,20 @@ class _ConfirmarRecepcionConsignacionScreenState
           final nombreProducto = producto['producto']['denominacion'] ?? 'Producto';
           final sku = producto['producto']['sku'] ?? 'N/A';
           final cantidad = producto['cantidad_enviada'];
-          // Precio de costo en USD enviado por el consignador (precio_costo_unitario)
-          final precioSugerido = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
+          // Precio de costo en CUP configurado por el consignador (precio_costo_cup)
+          final precioCostoCUP = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
+          // Precio de costo en USD (del producto original)
+          final precioCostoUSD = (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
           final puedeModificarPrecio = (producto['puede_modificar_precio'] as bool?) ?? false;
           // Precio de venta en CUP configurado por el consignatario
-          final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioSugerido;
+          final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioCostoCUP;
           
-          // Si no puede modificar, establecer automáticamente el precio sugerido convertido a CUP
+          // Si no puede modificar, establecer automáticamente el precio sugerido (ya está en CUP)
           if (!puedeModificarPrecio && !_preciosVentaConfigurables.containsKey(idProductoConsignacion)) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               setState(() {
-                // ✅ Convertir el precio sugerido de USD a CUP
-                _preciosVentaConfigurables[idProductoConsignacion] = precioSugerido * _tasaCambio;
+                // ✅ El precio ya está en CUP, no necesita conversión
+                _preciosVentaConfigurables[idProductoConsignacion] = precioCostoCUP;
               });
             });
           }
@@ -335,16 +373,16 @@ class _ConfirmarRecepcionConsignacionScreenState
                     ],
                   ),
                   const SizedBox(height: 12),
-                  // Fila 2: Precio de costo (informativo), margen % y precio de venta
+                  // Fila 2: Precio de costo, precio de venta y ganancias
                   Row(
                     children: [
                       Expanded(
-                        flex: 3,
+                        flex: 2,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Precio Costo (del Consignador)',
+                              'Precio Costo',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -359,25 +397,24 @@ class _ConfirmarRecepcionConsignacionScreenState
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(color: Colors.blue.withOpacity(0.3)),
                               ),
-                              child: Row(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '\$${precioSugerido.toStringAsFixed(2)} USD',
+                                    '\$${precioCostoUSD.toStringAsFixed(2)} USD',
                                     style: const TextStyle(
-                                      fontSize: 20,
+                                      fontSize: 14,
                                       fontWeight: FontWeight.bold,
                                       color: Colors.blue,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
+                                  const SizedBox(height: 4),
                                   Text(
-                                    ' / \$${(precioSugerido * _tasaCambio).toStringAsFixed(2)} CUP',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      color: Colors.blue[600],
+                                    '\$${precioCostoCUP.toStringAsFixed(2)} CUP',
+                                    style: const TextStyle(
+                                      fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      fontStyle: FontStyle.italic,
+                                      color: Colors.blue,
                                     ),
                                   ),
                                 ],
@@ -388,31 +425,12 @@ class _ConfirmarRecepcionConsignacionScreenState
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        flex: 3,
+                        flex: 2,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Margen %',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[700],
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            _buildMargenTextField(idProductoConsignacion, precioSugerido),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 3,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Precio de Venta * CUP',
+                              'Precio de Venta (CUP)',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -422,10 +440,19 @@ class _ConfirmarRecepcionConsignacionScreenState
                             const SizedBox(height: 4),
                             _buildPrecioTextField(
                               idProductoConsignacion,
-                              precioSugerido,
+                              precioCostoCUP,
                               puedeModificarPrecio,
                             ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: _buildGananciasColumn(
+                          idProductoConsignacion,
+                          precioCostoCUP,
+                          precioCostoUSD,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -454,26 +481,17 @@ class _ConfirmarRecepcionConsignacionScreenState
   }
 
   /// Construye el TextField para el precio de venta con controller persistente
-  /// El consignatario siempre puede configurar el precio de venta
-  /// Carga automáticamente el precio convertido en CUP
+  /// El consignatario configura el precio de venta en CUP
+  /// SIN precio preconfigurado - El consignatario debe ingresar el precio
   Widget _buildPrecioTextField(
     int idProductoConsignacion,
-    double precioSugerido,
+    double precioCostoCUP,
     bool puedeModificarPrecio,
   ) {
     // Obtener o crear el controller
     if (!_precioControllers.containsKey(idProductoConsignacion)) {
-      // ✅ Cargar automáticamente el precio convertido en CUP
-      // El precio sugerido viene en USD, se convierte a CUP
-      final precioEnCUP = precioSugerido * _tasaCambio;
-      final precioInicial = _preciosVentaConfigurables[idProductoConsignacion] ?? precioEnCUP;
-      _precioControllers[idProductoConsignacion] = TextEditingController(
-        text: precioInicial > 0 ? precioInicial.toStringAsFixed(2) : precioEnCUP.toStringAsFixed(2),
-      );
-      // Guardar el precio inicial en el mapa (en CUP)
-      if (!_preciosVentaConfigurables.containsKey(idProductoConsignacion)) {
-        _preciosVentaConfigurables[idProductoConsignacion] = precioInicial > 0 ? precioInicial : precioEnCUP;
-      }
+      // ✅ SIN precio preconfigurado - Campo vacío para que el consignatario ingrese el precio
+      _precioControllers[idProductoConsignacion] = TextEditingController(text: '');
     }
 
     final controller = _precioControllers[idProductoConsignacion]!;
@@ -484,7 +502,7 @@ class _ConfirmarRecepcionConsignacionScreenState
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       controller: controller,
       decoration: InputDecoration(
-        hintText: precioSugerido.toStringAsFixed(2),
+        hintText: 'Ingrese precio',
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(6),
           borderSide: BorderSide(
@@ -520,64 +538,75 @@ class _ConfirmarRecepcionConsignacionScreenState
     );
   }
 
-  /// Construye el TextField para el margen % con cálculo automático de precio
-  Widget _buildMargenTextField(int idProductoConsignacion, double precioSugerido) {
-    // Obtener o crear el controller de margen
-    if (!_margenControllers.containsKey(idProductoConsignacion)) {
-      _margenControllers[idProductoConsignacion] = TextEditingController(text: '');
-    }
+  /// Construye la columna de ganancias con cálculos en USD, CUP y porcentaje
+  Widget _buildGananciasColumn(
+    int idProductoConsignacion,
+    double precioCostoCUP,
+    double precioCostoUSD,
+  ) {
+    final precioVentaCUP = _preciosVentaConfigurables[idProductoConsignacion] ?? 0.0;
+    final precioVentaUSD = precioVentaCUP > 0 ? precioVentaCUP / _tasaCambio : 0.0;
+    final gananciaUSD = precioVentaUSD - precioCostoUSD;
+    final gananciaCUP = precioVentaCUP - precioCostoCUP;
+    final porcentajeGanancia = precioCostoCUP > 0 ? ((gananciaCUP / precioCostoCUP) * 100) : 0.0;
 
-    final controller = _margenControllers[idProductoConsignacion]!;
-
-    return TextField(
-      enabled: true,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      controller: controller,
-      decoration: InputDecoration(
-        hintText: '0',
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(6),
-          borderSide: BorderSide(color: Colors.grey[400]!),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ganancias',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey[700],
+          ),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(6),
-          borderSide: BorderSide(color: Colors.grey[400]!),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: gananciaUSD >= 0 ? Colors.green[50] : Colors.red[50],
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: gananciaUSD >= 0 ? Colors.green.withOpacity(0.3) : Colors.red.withOpacity(0.3),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '\$${gananciaUSD.toStringAsFixed(2)} USD',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '\$${gananciaCUP.toStringAsFixed(2)} CUP',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${porcentajeGanancia.toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
+                ),
+              ),
+            ],
+          ),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        isDense: true,
-        suffixText: '%',
-      ),
-      onChanged: (value) {
-        final margen = double.tryParse(value);
-        if (margen != null && margen >= 0) {
-          setState(() {
-            _margenPorcentaje[idProductoConsignacion] = margen;
-            // Calcular precio de venta automáticamente
-            final precioBase = precioSugerido * _tasaCambio; // Convertir a CUP
-            final precioConMargen = precioBase * (1 + (margen / 100));
-            _preciosVentaConfigurables[idProductoConsignacion] = precioConMargen;
-            // Actualizar el controller de precio
-            _precioControllers[idProductoConsignacion]?.text = precioConMargen.toStringAsFixed(2);
-          });
-        }
-      },
-      onSubmitted: (value) {
-        final margen = double.tryParse(value);
-        if (margen != null && margen >= 0) {
-          setState(() {
-            _margenPorcentaje[idProductoConsignacion] = margen;
-            // Calcular precio de venta automáticamente
-            final precioBase = precioSugerido * _tasaCambio; // Convertir a CUP
-            final precioConMargen = precioBase * (1 + (margen / 100));
-            _preciosVentaConfigurables[idProductoConsignacion] = precioConMargen;
-            // Actualizar el controller de precio
-            _precioControllers[idProductoConsignacion]?.text = precioConMargen.toStringAsFixed(2);
-          });
-        }
-      },
+      ],
     );
   }
-
+ 
   Widget _buildBotonesAccion() {
     return Column(
       children: [
@@ -812,30 +841,70 @@ class _ConfirmarRecepcionConsignacionScreenState
         }
 
         // Buscar envío pendiente para este contrato
-        final enviosPendientes = await ConsignacionEnvioService.obtenerEnviosPorEstado(
-          idContrato: widget.idContrato,
-          estado: ConsignacionEnvioService.ESTADO_EN_TRANSITO,
-        );
+        // Primero buscar en estado EN_TRANSITO, luego en PROPUESTO
+        late int idEnvio;
+        
+        // Si viene de un envío específico (idEnvio proporcionado), usarlo directamente
+        if (widget.idEnvio != null) {
+          idEnvio = widget.idEnvio!;
+          debugPrint('📦 Usando envío específico: $idEnvio');
+        } else {
+          // Buscar envío en estado EN_TRANSITO
+          var enviosPendientes = await ConsignacionEnvioService.obtenerEnviosPorEstado(
+            idContrato: widget.idContrato,
+            estado: ConsignacionEnvioService.ESTADO_EN_TRANSITO,
+          );
 
-        if (enviosPendientes.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('⚠️ No hay envío pendiente para aceptar'),
-                backgroundColor: Colors.orange,
-              ),
+          if (enviosPendientes.isEmpty) {
+            // Si no hay EN_TRANSITO, buscar en PROPUESTO
+            debugPrint('⚠️ No hay envío EN_TRANSITO, buscando PROPUESTO...');
+            enviosPendientes = await ConsignacionEnvioService.obtenerEnviosPorEstado(
+              idContrato: widget.idContrato,
+              estado: ConsignacionEnvioService.ESTADO_PROPUESTO,
             );
           }
-          setState(() => _isConfirming = false);
-          return;
+
+          if (enviosPendientes.isEmpty) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('⚠️ No hay envío pendiente para aceptar'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+            setState(() => _isConfirming = false);
+            return;
+          }
+
+          idEnvio = enviosPendientes[0]['id'] as int;
+          debugPrint('📦 Envío encontrado: $idEnvio');
         }
 
-        final idEnvio = enviosPendientes[0]['id'] as int;
-
+        // Construir JSON de precios del formulario
+        final preciosProductos = <Map<String, dynamic>>[];
+        for (final producto in _productosPendientes) {
+          final idProductoConsignacion = producto['id'] as int;
+          final idProducto = producto['id_producto'] as int;
+          final precioSugerido = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
+          final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioSugerido;
+          final precioCostoUsd = (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+          
+          preciosProductos.add({
+            'id_producto': idProducto,
+            'precio_venta_cup': precioConfigurable,
+            'precio_costo_usd': precioCostoUsd,
+          });
+        }
+        
+        debugPrint('💰 Precios del formulario: $preciosProductos');
+        
         // Aceptar envío completo con ConsignacionEnvioService
         final aceptarResult = await ConsignacionEnvioService.aceptarEnvio(
           idEnvio: idEnvio,
           idUsuario: user.id,
+          idTiendaDestino: widget.idTiendaDestino,
+          preciosProductos: preciosProductos,
         );
 
         if (!mounted) return;

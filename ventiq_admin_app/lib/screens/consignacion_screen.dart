@@ -24,17 +24,33 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
   List<Map<String, dynamic>> _contratos = [];
   Map<String, dynamic> _estadisticas = {};
   
+  // Búsqueda y filtrado
+  final TextEditingController _searchController = TextEditingController();
+  int? _filtroEstado; // null = todos, 0 = pendientes, 1 = confirmados, 2 = cancelados
+  int _currentPage = 0;
+  int _totalRegistros = 0;
+  bool _hasMore = false;
+  static const int _pageSize = 20;
+  bool _isSearching = false;
+  
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _searchController.addListener(_onSearchChanged);
     _loadData();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _currentPage = 0;
+    _buscarContratos();
   }
 
   Future<void> _loadData() async {
@@ -60,6 +76,39 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
     } catch (e) {
       debugPrint('❌ Error cargando datos: $e');
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _buscarContratos() async {
+    if (_idTienda == null) return;
+
+    setState(() => _isSearching = true);
+
+    try {
+      final resultado = await ConsignacionService.getContratosFiltrados(
+        idTienda: _idTienda!,
+        estadoConfirmacion: _filtroEstado,
+        searchTerm: _searchController.text.isEmpty ? null : _searchController.text,
+        limit: _pageSize,
+        offset: _currentPage * _pageSize,
+      );
+
+      setState(() {
+        _contratos = List<Map<String, dynamic>>.from(resultado['contratos'] ?? []);
+        _totalRegistros = resultado['total'] ?? 0;
+        _hasMore = resultado['hasMore'] ?? false;
+        _isSearching = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Error buscando contratos: $e');
+      setState(() => _isSearching = false);
+    }
+  }
+
+  void _cargarMas() {
+    if (_hasMore && !_isSearching) {
+      _currentPage++;
+      _buscarContratos();
     }
   }
 
@@ -226,33 +275,172 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
   Widget _buildContratosTab() {
     return RefreshIndicator(
       onRefresh: _loadData,
-      child: _contratos.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.handshake_outlined, size: 80, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No hay contratos activos',
-                    style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+      child: Column(
+        children: [
+          // Barra de búsqueda y filtros
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.grey[50],
+            child: Column(
+              children: [
+                // Campo de búsqueda
+                TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar por nombre de tienda...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              _onSearchChanged();
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Los contratos se gestionan desde el SuperAdmin',
-                    style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                    textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                
+                // Filtros por estado
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFiltroChip(
+                        label: 'Todos',
+                        value: null,
+                        isSelected: _filtroEstado == null,
+                        onTap: () {
+                          setState(() => _filtroEstado = null);
+                          _currentPage = 0;
+                          _buscarContratos();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _buildFiltroChip(
+                        label: 'Pendientes',
+                        value: 0,
+                        isSelected: _filtroEstado == 0,
+                        color: Colors.orange,
+                        onTap: () {
+                          setState(() => _filtroEstado = 0);
+                          _currentPage = 0;
+                          _buscarContratos();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _buildFiltroChip(
+                        label: 'Confirmados',
+                        value: 1,
+                        isSelected: _filtroEstado == 1,
+                        color: Colors.green,
+                        onTap: () {
+                          setState(() => _filtroEstado = 1);
+                          _currentPage = 0;
+                          _buscarContratos();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _buildFiltroChip(
+                        label: 'Cancelados',
+                        value: 2,
+                        isSelected: _filtroEstado == 2,
+                        color: Colors.red,
+                        onTap: () {
+                          setState(() => _filtroEstado = 2);
+                          _currentPage = 0;
+                          _buscarContratos();
+                        },
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _contratos.length,
-              itemBuilder: (context, index) {
-                return _buildContratoCard(_contratos[index]);
-              },
+                ),
+              ],
             ),
+          ),
+          
+          // Lista de contratos
+          Expanded(
+            child: _isSearching
+                ? const Center(child: CircularProgressIndicator())
+                : _contratos.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.handshake_outlined, size: 80, color: Colors.grey[400]),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No hay contratos',
+                              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _searchController.text.isNotEmpty
+                                  ? 'No se encontraron contratos con esos criterios'
+                                  : 'Los contratos se gestionan desde el SuperAdmin',
+                              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _contratos.length + (_hasMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == _contratos.length) {
+                            // Botón "Cargar más"
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              child: Center(
+                                child: ElevatedButton.icon(
+                                  onPressed: _cargarMas,
+                                  icon: const Icon(Icons.expand_more),
+                                  label: const Text('Cargar más'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          return _buildContratoCard(_contratos[index]);
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFiltroChip({
+    required String label,
+    required int? value,
+    required bool isSelected,
+    Color color = Colors.blue,
+    required VoidCallback onTap,
+  }) {
+    return FilterChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (_) => onTap(),
+      backgroundColor: Colors.white,
+      selectedColor: color.withOpacity(0.2),
+      side: BorderSide(
+        color: isSelected ? color : Colors.grey[300]!,
+        width: isSelected ? 2 : 1,
+      ),
+      labelStyle: TextStyle(
+        color: isSelected ? color : Colors.grey[700],
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+      ),
     );
   }
 

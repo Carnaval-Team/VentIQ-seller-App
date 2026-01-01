@@ -181,6 +181,7 @@ class _StoresScreenState extends State<StoresScreen> {
             'municipio':
                 store['municipio'] ?? '', // TODO: Agregar a la función RPC
             'direccion': store['direccion'] ?? 'Sin dirección',
+            'phone': store['phone'],
             'productCount': (store['total_productos'] as num?)?.toInt() ?? 0,
             'latitude': null, // TODO: Agregar coordenadas a la función RPC
             'longitude': null, // TODO: Agregar coordenadas a la función RPC
@@ -623,8 +624,8 @@ class _StoresScreenState extends State<StoresScreen> {
             storeName: store['nombre'] as String? ?? 'Tienda',
             logoUrl: store['imagen_url'] as String?,
             ubicacion: store['ubicacion'] as String? ?? 'Sin ubicación',
-            provincia: 'Santo Domingo', // TODO: Agregar a la función RPC
-            municipio: 'Santo Domingo Este', // TODO: Agregar a la función RPC
+            provincia: '', // TODO: Agregar a la función RPC
+            municipio: '', // TODO: Agregar a la función RPC
             direccion: store['direccion'] as String? ?? 'Sin dirección',
             productCount: (store['total_productos'] as num?)?.toInt() ?? 0,
             latitude: null, // TODO: Agregar coordenadas a la función RPC

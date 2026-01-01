@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../services/cart_service.dart';
+import '../services/store_service.dart';
 import 'route_plan_screen.dart';
 
 /// Pantalla del carrito de compras
@@ -8,11 +9,12 @@ class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
 
   @override
-  State<CartScreen> createState() => _CartScreenState();
+  State<CartScreen> createState() => CartScreenState();
 }
 
-class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
+class CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
   final CartService _cartService = CartService();
+  final StoreService _storeService = StoreService();
   bool _isLoading = false;
 
   @override
@@ -66,6 +68,10 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
 
   Future<void> _refreshCart() async {
     print('🔄 Pull to refresh - Recargando carrito...');
+    await _loadCart();
+  }
+
+  Future<void> refreshCart() async {
     await _loadCart();
   }
 
@@ -173,24 +179,38 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
 
     // Filter stores with valid location
     final List<Map<String, dynamic>> storesWithLocation = [];
+    final Map<int, List<CartItem>> itemsByStore = {};
+
+    for (final item in _cartService.items) {
+      itemsByStore.putIfAbsent(item.storeId, () => []).add(item);
+    }
+
     for (final item in uniqueStores.values) {
-      if (item.storeLocation != null && item.storeLocation!.contains(',')) {
-        storesWithLocation.add({
-          'id': item.storeId,
-          'denominacion': item.storeName,
-          'ubicacion': item.storeLocation,
-          'imagen_url': item
-              .storeLocation, // Using storeLocation as placeholder if needed? No, wait.
-          // CartItem doesn't have store image URL readily available in plain CartItem?
-          // Let's check CartItem definition again.
-          // It has 'storeLocation', 'storeName'. IT DOES NOT HAVE store image URL explicitly in the constructor shown earlier?
-          // Wait, let me check the CartItem definition in step 13.
-          // It DOES NOT have storeImageUrl. It has productImage and productName.
-          // I might need to fetch store details or just use a default icon.
-          // Or I can update CartItem to include it later, but for now let's survive without it or pass null.
-          'direccion': item.storeAddress,
-        });
-      }
+      // Obtener detalles reales para traer imagen_url (logo) y validar coordenadas
+      final storeDetails = await _storeService.getStoreDetails(item.storeId);
+      final ubicacionRaw =
+          (storeDetails?['ubicacion'] as String?) ?? item.storeLocation;
+
+      final parts = ubicacionRaw?.split(',');
+      final lat = (parts != null && parts.length == 2)
+          ? double.tryParse(parts[0].trim())
+          : null;
+      final lng = (parts != null && parts.length == 2)
+          ? double.tryParse(parts[1].trim())
+          : null;
+
+      if (lat == null || lng == null) continue;
+
+      storesWithLocation.add({
+        'id': item.storeId,
+        'denominacion':
+            (storeDetails?['denominacion'] as String?) ?? item.storeName,
+        'ubicacion': ubicacionRaw,
+        'imagen_url': storeDetails?['imagen_url'],
+        'logoUrl': storeDetails?['imagen_url'],
+        'direccion':
+            (storeDetails?['direccion'] as String?) ?? item.storeAddress,
+      });
     }
 
     if (storesWithLocation.isEmpty) {
@@ -207,7 +227,10 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => RoutePlanScreen(stores: storesWithLocation),
+        builder: (context) => RoutePlanScreen(
+          stores: storesWithLocation,
+          itemsByStore: itemsByStore,
+        ),
       ),
     );
   }
@@ -292,9 +315,23 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton.icon(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    // Navegar al home (MainScreen) limpiando todo el stack
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '/home',
+                      (route) => false,
+                    );
+                  },
                   icon: const Icon(Icons.shopping_bag_outlined),
-                  label: const Text('Explorar productos'),
+                  label: const Text(
+                    'Explorar productos',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryColor,
                     padding: const EdgeInsets.symmetric(
@@ -605,18 +642,22 @@ class _CartScreenState extends State<CartScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    FittedBox(
-                      child: Text(
-                        '\$${item.price.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.textPrimary,
-                          letterSpacing: -0.5,
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '\$${item.price.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                            letterSpacing: -0.5,
+                          ),
                         ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     // Controles de cantidad
                     _buildQuantityControls(item),
                   ],

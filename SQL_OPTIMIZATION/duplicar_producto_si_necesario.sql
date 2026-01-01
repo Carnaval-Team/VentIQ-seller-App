@@ -78,14 +78,14 @@ BEGIN
     denominacion_corta, descripcion, descripcion_corta, um,
     es_refrigerado, es_fragil, es_peligroso, es_vendible, es_comprable,
     es_inventariable, es_por_lotes, dias_alert_caducidad, codigo_barras,
-    imagen, es_elaborado, es_servicio, created_at
+    imagen, es_elaborado, es_servicio, id_vendedor_app, mostrar_en_catalogo, created_at
   )
   SELECT
     p_id_tienda_destino, sku, v_id_categoria_destino, denominacion, nombre_comercial,
     denominacion_corta, descripcion, descripcion_corta, um,
     es_refrigerado, es_fragil, es_peligroso, es_vendible, es_comprable,
     es_inventariable, es_por_lotes, dias_alert_caducidad, codigo_barras,
-    imagen, es_elaborado, es_servicio, CURRENT_TIMESTAMP
+    imagen, es_elaborado, es_servicio, NULL, false, CURRENT_TIMESTAMP
   FROM app_dat_producto
   WHERE id = p_id_producto_original
   RETURNING id INTO v_id_producto_nuevo;
