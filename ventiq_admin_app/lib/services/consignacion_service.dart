@@ -1630,6 +1630,7 @@ class ConsignacionService {
     required int idAlmacenDestino,
     required List<int> idsProductosConsignacion,
     Map<int, double>? preciosVenta,
+    int? idEnvio, // Opcional: ID del envío para actualizar su estado
   }) async {
     try {
       debugPrint('✅ Confirmando recepción de productos en consignación...');
@@ -1773,44 +1774,53 @@ class ConsignacionService {
             final idVariante = prodConsig['id_variante'] as int?;
 
             try {
-              // Buscar si ya existe precio de venta para este producto (hoy o después)
               final hoy = DateTime.now().toIso8601String().split('T')[0];
-              final preciosExistentes = await _supabase
+              final ayer = DateTime.now().subtract(const Duration(days: 1)).toIso8601String().split('T')[0];
+              
+              // ✅ PASO 1: Cerrar precios anteriores (igual que el RPC)
+              await _supabase
                   .from('app_dat_precio_venta')
-                  .select('id')
+                  .update({'fecha_hasta': ayer})
                   .eq('id_producto', idProductoDuplicado)
-                  .eq('fecha_desde', hoy);
+                  .isFilter('fecha_hasta', null);
+              
+              debugPrint('✅ Precios anteriores cerrados para producto $idProductoDuplicado');
+              
+              // ✅ PASO 2: Crear nuevo precio de venta
+              await _supabase
+                  .from('app_dat_precio_venta')
+                  .insert({
+                    'id_producto': idProductoDuplicado,
+                    'id_variante': idVariante,
+                    'precio_venta_cup': precioVenta,
+                    'fecha_desde': hoy,
+                  });
 
-              if ((preciosExistentes as List).isNotEmpty) {
-                // Actualizar precio existente
-                await _supabase
-                    .from('app_dat_precio_venta')
-                    .update({
-                      'precio_venta_cup': precioVenta,
-                    })
-                    .eq('id_producto', idProductoDuplicado)
-                    .eq('fecha_desde', hoy);
-
-                debugPrint('✅ Precio de venta actualizado: Producto $idProductoDuplicado = \$$precioVenta');
-              } else {
-                // Crear nuevo precio de venta
-                await _supabase
-                    .from('app_dat_precio_venta')
-                    .insert({
-                      'id_producto': idProductoDuplicado,
-                      'id_variante': idVariante,
-                      'precio_venta_cup': precioVenta,
-                      'fecha_desde': hoy,
-                    });
-
-                debugPrint('✅ Precio de venta creado: Producto $idProductoDuplicado = \$$precioVenta');
-              }
+              debugPrint('✅ Precio de venta creado: Producto $idProductoDuplicado = \$$precioVenta CUP (desde $hoy)');
             } catch (e) {
               debugPrint('⚠️ Error configurando precio de venta: $e');
             }
           }
         } catch (e) {
           debugPrint('⚠️ Error actualizando producto consignación: $e');
+        }
+      }
+
+      // ✅ NUEVO: Actualizar estado del envío a EN_TRANSITO (3) si se proporcionó idEnvio
+      if (idEnvio != null) {
+        try {
+          await _supabase
+              .from('app_dat_consignacion_envio')
+              .update({
+                'estado_envio': 3, // EN_TRANSITO
+                'fecha_envio': DateTime.now().toIso8601String(),
+                'updated_at': DateTime.now().toIso8601String(),
+              })
+              .eq('id', idEnvio);
+          
+          debugPrint('✅ Estado del envío actualizado a EN_TRANSITO (3)');
+        } catch (e) {
+          debugPrint('⚠️ Error actualizando estado del envío (no crítico): $e');
         }
       }
 
@@ -2073,21 +2083,35 @@ class ConsignacionService {
           continue;
         }
         
-        // ✅ IMPORTANTE: SIEMPRE obtener presentación del producto DUPLICADO (tienda destino)
-        // NO usar la presentación del producto original, aunque venga en los datos
+        // ✅ IMPORTANTE: Obtener presentación usando el mapeo de duplicación
         int? idPresentacion;
         try {
-          final presentacionResponse = await _supabase
-              .from('app_dat_producto_presentacion')
-              .select('id')
-              .eq('id_producto', idProductoDuplicado)
+          // Primero intentar obtener del mapeo de duplicación
+          final mapeoResponse = await _supabase
+              .from('app_dat_producto_consignacion_duplicado')
+              .select('id_presentacion_duplicada')
+              .eq('id_producto_original', idProductoOriginal)
+              .eq('id_tienda_destino', idTiendaDestino)
               .limit(1);
           
-          if ((presentacionResponse as List).isNotEmpty) {
-            idPresentacion = presentacionResponse[0]['id'] as int;
-            debugPrint('✅ Presentación obtenida del producto duplicado $idProductoDuplicado: $idPresentacion');
+          if ((mapeoResponse as List).isNotEmpty && mapeoResponse[0]['id_presentacion_duplicada'] != null) {
+            idPresentacion = mapeoResponse[0]['id_presentacion_duplicada'] as int;
+            debugPrint('✅ Presentación obtenida del mapeo: $idPresentacion (producto duplicado: $idProductoDuplicado)');
           } else {
-            debugPrint('⚠️ No se encontró presentación para producto duplicado $idProductoDuplicado');
+            // Si no hay mapeo, buscar cualquier presentación del producto duplicado
+            final presentacionResponse = await _supabase
+                .from('app_dat_producto_presentacion')
+                .select('id')
+                .eq('id_producto', idProductoDuplicado)
+                .eq('es_base', true)
+                .limit(1);
+            
+            if ((presentacionResponse as List).isNotEmpty) {
+              idPresentacion = presentacionResponse[0]['id'] as int;
+              debugPrint('✅ Presentación base obtenida del producto duplicado $idProductoDuplicado: $idPresentacion');
+            } else {
+              debugPrint('⚠️ No se encontró presentación para producto duplicado $idProductoDuplicado');
+            }
           }
         } catch (e) {
           debugPrint('⚠️ Error obteniendo presentación del producto duplicado: $e');

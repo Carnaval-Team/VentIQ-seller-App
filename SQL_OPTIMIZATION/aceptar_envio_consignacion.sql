@@ -156,13 +156,24 @@ BEGIN
       v_id_producto_destino := v_producto.id_producto;
     END IF;
     
-    -- 4b. Obtener presentación base del producto duplicado/reutilizado
-    SELECT pp.id
+    -- 4b. Obtener presentación del producto duplicado usando el mapeo
+    -- Primero intentar obtener del mapeo de duplicación
+    SELECT pcd.id_presentacion_duplicada
     INTO v_id_presentacion_base
-    FROM app_dat_producto_presentacion pp
-    WHERE pp.id_producto = v_id_producto_destino
-      AND pp.es_base = true
+    FROM app_dat_producto_consignacion_duplicado pcd
+    WHERE pcd.id_producto_original = v_producto.id_producto
+      AND pcd.id_tienda_destino = v_id_tienda_destino
     LIMIT 1;
+    
+    -- Si no hay mapeo, buscar la presentación base del producto duplicado
+    IF v_id_presentacion_base IS NULL THEN
+      SELECT pp.id
+      INTO v_id_presentacion_base
+      FROM app_dat_producto_presentacion pp
+      WHERE pp.id_producto = v_id_producto_destino
+        AND pp.es_base = true
+      LIMIT 1;
+    END IF;
     
     -- 4c. Actualizar precio_venta en tienda consignataria para el producto duplicado
     -- Primero cerrar el precio anterior (si existe)
