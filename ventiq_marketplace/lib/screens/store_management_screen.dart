@@ -770,14 +770,17 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
         longitude: lng,
       );
 
+      int? storeIdInt;
       final storeId = tienda['id'];
       if (storeId is int) {
-        await _storeService.ensureGerenteLink(uuid: uuid, storeId: storeId);
+        storeIdInt = storeId;
       } else if (storeId is num) {
-        await _storeService.ensureGerenteLink(
-          uuid: uuid,
-          storeId: storeId.toInt(),
-        );
+        storeIdInt = storeId.toInt();
+      }
+
+      if (storeIdInt != null) {
+        await _storeService.ensureGerenteLink(uuid: uuid, storeId: storeIdInt);
+        await _storeService.createDefaultSubscription(storeIdInt, uuid);
       }
 
       if (!mounted) return;
@@ -913,7 +916,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     final effectiveVisible = isValidated && isVisibleInCatalog;
     final catalogUrl = storeId == null
         ? null
-        : 'https://inventtia-catalogo.netlify.app/#/?${Uri(queryParameters: {'storeId': storeId.toString()}).query}';
+        : 'https://inventtia-catalogo.netlify.app/open.html?${Uri(queryParameters: {'storeId': storeId.toString()}).query}';
 
     return RefreshIndicator(
       onRefresh: _loadStores,

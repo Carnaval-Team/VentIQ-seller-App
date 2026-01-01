@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:app_links/app_links.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'home_screen.dart';
 import 'stores_screen.dart';
@@ -20,6 +22,42 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   bool _didApplyInitialTab = false;
   bool _didHandleDeepLinkStore = false;
+
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _deepLinkSub;
+
+  int? _parseStoreIdFromUri(Uri? uri) {
+    if (uri == null) return null;
+    final raw = (uri.queryParameters['storeId'] ?? '').toString();
+    final id = int.tryParse(raw);
+    if (id != null && id > 0) return id;
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    _deepLinkSub = _appLinks.uriLinkStream.listen((uri) {
+      if (!mounted) return;
+      if (_didHandleDeepLinkStore) return;
+
+      final storeId = _parseStoreIdFromUri(uri);
+      if (storeId == null || storeId <= 0) return;
+
+      _didHandleDeepLinkStore = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _openStoreFromDeepLink(storeId);
+      });
+    }, onError: (_) {});
+  }
+
+  @override
+  void dispose() {
+    _deepLinkSub?.cancel();
+    super.dispose();
+  }
 
   int? _parseStoreIdFromUrl() {
     final base = Uri.base;

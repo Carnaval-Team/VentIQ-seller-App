@@ -79,6 +79,57 @@ class StoreManagementService {
     return Map<String, dynamic>.from(response as Map);
   }
 
+  Future<Map<String, dynamic>?> createDefaultSubscription(
+    int idTienda,
+    String creadoPor,
+  ) async {
+    try {
+      final existing = await _supabase
+          .from('app_suscripciones')
+          .select('id')
+          .eq('id_tienda', idTienda)
+          .limit(1)
+          .maybeSingle();
+
+      if (existing != null) {
+        return Map<String, dynamic>.from(existing as Map);
+      }
+
+      final subscriptionData = {
+        'id_tienda': idTienda,
+        'id_plan': 1,
+        'estado': 2,
+        'creado_por': creadoPor,
+        'renovacion_automatica': false,
+        'observaciones':
+            'Suscripción creada automáticamente al registrar la tienda',
+      };
+
+      final response = await _supabase
+          .from('app_suscripciones')
+          .insert(subscriptionData)
+          .select('''
+            *,
+            app_suscripciones_plan (
+              id,
+              denominacion,
+              descripcion,
+              precio_mensual,
+              duracion_trial_dias,
+              limite_tiendas,
+              limite_usuarios,
+              funciones_habilitadas,
+              es_activo
+            )
+          ''')
+          .single();
+
+      return Map<String, dynamic>.from(response as Map);
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>> updateStore({
     required int storeId,
     required String denominacion,

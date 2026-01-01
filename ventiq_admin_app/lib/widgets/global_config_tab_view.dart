@@ -16,23 +16,26 @@ class GlobalConfigTabView extends StatefulWidget {
 }
 
 class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
-  final UserPreferencesService _userPreferencesService = UserPreferencesService();
+  final UserPreferencesService _userPreferencesService =
+      UserPreferencesService();
   final SubscriptionService _subscriptionService = SubscriptionService();
-  final TextEditingController _masterPasswordController = TextEditingController();
-  
+  final TextEditingController _masterPasswordController =
+      TextEditingController();
+
   bool _isLoading = true;
   bool _needMasterPasswordToCancel = false;
   bool _needAllOrdersCompletedToContinue = false;
   bool _manejaInventario = false;
   bool _permiteVenderAunSinDisponibilidad = false;
   bool _noSolicitarCliente = false;
+  bool _allowDiscountOnVendedor = false;
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
   bool _showDescriptionInSelectors = false;
   int? _storeId;
   String? _storeName;
-  
+
   // Variables para suscripción
   Subscription? _activeSubscription;
 
@@ -50,7 +53,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
       // Obtener ID de tienda desde UserPreferencesService
       _storeId = await _userPreferencesService.getIdTienda();
-      
+
       if (_storeId == null) {
         throw Exception('No se pudo obtener el ID de la tienda');
       }
@@ -59,23 +62,33 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       final storeInfo = await _userPreferencesService.getCurrentStoreInfo();
       _storeName = storeInfo?['denominacion'] ?? 'Tienda Desconocida';
 
-      print('🏪 Cargando configuración para tienda ID: $_storeId - Nombre: $_storeName');
+      print(
+        '🏪 Cargando configuración para tienda ID: $_storeId - Nombre: $_storeName',
+      );
 
       // Obtener configuración de la tienda
       final config = await StoreConfigService.getStoreConfig(_storeId!);
-      
+
       // Verificar si existe master password
-      final hasMasterPassword = await StoreConfigService.hasMasterPassword(_storeId!);
-      
+      final hasMasterPassword = await StoreConfigService.hasMasterPassword(
+        _storeId!,
+      );
+
       // Cargar configuración de UI desde preferencias locales
-      final showDescriptionInSelectors = await _userPreferencesService.getShowDescriptionInSelectors();
-      
+      final showDescriptionInSelectors =
+          await _userPreferencesService.getShowDescriptionInSelectors();
+
       setState(() {
-        _needMasterPasswordToCancel = config['need_master_password_to_cancel'] ?? false;
-        _needAllOrdersCompletedToContinue = config['need_all_orders_completed_to_continue'] ?? false;
+        _needMasterPasswordToCancel =
+            config['need_master_password_to_cancel'] ?? false;
+        _needAllOrdersCompletedToContinue =
+            config['need_all_orders_completed_to_continue'] ?? false;
         _manejaInventario = config['maneja_inventario'] ?? false;
-        _permiteVenderAunSinDisponibilidad = config['permite_vender_aun_sin_disponibilidad'] ?? false;
+        _permiteVenderAunSinDisponibilidad =
+            config['permite_vender_aun_sin_disponibilidad'] ?? false;
         _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
+        _allowDiscountOnVendedor =
+            config['allow_discount_on_vendedor'] ?? false;
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
         _showDescriptionInSelectors = showDescriptionInSelectors;
@@ -83,8 +96,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       });
 
       // Cargar suscripción actual (activa o vencida)
-      _activeSubscription = await _subscriptionService.getCurrentSubscription(_storeId!);
-      
+      _activeSubscription = await _subscriptionService.getCurrentSubscription(
+        _storeId!,
+      );
+
       if (_activeSubscription != null) {
         print('🔍 Suscripción encontrada:');
         print('  - ID: ${_activeSubscription!.id}');
@@ -100,30 +115,90 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       }
 
       print('✅ Configuración cargada:');
-      print('  - Contraseña maestra para cancelar: $_needMasterPasswordToCancel');
-      print('  - Completar todas las órdenes: $_needAllOrdersCompletedToContinue');
+      print(
+        '  - Contraseña maestra para cancelar: $_needMasterPasswordToCancel',
+      );
+      print(
+        '  - Completar todas las órdenes: $_needAllOrdersCompletedToContinue',
+      );
       print('  - Maneja inventario: $_manejaInventario');
-      print('  - Permite vender sin disponibilidad: $_permiteVenderAunSinDisponibilidad');
+      print(
+        '  - Permite vender sin disponibilidad: $_permiteVenderAunSinDisponibilidad',
+      );
       print('  - No solicitar cliente en venta: $_noSolicitarCliente');
+      print(
+        '  - Permitir descuentos manuales (vendedor): $_allowDiscountOnVendedor',
+      );
       print('  - Tiene contraseña maestra: $_hasMasterPassword');
-      print('  - Mostrar descripción en selectores: $_showDescriptionInSelectors');
-      print('  - Suscripción actual: ${_activeSubscription?.planDenominacion ?? 'No encontrada'} (${_activeSubscription?.estadoText ?? 'N/A'})');
+      print(
+        '  - Mostrar descripción en selectores: $_showDescriptionInSelectors',
+      );
+      print(
+        '  - Suscripción actual: ${_activeSubscription?.planDenominacion ?? 'No encontrada'} (${_activeSubscription?.estadoText ?? 'N/A'})',
+      );
 
       // Actualizar UI después de cargar la suscripción
       if (mounted) {
         setState(() {});
       }
-
     } catch (e) {
       print('❌ Error al cargar configuración de tienda: $e');
       setState(() {
         _isLoading = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al cargar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateAllowDiscountOnVendedorSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print(
+        '🔧 Actualizando configuración de permitir descuentos manuales: $value',
+      );
+
+      await StoreConfigService.updateAllowDiscountOnVendedor(_storeId!, value);
+
+      setState(() {
+        _allowDiscountOnVendedor = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'Los vendedores ahora pueden aplicar descuentos manuales'
+                  : 'Los vendedores ya no pueden aplicar descuentos manuales',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ Configuración de permitir descuentos manuales actualizada');
+    } catch (e) {
+      print(
+        '❌ Error al actualizar configuración de permitir descuentos manuales: $e',
+      );
+
+      setState(() {
+        _allowDiscountOnVendedor = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -136,9 +211,12 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
     try {
       print('🔧 Actualizando configuración de contraseña maestra: $value');
-      
-      await StoreConfigService.updateNeedMasterPasswordToCancel(_storeId!, value);
-      
+
+      await StoreConfigService.updateNeedMasterPasswordToCancel(
+        _storeId!,
+        value,
+      );
+
       setState(() {
         _needMasterPasswordToCancel = value;
         _showMasterPasswordField = value;
@@ -148,9 +226,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              value 
-                ? 'Contraseña maestra activada para cancelar órdenes'
-                : 'Contraseña maestra desactivada para cancelar órdenes'
+              value
+                  ? 'Contraseña maestra activada para cancelar órdenes'
+                  : 'Contraseña maestra desactivada para cancelar órdenes',
             ),
             backgroundColor: AppColors.success,
           ),
@@ -160,7 +238,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('✅ Configuración de contraseña maestra actualizada');
     } catch (e) {
       print('❌ Error al actualizar configuración de contraseña maestra: $e');
-      
+
       // Revertir el cambio en caso de error
       setState(() {
         _needMasterPasswordToCancel = !value;
@@ -182,9 +260,12 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
     try {
       print('🔧 Actualizando configuración de órdenes completadas: $value');
-      
-      await StoreConfigService.updateNeedAllOrdersCompletedToContinue(_storeId!, value);
-      
+
+      await StoreConfigService.updateNeedAllOrdersCompletedToContinue(
+        _storeId!,
+        value,
+      );
+
       setState(() {
         _needAllOrdersCompletedToContinue = value;
       });
@@ -193,9 +274,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              value 
-                ? 'Ahora se requiere completar todas las órdenes antes de continuar'
-                : 'Ya no se requiere completar todas las órdenes antes de continuar'
+              value
+                  ? 'Ahora se requiere completar todas las órdenes antes de continuar'
+                  : 'Ya no se requiere completar todas las órdenes antes de continuar',
             ),
             backgroundColor: AppColors.success,
           ),
@@ -205,7 +286,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('✅ Configuración de órdenes completadas actualizada');
     } catch (e) {
       print('❌ Error al actualizar configuración de órdenes completadas: $e');
-      
+
       // Revertir el cambio en caso de error
       setState(() {
         _needAllOrdersCompletedToContinue = !value;
@@ -227,9 +308,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
     try {
       print('🔧 Actualizando configuración de manejo de inventario: $value');
-      
+
       await StoreConfigService.updateManejaInventario(_storeId!, value);
-      
+
       setState(() {
         _manejaInventario = value;
       });
@@ -238,9 +319,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              value 
-                ? 'Control de inventario activado - Los vendedores deberán hacer control al abrir/cerrar turno'
-                : 'Control de inventario desactivado - Los vendedores no harán control al abrir/cerrar turno'
+              value
+                  ? 'Control de inventario activado - Los vendedores deberán hacer control al abrir/cerrar turno'
+                  : 'Control de inventario desactivado - Los vendedores no harán control al abrir/cerrar turno',
             ),
             backgroundColor: AppColors.success,
           ),
@@ -250,7 +331,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('✅ Configuración de manejo de inventario actualizada');
     } catch (e) {
       print('❌ Error al actualizar configuración de manejo de inventario: $e');
-      
+
       // Revertir el cambio en caso de error
       setState(() {
         _manejaInventario = !value;
@@ -277,10 +358,15 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     }
 
     try {
-      print('🔧 Actualizando configuración de productos elaborados sin disponibilidad: $value');
-      
-      await StoreConfigService.updatePermiteVenderAunSinDisponibilidad(_storeId!, value);
-      
+      print(
+        '🔧 Actualizando configuración de productos elaborados sin disponibilidad: $value',
+      );
+
+      await StoreConfigService.updatePermiteVenderAunSinDisponibilidad(
+        _storeId!,
+        value,
+      );
+
       setState(() {
         _permiteVenderAunSinDisponibilidad = value;
       });
@@ -289,9 +375,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              value 
-                ? '⚠️ Los vendedores ahora pueden vender productos elaborados sin verificar ingredientes'
-                : '✅ Los vendedores deben verificar ingredientes antes de vender productos elaborados'
+              value
+                  ? '⚠️ Los vendedores ahora pueden vender productos elaborados sin verificar ingredientes'
+                  : '✅ Los vendedores deben verificar ingredientes antes de vender productos elaborados',
             ),
             backgroundColor: value ? Colors.orange : AppColors.success,
           ),
@@ -301,7 +387,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('✅ Configuración de productos elaborados actualizada');
     } catch (e) {
       print('❌ Error al actualizar configuración de productos elaborados: $e');
-      
+
       // Revertir el cambio en caso de error
       setState(() {
         _permiteVenderAunSinDisponibilidad = !value;
@@ -323,9 +409,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
     try {
       print('🔧 Actualizando configuración de no solicitar cliente: $value');
-      
+
       await StoreConfigService.updateNoSolicitarCliente(_storeId!, value);
-      
+
       setState(() {
         _noSolicitarCliente = value;
       });
@@ -334,9 +420,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              value 
-                ? 'No se solicitarán datos del comprador en ventas - Se usará "Cliente" automáticamente'
-                : 'Se solicitarán datos del comprador en ventas'
+              value
+                  ? 'No se solicitarán datos del comprador en ventas - Se usará "Cliente" automáticamente'
+                  : 'Se solicitarán datos del comprador en ventas',
             ),
             backgroundColor: AppColors.success,
           ),
@@ -346,7 +432,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('✅ Configuración de no solicitar cliente actualizada');
     } catch (e) {
       print('❌ Error al actualizar configuración de no solicitar cliente: $e');
-      
+
       // Revertir el cambio en caso de error
       setState(() {
         _noSolicitarCliente = !value;
@@ -365,128 +451,137 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
   Future<bool> _showElaboratedProductsWarning() async {
     return await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.orange,
-                size: 28,
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Advertencia Importante',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.orange,
-                ),
-              ),
-            ],
-          ),
-          content: Container(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.orange.withOpacity(0.3),
-                      width: 1,
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.orange,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Advertencia Importante',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange,
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '🍽️ Productos sin Verificación de Disponibilidad',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.orange,
+                ],
+              ),
+              content: Container(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.orange.withOpacity(0.3),
+                          width: 1,
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Al activar esta opción:',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _buildWarningPoint('Los vendedores podrán vender productos sin verificar si hay ingredientes o cantidad suficientes'),
-                      const SizedBox(height: 8),
-                      _buildWarningPoint('Esto puede resultar en ventas de productos que no se pueden preparar'),
-                      const SizedBox(height: 8),
-                      _buildWarningPoint('Podrías tener problemas de inventario y clientes insatisfechos'),
-                      const SizedBox(height: 8),
-                      _buildWarningPoint('Solo activa esta opción si confías completamente en el control manual de tus vendedores'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.blue.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        color: Colors.blue,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Recomendación: Mantén esta opción desactivada para un mejor control de inventario',
-                          style: TextStyle(
-                            color: Colors.blue,
-                            fontSize: 13,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '🍽️ Productos sin Verificación de Disponibilidad',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.orange,
+                            ),
                           ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Al activar esta opción:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildWarningPoint(
+                            'Los vendedores podrán vender productos sin verificar si hay ingredientes o cantidad suficientes',
+                          ),
+                          const SizedBox(height: 8),
+                          _buildWarningPoint(
+                            'Esto puede resultar en ventas de productos que no se pueden preparar',
+                          ),
+                          const SizedBox(height: 8),
+                          _buildWarningPoint(
+                            'Podrías tener problemas de inventario y clientes insatisfechos',
+                          ),
+                          const SizedBox(height: 8),
+                          _buildWarningPoint(
+                            'Solo activa esta opción si confías completamente en el control manual de tus vendedores',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.blue.withOpacity(0.3),
+                          width: 1,
                         ),
                       ),
-                    ],
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.blue,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Recomendación: Mantén esta opción desactivada para un mejor control de inventario',
+                              style: TextStyle(
+                                color: Colors.blue,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.grey),
                   ),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Activar de todos modos'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text(
-                'Cancelar',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Activar de todos modos'),
-            ),
-          ],
-        );
-      },
-    ) ?? false;
+            );
+          },
+        ) ??
+        false;
   }
 
   Widget _buildWarningPoint(String text) {
@@ -504,13 +599,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.4,
-            ),
-          ),
+          child: Text(text, style: const TextStyle(fontSize: 13, height: 1.4)),
         ),
       ],
     );
@@ -518,10 +607,12 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
   Future<void> _updateShowDescriptionSetting(bool value) async {
     try {
-      print('🔧 Actualizando configuración de mostrar descripción en selectores: $value');
-      
+      print(
+        '🔧 Actualizando configuración de mostrar descripción en selectores: $value',
+      );
+
       await _userPreferencesService.setShowDescriptionInSelectors(value);
-      
+
       setState(() {
         _showDescriptionInSelectors = value;
       });
@@ -530,9 +621,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              value 
-                ? 'Ahora se mostrarán las descripciones en los selectores de productos'
-                : 'Las descripciones en los selectores de productos están ocultas'
+              value
+                  ? 'Ahora se mostrarán las descripciones en los selectores de productos'
+                  : 'Las descripciones en los selectores de productos están ocultas',
             ),
             backgroundColor: AppColors.success,
           ),
@@ -542,7 +633,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('✅ Configuración de mostrar descripción actualizada');
     } catch (e) {
       print('❌ Error al actualizar configuración de mostrar descripción: $e');
-      
+
       // Revertir el cambio en caso de error
       setState(() {
         _showDescriptionInSelectors = !value;
@@ -575,9 +666,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
     try {
       print('🔧 Actualizando contraseña maestra...');
-      
+
       await StoreConfigService.updateMasterPassword(_storeId!, password);
-      
+
       setState(() {
         _hasMasterPassword = true;
       });
@@ -597,7 +688,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
       print('✅ Contraseña maestra actualizada');
     } catch (e) {
       print('❌ Error al actualizar contraseña maestra: $e');
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -626,10 +717,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             SizedBox(height: 16),
             Text(
               'Cargando configuración global...',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
           ],
         ),
@@ -658,9 +746,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             icon: Icons.lock_outline,
             iconColor: Colors.orange,
             title: 'Contraseña Maestra para Cancelar',
-            subtitle: _needMasterPasswordToCancel
-                ? 'Los vendedores necesitan contraseña maestra para cancelar órdenes'
-                : 'Los vendedores pueden cancelar órdenes sin contraseña maestra',
+            subtitle:
+                _needMasterPasswordToCancel
+                    ? 'Los vendedores necesitan contraseña maestra para cancelar órdenes'
+                    : 'Los vendedores pueden cancelar órdenes sin contraseña maestra',
             value: _needMasterPasswordToCancel,
             onChanged: _updateMasterPasswordSetting,
           ),
@@ -678,9 +767,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             icon: Icons.check_circle_outline,
             iconColor: Colors.green,
             title: 'Completar Todas las Órdenes',
-            subtitle: _needAllOrdersCompletedToContinue
-                ? 'Los vendedores deben completar todas las órdenes antes de crear una nueva'
-                : 'Los vendedores pueden crear nuevas órdenes sin completar las pendientes',
+            subtitle:
+                _needAllOrdersCompletedToContinue
+                    ? 'Los vendedores deben completar todas las órdenes antes de crear una nueva'
+                    : 'Los vendedores pueden crear nuevas órdenes sin completar las pendientes',
             value: _needAllOrdersCompletedToContinue,
             onChanged: _updateOrdersCompletionSetting,
           ),
@@ -692,9 +782,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             icon: Icons.inventory_2_outlined,
             iconColor: Colors.blue,
             title: 'Control de Inventario en Turnos',
-            subtitle: _manejaInventario
-                ? 'Los vendedores deben hacer control de inventario al abrir y cerrar turno'
-                : 'Los vendedores no hacen control de inventario al abrir y cerrar turno',
+            subtitle:
+                _manejaInventario
+                    ? 'Los vendedores deben hacer control de inventario al abrir y cerrar turno'
+                    : 'Los vendedores no hacen control de inventario al abrir y cerrar turno',
             value: _manejaInventario,
             onChanged: _updateInventoryManagementSetting,
           ),
@@ -706,9 +797,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             icon: Icons.restaurant_menu,
             iconColor: Colors.deepOrange,
             title: 'Venta de Productos Sin Disponibilidad',
-            subtitle: _permiteVenderAunSinDisponibilidad
-                ? '⚠️ Los vendedores pueden vender productos sin verificar ingredientes disponibles'
-                : '✅ Los vendedores deben verificar ingredientes antes de vender productos',
+            subtitle:
+                _permiteVenderAunSinDisponibilidad
+                    ? '⚠️ Los vendedores pueden vender productos sin verificar ingredientes disponibles'
+                    : '✅ Los vendedores deben verificar ingredientes antes de vender productos',
             value: _permiteVenderAunSinDisponibilidad,
             onChanged: _updateElaboratedProductsSetting,
           ),
@@ -720,9 +812,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             icon: Icons.description_outlined,
             iconColor: Colors.purple,
             title: 'Mostrar Descripción en Selectores',
-            subtitle: _showDescriptionInSelectors
-                ? 'Las descripciones de productos se muestran en los selectores para facilitar la identificación'
-                : 'Solo se muestra el nombre del producto en los selectores (vista compacta)',
+            subtitle:
+                _showDescriptionInSelectors
+                    ? 'Las descripciones de productos se muestran en los selectores para facilitar la identificación'
+                    : 'Solo se muestra el nombre del producto en los selectores (vista compacta)',
             value: _showDescriptionInSelectors,
             onChanged: _updateShowDescriptionSetting,
           ),
@@ -734,11 +827,26 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             icon: Icons.person_off_outlined,
             iconColor: Colors.teal,
             title: 'No Pedir Datos en Venta',
-            subtitle: _noSolicitarCliente
-                ? '✅ No se solicitan datos del comprador - Se usa "Cliente" automáticamente'
-                : '📋 Se solicitan datos del comprador (nombre, teléfono, contactos adicionales)',
+            subtitle:
+                _noSolicitarCliente
+                    ? '✅ No se solicitan datos del comprador - Se usa "Cliente" automáticamente'
+                    : '📋 Se solicitan datos del comprador (nombre, teléfono, contactos adicionales)',
             value: _noSolicitarCliente,
             onChanged: _updateNoSolicitarClienteSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          _buildConfigCard(
+            icon: Icons.percent,
+            iconColor: Colors.indigo,
+            title: 'Permitir Descuentos Manuales',
+            subtitle:
+                _allowDiscountOnVendedor
+                    ? '✅ Los vendedores pueden aplicar descuentos manuales a una orden'
+                    : '🔒 Los vendedores no pueden aplicar descuentos manuales (solo precios configurados)',
+            value: _allowDiscountOnVendedor,
+            onChanged: _updateAllowDiscountOnVendedorSetting,
           ),
 
           const SizedBox(height: 24),
@@ -755,21 +863,14 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             decoration: BoxDecoration(
               color: Colors.blue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: Colors.blue.withOpacity(0.3),
-                width: 1,
-              ),
+              border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1),
             ),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue,
-                      size: 20,
-                    ),
+                    Icon(Icons.info_outline, color: Colors.blue, size: 20),
                     SizedBox(width: 8),
                     Text(
                       'Información',
@@ -784,10 +885,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 SizedBox(height: 8),
                 Text(
                   'Estas configuraciones afectan el comportamiento de la aplicación de vendedores (Inventtia App). Los cambios se aplicarán inmediatamente para todos los usuarios. La configuración de "Mostrar Descripción en Selectores" es una preferencia local que se guarda en este dispositivo.',
-                  style: TextStyle(
-                    color: Colors.blue,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: Colors.blue, fontSize: 14),
                 ),
               ],
             ),
@@ -917,15 +1015,11 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
               color: iconColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
-              icon,
-              color: iconColor,
-              size: 24,
-            ),
+            child: Icon(icon, color: iconColor, size: 24),
           ),
-          
+
           const SizedBox(width: 16),
-          
+
           // Contenido
           Expanded(
             child: Column(
@@ -942,17 +1036,14 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                 ),
               ],
             ),
           ),
-          
+
           const SizedBox(width: 16),
-          
+
           // Switch
           Switch(
             value: value,
@@ -998,9 +1089,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                   size: 24,
                 ),
               ),
-              
+
               const SizedBox(width: 16),
-              
+
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1015,22 +1106,19 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _hasMasterPassword 
+                      _hasMasterPassword
                           ? 'Contraseña configurada - Ingresa una nueva para cambiarla'
                           : 'Establece la contraseña maestra para cancelar órdenes',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Campo de texto para la contraseña
           Row(
             children: [
@@ -1039,14 +1127,15 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                   controller: _masterPasswordController,
                   obscureText: _obscureMasterPassword,
                   decoration: InputDecoration(
-                    hintText: _hasMasterPassword 
-                        ? 'Nueva contraseña maestra'
-                        : 'Contraseña maestra',
+                    hintText:
+                        _hasMasterPassword
+                            ? 'Nueva contraseña maestra'
+                            : 'Contraseña maestra',
                     prefixIcon: const Icon(Icons.lock),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscureMasterPassword 
-                            ? Icons.visibility 
+                        _obscureMasterPassword
+                            ? Icons.visibility
                             : Icons.visibility_off,
                       ),
                       onPressed: () {
@@ -1068,9 +1157,9 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(width: 12),
-              
+
               // Botón para guardar
               ElevatedButton(
                 onPressed: _updateMasterPassword,
@@ -1085,13 +1174,11 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: Text(
-                  _hasMasterPassword ? 'Cambiar' : 'Establecer',
-                ),
+                child: Text(_hasMasterPassword ? 'Cambiar' : 'Establecer'),
               ),
             ],
           ),
-          
+
           // Información adicional
           if (_hasMasterPassword) ...[
             const SizedBox(height: 12),
@@ -1116,10 +1203,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                   Expanded(
                     child: Text(
                       'Contraseña maestra configurada correctamente',
-                      style: TextStyle(
-                        color: Colors.green,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: Colors.green, fontSize: 12),
                     ),
                   ),
                 ],
@@ -1179,10 +1263,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     SizedBox(height: 4),
                     Text(
                       'Gestionar impresoras de red',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey,
-                      ),
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -1196,7 +1277,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10B981),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1210,25 +1294,16 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             decoration: BoxDecoration(
               color: Colors.blue.withOpacity(0.05),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: Colors.blue.withOpacity(0.2),
-              ),
+              border: Border.all(color: Colors.blue.withOpacity(0.2)),
             ),
             child: const Row(
               children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 16,
-                  color: Colors.blue,
-                ),
+                Icon(Icons.info_outline, size: 16, color: Colors.blue),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'Configura y gestiona las impresoras WiFi para imprimir documentos de inventario',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.blue,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.blue),
                   ),
                 ),
               ],
@@ -1241,9 +1316,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
   Widget _buildSubscriptionCard() {
     final subscription = _activeSubscription!;
-    final isExpiringSoon = subscription.diasRestantes > 0 && subscription.diasRestantes <= 7;
+    final isExpiringSoon =
+        subscription.diasRestantes > 0 && subscription.diasRestantes <= 7;
     final isExpired = subscription.isExpired;
-    
+
     Color statusColor = AppColors.success;
     if (isExpired) {
       statusColor = AppColors.error;
@@ -1253,7 +1329,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
 
     return GestureDetector(
       onTap: () async {
-        final canNavigate = await NavigationGuard.canNavigate('/subscription-detail', context);
+        final canNavigate = await NavigationGuard.canNavigate(
+          '/subscription-detail',
+          context,
+        );
         if (canNavigate) {
           Navigator.push(
             context,
@@ -1331,7 +1410,10 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor,
                     borderRadius: BorderRadius.circular(20),
@@ -1347,16 +1429,16 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Información del plan
             Row(
               children: [
                 Expanded(
                   child: _buildSubscriptionInfo(
                     'Precio',
-                    subscription.planPrecioMensual != null 
+                    subscription.planPrecioMensual != null
                         ? '\$${subscription.planPrecioMensual!.toStringAsFixed(2)}/mes'
                         : 'N/A',
                     Icons.attach_money,
@@ -1371,7 +1453,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                 ),
               ],
             ),
-            
+
             if (subscription.fechaFin != null) ...[
               const SizedBox(height: 12),
               Row(
@@ -1417,7 +1499,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        isExpired 
+                        isExpired
                             ? 'Tu suscripción ha vencido. Contacta al administrador para renovar.'
                             : 'Tu suscripción vence pronto. Contacta al administrador para renovar.',
                         style: TextStyle(
@@ -1433,7 +1515,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
             ],
 
             const SizedBox(height: 16),
-            
+
             // Botón para ver detalles
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -1468,7 +1550,12 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
     );
   }
 
-  Widget _buildSubscriptionInfo(String label, String value, IconData icon, [Color? color]) {
+  Widget _buildSubscriptionInfo(
+    String label,
+    String value,
+    IconData icon, [
+    Color? color,
+  ]) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
