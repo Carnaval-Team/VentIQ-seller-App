@@ -46,16 +46,6 @@ class AppDrawer extends StatelessWidget {
                       route: '/administradores',
                     ),
                     _DrawerItem(
-                      icon: Icons.warehouse,
-                      title: 'Almacenes',
-                      route: '/almacenes',
-                    ),
-                    _DrawerItem(
-                      icon: Icons.point_of_sale,
-                      title: 'TPVs y Vendedores',
-                      route: '/tpvs',
-                    ),
-                    _DrawerItem(
                       icon: Icons.people,
                       title: 'Trabajadores',
                       route: '/trabajadores',
@@ -88,17 +78,7 @@ class AppDrawer extends StatelessWidget {
                     ),
                   ],
                 ),
-                _buildMenuSection(
-                  context,
-                  title: 'Operaciones',
-                  items: [
-                    _DrawerItem(
-                      icon: Icons.handshake,
-                      title: 'Gestión de Consignaciones',
-                      route: '/consignacion',
-                    ),
-                  ],
-                ),
+
                 _buildMenuSection(
                   context,
                   title: 'Usuarios',
@@ -267,13 +247,10 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/tiendas-catalogo' ||
                 item.route == '/usuarios' ||
                 item.route == '/administradores' ||
-                item.route == '/almacenes' ||
-                item.route == '/tpvs' ||
                 item.route == '/trabajadores' ||
                 item.route == '/licencias' ||
                 item.route == '/renovaciones' ||
                 item.route == '/configuracion' ||
-                item.route == '/consignacion' ||
                 item.route == '/carnaval-tiendas') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
