@@ -385,6 +385,35 @@ class ConsignacionEnvioService {
     }
   }
 
+  /// Actualiza precio_venta_cup en app_dat_consignacion_envio_producto
+  /// Esto guarda el precio de venta configurado por el consignatario en los detalles del envío
+  static Future<void> actualizarPreciosEnvioProductos({
+    required int idEnvio,
+    required List<dynamic> preciosProductos,
+  }) async {
+    try {
+      debugPrint('💾 Guardando precios de venta en detalles del envío: $idEnvio');
+      
+      for (final precioData in preciosProductos) {
+        final precioMap = precioData as Map<String, dynamic>;
+        final idProducto = precioMap['id_producto'] as int?;
+        final precioVentaCup = (precioMap['precio_venta_cup'] as num?)?.toDouble() ?? 0.0;
+        
+        if (idProducto != null && precioVentaCup > 0) {
+          await _supabase
+              .from('app_dat_consignacion_envio_producto')
+              .update({'precio_venta_cup': precioVentaCup})
+              .eq('id_envio', idEnvio)
+              .eq('id_producto', idProducto);
+          
+          debugPrint('✅ Precio de venta actualizado: Producto $idProducto = \$$precioVentaCup CUP');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error actualizando precios en detalles del envío: $e');
+    }
+  }
+
   /// Configura precios de venta (CUP) y precio promedio (USD) después de aceptar envío
   /// También actualiza el estado del envío a CONFIGURADO
   static Future<Map<String, dynamic>?> configurarPreciosRecepcion({
@@ -395,6 +424,12 @@ class ConsignacionEnvioService {
   }) async {
     try {
       debugPrint('💰 Configurando precios para operación de recepción: $idOperacionRecepcion');
+
+      // ✅ NUEVO: Guardar precios en detalles del envío
+      await actualizarPreciosEnvioProductos(
+        idEnvio: idEnvio,
+        preciosProductos: preciosProductos,
+      );
 
       final response = await _supabase.rpc(
         'configurar_precios_recepcion_consignacion',

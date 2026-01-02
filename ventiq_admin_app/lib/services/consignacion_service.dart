@@ -1770,7 +1770,14 @@ class ConsignacionService {
             // Obtener el ID del producto duplicado/reutilizado
             final prodConsig = productosConsignacion.firstWhere((p) => p['id'] == idProductoConsignacion);
             final idProductoOriginal = prodConsig['id_producto'] as int;
-            final idProductoDuplicado = mapeoProductos[idProductoOriginal]?['id_duplicado'] ?? idProductoOriginal;
+            
+            // ✅ CRÍTICO: Verificar que el mapeo existe antes de intentar guardar el precio
+            if (!mapeoProductos.containsKey(idProductoOriginal)) {
+              debugPrint('⚠️ ADVERTENCIA: No hay mapeo para producto $idProductoOriginal - NO se guardará precio de venta');
+              continue;
+            }
+            
+            final idProductoDuplicado = mapeoProductos[idProductoOriginal]!['id_duplicado'] as int;
             final idVariante = prodConsig['id_variante'] as int?;
 
             try {
@@ -1787,14 +1794,20 @@ class ConsignacionService {
               debugPrint('✅ Precios anteriores cerrados para producto $idProductoDuplicado');
               
               // ✅ PASO 2: Crear nuevo precio de venta
+              final precioVentaData = {
+                'id_producto': idProductoDuplicado,
+                'precio_venta_cup': precioVenta,
+                'fecha_desde': hoy,
+              };
+              
+              // Agregar id_variante solo si no es null
+              if (idVariante != null) {
+                precioVentaData['id_variante'] = idVariante;
+              }
+              
               await _supabase
                   .from('app_dat_precio_venta')
-                  .insert({
-                    'id_producto': idProductoDuplicado,
-                    'id_variante': idVariante,
-                    'precio_venta_cup': precioVenta,
-                    'fecha_desde': hoy,
-                  });
+                  .insert(precioVentaData);
 
               debugPrint('✅ Precio de venta creado: Producto $idProductoDuplicado = \$$precioVenta CUP (desde $hoy)');
             } catch (e) {
