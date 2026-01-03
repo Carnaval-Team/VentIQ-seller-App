@@ -5,6 +5,7 @@ import '../models/order.dart';
 import '../models/inventory_product.dart';
 import '../models/expense.dart';
 import '../services/order_service.dart';
+import '../services/notification_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../services/shift_workers_service.dart';
@@ -1424,7 +1425,9 @@ class _CierreScreenState extends State<CierreScreen> {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              '$_ordenesAbiertas órdenes pendientes de cerrar',
+                              _trabajadorManejaAperturaControl
+                                  ? '$_ordenesAbiertas órdenes pendientes. Debes cerrarlas antes...'
+                                  : '$_ordenesAbiertas órdenes pendientes. No se completarán automáticamente.',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.orange[700],
@@ -1600,7 +1603,9 @@ class _CierreScreenState extends State<CierreScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Estas órdenes se marcarán como completadas al cerrar',
+                        _trabajadorManejaAperturaControl
+                            ? 'Debes cerrar estas órdenes antes de realizar el cierre'
+                            : 'Estas órdenes no se completarán automáticamente',
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                       const SizedBox(height: 12),
@@ -1998,6 +2003,58 @@ class _CierreScreenState extends State<CierreScreen> {
     final montoEsperado = _montoInicialCaja + _totalEfectivo - _egresosEfectivo;
     final diferencia = montoFinal - montoEsperado;
 
+    final currentPendingOrders =
+        _orderService.orders
+            .where(
+              (order) =>
+                  order.status == OrderStatus.enviada ||
+                  order.status == OrderStatus.procesando ||
+                  order.status == OrderStatus.pagoConfirmado,
+            )
+            .toList();
+
+    final carnavalOrderIdsToReactivate = <String>{};
+    for (final order in currentPendingOrders) {
+      final notas = order.notas;
+      if (notas == null) continue;
+
+      final match = RegExp(r'Venta desde orden (\d+)').firstMatch(notas);
+      final carnavalOrderId = match?.group(1);
+      if (carnavalOrderId != null) {
+        carnavalOrderIdsToReactivate.add(carnavalOrderId);
+      }
+    }
+
+    if (currentPendingOrders.isNotEmpty &&
+        carnavalOrderIdsToReactivate.isNotEmpty) {
+      NotificationService()
+          .reactivateVentaNotificationsForOrdenIds(carnavalOrderIdsToReactivate)
+          .catchError((e) {
+            print('❌ Error reactivando notificaciones Carnaval: $e');
+            return 0;
+          });
+    }
+
+    if (currentPendingOrders.isNotEmpty) {
+      setState(() {
+        _ordenesAbiertas = currentPendingOrders.length;
+        _ordenesPendientes = currentPendingOrders;
+      });
+
+      if (_trabajadorManejaAperturaControl) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Tienes ${currentPendingOrders.length} órdenes pendientes. Debes cerrarlas antes de cerrar el turno.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+    }
+
     // Mostrar confirmación si hay diferencia significativa
     if (diferencia.abs() > 0.01) {
       final confirmar = await _showDiferenciaDialog(diferencia);
@@ -2173,10 +2230,6 @@ class _CierreScreenState extends State<CierreScreen> {
 
         if (success) {
           // Close all pending orders locally
-          for (final order in _ordenesPendientes) {
-            _orderService.updateOrderStatus(order.id, OrderStatus.completada);
-          }
-
           _showSuccessDialog(montoFinal, diferencia);
         } else {
           _showErrorMessage('Error al procesar el cierre de turno');
@@ -2295,7 +2348,7 @@ class _CierreScreenState extends State<CierreScreen> {
                 Text('Ventas del día: \$${_ventasTotales.toStringAsFixed(2)}'),
                 if (diferencia.abs() > 0.01)
                   Text('Diferencia: \$${diferencia.toStringAsFixed(2)}'),
-                Text('Órdenes cerradas: ${_ordenesPendientes.length}'),
+                Text('Órdenes pendientes: ${_ordenesPendientes.length}'),
                 if (_trabajadoresCerrados > 0)
                   Text('Trabajadores cerrados: $_trabajadoresCerrados'),
                 Text('Fecha: ${_formatDate(DateTime.now())}'),
@@ -2368,10 +2421,6 @@ class _CierreScreenState extends State<CierreScreen> {
       await _userPrefs.clearOfflineTurno();
 
       // Cerrar órdenes pendientes localmente
-      for (final order in _ordenesPendientes) {
-        _orderService.updateOrderStatus(order.id, OrderStatus.completada);
-      }
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
