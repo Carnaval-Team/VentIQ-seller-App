@@ -20,7 +20,7 @@ class PromotionService {
 
   /// Lista promociones con filtros y paginación
   Future<List<Promotion>> listPromotions({
-    String? idTienda,
+    dynamic idTienda,
     String? search,
     bool? estado,
     String? tipoPromocion,
@@ -186,7 +186,7 @@ class PromotionService {
   /// Valida una promoción para una venta específica
   Future<PromotionValidationResult> validatePromotion({
     required String codigoPromocion,
-    required String idTienda,
+    required dynamic idTienda,
     List<Map<String, dynamic>>? productos,
   }) async {
     try {
@@ -197,7 +197,7 @@ class PromotionService {
         'fn_validar_promocion_venta',
         params: {
           'p_codigo_promocion': codigoPromocion,
-          'p_id_tienda': int.parse(idTienda),
+          'p_id_tienda': idTienda is int ? idTienda : int.tryParse(idTienda.toString()) ?? 0,
           'p_productos': productos,
         },
       );
@@ -421,9 +421,8 @@ class PromotionService {
     }
   }
 
-  /// Obtiene estadísticas de promociones
   Future<Map<String, dynamic>> getPromotionStats({
-    String? idTienda,
+    dynamic idTienda,
     DateTime? fechaDesde,
     DateTime? fechaHasta,
   }) async {
@@ -602,11 +601,11 @@ class PromotionService {
     }
   }
 
-  /// Obtiene el ID de tienda del usuario de manera más robusta
-  Future<int?> _getStoreId([String? providedStoreId]) async {
+  Future<int?> _getStoreId([dynamic providedStoreId]) async {
     // Si se proporciona un ID específico, usarlo
     if (providedStoreId != null) {
-      return int.tryParse(providedStoreId);
+      if (providedStoreId is int) return providedStoreId;
+      return int.tryParse(providedStoreId.toString());
     }
     
     // Intentar obtener desde el store selector service
