@@ -113,6 +113,53 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
+  Future<void> _checkForUpdatesManual() async {
+    try {
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(
+          child: CircularProgressIndicator(color: AppTheme.primaryColor),
+        ),
+      );
+
+      final updateInfo = await UpdateService.checkForUpdates();
+
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
+      if (!mounted) return;
+
+      if (updateInfo['hay_actualizacion'] == true) {
+        _showUpdateAvailableDialog(updateInfo);
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Estás en la última versión'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (_) {
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ Error buscando actualizaciones'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
+  }
+
   void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
     final bool isObligatory = updateInfo['obligatoria'] ?? false;
     final String newVersion = updateInfo['version_disponible'] ?? 'Desconocida';
@@ -429,6 +476,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     if (!mounted) return;
                     await Navigator.of(context).pushNamed('/store-management');
                     if (mounted) setState(() {});
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.system_update),
+                  title: const Text(
+                    'Buscar actualizaciones',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    await _checkForUpdatesManual();
                   },
                 ),
                 ListTile(
