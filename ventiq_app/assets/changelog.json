@@ -1,8 +1,25 @@
 {
-  "current_version": "1.8.1",
-  "build": 711,
+  "current_version": "1.8.2",
+  "build": 712,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.8.2",
+      "date": "2026-01-03",
+      "title": "🛠️ Corrección de Notificaciones de Órdenes",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Notificaciones de órdenes de Carnaval",
+          "description": "Si una orden de Carnaval queda pendiente al cerrar el turno, su notificación vuelve a aparecer como no leída para que puedas atenderla."
+        },
+        {
+          "type": "improvement",
+          "title": "Cierre de turno sin cerrar órdenes automáticamente",
+          "description": "Al cerrar el turno, las órdenes pendientes ya no se marcan como completadas automáticamente."
+        }
+      ]
+    },
     {
       "version": "1.8.1",
       "date": "2025-12-22",
