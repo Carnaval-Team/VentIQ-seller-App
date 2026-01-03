@@ -18,6 +18,7 @@ import '../widgets/product_selector_widget.dart';
 import '../widgets/location_selector_widget.dart';
 import '../services/product_search_service.dart';
 import '../utils/presentation_converter.dart';
+import '../services/export_service.dart';
 
 class InventoryExtractionBySaleScreen extends StatefulWidget {
   const InventoryExtractionBySaleScreen({super.key});
@@ -40,6 +41,8 @@ class _InventoryExtractionBySaleScreenState
   WarehouseZone? _selectedSourceLocation;
   bool _isLoading = false;
   bool _showDescriptionInSelectors = false;
+  bool _isGeneratingOffer = false;
+  String _offerCurrencyCode = 'CUP';
 
   // Motivos de venta
   List<Map<String, dynamic>> _motivoVentaOptions = [];
@@ -79,13 +82,18 @@ class _InventoryExtractionBySaleScreenState
   Future<void> _loadShowDescriptionConfig() async {
     try {
       final userPreferencesService = UserPreferencesService();
-      final showDescription = await userPreferencesService.getShowDescriptionInSelectors();
+      final showDescription =
+          await userPreferencesService.getShowDescriptionInSelectors();
       setState(() {
         _showDescriptionInSelectors = showDescription;
       });
-      print('📋 ExtractionBySale - Configuración "Mostrar descripción en selectores" cargada: $showDescription');
+      print(
+        '📋 ExtractionBySale - Configuración "Mostrar descripción en selectores" cargada: $showDescription',
+      );
     } catch (e) {
-      print('❌ ExtractionBySale - Error al cargar configuración de mostrar descripción: $e');
+      print(
+        '❌ ExtractionBySale - Error al cargar configuración de mostrar descripción: $e',
+      );
       // Mantener valor por defecto (false)
     }
   }
@@ -96,26 +104,34 @@ class _InventoryExtractionBySaleScreenState
     try {
       // Cargar todos los motivos de extracción
       final allMotivos = await InventoryService.getMotivoExtraccionOptions();
-      
+
       // Filtrar solo los que contengan "venta" en su denominación (case insensitive)
-      _motivoVentaOptions = allMotivos.where((motivo) {
-        final denominacion = (motivo['denominacion'] ?? '').toString().toLowerCase();
-        return denominacion.contains('venta');
-      }).toList();
+      _motivoVentaOptions =
+          allMotivos.where((motivo) {
+            final denominacion =
+                (motivo['denominacion'] ?? '').toString().toLowerCase();
+            return denominacion.contains('venta');
+          }).toList();
 
       // Buscar y seleccionar automáticamente "Venta normal"
       if (_motivoVentaOptions.isNotEmpty) {
         // Intentar encontrar "Venta normal" específicamente
         final ventaNormal = _motivoVentaOptions.firstWhere(
           (motivo) {
-            final denominacion = (motivo['denominacion'] ?? '').toString().toLowerCase();
+            final denominacion =
+                (motivo['denominacion'] ?? '').toString().toLowerCase();
             return denominacion == 'venta normal';
           },
-          orElse: () => _motivoVentaOptions.first, // Fallback al primero si no encuentra "Venta normal"
+          orElse:
+              () =>
+                  _motivoVentaOptions
+                      .first, // Fallback al primero si no encuentra "Venta normal"
         );
         _selectedMotivoVenta = ventaNormal;
-        
-        print('🎯 Motivo seleccionado automáticamente: ${_selectedMotivoVenta!['denominacion']}');
+
+        print(
+          '🎯 Motivo seleccionado automáticamente: ${_selectedMotivoVenta!['denominacion']}',
+        );
       }
 
       print('✅ Motivos de venta cargados: ${_motivoVentaOptions.length}');
@@ -127,7 +143,7 @@ class _InventoryExtractionBySaleScreenState
     } catch (e) {
       print('❌ Error cargando motivos de venta: $e');
       setState(() => _isLoadingMotivos = false);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -159,7 +175,7 @@ class _InventoryExtractionBySaleScreenState
     } catch (e) {
       print('❌ Error cargando medios de pago: $e');
       setState(() => _isLoadingMediosPago = false);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -200,7 +216,7 @@ class _InventoryExtractionBySaleScreenState
     } catch (e) {
       print('❌ Error cargando TPVs: $e');
       setState(() => _isLoadingTPVs = false);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -232,17 +248,18 @@ class _InventoryExtractionBySaleScreenState
 
     showDialog(
       context: context,
-      builder: (context) => _ProductQuantityWithPriceDialog(
-        product: product,
-        sourceLocation: _selectedSourceLocation,
-        onProductAdded: (productData) {
-          print('productData');
-          print(productData);
-          setState(() {
-            _selectedProducts.add(productData);
-          });
-        },
-      ),
+      builder:
+          (context) => _ProductQuantityWithPriceDialog(
+            product: product,
+            sourceLocation: _selectedSourceLocation,
+            onProductAdded: (productData) {
+              print('productData');
+              print(productData);
+              setState(() {
+                _selectedProducts.add(productData);
+              });
+            },
+          ),
     );
   }
 
@@ -264,205 +281,239 @@ class _InventoryExtractionBySaleScreenState
   void _showExtractionConfirmation() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(
-          'Confirmar Venta por Acuerdo',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Ubicación origen
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.success.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.location_on,
-                        color: AppColors.success.withOpacity(0.7), size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Zona de Origen:',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w600, fontSize: 12)),
-                          Text(
-                            _selectedSourceLocation?.name ?? 'No seleccionada',
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        ],
+      builder:
+          (context) => AlertDialog(
+            title: const Text(
+              'Confirmar Venta por Acuerdo',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Ubicación origen
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.success.withOpacity(0.3),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Lista de productos
-              const Text('Productos a Vender:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 8),
-              ..._selectedProducts.map((productData) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.success.withOpacity(0.3)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Nombre del producto - ocupa todo el ancho
-                      SizedBox(
-                        width: double.infinity,
-                        child: Text(
-                          productData['denominacion'] ?? 'Sin nombre',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          color: AppColors.success.withOpacity(0.7),
+                          size: 20,
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      
-                      // Primera fila: SKU y Variante
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 1,
-                            child: Text(
-                              'SKU: ${productData['sku_producto'] ?? 'N/A'}',
-                              style: const TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                          if (productData['variante'] != null &&
-                              productData['variante'].toString().isNotEmpty)
-                            Expanded(
-                              flex: 1,
-                              child: Text(
-                                'Variante: ${productData['variante']}',
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Zona de Origen:',
                                 style: TextStyle(
-                                  color: AppColors.success.withOpacity(0.6),
+                                  fontWeight: FontWeight.w600,
                                   fontSize: 12,
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      
-                      // Segunda fila: Cantidad y Precio
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 1,
-                            child: Text(
-                              'Cantidad: ${productData['cantidad']}',
-                              style: const TextStyle(fontWeight: FontWeight.w500),
-                            ),
+                              Text(
+                                _selectedSourceLocation?.name ??
+                                    'No seleccionada',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ],
                           ),
-                          Expanded(
-                            flex: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Lista de productos
+                  const Text(
+                    'Productos a Vender:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._selectedProducts.map((productData) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.success.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Nombre del producto - ocupa todo el ancho
+                          SizedBox(
+                            width: double.infinity,
                             child: Text(
-                              'Precio: \$${(productData['precio_unitario'] ?? 0.0).toStringAsFixed(2)}',
+                              productData['denominacion'] ?? 'Sin nombre',
                               style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.success,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
+                          const SizedBox(height: 8),
+
+                          // Primera fila: SKU y Variante
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 1,
+                                child: Text(
+                                  'SKU: ${productData['sku_producto'] ?? 'N/A'}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (productData['variante'] != null &&
+                                  productData['variante'].toString().isNotEmpty)
+                                Expanded(
+                                  flex: 1,
+                                  child: Text(
+                                    'Variante: ${productData['variante']}',
+                                    style: TextStyle(
+                                      color: AppColors.success.withOpacity(0.6),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+
+                          // Segunda fila: Cantidad y Precio
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 1,
+                                child: Text(
+                                  'Cantidad: ${productData['cantidad']}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: Text(
+                                  'Precio: \$${(productData['precio_unitario'] ?? 0.0).toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.success,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+
+                          // Tercera fila: Subtotal - centrado y destacado
+                          SizedBox(
+                            width: double.infinity,
+                            child: Text(
+                              'Subtotal: \$${((productData['cantidad'] ?? 0.0) * (productData['precio_unitario'] ?? 0.0)).toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.success,
+                                fontSize: 16,
+                              ),
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      
-                      // Tercera fila: Subtotal - centrado y destacado
-                      SizedBox(
-                        width: double.infinity,
-                        child: Text(
-                          'Subtotal: \$${((productData['cantidad'] ?? 0.0) * (productData['precio_unitario'] ?? 0.0)).toStringAsFixed(2)}',
-                          style: const TextStyle(
+                    );
+                  }).toList(),
+                  const SizedBox(height: 16),
+
+                  // Total
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.success),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'TOTAL:',
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: AppColors.success,
                             fontSize: 16,
                           ),
-                          textAlign: TextAlign.right,
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-              const SizedBox(height: 16),
-
-              // Total
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.success),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('TOTAL:',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
-                    Text('\$${_calculateTotal().toStringAsFixed(2)}',
-                        style: const TextStyle(
+                        Text(
+                          '\$${_calculateTotal().toStringAsFixed(2)}',
+                          style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
-                            color: AppColors.success)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
+                            color: AppColors.success,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
-              // Cliente y observaciones
-              if (_clienteController.text.isNotEmpty ||
-                  _observacionesController.text.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.info.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.info.withOpacity(0.3)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_clienteController.text.isNotEmpty)
-                        Text('Cliente: ${_clienteController.text}'),
-                      if (_observacionesController.text.isNotEmpty)
-                        Text('Observaciones: ${_observacionesController.text}'),
-                    ],
-                  ),
+                  // Cliente y observaciones
+                  if (_clienteController.text.isNotEmpty ||
+                      _observacionesController.text.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.info.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.info.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_clienteController.text.isNotEmpty)
+                            Text('Cliente: ${_clienteController.text}'),
+                          if (_observacionesController.text.isNotEmpty)
+                            Text(
+                              'Observaciones: ${_observacionesController.text}',
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _submitExtraction();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.success,
                 ),
+                child: const Text('Confirmar Venta'),
+              ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _submitExtraction();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
-            child: const Text('Confirmar Venta'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -487,9 +538,9 @@ class _InventoryExtractionBySaleScreenState
       return;
     }
     if (_selectedTPV == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debe seleccionar un TPV')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Debe seleccionar un TPV')));
       return;
     }
     if (_selectedMedioPago == null) {
@@ -514,20 +565,23 @@ class _InventoryExtractionBySaleScreenState
       }
 
       // Preparar productos usando el mismo formato que order_service.dart
-      final productos = _selectedProducts.map((product) {
-        return {
-          'id_producto': product['meta']['id_producto'],
-          'id_variante': product['id_variante'],
-          'id_opcion_variante': product['id_opcion_variante'],
-          'id_ubicacion': product['id_ubicacion'],
-          'id_presentacion': product['meta']['id_presentacion'] ?? 1,
-          'cantidad': product['cantidad'],
-          'precio_unitario': product['precio_unitario'],
-          'sku_producto': product['sku_producto'] ?? product['id_producto'].toString(),
-          'sku_ubicacion': product['sku_ubicacion'],
-          'es_producto_venta': true, // Mark as sales product like in order_service
-        };
-      }).toList();
+      final productos =
+          _selectedProducts.map((product) {
+            return {
+              'id_producto': product['meta']['id_producto'],
+              'id_variante': product['id_variante'],
+              'id_opcion_variante': product['id_opcion_variante'],
+              'id_ubicacion': product['id_ubicacion'],
+              'id_presentacion': product['meta']['id_presentacion'] ?? 1,
+              'cantidad': product['cantidad'],
+              'precio_unitario': product['precio_unitario'],
+              'sku_producto':
+                  product['sku_producto'] ?? product['id_producto'].toString(),
+              'sku_ubicacion': product['sku_ubicacion'],
+              'es_producto_venta':
+                  true, // Mark as sales product like in order_service
+            };
+          }).toList();
 
       // Preparar observaciones con información del cliente y total
       String observaciones = '';
@@ -550,7 +604,8 @@ class _InventoryExtractionBySaleScreenState
       // Usar fn_registrar_venta como en order_service.dart
       final rpcParams = {
         'p_codigo_promocion': null,
-        'p_denominacion': 'Venta por Acuerdo - ${DateTime.now().millisecondsSinceEpoch}',
+        'p_denominacion':
+            'Venta por Acuerdo - ${DateTime.now().millisecondsSinceEpoch}',
         'p_estado_inicial': 1,
         'p_id_tpv': idTpv,
         'p_observaciones': observaciones,
@@ -589,26 +644,27 @@ class _InventoryExtractionBySaleScreenState
         try {
           final totalVenta = _calculateTotal();
           final idMedioPago = _selectedMedioPago!['id'];
-          final medioPagoNombre = _selectedMedioPago!['denominacion'] ?? 'Desconocido';
+          final medioPagoNombre =
+              _selectedMedioPago!['denominacion'] ?? 'Desconocido';
 
           print('💳 Registrando pago:');
           print('   - Monto: CUP ${totalVenta.toStringAsFixed(2)}');
           print('   - Medio: $medioPagoNombre (ID: $idMedioPago)');
 
           // Preparar array de pagos
-          List<Map<String, dynamic>> pagos = [{
-            'id_medio_pago': idMedioPago,
-            'monto': totalVenta,
-            'referencia_pago': 'Venta por Acuerdo - ${DateTime.now().millisecondsSinceEpoch}',
-          }];
+          List<Map<String, dynamic>> pagos = [
+            {
+              'id_medio_pago': idMedioPago,
+              'monto': totalVenta,
+              'referencia_pago':
+                  'Venta por Acuerdo - ${DateTime.now().millisecondsSinceEpoch}',
+            },
+          ];
 
           // Llamar a fn_registrar_pago_venta
           final pagoResponse = await Supabase.instance.client.rpc(
             'fn_registrar_pago_venta',
-            params: {
-              'p_id_operacion_venta': operationId,
-              'p_pagos': pagos,
-            },
+            params: {'p_id_operacion_venta': operationId, 'p_pagos': pagos},
           );
 
           print('Respuesta fn_registrar_pago_venta: $pagoResponse');
@@ -616,17 +672,21 @@ class _InventoryExtractionBySaleScreenState
           if (pagoResponse == true) {
             print('✅ Pago registrado exitosamente');
           } else {
-            print('⚠️ Advertencia: Respuesta inesperada del registro de pago: $pagoResponse');
+            print(
+              '⚠️ Advertencia: Respuesta inesperada del registro de pago: $pagoResponse',
+            );
           }
         } catch (pagoError, stackTrace) {
           print('❌ Error al registrar pago: $pagoError');
           print('🔴 Stack trace: $stackTrace');
-          
+
           // Mostrar advertencia pero no fallar la operación
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Advertencia: Venta registrada pero error en pago: $pagoError'),
+                content: Text(
+                  'Advertencia: Venta registrada pero error en pago: $pagoError',
+                ),
                 backgroundColor: Colors.orange,
                 duration: const Duration(seconds: 5),
               ),
@@ -637,7 +697,7 @@ class _InventoryExtractionBySaleScreenState
         // Completar operación automáticamente usando fn_registrar_cambio_estado_operacion
         try {
           print('🔄 Completando operación automáticamente...');
-          
+
           final completeResponse = await Supabase.instance.client.rpc(
             'fn_registrar_cambio_estado_operacion',
             params: {
@@ -647,7 +707,9 @@ class _InventoryExtractionBySaleScreenState
             },
           );
 
-          print('Respuesta fn_registrar_cambio_estado_operacion: $completeResponse');
+          print(
+            'Respuesta fn_registrar_cambio_estado_operacion: $completeResponse',
+          );
           print('✅ Operación completada automáticamente');
         } catch (completeError) {
           print('❌ Error al completar operación: $completeError');
@@ -660,31 +722,187 @@ class _InventoryExtractionBySaleScreenState
           _observacionesController.clear();
           _lastCliente = '';
           _lastObservaciones = '';
-          
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Venta por acuerdo registrada y completada exitosamente'),
+              content: Text(
+                'Venta por acuerdo registrada y completada exitosamente',
+              ),
               backgroundColor: AppColors.success,
             ),
           );
-          
+
           // ✅ Mostrar diálogo de impresión INMEDIATAMENTE (sin delay)
           // El diálogo se mostrará antes de que se cierre la pantalla
           _showPrintDialog();
         }
       } else {
-        throw Exception(response?['message'] ?? 'Error en el registro de venta');
+        throw Exception(
+          response?['message'] ?? 'Error en el registro de venta',
+        );
       }
     } catch (e) {
       print('❌ Error en _submitExtraction: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al registrar venta: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al registrar venta: $e')));
       }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<String?> _showOfferCurrencyDialog({required String initialCurrency}) {
+    const currencies = <String>['CUP', 'USD', 'EUR', 'MLC'];
+    final normalizedInitial =
+        currencies.contains(initialCurrency) ? initialCurrency : currencies[0];
+
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        String selectedCurrency = normalizedInitial;
+
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Moneda de la oferta'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ...currencies.map(
+                      (c) => RadioListTile<String>(
+                        value: c,
+                        groupValue: selectedCurrency,
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setStateDialog(() {
+                            selectedCurrency = value;
+                          });
+                        },
+                        title: Text(c),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () =>
+                      Navigator.pop(dialogContext, selectedCurrency),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.success,
+                  ),
+                  child: const Text('Generar PDF'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _onOfferPdfPressed() async {
+    if (_selectedProducts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debe seleccionar al menos un producto')),
+      );
+      return;
+    }
+
+    final selectedCurrency = await _showOfferCurrencyDialog(
+      initialCurrency: _offerCurrencyCode,
+    );
+    if (selectedCurrency == null) return;
+
+    if (!mounted) return;
+    setState(() {
+      _offerCurrencyCode = selectedCurrency;
+    });
+
+    await _generateOfferPdf(currencyCode: selectedCurrency);
+  }
+
+  Future<void> _generateOfferPdf({required String currencyCode}) async {
+    if (_selectedProducts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debe seleccionar al menos un producto')),
+      );
+      return;
+    }
+
+    setState(() => _isGeneratingOffer = true);
+
+    try {
+      final userPrefs = UserPreferencesService();
+      final userData = await userPrefs.getUserData();
+      final idTienda = userData['idTienda'] as int?;
+
+      Map<String, dynamic>? tiendaData;
+      if (idTienda != null) {
+        tiendaData =
+            await Supabase.instance.client
+                .from('app_dat_tienda')
+                .select('denominacion, direccion, ubicacion')
+                .eq('id', idTienda)
+                .maybeSingle();
+      }
+
+      final storeName =
+          (tiendaData?['denominacion'] ?? 'Tienda').toString().trim().isEmpty
+              ? 'Tienda'
+              : (tiendaData?['denominacion'] ?? 'Tienda').toString();
+
+      final storeAddress = (tiendaData?['direccion'])?.toString();
+      final storeLocation = (tiendaData?['ubicacion'])?.toString();
+
+      final productsForPdf =
+          _selectedProducts.map<Map<String, dynamic>>((p) {
+            return {
+              'denominacion': p['denominacion'],
+              'sku_producto': p['sku_producto'],
+              'cantidad': p['cantidad'],
+              'precio_unitario': p['precio_unitario'],
+              'descripcion': p['descripcion'],
+              'descripcion_corta': p['descripcion_corta'],
+            };
+          }).toList();
+
+      await ExportService().exportCommercialOfferPdf(
+        context: context,
+        storeName: storeName,
+        storeAddress: storeAddress,
+        storeLocation: storeLocation,
+        currencyCode: currencyCode,
+        offerTitle: 'OFERTA COMERCIAL',
+        issuedAt: DateTime.now(),
+        clientName:
+            _clienteController.text.isEmpty ? null : _clienteController.text,
+        observations:
+            _observacionesController.text.isEmpty
+                ? null
+                : _observacionesController.text,
+        products: productsForPdf,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al generar oferta: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingOffer = false);
       }
     }
   }
@@ -714,7 +932,8 @@ class _InventoryExtractionBySaleScreenState
                           type: LocationSelectorType.single,
                           title: 'Zona de Origen',
                           includeConsignations: true,
-                          subtitle: 'Seleccione la zona desde donde se venderán los productos',
+                          subtitle:
+                              'Seleccione la zona desde donde se venderán los productos',
                           selectedLocation: _selectedSourceLocation,
                           onLocationChanged: (location) {
                             setState(() {
@@ -722,9 +941,10 @@ class _InventoryExtractionBySaleScreenState
                               _selectedProducts.clear();
                             });
                           },
-                          validationMessage: _selectedSourceLocation == null
-                              ? 'Debe seleccionar una zona de origen'
-                              : null,
+                          validationMessage:
+                              _selectedSourceLocation == null
+                                  ? 'Debe seleccionar una zona de origen'
+                                  : null,
                         ),
                       ),
                     ),
@@ -765,8 +985,10 @@ class _InventoryExtractionBySaleScreenState
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.warning_amber,
-                                        color: Colors.orange[700]),
+                                    Icon(
+                                      Icons.warning_amber,
+                                      color: Colors.orange[700],
+                                    ),
                                     const SizedBox(width: 12),
                                     const Expanded(
                                       child: Text(
@@ -786,15 +1008,17 @@ class _InventoryExtractionBySaleScreenState
                                   prefixIcon: Icon(Icons.sell),
                                   hintText: 'Seleccione el tipo de venta',
                                 ),
-                                items: _motivoVentaOptions.map((motivo) {
-                                  return DropdownMenuItem(
-                                    value: motivo,
-                                    child: Text(
-                                      motivo['denominacion'] ?? 'Sin nombre',
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  );
-                                }).toList(),
+                                items:
+                                    _motivoVentaOptions.map((motivo) {
+                                      return DropdownMenuItem(
+                                        value: motivo,
+                                        child: Text(
+                                          motivo['denominacion'] ??
+                                              'Sin nombre',
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
+                                      );
+                                    }).toList(),
                                 onChanged: (motivo) {
                                   setState(() => _selectedMotivoVenta = motivo);
                                 },
@@ -826,8 +1050,10 @@ class _InventoryExtractionBySaleScreenState
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.warning_amber,
-                                        color: Colors.orange[700]),
+                                    Icon(
+                                      Icons.warning_amber,
+                                      color: Colors.orange[700],
+                                    ),
                                     const SizedBox(width: 12),
                                     const Expanded(
                                       child: Text(
@@ -847,15 +1073,16 @@ class _InventoryExtractionBySaleScreenState
                                   prefixIcon: Icon(Icons.point_of_sale),
                                   hintText: 'Seleccione el TPV',
                                 ),
-                                items: _tpvOptions.map((tpv) {
-                                  return DropdownMenuItem(
-                                    value: tpv,
-                                    child: Text(
-                                      tpv['denominacion'] ?? 'Sin nombre',
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  );
-                                }).toList(),
+                                items:
+                                    _tpvOptions.map((tpv) {
+                                      return DropdownMenuItem(
+                                        value: tpv,
+                                        child: Text(
+                                          tpv['denominacion'] ?? 'Sin nombre',
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
+                                      );
+                                    }).toList(),
                                 onChanged: (tpv) {
                                   setState(() => _selectedTPV = tpv);
                                 },
@@ -887,8 +1114,10 @@ class _InventoryExtractionBySaleScreenState
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.warning_amber,
-                                        color: Colors.orange[700]),
+                                    Icon(
+                                      Icons.warning_amber,
+                                      color: Colors.orange[700],
+                                    ),
                                     const SizedBox(width: 12),
                                     const Expanded(
                                       child: Text(
@@ -897,7 +1126,7 @@ class _InventoryExtractionBySaleScreenState
                                       ),
                                     ),
                                   ],
-                                )
+                                ),
                               )
                             else
                               DropdownButtonFormField<Map<String, dynamic>>(
@@ -909,33 +1138,37 @@ class _InventoryExtractionBySaleScreenState
                                   prefixIcon: Icon(Icons.payment),
                                   hintText: 'Seleccione el medio de pago',
                                 ),
-                                items: _medioPagoOptions.map((medio) {
-                                  return DropdownMenuItem(
-                                    value: medio,
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          medio['es_efectivo'] == true
-                                              ? Icons.money
-                                              : medio['es_digital'] == true
+                                items:
+                                    _medioPagoOptions.map((medio) {
+                                      return DropdownMenuItem(
+                                        value: medio,
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              medio['es_efectivo'] == true
+                                                  ? Icons.money
+                                                  : medio['es_digital'] == true
                                                   ? Icons.credit_card
                                                   : Icons.payment,
-                                          size: 18,
-                                          color: Colors.grey[600],
+                                              size: 18,
+                                              color: Colors.grey[600],
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                medio['denominacion'] ??
+                                                    'Sin nombre',
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            medio['denominacion'] ?? 'Sin nombre',
-                                            style: const TextStyle(fontSize: 14),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
+                                      );
+                                    }).toList(),
                                 onChanged: (medio) {
                                   setState(() => _selectedMedioPago = medio);
                                 },
@@ -1000,13 +1233,17 @@ class _InventoryExtractionBySaleScreenState
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.info_outline,
-                                        color: Colors.orange[700]),
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: Colors.orange[700],
+                                    ),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Text(
                                         'Seleccione una zona de origen para ver productos disponibles',
-                                        style: TextStyle(color: Colors.orange[700]),
+                                        style: TextStyle(
+                                          color: Colors.orange[700],
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -1016,11 +1253,14 @@ class _InventoryExtractionBySaleScreenState
                               SizedBox(
                                 height: 300,
                                 child: ProductSelectorWidget(
-                                  key: ValueKey('product_selector_${_selectedSourceLocation!.id}'),
+                                  key: ValueKey(
+                                    'product_selector_${_selectedSourceLocation!.id}',
+                                  ),
                                   searchType: ProductSearchType.withStock,
                                   requireInventory: true,
-                                  locationId:
-                                      int.tryParse(_selectedSourceLocation!.id),
+                                  locationId: int.tryParse(
+                                    _selectedSourceLocation!.id,
+                                  ),
                                   searchHint: 'Buscar productos para vender...',
                                   onProductSelected: _addProductToExtraction,
                                 ),
@@ -1064,14 +1304,15 @@ class _InventoryExtractionBySaleScreenState
                                 shrinkWrap: true,
                                 physics: const NeverScrollableScrollPhysics(),
                                 itemCount: _selectedProducts.length,
-                                separatorBuilder: (context, index) =>
-                                    const Divider(),
+                                separatorBuilder:
+                                    (context, index) => const Divider(),
                                 itemBuilder: (context, index) {
                                   final product = _selectedProducts[index];
                                   return ListTile(
                                     contentPadding: EdgeInsets.zero,
                                     title: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           '${product['denominacion']}',
@@ -1080,7 +1321,8 @@ class _InventoryExtractionBySaleScreenState
                                           ),
                                         ),
                                         // Mostrar descripción si está habilitado y existe
-                                        if (_showDescriptionInSelectors && _hasDescription(product)) ...[
+                                        if (_showDescriptionInSelectors &&
+                                            _hasDescription(product)) ...[
                                           const SizedBox(height: 2),
                                           Text(
                                             _getProductDescription(product),
@@ -1093,7 +1335,10 @@ class _InventoryExtractionBySaleScreenState
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ],
-                                        if (product['sku_producto'] != null && product['sku_producto'].toString().isNotEmpty) ...[
+                                        if (product['sku_producto'] != null &&
+                                            product['sku_producto']
+                                                .toString()
+                                                .isNotEmpty) ...[
                                           const SizedBox(height: 2),
                                           Text(
                                             'SKU: ${product['sku_producto']}',
@@ -1129,8 +1374,10 @@ class _InventoryExtractionBySaleScreenState
                                       ],
                                     ),
                                     trailing: IconButton(
-                                      icon: const Icon(Icons.delete,
-                                          color: Colors.red),
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: Colors.red,
+                                      ),
                                       onPressed: () {
                                         _removeProductFromExtraction(index);
                                       },
@@ -1185,27 +1432,65 @@ class _InventoryExtractionBySaleScreenState
                 ],
               ),
               child: SafeArea(
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _showExtractionConfirmation,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.success,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed:
+                            (_isLoading || _isGeneratingOffer)
+                                ? null
+                                : _onOfferPdfPressed,
+                        icon:
+                            _isGeneratingOffer
+                                ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                : const Icon(Icons.picture_as_pdf),
+                        label: const Text('Oferta PDF'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          side: const BorderSide(color: AppColors.success),
+                          foregroundColor: AppColors.success,
+                        ),
                       ),
                     ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(
-                            'Confirmar Venta (${_selectedProducts.length} productos)',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed:
+                            (_isLoading || _isGeneratingOffer)
+                                ? null
+                                : _showExtractionConfirmation,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                  ),
+                        ),
+                        child:
+                            _isLoading
+                                ? const CircularProgressIndicator(
+                                  color: Colors.white,
+                                )
+                                : Text(
+                                  'Confirmar Venta (${_selectedProducts.length} productos)',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1218,22 +1503,23 @@ class _InventoryExtractionBySaleScreenState
   bool _hasDescription(Map<String, dynamic> product) {
     final descripcion = product['descripcion'];
     final descripcionCorta = product['descripcion_corta'];
-    
+
     return (descripcion != null && descripcion.toString().isNotEmpty) ||
-           (descripcionCorta != null && descripcionCorta.toString().isNotEmpty);
+        (descripcionCorta != null && descripcionCorta.toString().isNotEmpty);
   }
 
   /// Obtiene la descripción del producto, priorizando descripcion sobre descripcion_corta
   String _getProductDescription(Map<String, dynamic> product) {
     final descripcion = product['descripcion'];
     final descripcionCorta = product['descripcion_corta'];
-    
+
     if (descripcion != null && descripcion.toString().isNotEmpty) {
       return descripcion.toString();
-    } else if (descripcionCorta != null && descripcionCorta.toString().isNotEmpty) {
+    } else if (descripcionCorta != null &&
+        descripcionCorta.toString().isNotEmpty) {
       return descripcionCorta.toString();
     }
-    
+
     return '';
   }
 
@@ -1242,42 +1528,41 @@ class _InventoryExtractionBySaleScreenState
     showDialog(
       context: context,
       barrierDismissible: false, // Evitar cerrar tocando afuera
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.print, color: Color(0xFF4A90E2)),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text('¿Deseas imprimir el ticket?'),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.print, color: Color(0xFF4A90E2)),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('¿Deseas imprimir el ticket?')),
+              ],
             ),
-          ],
-        ),
-        content: const Text(
-          'Se imprimirá un ticket con los detalles de la venta por acuerdo.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Cerrar diálogo
-              Navigator.pop(context); // Cerrar pantalla
-            },
-            child: const Text('No'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.pop(context); // Cerrar diálogo
-              _printExtractionTicket(); // Iniciar impresión
-              // La pantalla se cerrará después de que termine la impresión
-            },
-            icon: const Icon(Icons.print),
-            label: const Text('Sí, Imprimir'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A90E2),
-              foregroundColor: Colors.white,
+            content: const Text(
+              'Se imprimirá un ticket con los detalles de la venta por acuerdo.',
             ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context); // Cerrar diálogo
+                  Navigator.pop(context); // Cerrar pantalla
+                },
+                child: const Text('No'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context); // Cerrar diálogo
+                  _printExtractionTicket(); // Iniciar impresión
+                  // La pantalla se cerrará después de que termine la impresión
+                },
+                icon: const Icon(Icons.print),
+                label: const Text('Sí, Imprimir'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A90E2),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -1290,52 +1575,57 @@ class _InventoryExtractionBySaleScreenState
 
       // Verificar si hay productos para imprimir
       if (_selectedProducts.isEmpty) {
-        if (mounted) _showErrorDialog('Error', 'No hay productos para imprimir');
+        if (mounted)
+          _showErrorDialog('Error', 'No hay productos para imprimir');
         return;
       }
 
       // Mostrar diálogo de selección de tipo de impresora
       final printerType = await showDialog<String>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Row(
-            children: [
-              const Icon(Icons.print, color: Color(0xFF4A90E2)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: const Text(
-                  'Seleccionar Impresora',
-                  overflow: TextOverflow.ellipsis,
+        builder:
+            (context) => AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.print, color: Color(0xFF4A90E2)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: const Text(
+                      'Seleccionar Impresora',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('¿Cómo deseas imprimir el ticket?'),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    leading: const Icon(Icons.wifi, color: Color(0xFF10B981)),
+                    title: const Text('Impresora WiFi'),
+                    subtitle: const Text('Imprimir por red WiFi'),
+                    onTap: () => Navigator.pop(context, 'wifi'),
+                  ),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.bluetooth,
+                      color: Color(0xFF4A90E2),
+                    ),
+                    title: const Text('Impresora Bluetooth'),
+                    subtitle: const Text('Imprimir por Bluetooth'),
+                    onTap: () => Navigator.pop(context, 'bluetooth'),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
                 ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('¿Cómo deseas imprimir el ticket?'),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.wifi, color: Color(0xFF10B981)),
-                title: const Text('Impresora WiFi'),
-                subtitle: const Text('Imprimir por red WiFi'),
-                onTap: () => Navigator.pop(context, 'wifi'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.bluetooth, color: Color(0xFF4A90E2)),
-                title: const Text('Impresora Bluetooth'),
-                subtitle: const Text('Imprimir por Bluetooth'),
-                onTap: () => Navigator.pop(context, 'bluetooth'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
+              ],
             ),
-          ],
-        ),
       );
 
       if (printerType == null || !mounted) return;
@@ -1357,13 +1647,15 @@ class _InventoryExtractionBySaleScreenState
   Future<void> _printExtractionTicketWiFi() async {
     try {
       print('📶 Imprimiendo por WiFi...');
-      
+
       if (!mounted) return;
 
       final wifiService = WiFiPrinterService();
 
       // Mostrar diálogo de selección de impresora WiFi
-      final selectedPrinter = await wifiService.showPrinterSelectionDialog(context);
+      final selectedPrinter = await wifiService.showPrinterSelectionDialog(
+        context,
+      );
       if (selectedPrinter == null) {
         print('❌ No se seleccionó impresora WiFi');
         return;
@@ -1375,16 +1667,17 @@ class _InventoryExtractionBySaleScreenState
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF10B981)),
-              SizedBox(height: 16),
-              Text('Imprimiendo por WiFi...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => const AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF10B981)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo por WiFi...'),
+                ],
+              ),
+            ),
       );
 
       // Conectar e imprimir
@@ -1396,7 +1689,10 @@ class _InventoryExtractionBySaleScreenState
       if (!connected) {
         if (mounted) {
           Navigator.pop(context);
-          _showErrorDialog('Error de Conexión', 'No se pudo conectar a la impresora WiFi');
+          _showErrorDialog(
+            'Error de Conexión',
+            'No se pudo conectar a la impresora WiFi',
+          );
         }
         return;
       }
@@ -1404,12 +1700,12 @@ class _InventoryExtractionBySaleScreenState
       // Generar ticket
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
-      
+
       // ========== IMPRIMIR COPIA 1: COMPROBANTE PRINCIPAL ==========
       print('📄 Imprimiendo copia 1: COMPROBANTE PRINCIPAL');
       List<int> bytes1 = _generateExtractionTicket(generator, copyNumber: 1);
       bool printed1 = await wifiService.sendRawBytes(bytes1);
-      
+
       if (!printed1) {
         await wifiService.disconnect();
         if (!mounted) return;
@@ -1417,16 +1713,16 @@ class _InventoryExtractionBySaleScreenState
         _showErrorDialog('Error', 'No se pudo imprimir la primera copia');
         return;
       }
-      
+
       // Esperar entre impresiones
       print('⏳ Esperando 3 segundos antes de segunda copia...');
       await Future.delayed(const Duration(seconds: 3));
-      
+
       // ========== IMPRIMIR COPIA 2: COMPROBANTE ALMACÉN ==========
       print('🏭 Imprimiendo copia 2: COMPROBANTE ALMACÉN');
       List<int> bytes2 = _generateExtractionTicket(generator, copyNumber: 2);
       bool printed2 = await wifiService.sendRawBytes(bytes2);
-      
+
       await wifiService.disconnect();
 
       if (!mounted) return;
@@ -1434,7 +1730,10 @@ class _InventoryExtractionBySaleScreenState
 
       if (printed1 && printed2) {
         print('✅ Ambas copias impresas exitosamente');
-        _showSuccessDialog('¡Impreso!', 'Ambas copias se imprimieron correctamente por WiFi');
+        _showSuccessDialog(
+          '¡Impreso!',
+          'Ambas copias se imprimieron correctamente por WiFi',
+        );
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
             Navigator.pop(context); // Cerrar diálogo
@@ -1443,7 +1742,10 @@ class _InventoryExtractionBySaleScreenState
         });
       } else {
         print('⚠️ Solo se imprimió la primera copia');
-        _showErrorDialog('Advertencia', 'Solo se pudo imprimir la primera copia');
+        _showErrorDialog(
+          'Advertencia',
+          'Solo se pudo imprimir la primera copia',
+        );
       }
     } catch (e) {
       print('❌ Error imprimiendo por WiFi: $e');
@@ -1466,12 +1768,16 @@ class _InventoryExtractionBySaleScreenState
       final printerManager = PrinterManager();
 
       // Mostrar diálogo de confirmación
-      bool shouldPrint = await printerManager.showPrintConfirmationDialog(context);
+      bool shouldPrint = await printerManager.showPrintConfirmationDialog(
+        context,
+      );
       if (!shouldPrint || !mounted) return;
 
       // Seleccionar dispositivo Bluetooth
       final bluetoothService = printerManager.bluetoothService;
-      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(context);
+      var selectedDevice = await bluetoothService.showDeviceSelectionDialog(
+        context,
+      );
       if (selectedDevice == null || !mounted) return;
 
       // ✅ Verificar si el widget sigue montado
@@ -1485,16 +1791,17 @@ class _InventoryExtractionBySaleScreenState
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Conectando a impresora...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Conectando a impresora...'),
+                ],
+              ),
+            ),
       );
 
       // Conectar a la impresora
@@ -1502,7 +1809,10 @@ class _InventoryExtractionBySaleScreenState
       if (!connected) {
         if (mounted) {
           Navigator.pop(context);
-          _showErrorDialog('Conexión Fallida', 'No se pudo conectar a la impresora');
+          _showErrorDialog(
+            'Conexión Fallida',
+            'No se pudo conectar a la impresora',
+          );
         }
         return;
       }
@@ -1520,27 +1830,28 @@ class _InventoryExtractionBySaleScreenState
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              CircularProgressIndicator(color: Color(0xFF4A90E2)),
-              SizedBox(height: 16),
-              Text('Imprimiendo ticket...'),
-            ],
-          ),
-        ),
+        builder:
+            (context) => AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  CircularProgressIndicator(color: Color(0xFF4A90E2)),
+                  SizedBox(height: 16),
+                  Text('Imprimiendo ticket...'),
+                ],
+              ),
+            ),
       );
 
       // Generar y enviar tickets (2 copias)
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm58, profile);
-      
+
       // ========== IMPRIMIR COPIA 1: COMPROBANTE PRINCIPAL ==========
       print('📄 Imprimiendo copia 1: COMPROBANTE PRINCIPAL');
       List<int> bytes1 = _generateExtractionTicket(generator, copyNumber: 1);
       bool printed1 = await PrintBluetoothThermal.writeBytes(bytes1);
-      
+
       if (!printed1) {
         await bluetoothService.disconnect();
         if (!mounted) return;
@@ -1548,11 +1859,11 @@ class _InventoryExtractionBySaleScreenState
         _showErrorDialog('Error', 'No se pudo imprimir la primera copia');
         return;
       }
-      
+
       // Esperar entre impresiones
       print('⏳ Esperando 3 segundos antes de segunda copia...');
       await Future.delayed(const Duration(seconds: 3));
-      
+
       // ========== IMPRIMIR COPIA 2: COMPROBANTE ALMACÉN ==========
       print('🏭 Imprimiendo copia 2: COMPROBANTE ALMACÉN');
       List<int> bytes2 = _generateExtractionTicket(generator, copyNumber: 2);
@@ -1573,7 +1884,10 @@ class _InventoryExtractionBySaleScreenState
 
       if (printed1 && printed2) {
         if (mounted) {
-          _showSuccessDialog('¡Ticket Impreso!', 'El ticket se imprimió correctamente');
+          _showSuccessDialog(
+            '¡Ticket Impreso!',
+            'El ticket se imprimió correctamente',
+          );
           // Cerrar la pantalla después de mostrar el éxito
           Future.delayed(const Duration(seconds: 3), () {
             if (mounted) {
@@ -1585,7 +1899,10 @@ class _InventoryExtractionBySaleScreenState
         print(' Ticket impreso exitosamente');
       } else {
         if (mounted) {
-          _showErrorDialog('Error de Impresión', 'No se pudo imprimir el ticket');
+          _showErrorDialog(
+            'Error de Impresión',
+            'No se pudo imprimir el ticket',
+          );
           // Cerrar la pantalla después de mostrar el error
           Future.delayed(const Duration(seconds: 3), () {
             if (mounted) {
@@ -1615,28 +1932,55 @@ class _InventoryExtractionBySaleScreenState
   }
 
   /// Generar contenido del ticket de extracción
-  List<int> _generateExtractionTicket(Generator generator, {int copyNumber = 1}) {
+  List<int> _generateExtractionTicket(
+    Generator generator, {
+    int copyNumber = 1,
+  }) {
     List<int> bytes = [];
 
     // Header
-    bytes += generator.text('INVENTTIA', styles: PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.text('VENTA POR ACUERDO', styles: PosStyles(align: PosAlign.center, bold: true));
-    
+    bytes += generator.text(
+      'INVENTTIA',
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      'VENTA POR ACUERDO',
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
+
     // Indicador de copia
-    String copyLabel = copyNumber == 1 ? 'COMPROBANTE PRINCIPAL' : 'COMPROBANTE ALMACÉN';
-    bytes += generator.text(copyLabel, styles: PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    String copyLabel =
+        copyNumber == 1 ? 'COMPROBANTE PRINCIPAL' : 'COMPROBANTE ALMACÉN';
+    bytes += generator.text(
+      copyLabel,
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
 
     // Información de la venta
-    bytes += generator.text('Cliente: ${_clienteController.text.isNotEmpty ? _clienteController.text : 'N/A'}', 
-                           styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('Tipo: ${_selectedMotivoVenta?['denominacion'] ?? 'N/A'}', 
-                           styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('Pago: ${_selectedMedioPago?['denominacion'] ?? 'N/A'}', 
-                           styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('Fecha: ${DateTime.now().toString().split('.')[0]}', 
-                           styles: PosStyles(align: PosAlign.left));
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      'Cliente: ${_clienteController.text.isNotEmpty ? _clienteController.text : 'N/A'}',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.text(
+      'Tipo: ${_selectedMotivoVenta?['denominacion'] ?? 'N/A'}',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.text(
+      'Pago: ${_selectedMedioPago?['denominacion'] ?? 'N/A'}',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.text(
+      'Fecha: ${DateTime.now().toString().split('.')[0]}',
+      styles: PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
 
     // Productos
     double total = 0;
@@ -1649,27 +1993,47 @@ class _InventoryExtractionBySaleScreenState
       String nombre = product['nombre'] ?? 'Producto';
       if (nombre.length > 28) nombre = nombre.substring(0, 25) + '...';
 
-      bytes += generator.text('${cantidad.toStringAsFixed(1)}x $nombre', 
-                             styles: PosStyles(align: PosAlign.left));
-      bytes += generator.text('  \$${precio.toStringAsFixed(0)} = \$${subtotal.toStringAsFixed(0)}', 
-                             styles: PosStyles(align: PosAlign.right));
+      bytes += generator.text(
+        '${cantidad.toStringAsFixed(1)}x $nombre',
+        styles: PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        '  \$${precio.toStringAsFixed(0)} = \$${subtotal.toStringAsFixed(0)}',
+        styles: PosStyles(align: PosAlign.right),
+      );
     }
 
     // Total
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('TOTAL: \$${total.toStringAsFixed(0)}', 
-                           styles: PosStyles(align: PosAlign.right, bold: true));
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.text(
+      'TOTAL: \$${total.toStringAsFixed(0)}',
+      styles: PosStyles(align: PosAlign.right, bold: true),
+    );
 
     // Observaciones
     if (_observacionesController.text.isNotEmpty) {
-      bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
-      bytes += generator.text('Obs: ${_observacionesController.text}', 
-                             styles: PosStyles(align: PosAlign.left));
+      bytes += generator.text(
+        '----------------------------',
+        styles: PosStyles(align: PosAlign.center),
+      );
+      bytes += generator.text(
+        'Obs: ${_observacionesController.text}',
+        styles: PosStyles(align: PosAlign.left),
+      );
     }
 
     // Footer
-    bytes += generator.text('----------------------------', styles: PosStyles(align: PosAlign.center));
-    bytes += generator.text('Gracias por su compra', styles: PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      '----------------------------',
+      styles: PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.text(
+      'Gracias por su compra',
+      styles: PosStyles(align: PosAlign.center),
+    );
     bytes += generator.emptyLines(2);
     bytes += generator.cut();
 
@@ -1680,22 +2044,23 @@ class _InventoryExtractionBySaleScreenState
   void _showErrorDialog(String title, String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.error, color: Colors.red),
-            const SizedBox(width: 8),
-            Text(title),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.red),
+                const SizedBox(width: 8),
+                Text(title),
+              ],
+            ),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -1703,26 +2068,27 @@ class _InventoryExtractionBySaleScreenState
   void _showSuccessDialog(String title, String message) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green),
-            const SizedBox(width: 8),
-            Text(title),
-          ],
-        ),
-        content: Text(message),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green),
+                const SizedBox(width: 8),
+                Text(title),
+              ],
             ),
-            child: const Text('¡Genial!'),
+            content: Text(message),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('¡Genial!'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 }
@@ -1760,9 +2126,9 @@ class _ProductQuantityWithPriceDialogState
     _maxAvailableStock =
         (widget.product['stock_disponible'] as num?)?.toDouble() ?? 0.0;
     // Set default price from product
-    _priceController.text =
-        ((widget.product['precio_venta'] as num?)?.toDouble() ?? 0.0)
-            .toStringAsFixed(2);
+    _priceController
+        .text = ((widget.product['precio_venta'] as num?)?.toDouble() ?? 0.0)
+        .toStringAsFixed(2);
     _loadLocationSpecificVariants();
   }
 
@@ -1844,7 +2210,9 @@ class _ProductQuantityWithPriceDialogState
       'denominacion_corta': widget.product['denominacion_corta'] ?? '',
       'sku_ubicacion': widget.sourceLocation?.name ?? '',
       'denominacion':
-          widget.product['denominacion'] ?? widget.product['nombre_producto'] ?? '',
+          widget.product['denominacion'] ??
+          widget.product['nombre_producto'] ??
+          '',
       'variante': _selectedVariant!['variante'] ?? '',
       'zona_nombre': widget.sourceLocation?.name ?? '',
       'meta': widget.product,
@@ -1942,14 +2310,16 @@ class _ProductQuantityWithPriceDialogState
                               margin: const EdgeInsets.only(bottom: 8),
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: isSelected
-                                    ? AppColors.success.withOpacity(0.1)
-                                    : Colors.white,
+                                color:
+                                    isSelected
+                                        ? AppColors.success.withOpacity(0.1)
+                                        : Colors.white,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: isSelected
-                                      ? AppColors.success
-                                      : AppColors.border,
+                                  color:
+                                      isSelected
+                                          ? AppColors.success
+                                          : AppColors.border,
                                   width: isSelected ? 2 : 1,
                                 ),
                               ),
@@ -1959,9 +2329,10 @@ class _ProductQuantityWithPriceDialogState
                                     isSelected
                                         ? Icons.radio_button_checked
                                         : Icons.radio_button_unchecked,
-                                    color: isSelected
-                                        ? AppColors.success
-                                        : Colors.grey,
+                                    color:
+                                        isSelected
+                                            ? AppColors.success
+                                            : Colors.grey,
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -1974,9 +2345,10 @@ class _ProductQuantityWithPriceDialogState
                                               'Sin presentación',
                                           style: TextStyle(
                                             fontWeight: FontWeight.w600,
-                                            color: isSelected
-                                                ? AppColors.success
-                                                : Colors.black87,
+                                            color:
+                                                isSelected
+                                                    ? AppColors.success
+                                                    : Colors.black87,
                                           ),
                                         ),
                                         Text(
@@ -2014,7 +2386,8 @@ class _ProductQuantityWithPriceDialogState
                         decoration: InputDecoration(
                           hintText: 'Ingrese la cantidad',
                           prefixIcon: const Icon(Icons.inventory),
-                          suffixText: _selectedVariant?['presentacion_nombre'] ?? '',
+                          suffixText:
+                              _selectedVariant?['presentacion_nombre'] ?? '',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -2120,7 +2493,8 @@ class _ProductQuantityWithPriceDialogState
                   Expanded(
                     flex: 2,
                     child: ElevatedButton(
-                      onPressed: _selectedVariant == null ? null : _submitProduct,
+                      onPressed:
+                          _selectedVariant == null ? null : _submitProduct,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.success,
                         padding: const EdgeInsets.symmetric(vertical: 16),

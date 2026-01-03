@@ -22,54 +22,11 @@ class _TiendasCatalogoScreenState extends State<TiendasCatalogoScreen> {
   final Set<int> _updatingStoreIds = <int>{};
 
   Future<int?> _askValidationDays(CatalogStore store) async {
-    final controller = TextEditingController();
-
-    final result = await showDialog<int>(
+    return showDialog<int>(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Validar "${store.denominacion}"'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('¿Cuántos días estará validada en el catálogo?'),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    labelText: 'Días de validación',
-                    hintText: 'Ej: 30',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final days = int.tryParse(controller.text.trim());
-                Navigator.of(context).pop(days);
-              },
-              child: const Text('Confirmar'),
-            ),
-          ],
-        );
-      },
+      builder: (context) => _ValidationDaysDialog(store: store),
     );
-
-    controller.dispose();
-    return result;
   }
 
   @override
@@ -882,6 +839,72 @@ class _TiendasCatalogoScreenState extends State<TiendasCatalogoScreen> {
                   },
                 ),
       ),
+    );
+  }
+}
+
+class _ValidationDaysDialog extends StatefulWidget {
+  final CatalogStore store;
+
+  const _ValidationDaysDialog({required this.store});
+
+  @override
+  State<_ValidationDaysDialog> createState() => _ValidationDaysDialogState();
+}
+
+class _ValidationDaysDialogState extends State<_ValidationDaysDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Validar "${widget.store.denominacion}"'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('¿Cuántos días estará validada en el catálogo?'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'Días de validación',
+                hintText: 'Ej: 30',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final days = int.tryParse(_controller.text.trim());
+            Navigator.of(context).pop(days);
+          },
+          child: const Text('Confirmar'),
+        ),
+      ],
     );
   }
 }

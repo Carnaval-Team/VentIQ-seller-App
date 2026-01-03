@@ -463,19 +463,32 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   return Switch(
                                     value: mostrar,
                                     onChanged: (value) async {
-                                      await _catalogoService.actualizarMostrarEnCatalogoTienda(_storeId!, value);
-                                      if (mounted) {
-                                        setState(() {});
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              value
-                                                  ? '✅ Catálogo habilitado'
-                                                  : '✅ Catálogo deshabilitado',
+                                      try {
+                                        await _catalogoService.actualizarMostrarEnCatalogoTienda(_storeId!, value);
+                                        if (mounted) {
+                                          setState(() {});
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                value
+                                                    ? '✅ Catálogo habilitado'
+                                                    : '✅ Catálogo deshabilitado',
+                                              ),
+                                              backgroundColor: Colors.green,
                                             ),
-                                            backgroundColor: Colors.green,
-                                          ),
-                                        );
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          setState(() {});
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text(e.toString().replaceAll('Exception: ', '')),
+                                              backgroundColor: Colors.red,
+                                              duration: const Duration(seconds: 5),
+                                            ),
+                                          );
+                                        }
                                       }
                                     },
                                     activeColor: Colors.green,

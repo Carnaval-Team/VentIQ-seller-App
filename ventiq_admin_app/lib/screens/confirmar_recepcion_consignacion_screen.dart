@@ -5,6 +5,7 @@ import '../services/consignacion_service.dart';
 import '../services/consignacion_envio_service.dart';
 import '../services/consignacion_envio_listado_service.dart';
 import '../services/currency_display_service.dart';
+import '../services/user_preferences_service.dart';
 
 class ConfirmarRecepcionConsignacionScreen extends StatefulWidget {
   final int idContrato;
@@ -899,19 +900,61 @@ class _ConfirmarRecepcionConsignacionScreenState
         
         debugPrint('💰 Precios del formulario: $preciosProductos');
         
-        // Aceptar envío completo con ConsignacionEnvioService
-        final aceptarResult = await ConsignacionEnvioService.aceptarEnvio(
-          idEnvio: idEnvio,
-          idUsuario: user.id,
-          idTiendaDestino: widget.idTiendaDestino,
-          preciosProductos: preciosProductos,
-        );
+        bool success = false;
+        
+        // ✅ Decidir qué método usar según el flujo
+        final envioId = widget.idEnvio ?? idEnvio;
+        if (envioId != null) {
+          // FLUJO DE ENVÍO: Usar aceptarEnvio del RPC
+          debugPrint('📦 Usando flujo de envío específico: $envioId');
+          final userPrefs = UserPreferencesService();
+          final userId = await userPrefs.getUserId();
+          
+          final aceptarResult = await ConsignacionEnvioService.aceptarEnvio(
+            idEnvio: envioId,
+            idUsuario: userId ?? '',
+            idTiendaDestino: widget.idTiendaDestino,
+            preciosProductos: preciosProductos,
+          );
+          
+          success = aceptarResult != null && aceptarResult['success'] == true;
+        } else {
+          // FLUJO DE CONTRATO DIRECTO: Usar confirmarRecepcionProductosConsignacion
+          debugPrint('📋 Usando flujo de contrato directo');
+          
+          // Preparar IDs de productos consignación y mapa de precios
+          final idsProductosConsignacion = _productosPendientes
+              .map((p) => p['id'] as int)
+              .toList();
+          
+          final preciosVentaMap = <int, double>{};
+          for (final producto in _productosPendientes) {
+            final idProductoConsignacion = producto['id'] as int;
+            final precioSugerido = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
+            final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioSugerido;
+            preciosVentaMap[idProductoConsignacion] = precioConfigurable;
+          }
+          
+          debugPrint('📋 IDs productos consignación: $idsProductosConsignacion');
+          debugPrint('💰 Precios de venta: $preciosVentaMap');
+          
+          success = await ConsignacionService.confirmarRecepcionProductosConsignacion(
+            idContrato: widget.idContrato,
+            idTiendaOrigen: widget.idTiendaOrigen,
+            idTiendaDestino: widget.idTiendaDestino,
+            idAlmacenOrigen: widget.idAlmacenOrigen,
+            idAlmacenDestino: widget.idAlmacenDestino,
+            idsProductosConsignacion: idsProductosConsignacion,
+            preciosVenta: preciosVentaMap,
+            idEnvio: idEnvio,
+          );
+        }
 
         if (!mounted) return;
 
         setState(() => _isConfirming = false);
 
-        if (aceptarResult != null && aceptarResult['success'] == true) {
+        if (success) {
           // ✅ NUEVO: Actualizar monto_total del contrato
           try {
             await ConsignacionService.actualizarMontoTotalContrato(
@@ -938,8 +981,8 @@ class _ConfirmarRecepcionConsignacionScreenState
           }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Error al aceptar envío: ${aceptarResult?['mensaje'] ?? 'Error desconocido'}'),
+            const SnackBar(
+              content: Text('❌ Error al aceptar envío'),
               backgroundColor: Colors.red,
             ),
           );

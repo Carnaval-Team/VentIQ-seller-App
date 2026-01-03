@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../config/app_colors.dart';
 import '../widgets/app_drawer.dart';
 import '../utils/platform_utils.dart';
@@ -21,6 +25,8 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   String _searchQuery = '';
   String _selectedPlan = 'todos';
   String _selectedEstado = 'todos';
+  String _selectedUrgencia = 'todas';
+  int _diasFiltro = 365; // Mostrar todas por defecto
 
   @override
   void initState() {
@@ -86,6 +92,17 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
           estado = 'por_vencer';
         }
 
+        String urgencia = 'baja';
+        if (diasRestantes < 0) {
+          urgencia = 'vencida';
+        } else if (diasRestantes <= 7) {
+          urgencia = 'critica';
+        } else if (diasRestantes <= 15) {
+          urgencia = 'alta';
+        } else if (diasRestantes <= 30) {
+          urgencia = 'media';
+        }
+
         suscripciones.add({
           ...suscripcion,
           'plan': plan?['denominacion'] ?? 'Sin plan',
@@ -99,6 +116,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
           'estado_computed': estado,
           'estado': estado,
           'estado_id': suscripcion['estado'],
+          'urgencia': urgencia,
         });
       }
 
@@ -149,7 +167,17 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                 _selectedEstado == 'todos' ||
                 suscripcion['estado'] == _selectedEstado;
 
-            return matchesSearch && matchesPlan && matchesEstado;
+            final matchesUrgencia =
+                _selectedUrgencia == 'todas' ||
+                suscripcion['urgencia'] == _selectedUrgencia;
+
+            final matchesDias = suscripcion['dias_restantes'] <= _diasFiltro;
+
+            return matchesSearch &&
+                matchesPlan &&
+                matchesEstado &&
+                matchesUrgencia &&
+                matchesDias;
           }).toList();
     });
   }
@@ -205,56 +233,79 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
   }
 
   Widget _buildFilters() {
-    final screenSize = MediaQuery.of(context).size;
-    final isDesktop = PlatformUtils.shouldUseDesktopLayout(screenSize.width);
-
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child:
-            isDesktop
-                ? Row(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Buscar tienda o plan',
+                  prefixIcon: Icon(Icons.search),
+                  border: InputBorder.none,
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value;
+                  });
+                  _filterSuscripciones();
+                },
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            IconButton(
+              icon: Icon(
+                Icons.filter_list,
+                color:
+                    (_selectedPlan != 'todos' ||
+                            _selectedEstado != 'todos' ||
+                            _selectedUrgencia != 'todas' ||
+                            _diasFiltro != 365)
+                        ? AppColors.primary
+                        : null,
+              ),
+              onPressed: _showFilterDialog,
+              tooltip: 'Filtros Avanzados',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFilterDialog() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: const Row(
                   children: [
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'Buscar licencia',
-                          prefixIcon: Icon(Icons.search),
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                          _filterSuscripciones();
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 1,
-                      child: DropdownButtonFormField<String>(
+                    Icon(Icons.filter_alt, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Text('Filtros de Licencias'),
+                  ],
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 16,
+                    children: [
+                      DropdownButtonFormField<String>(
                         value: _selectedPlan,
                         decoration: const InputDecoration(
-                          labelText: 'Plan',
+                          labelText: 'Plan de Suscripción',
                           border: OutlineInputBorder(),
-                          isDense: true,
                         ),
                         items: const [
-                          DropdownMenuItem(
-                            value: 'todos',
-                            child: Text('Todos'),
-                          ),
+                          DropdownMenuItem(value: 'todos', child: Text('Todos')),
                           DropdownMenuItem(
                             value: 'gratuita',
                             child: Text('Gratuita'),
                           ),
-                          DropdownMenuItem(
-                            value: 'basica',
-                            child: Text('Básica'),
-                          ),
+                          DropdownMenuItem(value: 'basica', child: Text('Básica')),
                           DropdownMenuItem(
                             value: 'premium',
                             child: Text('Premium'),
@@ -265,32 +316,18 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           ),
                         ],
                         onChanged: (value) {
-                          setState(() {
-                            _selectedPlan = value!;
-                          });
-                          _filterSuscripciones();
+                          setDialogState(() => _selectedPlan = value!);
                         },
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 1,
-                      child: DropdownButtonFormField<String>(
+                      DropdownButtonFormField<String>(
                         value: _selectedEstado,
                         decoration: const InputDecoration(
-                          labelText: 'Estado',
+                          labelText: 'Estado de Licencia',
                           border: OutlineInputBorder(),
-                          isDense: true,
                         ),
                         items: const [
-                          DropdownMenuItem(
-                            value: 'todos',
-                            child: Text('Todos'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'activa',
-                            child: Text('Activas'),
-                          ),
+                          DropdownMenuItem(value: 'todos', child: Text('Todos')),
+                          DropdownMenuItem(value: 'activa', child: Text('Activas')),
                           DropdownMenuItem(
                             value: 'por_vencer',
                             child: Text('Por Vencer'),
@@ -305,116 +342,87 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                           ),
                         ],
                         onChanged: (value) {
-                          setState(() {
-                            _selectedEstado = value!;
-                          });
-                          _filterSuscripciones();
+                          setDialogState(() => _selectedEstado = value!);
                         },
                       ),
-                    ),
-                  ],
-                )
-                : Column(
-                  spacing: 12,
-                  children: [
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'Buscar licencia',
-                        prefixIcon: Icon(Icons.search),
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                      DropdownButtonFormField<String>(
+                        value: _selectedUrgencia,
+                        decoration: const InputDecoration(
+                          labelText: 'Urgencia (Renovación)',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'todas', child: Text('Todas')),
+                          DropdownMenuItem(
+                            value: 'vencida',
+                            child: Text('Vencidas'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'critica',
+                            child: Text('Crítica (≤7 días)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'alta',
+                            child: Text('Alta (≤15 días)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'media',
+                            child: Text('Media (≤30 días)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'baja',
+                            child: Text('Baja (>30 días)'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setDialogState(() => _selectedUrgencia = value!);
+                        },
                       ),
-                      onChanged: (value) {
-                        setState(() {
-                          _searchQuery = value;
-                        });
-                        _filterSuscripciones();
-                      },
-                    ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: _selectedPlan,
-                            decoration: const InputDecoration(
-                              labelText: 'Plan',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'todos',
-                                child: Text('Todos'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'gratuita',
-                                child: Text('Gratuita'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'basica',
-                                child: Text('Básica'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'premium',
-                                child: Text('Premium'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'enterprise',
-                                child: Text('Enterprise'),
-                              ),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedPlan = value!;
-                              });
-                              _filterSuscripciones();
-                            },
-                          ),
+                      DropdownButtonFormField<int>(
+                        value: _diasFiltro,
+                        decoration: const InputDecoration(
+                          labelText: 'Días para vencer',
+                          border: OutlineInputBorder(),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: _selectedEstado,
-                            decoration: const InputDecoration(
-                              labelText: 'Estado',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'todos',
-                                child: Text('Todos'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'activa',
-                                child: Text('Activas'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'por_vencer',
-                                child: Text('Por Vencer'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'vencida',
-                                child: Text('Vencidas'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'inactiva',
-                                child: Text('Inactivas'),
-                              ),
-                            ],
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedEstado = value!;
-                              });
-                              _filterSuscripciones();
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        items: const [
+                          DropdownMenuItem(value: 7, child: Text('7 días')),
+                          DropdownMenuItem(value: 15, child: Text('15 días')),
+                          DropdownMenuItem(value: 30, child: Text('30 días')),
+                          DropdownMenuItem(value: 60, child: Text('60 días')),
+                          DropdownMenuItem(value: 365, child: Text('Todas')),
+                        ],
+                        onChanged: (value) {
+                          setDialogState(() => _diasFiltro = value!);
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-      ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _selectedPlan = 'todos';
+                        _selectedEstado = 'todos';
+                        _selectedUrgencia = 'todas';
+                        _diasFiltro = 365;
+                      });
+                      _filterSuscripciones();
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Limpiar'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      _filterSuscripciones();
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Aplicar Filtros'),
+                  ),
+                ],
+              );
+            },
+          ),
     );
   }
 
@@ -467,8 +475,8 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
         ],
       );
     } else {
+      // Diseño móvil: Rejilla más compacta o Wrap
       return Column(
-        spacing: 12,
         children: [
           Row(
             children: [
@@ -478,19 +486,22 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                   stats[0].$2,
                   stats[0].$3,
                   stats[0].$4,
+                  isMobile: true,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: _buildStatCard(
                   stats[1].$1,
                   stats[1].$2,
                   stats[1].$3,
                   stats[1].$4,
+                  isMobile: true,
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -499,20 +510,29 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                   stats[2].$2,
                   stats[2].$3,
                   stats[2].$4,
+                  isMobile: true,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: _buildStatCard(
                   stats[3].$1,
                   stats[3].$2,
                   stats[3].$3,
                   stats[3].$4,
+                  isMobile: true,
                 ),
               ),
             ],
           ),
-          _buildStatCard(stats[4].$1, stats[4].$2, stats[4].$3, stats[4].$4),
+          const SizedBox(height: 8),
+          _buildStatCard(
+            stats[4].$1,
+            stats[4].$2,
+            stats[4].$3,
+            stats[4].$4,
+            isMobile: true,
+          ),
         ],
       );
     }
@@ -522,8 +542,46 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
     String title,
     String value,
     IconData icon,
-    Color color,
-  ) {
+    Color color, {
+    bool isMobile = false,
+  }) {
+    if (isMobile) {
+      return Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      value,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                    Text(
+                      title,
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -567,6 +625,7 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                 child: SingleChildScrollView(
                   child: DataTable(
                     columns: const [
+                      DataColumn(label: Text('Urgencia')),
                       DataColumn(label: Text('Tienda')),
                       DataColumn(label: Text('Plan')),
                       DataColumn(label: Text('Estado')),
@@ -580,6 +639,9 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                         _filteredSuscripciones.map((suscripcion) {
                           return DataRow(
                             cells: [
+                              DataCell(
+                                _buildUrgenciaChip(suscripcion['urgencia']),
+                              ),
                               DataCell(
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -647,6 +709,17 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                                         suscripcion['estado'] == 'vencida')
                                       IconButton(
                                         icon: const Icon(
+                                          Icons.history,
+                                          color: AppColors.primary,
+                                        ),
+                                        onPressed:
+                                            () => _showHistorialDialog(
+                                              suscripcion,
+                                            ),
+                                        tooltip: 'Historial',
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(
                                           Icons.refresh,
                                           color: AppColors.success,
                                         ),
@@ -698,13 +771,15 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
               children: [
                 Text(suscripcion['tienda_ubicacion']),
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    _buildPlanChip(suscripcion['plan']),
-                    const SizedBox(width: 8),
-                    _buildEstadoChip(suscripcion['estado']),
-                  ],
-                ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        _buildUrgenciaChip(suscripcion['urgencia']),
+                        _buildPlanChip(suscripcion['plan']),
+                        _buildEstadoChip(suscripcion['estado']),
+                      ],
+                    ),
               ],
             ),
             children: [
@@ -748,13 +823,21 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
                       '\$${suscripcion['precio'] ?? 0}',
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         TextButton.icon(
-                          icon: const Icon(Icons.visibility),
-                          label: const Text('Ver'),
-                          onPressed: () => _showLicenciaDetails(suscripcion),
+                          icon: const Icon(Icons.history, size: 18),
+                          label: const Text('Historial'),
+                          onPressed: () => _showHistorialDialog(suscripcion),
+                        ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.edit, size: 18),
+                          label: const Text('Editar'),
+                          onPressed: () => _showEditLicenciaDialog(suscripcion),
                         ),
                         TextButton.icon(
                           icon: const Icon(
@@ -776,6 +859,54 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildUrgenciaChip(String urgencia) {
+    Color color;
+    String text;
+
+    switch (urgencia) {
+      case 'vencida':
+        color = AppColors.error;
+        text = 'VENCIDA';
+        break;
+      case 'critica':
+        color = AppColors.error;
+        text = 'CRÍTICA';
+        break;
+      case 'alta':
+        color = AppColors.warning;
+        text = 'ALTA';
+        break;
+      case 'media':
+        color = AppColors.secondary;
+        text = 'MEDIA';
+        break;
+      case 'baja':
+        color = AppColors.success;
+        text = 'BAJA';
+        break;
+      default:
+        color = AppColors.textSecondary;
+        text = urgencia.toUpperCase();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 
@@ -1001,6 +1132,159 @@ class _LicenciasScreenState extends State<LicenciasScreen> {
           ),
     );
   }
+
+  void _showHistorialDialog(Map<String, dynamic> suscripcion) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => _HistorialDialogContent(
+            suscripcion: suscripcion,
+            supabase: _supabase,
+          ),
+    );
+  }
+}
+
+class _HistorialDialogContent extends StatefulWidget {
+  final Map<String, dynamic> suscripcion;
+  final SupabaseClient supabase;
+
+  const _HistorialDialogContent({
+    required this.suscripcion,
+    required this.supabase,
+  });
+
+  @override
+  State<_HistorialDialogContent> createState() =>
+      _HistorialDialogContentState();
+}
+
+class _HistorialDialogContentState extends State<_HistorialDialogContent> {
+  List<Map<String, dynamic>> _historial = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarHistorial();
+  }
+
+  Future<void> _cargarHistorial() async {
+    try {
+      final response = await widget.supabase
+          .from('app_suscripciones_historial')
+          .select('''
+            *,
+            plan_anterior:app_suscripciones_plan!app_suscripciones_historial_id_plan_anterior_fkey(denominacion),
+            plan_nuevo:app_suscripciones_plan!app_suscripciones_historial_id_plan_nuevo_fkey(denominacion)
+          ''')
+          .eq('id_suscripcion', widget.suscripcion['id'])
+          .order('fecha_cambio', ascending: false);
+
+      if (mounted) {
+        setState(() {
+          _historial = List<Map<String, dynamic>>.from(response);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error cargando historial: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _formatDateTime(String dateStr) {
+    final date = DateTime.parse(dateStr);
+    return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Historial - ${widget.suscripcion['tienda_nombre']}'),
+      content: SizedBox(
+        width: 600,
+        height: 400,
+        child:
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _historial.isEmpty
+                ? const Center(child: Text('No hay registros de historial'))
+                : ListView.separated(
+                  itemCount: _historial.length,
+                  separatorBuilder: (context, index) => const Divider(),
+                  itemBuilder: (context, index) {
+                    final item = _historial[index];
+                    final planAnterior =
+                        item['plan_anterior']?['denominacion'] ?? 'N/A';
+                    final planNuevo =
+                        item['plan_nuevo']?['denominacion'] ?? 'N/A';
+
+                    return ListTile(
+                      isThreeLine: true,
+                      title: Text(_formatDateTime(item['fecha_cambio'])),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Plan: $planAnterior ➔ $planNuevo'),
+                          if (item['evidencia'] != null &&
+                              item['evidencia'].toString().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child:
+                                  item['evidencia'].toString().startsWith(
+                                        'http',
+                                      )
+                                      ? InkWell(
+                                        onTap: () {
+                                          showDialog(
+                                            context: context,
+                                            builder:
+                                                (context) => Dialog(
+                                                  child: Image.network(
+                                                    item['evidencia'],
+                                                  ),
+                                                ),
+                                          );
+                                        },
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                          child: Image.network(
+                                            item['evidencia'],
+                                            height: 100,
+                                            width: 150,
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    const Text(
+                                                      'Error al cargar imagen',
+                                                    ),
+                                          ),
+                                        ),
+                                      )
+                                      : Text(
+                                        'Evidencia: ${item['evidencia']}',
+                                        style: const TextStyle(
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                            ),
+                          Text('Motivo: ${item['motivo'] ?? 'Sin motivo'}'),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
+    );
+  }
 }
 
 /// Widget para el diálogo de renovación con carga de planes y aplicación a gerente
@@ -1022,13 +1306,26 @@ class _RenovarDialogContent extends StatefulWidget {
 class _RenovarDialogContentState extends State<_RenovarDialogContent> {
   List<Map<String, dynamic>> _planesDisponibles = [];
   Map<String, dynamic>? _planSeleccionado;
+  final ImagePicker _imagePicker = ImagePicker();
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageName;
   bool _isLoading = true;
   bool _isProcessing = false;
+  late DateTime _fechaFin;
 
   @override
   void initState() {
     super.initState();
+    final ahora = DateTime.now();
+    final mesSiguiente = ahora.month == 12 ? 1 : ahora.month + 1;
+    final anioSiguiente = ahora.month == 12 ? ahora.year + 1 : ahora.year;
+    _fechaFin = DateTime(anioSiguiente, mesSiguiente, 2);
     _cargarPlanesYGerente();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 
   Future<void> _cargarPlanesYGerente() async {
@@ -1083,24 +1380,44 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
     try {
       final idTienda = widget.suscripcion['id_tienda'];
       final idSuscripcionActual = widget.suscripcion['id'];
+      final currentUser = widget.supabase.auth.currentUser;
+
+      if (currentUser == null) throw Exception('Usuario no autenticado');
+
+      String? evidenciaUrl;
+      if (_selectedImageBytes != null) {
+        evidenciaUrl = await _uploadEvidenceImage();
+        if (evidenciaUrl == null) {
+          throw Exception('No se pudo subir la imagen de evidencia');
+        }
+      }
+
       final esPlanPro =
           _planSeleccionado!['denominacion']?.toString().toLowerCase().contains(
             'pro',
           ) ??
           false;
 
-      // Nueva fecha de fin: día 2 del mes siguiente
       final ahora = DateTime.now();
-      final mesSiguiente = ahora.month == 12 ? 1 : ahora.month + 1;
-      final anioSiguiente = ahora.month == 12 ? ahora.year + 1 : ahora.year;
-      final nuevaFechaFin = DateTime(anioSiguiente, mesSiguiente, 2);
 
-      // Actualizar la suscripción actual
+      // 1. Guardar en el historial
+      await widget.supabase.from('app_suscripciones_historial').insert({
+        'id_suscripcion': idSuscripcionActual,
+        'id_plan_anterior': widget.suscripcion['id_plan'],
+        'id_plan_nuevo': _planSeleccionado!['id'],
+        'estado_anterior': widget.suscripcion['estado_id'],
+        'estado_nuevo': 1, // Activa
+        'motivo': 'Renovación de licencia',
+        'cambiado_por': currentUser.id,
+        'evidencia': evidenciaUrl ?? '',
+      });
+
+      // 2. Actualizar la suscripción actual
       await widget.supabase
           .from('app_suscripciones')
           .update({
             'id_plan': _planSeleccionado!['id'],
-            'fecha_fin': nuevaFechaFin.toIso8601String(),
+            'fecha_fin': _fechaFin.toIso8601String(),
             'estado': 1, // Activa
             'updated_at': ahora.toIso8601String(),
           })
@@ -1146,11 +1463,22 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
                       .from('app_suscripciones')
                       .update({
                         'id_plan': _planSeleccionado!['id'],
-                        'fecha_fin': nuevaFechaFin.toIso8601String(),
+                        'fecha_fin': _fechaFin.toIso8601String(),
                         'estado': 1,
                         'updated_at': ahora.toIso8601String(),
                       })
                       .eq('id', suscripcionExistente['id']);
+
+                  // También guardar historial para las tiendas del gerente
+                  await widget.supabase
+                      .from('app_suscripciones_historial')
+                      .insert({
+                        'id_suscripcion': suscripcionExistente['id'],
+                        'id_plan_nuevo': _planSeleccionado!['id'],
+                        'estado_nuevo': 1,
+                        'motivo': 'Renovación por Plan PRO de gerente',
+                        'cambiado_por': currentUser.id,
+                      });
                 }
               }
             }
@@ -1186,6 +1514,87 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
       if (mounted) {
         setState(() => _isProcessing = false);
       }
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final ImageSource? source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        builder: (BuildContext context) {
+          return SafeArea(
+            child: Wrap(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_camera),
+                  title: const Text('Tomar foto'),
+                  onTap: () => Navigator.of(context).pop(ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Seleccionar de galería'),
+                  onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.cancel),
+                  title: const Text('Cancelar'),
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (source != null) {
+        final XFile? image = await _imagePicker.pickImage(
+          source: source,
+          maxWidth: 800,
+          maxHeight: 800,
+          imageQuality: 80,
+        );
+
+        if (image != null) {
+          final bytes = await image.readAsBytes();
+          if (mounted) {
+            setState(() {
+              _selectedImageBytes = bytes;
+              _selectedImageName =
+                  'licencia_${DateTime.now().millisecondsSinceEpoch}.jpg';
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al seleccionar imagen: $e')),
+        );
+      }
+    }
+  }
+
+  Future<String?> _uploadEvidenceImage() async {
+    if (_selectedImageBytes == null || _selectedImageName == null) return null;
+
+    try {
+      final fileName = _selectedImageName!;
+      final fileBytes = _selectedImageBytes!;
+
+      await widget.supabase.storage
+          .from('suscripciones_evidencias')
+          .uploadBinary(fileName, fileBytes,
+              fileOptions: const FileOptions(contentType: 'image/jpeg'));
+
+      final String publicUrl = widget.supabase.storage
+          .from('suscripciones_evidencias')
+          .getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (e) {
+      debugPrint('Error uploading image: $e');
+      return null;
     }
   }
 
@@ -1231,6 +1640,83 @@ class _RenovarDialogContentState extends State<_RenovarDialogContent> {
                 setState(() => _planSeleccionado = plan);
               },
             ),
+            const SizedBox(height: 16),
+            const Text('Fecha de Vencimiento:'),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () async {
+                final DateTime? picked = await showDatePicker(
+                  context: context,
+                  initialDate: _fechaFin,
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime(2030),
+                );
+                if (picked != null) {
+                  setState(() => _fechaFin = picked);
+                }
+              },
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${_fechaFin.day}/${_fechaFin.month}/${_fechaFin.year}',
+                    ),
+                    const Icon(Icons.calendar_today, size: 16),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Evidencia de pago (Imagen):'),
+            const SizedBox(height: 8),
+            if (_selectedImageBytes != null)
+              Stack(
+                children: [
+                  Container(
+                    height: 150,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.textSecondary),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(
+                        _selectedImageBytes!,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black54,
+                      ),
+                      onPressed: () => setState(() {
+                        _selectedImageBytes = null;
+                        _selectedImageName = null;
+                      }),
+                    ),
+                  ),
+                ],
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: _pickImage,
+                icon: const Icon(Icons.add_a_photo_outlined),
+                label: const Text('Subir evidencia'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+              ),
           ],
         ),
       ),

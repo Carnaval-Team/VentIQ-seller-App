@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS app_dat_producto_consignacion_duplicado (
   id SERIAL PRIMARY KEY,
   id_producto_original BIGINT NOT NULL,
   id_producto_duplicado BIGINT NOT NULL,
+  id_presentacion_original BIGINT,
+  id_presentacion_duplicada BIGINT,
   id_contrato_consignacion INT NOT NULL,
   id_tienda_origen INT NOT NULL,
   id_tienda_destino INT NOT NULL,
@@ -19,6 +21,8 @@ CREATE TABLE IF NOT EXISTS app_dat_producto_consignacion_duplicado (
   
   FOREIGN KEY (id_producto_original) REFERENCES app_dat_producto(id) ON DELETE CASCADE,
   FOREIGN KEY (id_producto_duplicado) REFERENCES app_dat_producto(id) ON DELETE CASCADE,
+  FOREIGN KEY (id_presentacion_original) REFERENCES app_dat_producto_presentacion(id) ON DELETE SET NULL,
+  FOREIGN KEY (id_presentacion_duplicada) REFERENCES app_dat_producto_presentacion(id) ON DELETE SET NULL,
   FOREIGN KEY (id_contrato_consignacion) REFERENCES app_dat_contrato_consignacion(id) ON DELETE CASCADE,
   FOREIGN KEY (id_tienda_origen) REFERENCES app_dat_tienda(id),
   FOREIGN KEY (id_tienda_destino) REFERENCES app_dat_tienda(id),
@@ -82,6 +86,8 @@ DECLARE
   v_count_multimedias INT;
   v_count_etiquetas INT;
   v_count_unidades INT;
+  v_id_presentacion_original BIGINT;
+  v_id_presentacion_duplicada BIGINT;
 BEGIN
   -- 1. Verificar si ya existe en tienda destino (buscar por SKU o ID)
   SELECT id INTO v_id_producto_existente
@@ -115,7 +121,7 @@ BEGIN
   WHERE id = v_categoria_origen;
   
   -- 4. Verificar si categoría existe en tienda destino
-  SELECT id INTO v_id_categoria_destino
+  SELECT id_categoria INTO v_id_categoria_destino
   FROM app_dat_categoria_tienda
   WHERE id_tienda = p_id_tienda_destino
     AND id_categoria = v_categoria_origen
@@ -125,7 +131,10 @@ BEGIN
   IF v_id_categoria_destino IS NULL THEN
     INSERT INTO app_dat_categoria_tienda (id_tienda, id_categoria)
     VALUES (p_id_tienda_destino, v_categoria_origen)
-    RETURNING id INTO v_id_categoria_destino;
+    ON CONFLICT DO NOTHING;
+    
+    -- Usar la categoría origen como destino (es la misma categoría, solo se asocia a otra tienda)
+    v_id_categoria_destino := v_categoria_origen;
   END IF;
   
   -- 6. Validar que tenemos categoría válida
@@ -134,20 +143,21 @@ BEGIN
     RETURN;
   END IF;
   
-  -- 7. Duplicar producto base
+  -- 7. Duplicar producto base (usar v_id_categoria_destino que ahora contiene el ID de categoría correcto)
+  -- NOTA: Se excluyen id_vendedor_app (NULL) y mostrar_en_catalogo (false) de la duplicación
   INSERT INTO app_dat_producto (
     id_tienda, sku, id_categoria, denominacion, nombre_comercial,
     denominacion_corta, descripcion, descripcion_corta, um,
     es_refrigerado, es_fragil, es_peligroso, es_vendible, es_comprable,
     es_inventariable, es_por_lotes, dias_alert_caducidad, codigo_barras,
-    imagen, es_elaborado, es_servicio, id_vendedor_app, mostrar_en_catalogo, created_at
+    imagen, es_elaborado, es_servicio, created_at
   )
   SELECT
     p_id_tienda_destino, sku, v_id_categoria_destino, denominacion, nombre_comercial,
     denominacion_corta, descripcion, descripcion_corta, um,
     es_refrigerado, es_fragil, es_peligroso, es_vendible, es_comprable,
     es_inventariable, es_por_lotes, dias_alert_caducidad, codigo_barras,
-    imagen, es_elaborado, es_servicio, NULL, false, CURRENT_TIMESTAMP
+    imagen, es_elaborado, es_servicio, CURRENT_TIMESTAMP
   FROM app_dat_producto
   WHERE id = p_id_producto_original
   RETURNING id INTO v_id_producto_nuevo;
@@ -166,7 +176,7 @@ BEGIN
   
   GET DIAGNOSTICS v_count_subcategorias = ROW_COUNT;
   
-  -- 9. Duplicar presentaciones
+  -- 9. Duplicar presentaciones y guardar mapeo de la presentación base
   INSERT INTO app_dat_producto_presentacion (id_producto, id_presentacion, cantidad, es_base, precio_promedio, created_at)
   SELECT v_id_producto_nuevo, id_presentacion, cantidad, es_base, precio_promedio, CURRENT_TIMESTAMP
   FROM app_dat_producto_presentacion
@@ -174,6 +184,20 @@ BEGIN
   ON CONFLICT DO NOTHING;
   
   GET DIAGNOSTICS v_count_presentaciones = ROW_COUNT;
+  
+  -- 9.1. Obtener ID de presentación original (la base)
+  SELECT id INTO v_id_presentacion_original
+  FROM app_dat_producto_presentacion
+  WHERE id_producto = p_id_producto_original
+    AND es_base = true
+  LIMIT 1;
+  
+  -- 9.2. Obtener ID de presentación duplicada (la base)
+  SELECT id INTO v_id_presentacion_duplicada
+  FROM app_dat_producto_presentacion
+  WHERE id_producto = v_id_producto_nuevo
+    AND es_base = true
+  LIMIT 1;
   
   -- 10. Duplicar multimedias
   INSERT INTO app_dat_producto_multimedias (id_producto, media, created_at)
@@ -209,17 +233,23 @@ BEGIN
   WHERE id_producto = p_id_producto_original
   ON CONFLICT DO NOTHING;
   
-  -- 14. Registrar trazabilidad
+  -- 14. Registrar trazabilidad con mapeo de presentaciones
   INSERT INTO app_dat_producto_consignacion_duplicado (
-    id_producto_original, id_producto_duplicado, id_contrato_consignacion,
+    id_producto_original, id_producto_duplicado, 
+    id_presentacion_original, id_presentacion_duplicada,
+    id_contrato_consignacion,
     id_tienda_origen, id_tienda_destino, duplicado_por, fecha_duplicacion
   ) VALUES (
-    p_id_producto_original, v_id_producto_nuevo, p_id_contrato_consignacion,
+    p_id_producto_original, v_id_producto_nuevo,
+    v_id_presentacion_original, v_id_presentacion_duplicada,
+    p_id_contrato_consignacion,
     p_id_tienda_origen, p_id_tienda_destino, p_uuid_usuario, CURRENT_TIMESTAMP
   )
   ON CONFLICT (id_producto_original, id_tienda_destino) 
   DO UPDATE SET
     id_producto_duplicado = EXCLUDED.id_producto_duplicado,
+    id_presentacion_original = EXCLUDED.id_presentacion_original,
+    id_presentacion_duplicada = EXCLUDED.id_presentacion_duplicada,
     id_contrato_consignacion = EXCLUDED.id_contrato_consignacion,
     duplicado_por = EXCLUDED.duplicado_por,
     fecha_duplicacion = CURRENT_TIMESTAMP;

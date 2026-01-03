@@ -209,6 +209,16 @@ CREATE TABLE public.app_dat_almacenero (
   CONSTRAINT app_dat_almacenero_id_almacen_fkey FOREIGN KEY (id_almacen) REFERENCES public.app_dat_almacen(id),
   CONSTRAINT app_dat_almacenero_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id)
 );
+CREATE TABLE public.app_dat_application_rating (
+  id bigint NOT NULL DEFAULT nextval('app_dat_application_rating_id_seq'::regclass),
+  id_usuario uuid NOT NULL,
+  rating numeric NOT NULL CHECK (rating >= 1.0 AND rating <= 5.0),
+  comentario text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT app_dat_application_rating_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_tienda_rating_id_usuario_fkey FOREIGN KEY (id_usuario) REFERENCES auth.users(id)
+);
 CREATE TABLE public.app_dat_atributo_opcion (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   id_atributo bigint NOT NULL,
@@ -260,6 +270,7 @@ CREATE TABLE public.app_dat_categoria (
   sku_codigo text NOT NULL,
   image text,
   visible_vendedor boolean DEFAULT true,
+  para_catalogo boolean DEFAULT false,
   CONSTRAINT app_dat_categoria_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.app_dat_categoria_tienda (
@@ -912,6 +923,7 @@ CREATE TABLE public.app_dat_producto (
   es_servicio boolean DEFAULT false,
   deleted_at timestamp without time zone,
   id_vendedor_app bigint,
+  mostrar_en_catalogo boolean DEFAULT false,
   CONSTRAINT app_dat_producto_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_producto_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_dat_producto_id_categoria_fkey FOREIGN KEY (id_categoria) REFERENCES public.app_dat_categoria(id)
@@ -1135,6 +1147,14 @@ CREATE TABLE public.app_dat_supervisor (
   CONSTRAINT app_dat_supervisor_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
   CONSTRAINT app_dat_supervisor_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id)
 );
+CREATE TABLE public.app_dat_suscripcion_catalogo (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  id_tienda bigint,
+  tiempo_suscripcion numeric,
+  vencido boolean,
+  CONSTRAINT app_dat_suscripcion_catalogo_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.app_dat_tienda (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   denominacion character varying NOT NULL,
@@ -1149,8 +1169,15 @@ CREATE TABLE public.app_dat_tienda (
   estado character varying,
   nombre_pais character varying,
   nombre_estado character varying,
-  latitude numeric(10, 8),
-  longitude numeric(11, 8),
+  latitude numeric,
+  longitude numeric,
+  mostrar_en_catalogo boolean DEFAULT false,
+  dias_trabajo jsonb DEFAULT '["lunes", "martes", "miércoles", "jueves", "viernes"]'::jsonb,
+  hora_apertura time without time zone DEFAULT '09:00:00'::time without time zone,
+  hora_cierre time without time zone DEFAULT '18:00:00'::time without time zone,
+  provincia character varying,
+  only_catalogo boolean DEFAULT false,
+  validada boolean DEFAULT false,
   CONSTRAINT app_dat_tienda_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.app_dat_tienda_rating (
@@ -1573,6 +1600,7 @@ CREATE TABLE public.app_suscripciones_historial (
   fecha_cambio timestamp with time zone NOT NULL DEFAULT now(),
   cambiado_por uuid NOT NULL,
   motivo text,
+  evidencia text,
   CONSTRAINT app_suscripciones_historial_pkey PRIMARY KEY (id),
   CONSTRAINT app_suscripciones_historial_id_suscripcion_fkey FOREIGN KEY (id_suscripcion) REFERENCES public.app_suscripciones(id),
   CONSTRAINT app_suscripciones_historial_cambiado_por_fkey FOREIGN KEY (cambiado_por) REFERENCES auth.users(id)
@@ -1588,6 +1616,8 @@ CREATE TABLE public.app_suscripciones_plan (
   funciones_habilitadas jsonb,
   es_activo boolean NOT NULL DEFAULT true,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  periodo smallint NOT NULL DEFAULT '1'::smallint,
+  moneda text NOT NULL DEFAULT 'USD'::text,
   CONSTRAINT app_suscripciones_plan_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.app_versiones (

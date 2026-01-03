@@ -15,16 +15,17 @@ import '../models/warehouse.dart';
 import '../config/app_colors.dart';
 
 // Importación condicional para web
-import 'web_download_stub.dart' 
-  if (dart.library.html) 'web_download_web.dart' as web_download;
+import 'web_download_stub.dart'
+    if (dart.library.html) 'web_download_web.dart'
+    as web_download;
 
 class ExportService {
   static const String _appName = 'Inventtia Admin';
-  
+
   // Cache para las fuentes
   static pw.Font? _regularFont;
   static pw.Font? _boldFont;
-  
+
   /// Obtiene la fuente regular con soporte Unicode
   static Future<pw.Font> _getRegularFont() async {
     if (_regularFont == null) {
@@ -32,13 +33,107 @@ class ExportService {
     }
     return _regularFont!;
   }
-  
+
   /// Obtiene la fuente bold con soporte Unicode
   static Future<pw.Font> _getBoldFont() async {
     if (_boldFont == null) {
       _boldFont = await PdfGoogleFonts.robotoBold();
     }
     return _boldFont!;
+  }
+
+  Future<void> exportCommercialOfferPdf({
+    required BuildContext context,
+    required String storeName,
+    String? storeAddress,
+    String? storeLocation,
+    required String currencyCode,
+    required String offerTitle,
+    required DateTime issuedAt,
+    String? clientName,
+    String? observations,
+    required List<Map<String, dynamic>> products,
+  }) async {
+    try {
+      final dateStr = DateFormat('yyyyMMdd_HHmmss').format(issuedAt);
+      final fileName = 'Oferta_${_cleanFileName(storeName)}_${dateStr}.pdf';
+
+      final fileBytes = await _generateCommercialOfferPdf(
+        storeName: storeName,
+        storeAddress: storeAddress,
+        storeLocation: storeLocation,
+        currencyCode: currencyCode,
+        offerTitle: offerTitle,
+        issuedAt: issuedAt,
+        clientName: clientName,
+        observations: observations,
+        products: products,
+      );
+
+      const mimeType = 'application/pdf';
+
+      if (kIsWeb) {
+        try {
+          _downloadFileWeb(fileBytes, fileName, mimeType);
+        } catch (webError) {
+          print('Error específico de descarga web: $webError');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Problema de compatibilidad del navegador. Intenta con Edge o actualiza tu navegador.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'Reintentar',
+                  onPressed:
+                      () => _downloadFileWeb(fileBytes, fileName, mimeType),
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      } else {
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsBytes(fileBytes);
+
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: mimeType)],
+          subject: offerTitle,
+          text:
+              'Documento generado el ${DateFormat('dd/MM/yyyy HH:mm').format(issuedAt)}',
+        );
+      }
+
+      if (context.mounted) {
+        final message =
+            kIsWeb
+                ? 'Archivo PDF descargado exitosamente'
+                : 'Archivo PDF generado y compartido exitosamente';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error al generar oferta comercial PDF: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar el PDF: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 
   /// Exporta la lista de productos de un almacén y zona específica
@@ -85,7 +180,8 @@ class ExportService {
                 duration: const Duration(seconds: 5),
                 action: SnackBarAction(
                   label: 'Reintentar',
-                  onPressed: () => _downloadFileWeb(fileBytes, fileName, mimeType),
+                  onPressed:
+                      () => _downloadFileWeb(fileBytes, fileName, mimeType),
                 ),
               ),
             );
@@ -109,10 +205,11 @@ class ExportService {
 
       // Mostrar mensaje de éxito
       if (context.mounted) {
-        final message = kIsWeb 
-            ? 'Archivo ${format.displayName} descargado exitosamente'
-            : 'Archivo ${format.displayName} generado y compartido exitosamente';
-        
+        final message =
+            kIsWeb
+                ? 'Archivo ${format.displayName} descargado exitosamente'
+                : 'Archivo ${format.displayName} generado y compartido exitosamente';
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
@@ -167,7 +264,7 @@ class ExportService {
     final now = DateTime.now();
     final dateFormatter = DateFormat('dd/MM/yyyy');
     final timeFormatter = DateFormat('HH:mm');
-    
+
     // Cargar fuentes Unicode
     final regularFont = await _getRegularFont();
     final boldFont = await _getBoldFont();
@@ -185,30 +282,21 @@ class ExportService {
                 // Título principal
                 pw.Text(
                   'REPORTE DE INVENTARIO',
-                  style: pw.TextStyle(
-                    fontSize: 24,
-                    font: boldFont,
-                  ),
+                  style: pw.TextStyle(fontSize: 24, font: boldFont),
                 ),
                 pw.SizedBox(height: 8),
 
                 // Subtítulo con almacén
                 pw.Text(
                   'Almacén: $warehouseName',
-                  style: pw.TextStyle(
-                    fontSize: 18,
-                    font: boldFont,
-                  ),
+                  style: pw.TextStyle(fontSize: 18, font: boldFont),
                 ),
                 pw.SizedBox(height: 4),
 
                 // Subtítulo con zona/área
                 pw.Text(
                   'Área: $zoneName',
-                  style: pw.TextStyle(
-                    fontSize: 16,
-                    font: regularFont,
-                  ),
+                  style: pw.TextStyle(fontSize: 16, font: regularFont),
                 ),
                 pw.SizedBox(height: 16),
 
@@ -258,43 +346,47 @@ class ExportService {
                 ),
 
                 // Filas de productos
-                ...products.map(
-                  (product) {
-                    // Calcular movimientos basados en los datos disponibles
-                    final entradas = 0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
-                    final extracciones = 0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
-                    final ventas = product.cantidadInicial > product.cantidadFinal 
-                        ? product.cantidadInicial - product.cantidadFinal 
-                        : 0.0; // Diferencia como aproximación de ventas
-                    
-                    return pw.TableRow(
-                      children: [
-                        _buildTableCell(product.nombreProducto, font: regularFont),
-                        _buildTableCell(product.skuProducto, font: regularFont),
-                        _buildTableCell(
-                          product.cantidadInicial.toStringAsFixed(0),
-                          font: regularFont,
-                        ),
-                        _buildTableCell(
-                          entradas.toStringAsFixed(0),
-                          font: regularFont,
-                        ),
-                        _buildTableCell(
-                          extracciones.toStringAsFixed(0),
-                          font: regularFont,
-                        ),
-                        _buildTableCell(
-                          ventas.toStringAsFixed(0),
-                          font: regularFont,
-                        ),
-                        _buildTableCell(
-                          product.cantidadFinal.toStringAsFixed(0),
-                          font: regularFont,
-                        ),
-                      ],
-                    );
-                  },
-                ),
+                ...products.map((product) {
+                  // Calcular movimientos basados en los datos disponibles
+                  final entradas =
+                      0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
+                  final extracciones =
+                      0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
+                  final ventas =
+                      product.cantidadInicial > product.cantidadFinal
+                          ? product.cantidadInicial - product.cantidadFinal
+                          : 0.0; // Diferencia como aproximación de ventas
+
+                  return pw.TableRow(
+                    children: [
+                      _buildTableCell(
+                        product.nombreProducto,
+                        font: regularFont,
+                      ),
+                      _buildTableCell(product.skuProducto, font: regularFont),
+                      _buildTableCell(
+                        product.cantidadInicial.toStringAsFixed(0),
+                        font: regularFont,
+                      ),
+                      _buildTableCell(
+                        entradas.toStringAsFixed(0),
+                        font: regularFont,
+                      ),
+                      _buildTableCell(
+                        extracciones.toStringAsFixed(0),
+                        font: regularFont,
+                      ),
+                      _buildTableCell(
+                        ventas.toStringAsFixed(0),
+                        font: regularFont,
+                      ),
+                      _buildTableCell(
+                        product.cantidadFinal.toStringAsFixed(0),
+                        font: regularFont,
+                      ),
+                    ],
+                  );
+                }),
               ],
             ),
 
@@ -312,13 +404,13 @@ class ExportService {
                 children: [
                   pw.Text(
                     'RESUMEN',
-                    style: pw.TextStyle(
-                      fontSize: 14,
-                      font: boldFont,
-                    ),
+                    style: pw.TextStyle(fontSize: 14, font: boldFont),
                   ),
                   pw.SizedBox(height: 8),
-                  pw.Text('• Total de productos: ${products.length}', style: pw.TextStyle(font: regularFont)),
+                  pw.Text(
+                    '• Total de productos: ${products.length}',
+                    style: pw.TextStyle(font: regularFont),
+                  ),
                   pw.Text(
                     '• Productos con stock: ${products.where((p) => p.cantidadFinal > 0).length}',
                     style: pw.TextStyle(font: regularFont),
@@ -360,6 +452,265 @@ class ExportService {
                   ),
                 ),
               ],
+            ),
+          );
+        },
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  Future<Uint8List> _generateCommercialOfferPdf({
+    required String storeName,
+    String? storeAddress,
+    String? storeLocation,
+    required String currencyCode,
+    required String offerTitle,
+    required DateTime issuedAt,
+    String? clientName,
+    String? observations,
+    required List<Map<String, dynamic>> products,
+  }) async {
+    final pdf = pw.Document();
+    final dateFormatter = DateFormat('dd/MM/yyyy');
+    final timeFormatter = DateFormat('HH:mm');
+
+    final regularFont = await _getRegularFont();
+    final boldFont = await _getBoldFont();
+
+    double total = 0.0;
+    for (final p in products) {
+      final qty = (p['cantidad'] as num?)?.toDouble() ?? 0.0;
+      final unitPrice = (p['precio_unitario'] as num?)?.toDouble() ?? 0.0;
+      total += qty * unitPrice;
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (pw.Context context) {
+          final headerLines = <pw.Widget>[];
+          headerLines.add(
+            pw.Text(
+              storeName,
+              style: pw.TextStyle(fontSize: 18, font: boldFont),
+            ),
+          );
+
+          if (storeAddress != null && storeAddress.trim().isNotEmpty) {
+            headerLines.add(
+              pw.Text(
+                storeAddress,
+                style: pw.TextStyle(fontSize: 10, font: regularFont),
+              ),
+            );
+          }
+
+          if (storeLocation != null && storeLocation.trim().isNotEmpty) {
+            headerLines.add(
+              pw.Text(
+                storeLocation,
+                style: pw.TextStyle(fontSize: 10, font: regularFont),
+              ),
+            );
+          }
+
+          headerLines.add(pw.SizedBox(height: 12));
+          headerLines.add(
+            pw.Text(
+              offerTitle,
+              style: pw.TextStyle(fontSize: 22, font: boldFont),
+            ),
+          );
+          headerLines.add(pw.SizedBox(height: 6));
+          headerLines.add(
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'Fecha: ${dateFormatter.format(issuedAt)}',
+                  style: pw.TextStyle(fontSize: 10, font: regularFont),
+                ),
+                pw.Text(
+                  'Hora: ${timeFormatter.format(issuedAt)}',
+                  style: pw.TextStyle(fontSize: 10, font: regularFont),
+                ),
+              ],
+            ),
+          );
+          headerLines.add(pw.SizedBox(height: 16));
+
+          final infoLines = <pw.Widget>[];
+          if (clientName != null && clientName.trim().isNotEmpty) {
+            infoLines.add(
+              pw.Text(
+                'Cliente: ${clientName.trim()}',
+                style: pw.TextStyle(fontSize: 11, font: regularFont),
+              ),
+            );
+          }
+          infoLines.add(
+            pw.Text(
+              'Moneda: $currencyCode',
+              style: pw.TextStyle(fontSize: 11, font: regularFont),
+            ),
+          );
+
+          if (observations != null && observations.trim().isNotEmpty) {
+            infoLines.add(pw.SizedBox(height: 6));
+            infoLines.add(
+              pw.Text(
+                'Observaciones: ${observations.trim()}',
+                style: pw.TextStyle(fontSize: 10, font: regularFont),
+              ),
+            );
+          }
+
+          final tableRows = <pw.TableRow>[];
+          tableRows.add(
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+              children: [
+                _buildTableHeader('Producto', font: boldFont),
+                _buildTableHeader('SKU', font: boldFont),
+                _buildTableHeader('Cant.', font: boldFont),
+                _buildTableHeader('Precio', font: boldFont),
+                _buildTableHeader('Importe', font: boldFont),
+              ],
+            ),
+          );
+
+          for (final p in products) {
+            final name = (p['denominacion'] ?? '').toString();
+            final sku = (p['sku_producto'] ?? '').toString();
+            final description =
+                (p['descripcion']?.toString().isNotEmpty == true)
+                    ? p['descripcion'].toString()
+                    : (p['descripcion_corta']?.toString().isNotEmpty == true)
+                    ? p['descripcion_corta'].toString()
+                    : '';
+            final qty = (p['cantidad'] as num?)?.toDouble() ?? 0.0;
+            final unitPrice = (p['precio_unitario'] as num?)?.toDouble() ?? 0.0;
+            final lineTotal = qty * unitPrice;
+
+            final productCell = pw.Container(
+              padding: const pw.EdgeInsets.all(6),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    name.isEmpty ? 'Producto' : name,
+                    style: pw.TextStyle(fontSize: 9, font: regularFont),
+                  ),
+                  if (description.isNotEmpty)
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.only(top: 2),
+                      child: pw.Text(
+                        description,
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          font: regularFont,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+
+            tableRows.add(
+              pw.TableRow(
+                children: [
+                  productCell,
+                  _buildTableCell(sku, font: regularFont),
+                  _buildTableCell(
+                    qty == qty.roundToDouble()
+                        ? qty.toStringAsFixed(0)
+                        : qty.toStringAsFixed(2),
+                    font: regularFont,
+                  ),
+                  _buildTableCell(
+                    '$currencyCode ${unitPrice.toStringAsFixed(2)}',
+                    font: regularFont,
+                  ),
+                  _buildTableCell(
+                    '$currencyCode ${lineTotal.toStringAsFixed(2)}',
+                    font: regularFont,
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return [
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                ...headerLines,
+                if (infoLines.isNotEmpty) ...[
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: infoLines,
+                  ),
+                  pw.SizedBox(height: 16),
+                ],
+                pw.Table(
+                  border: pw.TableBorder.all(
+                    color: PdfColors.grey400,
+                    width: 0.5,
+                  ),
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(3.2),
+                    1: const pw.FlexColumnWidth(1.5),
+                    2: const pw.FlexColumnWidth(1.0),
+                    3: const pw.FlexColumnWidth(1.4),
+                    4: const pw.FlexColumnWidth(1.4),
+                  },
+                  children: tableRows,
+                ),
+                pw.SizedBox(height: 16),
+                pw.Container(
+                  alignment: pw.Alignment.centerRight,
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: PdfColors.grey400),
+                      borderRadius: const pw.BorderRadius.all(
+                        pw.Radius.circular(4),
+                      ),
+                    ),
+                    child: pw.Row(
+                      mainAxisSize: pw.MainAxisSize.min,
+                      children: [
+                        pw.Text(
+                          'TOTAL: ',
+                          style: pw.TextStyle(fontSize: 12, font: boldFont),
+                        ),
+                        pw.Text(
+                          '$currencyCode ${total.toStringAsFixed(2)}',
+                          style: pw.TextStyle(fontSize: 12, font: boldFont),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ];
+        },
+        footer: (pw.Context context) {
+          return pw.Container(
+            alignment: pw.Alignment.centerRight,
+            margin: const pw.EdgeInsets.only(top: 16),
+            child: pw.Text(
+              'Página ${context.pageNumber} de ${context.pagesCount}',
+              style: pw.TextStyle(
+                fontSize: 10,
+                color: PdfColors.grey600,
+                font: regularFont,
+              ),
             ),
           );
         },
@@ -458,12 +809,15 @@ class ExportService {
     // Datos de los productos (nuevas 6 columnas solicitadas)
     for (final product in products) {
       // Calcular movimientos basados en los datos disponibles
-      final entradas = 0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
-      final extracciones = 0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
-      final ventas = product.cantidadInicial > product.cantidadFinal 
-          ? product.cantidadInicial - product.cantidadFinal 
-          : 0.0; // Diferencia como aproximación de ventas
-      
+      final entradas =
+          0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
+      final extracciones =
+          0.0; // Por ahora 0, se puede calcular si hay datos de movimientos
+      final ventas =
+          product.cantidadInicial > product.cantidadFinal
+              ? product.cantidadInicial - product.cantidadFinal
+              : 0.0; // Diferencia como aproximación de ventas
+
       final rowData = [
         product.nombreProducto,
         product.skuProducto,
@@ -530,11 +884,7 @@ class ExportService {
       padding: const pw.EdgeInsets.all(8),
       child: pw.Text(
         text,
-        style: pw.TextStyle(
-          fontSize: 10, 
-          font: font,
-          color: color,
-        ),
+        style: pw.TextStyle(fontSize: 10, font: font, color: color),
         textAlign: pw.TextAlign.center,
       ),
     );
@@ -596,9 +946,10 @@ class ExportService {
       final dateCell = sheet.cell(
         CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
       );
-      final dateStr = filterDate != null
-          ? 'Fecha: ${DateFormat('dd/MM/yyyy').format(filterDate)}'
-          : 'Período: Histórico';
+      final dateStr =
+          filterDate != null
+              ? 'Fecha: ${DateFormat('dd/MM/yyyy').format(filterDate)}'
+              : 'Período: Histórico';
       dateCell.value = TextCellValue(dateStr);
       dateCell.cellStyle = CellStyle(bold: true, fontSize: 12);
       currentRow += 2;
@@ -724,7 +1075,7 @@ class ExportService {
       final now = DateTime.now();
       final dateFormatter = DateFormat('dd/MM/yyyy');
       final timeFormatter = DateFormat('HH:mm');
-      
+
       // Cargar fuentes Unicode
       final regularFont = await _getRegularFont();
       final boldFont = await _getBoldFont();
@@ -746,28 +1097,19 @@ class ExportService {
                 children: [
                   pw.Text(
                     'REPORTE DE INVENTARIO',
-                    style: pw.TextStyle(
-                      fontSize: 24,
-                      font: boldFont,
-                    ),
+                    style: pw.TextStyle(fontSize: 24, font: boldFont),
                   ),
                   pw.SizedBox(height: 8),
                   pw.Text(
                     'Almacén: $warehouseName',
-                    style: pw.TextStyle(
-                      fontSize: 18,
-                      font: boldFont,
-                    ),
+                    style: pw.TextStyle(fontSize: 18, font: boldFont),
                   ),
                   pw.SizedBox(height: 4),
                   pw.Text(
-                    filterDate != null 
+                    filterDate != null
                         ? 'Fecha: ${dateFormatter.format(filterDate)}'
                         : 'Período: Histórico',
-                    style: pw.TextStyle(
-                      fontSize: 16,
-                      font: regularFont,
-                    ),
+                    style: pw.TextStyle(fontSize: 16, font: regularFont),
                   ),
                   pw.SizedBox(height: 16),
                   pw.Text(
@@ -793,10 +1135,7 @@ class ExportService {
                   ),
                   child: pw.Text(
                     'ALMACÉN: $almacenName',
-                    style: pw.TextStyle(
-                      fontSize: 14,
-                      font: boldFont,
-                    ),
+                    style: pw.TextStyle(fontSize: 14, font: boldFont),
                   ),
                 ),
               );
@@ -817,10 +1156,7 @@ class ExportService {
                     ),
                     child: pw.Text(
                       'Ubicación: $ubicacionName',
-                      style: pw.TextStyle(
-                        fontSize: 12,
-                        font: boldFont,
-                      ),
+                      style: pw.TextStyle(fontSize: 12, font: boldFont),
                     ),
                   ),
                 );
@@ -974,7 +1310,7 @@ class ExportService {
       if (format == 'excel') {
         // Generar Excel con páginas separadas por almacén y ubicación
         fileBytes = await _generateSimpleExcel(
-          warehouseName, 
+          warehouseName,
           inventoryData,
           includeSku: includeSku,
           includeNombreCorto: includeNombreCorto,
@@ -982,150 +1318,154 @@ class ExportService {
           includeDescripcionCorta: includeDescripcionCorta,
           includeDescripcion: includeDescripcion,
         );
-        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        mimeType =
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         fileName = 'inventario_${cleanWarehouse}_$dateStr.xlsx';
       } else {
         // Generar PDF
         final pdf = pw.Document();
         final dateFormatter = DateFormat('dd/MM/yyyy');
         final timeFormatter = DateFormat('HH:mm');
-        
+
         // Cargar fuentes Unicode
         final regularFont = await _getRegularFont();
         final boldFont = await _getBoldFont();
-
 
         // Agrupar por almacén y ubicación usando método común
         final groupedDataPdf = _groupInventoryData(inventoryData);
 
         // Crear PDF completo siempre (sin verificación de cantidad)
         pdf.addPage(
-            pw.MultiPage(
-              pageFormat: PdfPageFormat.a4,
-              margin: const pw.EdgeInsets.all(32),
-              build: (pw.Context context) {
-                final widgets = <pw.Widget>[];
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(32),
+            build: (pw.Context context) {
+              final widgets = <pw.Widget>[];
 
-                // Encabezado
+              // Encabezado
+              widgets.add(
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'REPORTE DE INVENTARIO',
+                      style: pw.TextStyle(fontSize: 24, font: boldFont),
+                    ),
+                    pw.SizedBox(height: 8),
+                    pw.Text(
+                      'Almacén: $warehouseName',
+                      style: pw.TextStyle(fontSize: 18, font: boldFont),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      _buildPeriodText(
+                        filterDateFrom,
+                        filterDateTo,
+                        dateFormatter,
+                        now,
+                      ),
+                      style: pw.TextStyle(fontSize: 16, font: regularFont),
+                    ),
+                    pw.SizedBox(height: 16),
+                    pw.Text(
+                      'Total de productos: ${inventoryData.length}',
+                      style: pw.TextStyle(fontSize: 12, font: regularFont),
+                    ),
+                    pw.SizedBox(height: 24),
+                  ],
+                ),
+              );
+
+              // Contenido limitado por almacén y ubicación
+              for (final almacenEntry in groupedDataPdf.entries) {
+                final almacenName = almacenEntry.key;
+
                 widgets.add(
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'REPORTE DE INVENTARIO',
-                        style: pw.TextStyle(fontSize: 24, font: boldFont),
-                      ),
-                      pw.SizedBox(height: 8),
-                      pw.Text(
-                        'Almacén: $warehouseName',
-                        style: pw.TextStyle(fontSize: 18, font: boldFont),
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Text(
-                        _buildPeriodText(filterDateFrom, filterDateTo, dateFormatter, now),
-                        style: pw.TextStyle(fontSize: 16, font: regularFont),
-                      ),
-                      pw.SizedBox(height: 16),
-                      pw.Text(
-                        'Total de productos: ${inventoryData.length}',
-                        style: pw.TextStyle(fontSize: 12, font: regularFont),
-                      ),
-                      pw.SizedBox(height: 24),
-                    ],
+                  pw.Container(
+                    width: double.infinity,
+                    padding: const pw.EdgeInsets.all(8),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.blue100,
+                      border: pw.Border.all(color: PdfColors.blue300),
+                    ),
+                    child: pw.Text(
+                      'ALMACÉN: $almacenName',
+                      style: pw.TextStyle(fontSize: 14, font: boldFont),
+                    ),
                   ),
                 );
 
-                // Contenido limitado por almacén y ubicación
-                for (final almacenEntry in groupedDataPdf.entries) {
-                  final almacenName = almacenEntry.key;
+                widgets.add(pw.SizedBox(height: 8));
+
+                for (final ubicacionEntry in almacenEntry.value.entries) {
+                  final ubicacionName = ubicacionEntry.key;
+                  final productos = ubicacionEntry.value;
 
                   widgets.add(
                     pw.Container(
                       width: double.infinity,
-                      padding: const pw.EdgeInsets.all(8),
+                      padding: const pw.EdgeInsets.all(6),
                       decoration: pw.BoxDecoration(
-                        color: PdfColors.blue100,
-                        border: pw.Border.all(color: PdfColors.blue300),
+                        color: PdfColors.grey200,
+                        border: pw.Border.all(color: PdfColors.grey400),
                       ),
                       child: pw.Text(
-                        'ALMACÉN: $almacenName',
-                        style: pw.TextStyle(fontSize: 14, font: boldFont),
+                        'Ubicación: $ubicacionName',
+                        style: pw.TextStyle(fontSize: 12, font: boldFont),
                       ),
                     ),
                   );
 
-                  widgets.add(pw.SizedBox(height: 8));
+                  widgets.add(pw.SizedBox(height: 4));
 
-                  for (final ubicacionEntry in almacenEntry.value.entries) {
-                    final ubicacionName = ubicacionEntry.key;
-                    final productos = ubicacionEntry.value;
+                  // Tabla de productos con columnas dinámicas
+                  widgets.add(
+                    _buildDynamicTable(
+                      productos,
+                      regularFont,
+                      boldFont,
+                      includeSku: includeSku,
+                      includeNombreCorto: includeNombreCorto,
+                      includeMarca: includeMarca,
+                      includeDescripcionCorta: includeDescripcionCorta,
+                    ),
+                  );
 
-                    widgets.add(
-                      pw.Container(
-                        width: double.infinity,
-                        padding: const pw.EdgeInsets.all(6),
-                        decoration: pw.BoxDecoration(
-                          color: PdfColors.grey200,
-                          border: pw.Border.all(color: PdfColors.grey400),
-                        ),
-                        child: pw.Text(
-                          'Ubicación: $ubicacionName',
-                          style: pw.TextStyle(fontSize: 12, font: boldFont),
-                        ),
-                      ),
-                    );
-
-                    widgets.add(pw.SizedBox(height: 4));
-
-                    // Tabla de productos con columnas dinámicas
-                    widgets.add(
-                      _buildDynamicTable(
-                        productos, 
-                        regularFont, 
-                        boldFont,
-                        includeSku: includeSku,
-                        includeNombreCorto: includeNombreCorto,
-                        includeMarca: includeMarca,
-                        includeDescripcionCorta: includeDescripcionCorta,
-                        includeDescripcion: includeDescripcion,
-                      ),
-                    );
-
-                    widgets.add(pw.SizedBox(height: 16));
-                  }
+                  widgets.add(pw.SizedBox(height: 16));
                 }
+              }
 
-                return widgets;
-              },
-              footer: (pw.Context context) {
-                return pw.Container(
-                  alignment: pw.Alignment.centerRight,
-                  margin: const pw.EdgeInsets.only(top: 16),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text(
-                        'Fecha: ${dateFormatter.format(now)} - ${timeFormatter.format(now)}',
-                        style: pw.TextStyle(
-                          fontSize: 10,
-                          color: PdfColors.grey600,
-                          font: regularFont,
-                        ),
+              return widgets;
+            },
+            footer: (pw.Context context) {
+              return pw.Container(
+                alignment: pw.Alignment.centerRight,
+                margin: const pw.EdgeInsets.only(top: 16),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text(
+                      'Fecha: ${dateFormatter.format(now)} - ${timeFormatter.format(now)}',
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        color: PdfColors.grey600,
+                        font: regularFont,
                       ),
-                      pw.Text(
-                        'Página ${context.pageNumber} de ${context.pagesCount}',
-                        style: pw.TextStyle(
-                          fontSize: 10,
-                          color: PdfColors.grey600,
-                          font: regularFont,
-                        ),
+                    ),
+                    pw.Text(
+                      'Página ${context.pageNumber} de ${context.pagesCount}',
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        color: PdfColors.grey600,
+                        font: regularFont,
                       ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          );
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
 
         fileBytes = await pdf.save();
         mimeType = 'application/pdf';
@@ -1150,7 +1490,8 @@ class ExportService {
                 duration: const Duration(seconds: 5),
                 action: SnackBarAction(
                   label: 'Reintentar',
-                  onPressed: () => _downloadFileWeb(fileBytes, fileName, mimeType),
+                  onPressed:
+                      () => _downloadFileWeb(fileBytes, fileName, mimeType),
                 ),
               ),
             );
@@ -1174,10 +1515,11 @@ class ExportService {
 
       // Mostrar mensaje de éxito
       if (context.mounted) {
-        final message = kIsWeb 
-            ? 'Archivo ${format.toUpperCase()} descargado exitosamente'
-            : 'Archivo ${format.toUpperCase()} generado y compartido exitosamente';
-        
+        final message =
+            kIsWeb
+                ? 'Archivo ${format.toUpperCase()} descargado exitosamente'
+                : 'Archivo ${format.toUpperCase()} generado y compartido exitosamente';
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
@@ -1219,7 +1561,12 @@ class ExportService {
   }
 
   /// Helper method to build period text for date range display
-  String _buildPeriodText(DateTime? filterDateFrom, DateTime? filterDateTo, DateFormat dateFormatter, DateTime now) {
+  String _buildPeriodText(
+    DateTime? filterDateFrom,
+    DateTime? filterDateTo,
+    DateFormat dateFormatter,
+    DateTime now,
+  ) {
     if (filterDateFrom != null && filterDateTo != null) {
       return 'Período: ${dateFormatter.format(filterDateFrom)} - ${dateFormatter.format(filterDateTo)}';
     } else if (filterDateFrom != null) {
@@ -1230,7 +1577,7 @@ class ExportService {
       return 'Período: Histórico';
     }
   }
-  
+
   /// Método común para agrupar datos de inventario por almacén y ubicación
   Map<String, Map<String, List<Map<String, dynamic>>>> _groupInventoryData(
     List<Map<String, dynamic>> inventoryData,
@@ -1243,7 +1590,10 @@ class ExportService {
       final idUbicacion = item['id_ubicacion'];
 
       // Skip items without location or with null id_ubicacion
-      if (ubicacion == 'Sin ubicación' || ubicacion == 'SIN UBICACIÓN' || idUbicacion == null) continue;
+      if (ubicacion == 'Sin ubicación' ||
+          ubicacion == 'SIN UBICACIÓN' ||
+          idUbicacion == null)
+        continue;
 
       if (!groupedData.containsKey(almacen)) {
         groupedData[almacen] = {};
@@ -1253,10 +1603,10 @@ class ExportService {
       }
       groupedData[almacen]![ubicacion]!.add(item);
     }
-    
+
     return groupedData;
   }
-  
+
   /// Convierte datos Map a InventoryProduct para usar la misma estructura que PDF
   List<InventoryProduct> _convertMapDataToInventoryProducts(
     List<Map<String, dynamic>> inventoryData,
@@ -1271,7 +1621,8 @@ class ExportService {
         descripcionCorta: item['descripcion_corta']?.toString(),
         idCategoria: int.tryParse(item['id_categoria']?.toString() ?? '0') ?? 0,
         categoria: item['categoria']?.toString() ?? '',
-        idSubcategoria: int.tryParse(item['id_subcategoria']?.toString() ?? '0') ?? 0,
+        idSubcategoria:
+            int.tryParse(item['id_subcategoria']?.toString() ?? '0') ?? 0,
         subcategoria: item['subcategoria']?.toString() ?? '',
         idTienda: int.tryParse(item['id_tienda']?.toString() ?? '0') ?? 0,
         tienda: item['tienda']?.toString() ?? '',
@@ -1281,32 +1632,59 @@ class ExportService {
         ubicacion: item['ubicacion']?.toString() ?? '',
         idVariante: int.tryParse(item['id_variante']?.toString() ?? ''),
         variante: item['variante']?.toString() ?? '',
-        idOpcionVariante: int.tryParse(item['id_opcion_variante']?.toString() ?? ''),
+        idOpcionVariante: int.tryParse(
+          item['id_opcion_variante']?.toString() ?? '',
+        ),
         opcionVariante: item['opcion_variante']?.toString() ?? '',
         idPresentacion: int.tryParse(item['id_presentacion']?.toString() ?? ''),
         presentacion: item['presentacion']?.toString() ?? 'N/A',
-        cantidadInicial: double.tryParse(item['cantidad_inicial']?.toString() ?? '0') ?? 0,
-        cantidadFinal: double.tryParse(item['cantidad_final']?.toString() ?? '0') ?? 0,
-        entradasPeriodo: double.tryParse(item['entradas_periodo']?.toString() ?? '0') ?? 0,
-        extraccionesPeriodo: double.tryParse(item['extracciones_periodo']?.toString() ?? '0') ?? 0,
-        ventasPeriodo: double.tryParse(item['ventas_periodo']?.toString() ?? '0') ?? 0,
-        stockDisponible: double.tryParse(item['stock_disponible']?.toString() ?? '0') ?? 0,
-        stockReservado: double.tryParse(item['stock_reservado']?.toString() ?? '0') ?? 0,
-        stockDisponibleAjustado: double.tryParse(item['stock_disponible_ajustado']?.toString() ?? '0') ?? 0,
-        esVendible: item['es_vendible'] == true || item['es_vendible']?.toString().toLowerCase() == 'true',
-        esInventariable: item['es_inventariable'] == true || item['es_inventariable']?.toString().toLowerCase() == 'true',
-        esElaborado: item['es_elaborado'] == true || item['es_elaborado']?.toString().toLowerCase() == 'true',
+        cantidadInicial:
+            double.tryParse(item['cantidad_inicial']?.toString() ?? '0') ?? 0,
+        cantidadFinal:
+            double.tryParse(item['cantidad_final']?.toString() ?? '0') ?? 0,
+        entradasPeriodo:
+            double.tryParse(item['entradas_periodo']?.toString() ?? '0') ?? 0,
+        extraccionesPeriodo:
+            double.tryParse(item['extracciones_periodo']?.toString() ?? '0') ??
+            0,
+        ventasPeriodo:
+            double.tryParse(item['ventas_periodo']?.toString() ?? '0') ?? 0,
+        stockDisponible:
+            double.tryParse(item['stock_disponible']?.toString() ?? '0') ?? 0,
+        stockReservado:
+            double.tryParse(item['stock_reservado']?.toString() ?? '0') ?? 0,
+        stockDisponibleAjustado:
+            double.tryParse(
+              item['stock_disponible_ajustado']?.toString() ?? '0',
+            ) ??
+            0,
+        esVendible:
+            item['es_vendible'] == true ||
+            item['es_vendible']?.toString().toLowerCase() == 'true',
+        esInventariable:
+            item['es_inventariable'] == true ||
+            item['es_inventariable']?.toString().toLowerCase() == 'true',
+        esElaborado:
+            item['es_elaborado'] == true ||
+            item['es_elaborado']?.toString().toLowerCase() == 'true',
         precioVenta: double.tryParse(item['precio_venta']?.toString() ?? '0'),
-        costoPromedio: double.tryParse(item['costo_promedio']?.toString() ?? '0'),
+        costoPromedio: double.tryParse(
+          item['costo_promedio']?.toString() ?? '0',
+        ),
         margenActual: double.tryParse(item['margen_actual']?.toString() ?? '0'),
-        clasificacionAbc: int.tryParse(item['clasificacion_abc']?.toString() ?? '0') ?? 0,
+        clasificacionAbc:
+            int.tryParse(item['clasificacion_abc']?.toString() ?? '0') ?? 0,
         abcDescripcion: item['abc_descripcion']?.toString() ?? '',
-        fechaUltimaActualizacion: DateTime.tryParse(item['fecha_ultima_actualizacion']?.toString() ?? '') ?? DateTime.now(),
+        fechaUltimaActualizacion:
+            DateTime.tryParse(
+              item['fecha_ultima_actualizacion']?.toString() ?? '',
+            ) ??
+            DateTime.now(),
         totalCount: int.tryParse(item['total_count']?.toString() ?? '0') ?? 0,
       );
     }).toList();
   }
-  
+
   /// Genera Excel con páginas separadas por almacén y ubicación
   Future<Uint8List> _generateSimpleExcel(
     String warehouseName,
@@ -1318,37 +1696,37 @@ class ExportService {
     bool includeDescripcion = false,
   }) async {
     final excel = Excel.createExcel();
-    
+
     // Eliminar la hoja por defecto
     excel.delete('Sheet1');
-    
+
     // Agrupar datos por almacén y ubicación usando método común
     final groupedData = _groupInventoryData(inventoryData);
-    
+
     // Crear una página de resumen general
     _createSummarySheet(excel, warehouseName, inventoryData);
-    
+
     // Crear una página para cada almacén-ubicación
     for (final almacenEntry in groupedData.entries) {
       final almacenName = almacenEntry.key;
       final ubicaciones = almacenEntry.value;
-      
+
       for (final ubicacionEntry in ubicaciones.entries) {
         final ubicacionName = ubicacionEntry.key;
         final productos = ubicacionEntry.value;
-        
+
         // Convertir a InventoryProduct para usar la misma lógica
         final inventoryProducts = _convertMapDataToInventoryProducts(productos);
-        
+
         // Crear nombre de hoja (limitado a 31 caracteres por Excel)
         final sheetName = _createSheetName(almacenName, ubicacionName);
-        
+
         // Crear la hoja
         final sheet = excel[sheetName];
         _populateSheet(
-          sheet, 
-          almacenName, 
-          ubicacionName, 
+          sheet,
+          almacenName,
+          ubicacionName,
           inventoryProducts,
           includeSku: includeSku,
           includeNombreCorto: includeNombreCorto,
@@ -1361,95 +1739,129 @@ class ExportService {
 
     return Uint8List.fromList(excel.encode()!);
   }
-  
+
   /// Crea una hoja de resumen general
-  void _createSummarySheet(Excel excel, String warehouseName, List<Map<String, dynamic>> inventoryData) {
+  void _createSummarySheet(
+    Excel excel,
+    String warehouseName,
+    List<Map<String, dynamic>> inventoryData,
+  ) {
     final sheet = excel['RESUMEN GENERAL'];
-    
+
     // Configurar anchos de columna
     sheet.setColumnWidth(0, 25);
     sheet.setColumnWidth(1, 25);
     sheet.setColumnWidth(2, 15);
     sheet.setColumnWidth(3, 15);
-    
+
     int currentRow = 0;
-    
+
     // Título principal
-    final titleCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    final titleCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
     titleCell.value = TextCellValue('RESUMEN GENERAL DE INVENTARIO');
     titleCell.cellStyle = CellStyle(bold: true, fontSize: 16);
     currentRow += 2;
-    
+
     // Información general
-    final warehouseCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    final warehouseCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
     warehouseCell.value = TextCellValue('Almacén: $warehouseName');
     warehouseCell.cellStyle = CellStyle(bold: true, fontSize: 14);
     currentRow++;
-    
-    final dateCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
-    dateCell.value = TextCellValue('Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}');
+
+    final dateCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
+    dateCell.value = TextCellValue(
+      'Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+    );
     currentRow += 2;
-    
+
     // Agrupar datos para el resumen
     final groupedData = _groupInventoryData(inventoryData);
-    
+
     // Encabezados de resumen
     final headers = ['Almacén', 'Ubicación', 'Total Productos', 'Con Stock'];
     for (int i = 0; i < headers.length; i++) {
-      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
+      final cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
+      );
       cell.value = TextCellValue(headers[i]);
-      cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.grey50);
+      cell.cellStyle = CellStyle(
+        bold: true,
+        backgroundColorHex: ExcelColor.grey50,
+      );
     }
     currentRow++;
-    
+
     // Datos del resumen
     for (final almacenEntry in groupedData.entries) {
       final almacenName = almacenEntry.key;
       final ubicaciones = almacenEntry.value;
-      
+
       for (final ubicacionEntry in ubicaciones.entries) {
         final ubicacionName = ubicacionEntry.key;
         final productos = ubicacionEntry.value;
         final inventoryProducts = _convertMapDataToInventoryProducts(productos);
-        
+
         final rowData = [
           almacenName,
           ubicacionName,
           inventoryProducts.length.toString(),
           inventoryProducts.where((p) => p.cantidadFinal > 0).length.toString(),
         ];
-        
+
         for (int i = 0; i < rowData.length; i++) {
-          final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
+          final cell = sheet.cell(
+            CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
+          );
           cell.value = TextCellValue(rowData[i]);
         }
         currentRow++;
       }
     }
-    
+
     // Totales generales
     currentRow += 2;
     final totalProducts = inventoryData.length;
     final convertedProducts = _convertMapDataToInventoryProducts(inventoryData);
-    final productsWithStock = convertedProducts.where((p) => p.cantidadFinal > 0).length;
-    
-    final totalCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    final productsWithStock =
+        convertedProducts.where((p) => p.cantidadFinal > 0).length;
+
+    final totalCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
     totalCell.value = TextCellValue('TOTALES GENERALES');
     totalCell.cellStyle = CellStyle(bold: true, fontSize: 14);
     currentRow++;
-    
-    final totalProductsCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
-    totalProductsCell.value = TextCellValue('• Total de productos: $totalProducts');
+
+    final totalProductsCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
+    totalProductsCell.value = TextCellValue(
+      '• Total de productos: $totalProducts',
+    );
     currentRow++;
-    
-    final stockProductsCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
-    stockProductsCell.value = TextCellValue('• Productos con stock: $productsWithStock');
+
+    final stockProductsCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
+    stockProductsCell.value = TextCellValue(
+      '• Productos con stock: $productsWithStock',
+    );
     currentRow++;
-    
-    final noStockProductsCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
-    noStockProductsCell.value = TextCellValue('• Productos sin stock: ${totalProducts - productsWithStock}');
+
+    final noStockProductsCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
+    noStockProductsCell.value = TextCellValue(
+      '• Productos sin stock: ${totalProducts - productsWithStock}',
+    );
   }
-  
+
   /// Crea un nombre de hoja válido para Excel
   String _createSheetName(String almacen, String ubicacion) {
     // Excel limita los nombres de hoja a 31 caracteres
@@ -1457,26 +1869,28 @@ class ExportService {
     if (combined.length <= 31) {
       return combined;
     }
-    
+
     // Truncar manteniendo información importante
     final maxAlmacenLength = 15;
     final maxUbicacionLength = 15;
-    
-    final truncatedAlmacen = almacen.length > maxAlmacenLength 
-        ? almacen.substring(0, maxAlmacenLength)
-        : almacen;
-    final truncatedUbicacion = ubicacion.length > maxUbicacionLength
-        ? ubicacion.substring(0, maxUbicacionLength)
-        : ubicacion;
-        
+
+    final truncatedAlmacen =
+        almacen.length > maxAlmacenLength
+            ? almacen.substring(0, maxAlmacenLength)
+            : almacen;
+    final truncatedUbicacion =
+        ubicacion.length > maxUbicacionLength
+            ? ubicacion.substring(0, maxUbicacionLength)
+            : ubicacion;
+
     return '${truncatedAlmacen}_$truncatedUbicacion';
   }
-  
+
   /// Puebla una hoja con datos de inventario
   void _populateSheet(
-    Sheet sheet, 
-    String almacenName, 
-    String ubicacionName, 
+    Sheet sheet,
+    String almacenName,
+    String ubicacionName,
     List<InventoryProduct> products, {
     bool includeSku = false,
     bool includeNombreCorto = false,
@@ -1487,7 +1901,7 @@ class ExportService {
     // Crear lista de encabezados dinámicamente
     final headers = <String>['Nombre'];
     int columnIndex = 1;
-    
+
     if (includeSku) {
       headers.add('SKU');
       columnIndex++;
@@ -1504,17 +1918,19 @@ class ExportService {
       headers.add('Descripción Corta');
       columnIndex++;
     }
-    if (includeDescripcion) {
-      headers.add('Descripción');
-      columnIndex++;
-    }
-    
-    headers.addAll(['Cant. Inicial', 'Entradas', 'Extracciones', 'Ventas', 'Cant. Final']);
-    
+
+    headers.addAll([
+      'Cant. Inicial',
+      'Entradas',
+      'Extracciones',
+      'Ventas',
+      'Cant. Final',
+    ]);
+
     // Configurar anchos de columna dinámicamente
     sheet.setColumnWidth(0, 30); // Nombre del Producto
     int currentCol = 1;
-    
+
     if (includeSku) {
       sheet.setColumnWidth(currentCol, 15); // SKU
       currentCol++;
@@ -1531,42 +1947,50 @@ class ExportService {
       sheet.setColumnWidth(currentCol, 30); // Descripción Corta
       currentCol++;
     }
-    if (includeDescripcion) {
-      sheet.setColumnWidth(currentCol, 35); // Descripción
-      currentCol++;
-    }
-    
+
     // Columnas numéricas
     for (int i = 0; i < 5; i++) {
       sheet.setColumnWidth(currentCol + i, 12);
     }
-    
+
     int currentRow = 0;
-    
+
     // Título de la sección
-    final titleCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    final titleCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
     titleCell.value = TextCellValue('INVENTARIO DETALLADO');
     titleCell.cellStyle = CellStyle(bold: true, fontSize: 16);
     currentRow += 2;
-    
+
     // Información del almacén y ubicación
-    final almacenCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    final almacenCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
     almacenCell.value = TextCellValue('Almacén: $almacenName');
     almacenCell.cellStyle = CellStyle(bold: true, fontSize: 14);
     currentRow++;
-    
-    final ubicacionCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+
+    final ubicacionCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
     ubicacionCell.value = TextCellValue('Ubicación: $ubicacionName');
     ubicacionCell.cellStyle = CellStyle(bold: true, fontSize: 14);
     currentRow++;
-    
-    final dateCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
-    dateCell.value = TextCellValue('Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}');
+
+    final dateCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
+    dateCell.value = TextCellValue(
+      'Fecha: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+    );
     currentRow += 2;
-    
+
     // Encabezados de la tabla
     for (int i = 0; i < headers.length; i++) {
-      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
+      final cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
+      );
       cell.value = TextCellValue(headers[i]);
       cell.cellStyle = CellStyle(
         bold: true,
@@ -1575,11 +1999,11 @@ class ExportService {
       );
     }
     currentRow++;
-    
+
     // Datos de los productos
     for (final product in products) {
       final rowData = <String>[product.nombreProducto];
-      
+
       // Agregar columnas adicionales si están habilitadas
       if (includeSku) {
         rowData.add(product.skuProducto ?? '');
@@ -1593,10 +2017,7 @@ class ExportService {
       if (includeDescripcionCorta) {
         rowData.add(product.descripcionCorta ?? '');
       }
-      if (includeDescripcion) {
-        rowData.add(product.descripcion ?? '');
-      }
-      
+
       // Agregar columnas numéricas
       rowData.addAll([
         product.cantidadInicial.toStringAsFixed(1),
@@ -1605,11 +2026,13 @@ class ExportService {
         (product.ventasPeriodo ?? 0).toStringAsFixed(1),
         product.cantidadFinal.toStringAsFixed(1),
       ]);
-      
+
       for (int i = 0; i < rowData.length; i++) {
-        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow));
+        final cell = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: i, rowIndex: currentRow),
+        );
         cell.value = TextCellValue(rowData[i]);
-        
+
         // Aplicar color basado en el stock en la última columna (Cant. Final)
         if (i == rowData.length - 1) {
           final cantidad = product.cantidadFinal;
@@ -1624,28 +2047,44 @@ class ExportService {
       }
       currentRow++;
     }
-    
+
     // Resumen de la ubicación
     currentRow += 2;
-    final summaryCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+    final summaryCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
     summaryCell.value = TextCellValue('RESUMEN DE UBICACIÓN');
     summaryCell.cellStyle = CellStyle(bold: true, fontSize: 14);
     currentRow++;
-    
-    final totalCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
+
+    final totalCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
     totalCell.value = TextCellValue('• Total de productos: ${products.length}');
     currentRow++;
-    
-    final stockCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
-    stockCell.value = TextCellValue('• Productos con stock: ${products.where((p) => p.cantidadFinal > 0).length}');
+
+    final stockCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
+    stockCell.value = TextCellValue(
+      '• Productos con stock: ${products.where((p) => p.cantidadFinal > 0).length}',
+    );
     currentRow++;
-    
-    final noStockCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
-    noStockCell.value = TextCellValue('• Productos sin stock: ${products.where((p) => p.cantidadFinal <= 0).length}');
+
+    final noStockCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
+    noStockCell.value = TextCellValue(
+      '• Productos sin stock: ${products.where((p) => p.cantidadFinal <= 0).length}',
+    );
     currentRow++;
-    
-    final totalStockCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow));
-    totalStockCell.value = TextCellValue('• Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} unidades');
+
+    final totalStockCell = sheet.cell(
+      CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: currentRow),
+    );
+    totalStockCell.value = TextCellValue(
+      '• Stock total: ${products.fold<double>(0, (sum, p) => sum + p.cantidadFinal).toStringAsFixed(0)} unidades',
+    );
   }
 
   /// Construye una tabla PDF con columnas dinámicas
@@ -1664,9 +2103,9 @@ class ExportService {
     final columnWidths = <int, pw.TableColumnWidth>{
       0: const pw.FlexColumnWidth(2.5),
     };
-    
+
     int columnIndex = 1;
-    
+
     if (includeSku) {
       headers.add('SKU');
       columnWidths[columnIndex] = const pw.FlexColumnWidth(1.5);
@@ -1687,14 +2126,15 @@ class ExportService {
       columnWidths[columnIndex] = const pw.FlexColumnWidth(2);
       columnIndex++;
     }
-    if (includeDescripcion) {
-      headers.add('Descripción');
-      columnWidths[columnIndex] = const pw.FlexColumnWidth(2.5);
-      columnIndex++;
-    }
-    
+
     // Agregar columnas numéricas
-    headers.addAll(['Cant. Inicial', 'Entradas', 'Extracciones', 'Ventas', 'Cant. Final']);
+    headers.addAll([
+      'Cant. Inicial',
+      'Entradas',
+      'Extracciones',
+      'Ventas',
+      'Cant. Final',
+    ]);
     for (int i = 0; i < 5; i++) {
       columnWidths[columnIndex + i] = const pw.FlexColumnWidth(1);
     }
@@ -1706,44 +2146,59 @@ class ExportService {
         // Encabezados
         pw.TableRow(
           decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-          children: headers.map((header) => _buildTableHeader(header, font: boldFont)).toList(),
+          children:
+              headers
+                  .map((header) => _buildTableHeader(header, font: boldFont))
+                  .toList(),
         ),
         // Datos de productos
-        ...productos.map(
-          (producto) {
-            final rowData = <String>[producto['nombre_producto']?.toString() ?? 'Sin nombre'];
-            
-            // Agregar columnas adicionales si están habilitadas
-            if (includeSku) {
-              rowData.add(producto['sku_producto']?.toString() ?? '');
-            }
-            if (includeNombreCorto) {
-              rowData.add(producto['denominacion_corta']?.toString() ?? '');
-            }
-            if (includeMarca) {
-              rowData.add(producto['nombre_comercial']?.toString() ?? '');
-            }
-            if (includeDescripcionCorta) {
-              rowData.add(producto['descripcion_corta']?.toString() ?? '');
-            }
-            if (includeDescripcion) {
-              rowData.add(producto['descripcion']?.toString() ?? '');
-            }
-            
-            // Agregar columnas numéricas
-            rowData.addAll([
-              (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-              (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-              (double.tryParse(producto['extracciones_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-              (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-              (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ?? 0).toStringAsFixed(1),
-            ]);
-            
-            return pw.TableRow(
-              children: rowData.map((data) => _buildTableCell(data, font: regularFont)).toList(),
-            );
-          },
-        ),
+        ...productos.map((producto) {
+          final rowData = <String>[
+            producto['nombre_producto']?.toString() ?? 'Sin nombre',
+          ];
+
+          // Agregar columnas adicionales si están habilitadas
+          if (includeSku) {
+            rowData.add(producto['sku_producto']?.toString() ?? '');
+          }
+          if (includeNombreCorto) {
+            rowData.add(producto['denominacion_corta']?.toString() ?? '');
+          }
+          if (includeMarca) {
+            rowData.add(producto['nombre_comercial']?.toString() ?? '');
+          }
+          if (includeDescripcionCorta) {
+            rowData.add(producto['descripcion_corta']?.toString() ?? '');
+          }
+
+          // Agregar columnas numéricas
+          rowData.addAll([
+            (double.tryParse(producto['cantidad_inicial']?.toString() ?? '0') ??
+                    0)
+                .toStringAsFixed(1),
+            (double.tryParse(producto['entradas_periodo']?.toString() ?? '0') ??
+                    0)
+                .toStringAsFixed(1),
+            (double.tryParse(
+                      producto['extracciones_periodo']?.toString() ?? '0',
+                    ) ??
+                    0)
+                .toStringAsFixed(1),
+            (double.tryParse(producto['ventas_periodo']?.toString() ?? '0') ??
+                    0)
+                .toStringAsFixed(1),
+            (double.tryParse(producto['cantidad_final']?.toString() ?? '0') ??
+                    0)
+                .toStringAsFixed(1),
+          ]);
+
+          return pw.TableRow(
+            children:
+                rowData
+                    .map((data) => _buildTableCell(data, font: regularFont))
+                    .toList(),
+          );
+        }),
       ],
     );
   }
