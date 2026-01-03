@@ -159,25 +159,11 @@ class CatalogoService {
       
       // Si se intenta activar el catálogo, verificar que tenga un plan válido
       if (mostrarEnCatalogo) {
-        // Obtener el plan de la tienda
-        final tiendaResponse = await _supabase
-            .from('app_dat_tienda')
-            .select('id_plan')
-            .eq('id', idTienda)
-            .single();
+        // Obtener el plan de la tienda usando el helper existente
+        final nombrePlanRaw = await obtenerTipoPlan(idTienda);
+        final nombrePlan = nombrePlanRaw?.toLowerCase() ?? '';
         
-        final idPlan = tiendaResponse['id_plan'] as int?;
-        
-        if (idPlan != null) {
-          // Obtener información del plan
-          final planResponse = await _supabase
-              .from('app_suscripciones_plan')
-              .select('denominacion')
-              .eq('id', idPlan)
-              .single();
-          
-          final nombrePlan = (planResponse['denominacion'] as String?)?.toLowerCase() ?? '';
-          
+        if (nombrePlan.isNotEmpty) {
           // Validar que NO sea plan "Gratis"
           if (nombrePlan.contains('gratis') || nombrePlan.contains('free')) {
             print('❌ No se puede activar el catálogo con plan Gratis');
@@ -186,8 +172,8 @@ class CatalogoService {
           
           print('✅ Plan válido para catálogo: $nombrePlan');
         } else {
-          print('⚠️ Tienda sin plan asignado');
-          throw Exception('La tienda no tiene un plan asignado. Por favor, contacta al administrador.');
+          print('⚠️ Tienda sin plan asignado o activo');
+          throw Exception('La tienda no tiene un plan activo asignado. Por favor, verifica tu suscripción.');
         }
       }
       

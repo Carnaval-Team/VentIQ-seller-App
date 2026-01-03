@@ -6,6 +6,8 @@ import '../models/promotion.dart' as promo;
 import '../models/product.dart';
 import '../services/promotion_service.dart';
 import '../services/product_service.dart';
+import '../services/store_selector_service.dart';
+import '../services/user_preferences_service.dart';
 import '../widgets/marketing_menu_widget.dart';
 import '../models/payment_method.dart';
 
@@ -31,6 +33,7 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final PromotionService _promotionService = PromotionService();
   final ProductService _productService = ProductService();
+  final StoreSelectorService _storeService = StoreSelectorService();
 
   // Form controllers
   final _nombreController = TextEditingController();
@@ -66,12 +69,19 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
   bool _isLoadingProducts = false;
   String? _productSearchQuery;
   final _productSearchController = TextEditingController();
+  
+  // Store state
+  int? _selectedStoreId;
+  String? _selectedStoreName;
 
   @override
   void initState() {
     super.initState();
     _isEditing = widget.promotion != null;
     _promotionTypes = widget.promotionTypes;
+    
+    // Initialize store service and load selected store
+    _initializeStore();
     
     // Set default dates for new promotions
     if (!_isEditing) {
@@ -98,6 +108,20 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
         _populateForm();
       }
     });
+  }
+
+  Future<void> _initializeStore() async {
+    try {
+      await _storeService.initialize();
+      setState(() {
+        _selectedStoreId = _storeService.selectedStore?.id;
+        _selectedStoreName = _storeService.selectedStore?.denominacion;
+      });
+      print('🏪 Tienda seleccionada para promociones: $_selectedStoreName (ID: $_selectedStoreId)');
+    } catch (e) {
+      print('❌ Error inicializando tienda: $e');
+      _showErrorSnackBar('Error al cargar la tienda seleccionada');
+    }
   }
 
   @override
@@ -186,12 +210,21 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
     });
 
     try {
+      // Usar la tienda seleccionada si está disponible
+      if (_selectedStoreId != null) {
+        // Actualizar preferencias con la tienda seleccionada antes de cargar productos
+        final userPrefs = UserPreferencesService();
+        await userPrefs.updateSelectedStore(_selectedStoreId!);
+        print('🏪 Tienda actualizada en preferencias: $_selectedStoreName (ID: $_selectedStoreId)');
+      }
+      
       final products = await ProductService.getProductsByTienda();
+      
       setState(() {
         _availableProducts = products;
         _isLoadingProducts = false;
       });
-      print('✅ Cargados ${products.length} productos disponibles');
+      print('✅ Cargados ${products.length} productos de tienda: $_selectedStoreName');
     } catch (e) {
       setState(() {
         _isLoadingProducts = false;
@@ -239,6 +272,12 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
 
   Future<void> _savePromotion() async {
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    // Validar que hay tienda seleccionada
+    if (_selectedStoreId == null) {
+      _showErrorSnackBar('Debe seleccionar una tienda');
       return;
     }
 
@@ -295,9 +334,11 @@ class _PromotionFormScreenState extends State<PromotionFormScreen> {
                 : int.parse(_limiteUsosController.text),
         'requiere_medio_pago': _requiereMedioPago,
         'id_medio_pago_requerido': _selectedMedioPago != null ? int.tryParse(_selectedMedioPago!) : null,
+        'id_tienda': _selectedStoreId,
       };
 
-      print('💾 Guardando promoción con datos: $promotionData');
+      print('💾 Guardando promoción en tienda: $_selectedStoreName (ID: $_selectedStoreId)');
+      print('💾 Datos de promoción: $promotionData');
 
       late promo.Promotion createdPromotion;
 
