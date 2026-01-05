@@ -3,6 +3,7 @@ import '../config/app_colors.dart';
 import '../widgets/store_selector_widget.dart';
 import '../services/dashboard_service.dart';
 import '../models/crm/crm_metrics.dart';
+import '../utils/navigation_guard.dart';
 
 class CRMRelationshipsScreen extends StatefulWidget {
   const CRMRelationshipsScreen({super.key});
@@ -17,11 +18,24 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
   bool _isLoading = true;
   CRMMetrics _crmMetrics = const CRMMetrics();
 
+  bool _canCreateRelationship = false;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _loadPermissions();
     _loadRelationshipsData();
+  }
+
+  Future<void> _loadPermissions() async {
+    final canCreate = await NavigationGuard.canPerformAction(
+      'crm.relationship.create',
+    );
+    if (!mounted) return;
+    setState(() {
+      _canCreateRelationship = canCreate;
+    });
   }
 
   @override
@@ -51,10 +65,7 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
         title: const Text('Relaciones Comerciales'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        actions: const [
-          AppBarStoreSelectorWidget(),
-          SizedBox(width: 8),
-        ],
+        actions: const [AppBarStoreSelectorWidget(), SizedBox(width: 8)],
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
@@ -75,11 +86,14 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
           _buildOpportunitiesTab(),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddRelationshipDialog(),
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton:
+          _canCreateRelationship
+              ? FloatingActionButton(
+                onPressed: () => _showAddRelationshipDialog(),
+                backgroundColor: AppColors.primary,
+                child: const Icon(Icons.add, color: Colors.white),
+              )
+              : null,
     );
   }
 
@@ -166,7 +180,12 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
     );
   }
 
-  Widget _buildOverviewCard(String title, String value, IconData icon, Color color) {
+  Widget _buildOverviewCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -187,10 +206,7 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
           ),
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.grey,
-            ),
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
         ],
@@ -271,7 +287,7 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
     ];
 
     final relationship = relationships[index];
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
@@ -299,20 +315,25 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: relationship['status'] == 'Activa' 
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.orange.withOpacity(0.1),
+                    color:
+                        relationship['status'] == 'Activa'
+                            ? Colors.green.withOpacity(0.1)
+                            : Colors.orange.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     relationship['status'] as String,
                     style: TextStyle(
                       fontSize: 10,
-                      color: relationship['status'] == 'Activa' 
-                          ? Colors.green
-                          : Colors.orange,
+                      color:
+                          relationship['status'] == 'Activa'
+                              ? Colors.green
+                              : Colors.orange,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -335,17 +356,11 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
           children: [
             Text(
               'Última interacción',
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
             ),
             Text(
               relationship['lastInteraction'] as String,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -436,10 +451,7 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
             const SizedBox(height: 4),
             Text(
               interaction['date'] as String,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
         ),
@@ -537,7 +549,10 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: (opportunity['color'] as Color).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
@@ -556,10 +571,7 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
             const SizedBox(height: 8),
             Text(
               opportunity['contact'] as String,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.grey[600], fontSize: 14),
             ),
             const SizedBox(height: 12),
             Row(
@@ -570,10 +582,7 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
                     children: [
                       Text(
                         'Valor Estimado',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                       Text(
                         opportunity['value'] as String,
@@ -592,10 +601,7 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
                     children: [
                       Text(
                         'Probabilidad',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                       Text(
                         '${opportunity['probability']}%',
@@ -634,52 +640,63 @@ class _CRMRelationshipsScreenState extends State<CRMRelationshipsScreen>
   void _showRelationshipDetail(Map<String, dynamic> relationship) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(relationship['name'] as String),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Tipo: ${relationship['type']}'),
-            Text('Estado: ${relationship['status']}'),
-            Text('Score: ${relationship['score']}%'),
-            Text('Última interacción: ${relationship['lastInteraction']}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(relationship['name'] as String),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Tipo: ${relationship['type']}'),
+                Text('Estado: ${relationship['status']}'),
+                Text('Score: ${relationship['score']}%'),
+                Text('Última interacción: ${relationship['lastInteraction']}'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  // TODO: Navegar a detalle completo
+                },
+                child: const Text('Ver Detalle'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // TODO: Navegar a detalle completo
-            },
-            child: const Text('Ver Detalle'),
-          ),
-        ],
-      ),
     );
   }
 
   void _showAddRelationshipDialog() {
+    if (!_canCreateRelationship) {
+      NavigationGuard.showActionDeniedMessage(
+        context,
+        'Agregar relación comercial',
+      );
+      return;
+    }
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nueva Relación'),
-        content: const Text('Funcionalidad para agregar nueva relación comercial.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Nueva Relación'),
+            content: const Text(
+              'Funcionalidad para agregar nueva relación comercial.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Agregar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Agregar'),
-          ),
-        ],
-      ),
     );
   }
 }

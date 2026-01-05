@@ -398,8 +398,10 @@ class _LoginScreenState extends State<LoginScreen> {
       // Paso 3: Verificar que tenga acceso a al menos una tienda como admin
       // Filtrar solo roles de admin (gerente, supervisor, almacenero)
       final adminRolesByStore = Map<int, UserRole>.fromEntries(
-        rolesByStore.entries
-            .where((entry) => entry.value != UserRole.vendedor && entry.value != UserRole.none),
+        rolesByStore.entries.where(
+          (entry) =>
+              entry.value != UserRole.vendedor && entry.value != UserRole.none,
+        ),
       );
 
       if (adminRolesByStore.isEmpty) {
@@ -411,7 +413,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final defaultStoreId = adminRolesByStore.keys.first;
       final userRole = adminRolesByStore[defaultStoreId]!;
       final roleName = _permissionsService.getRoleName(userRole);
-      print('🔍 Rol principal detectado: $roleName ($userRole) en tienda $defaultStoreId');
+      print(
+        '🔍 Rol principal detectado: $roleName ($userRole) en tienda $defaultStoreId',
+      );
 
       // Paso 4: Obtener tiendas del usuario (todas las tiendas donde tiene algún rol)
       List<Map<String, dynamic>> userStores = [];
@@ -420,11 +424,12 @@ class _LoginScreenState extends State<LoginScreen> {
       // Obtener información de todas las tiendas donde el usuario tiene acceso
       for (final storeId in adminRolesByStore.keys) {
         try {
-          final tiendaData = await supabase
-              .from('app_dat_tienda')
-              .select('id, denominacion')
-              .eq('id', storeId)
-              .maybeSingle();
+          final tiendaData =
+              await supabase
+                  .from('app_dat_tienda')
+                  .select('id, denominacion')
+                  .eq('id', storeId)
+                  .maybeSingle();
 
           if (tiendaData != null) {
             userStores.add({
@@ -445,17 +450,23 @@ class _LoginScreenState extends State<LoginScreen> {
       // Paso 5: Obtener suscripción activa de la tienda por defecto
       Subscription? activeSubscription;
       try {
-        activeSubscription = await _subscriptionService.getActiveSubscription(defaultStoreId);
+        activeSubscription = await _subscriptionService.getActiveSubscription(
+          defaultStoreId,
+        );
         if (activeSubscription != null) {
           print('✅ Suscripción activa encontrada:');
           print('  - Plan: ${activeSubscription.planDenominacion}');
           print('  - Estado: ${activeSubscription.estadoText}');
-          print('  - Vence: ${activeSubscription.fechaFin ?? 'Sin vencimiento'}');
+          print(
+            '  - Vence: ${activeSubscription.fechaFin ?? 'Sin vencimiento'}',
+          );
           if (activeSubscription.diasRestantes > 0) {
             print('  - Días restantes: ${activeSubscription.diasRestantes}');
           }
         } else {
-          print('⚠️ No se encontró suscripción activa para la tienda $defaultStoreId');
+          print(
+            '⚠️ No se encontró suscripción activa para la tienda $defaultStoreId',
+          );
         }
       } catch (e) {
         print('❌ Error obteniendo suscripción: $e');
@@ -490,7 +501,9 @@ class _LoginScreenState extends State<LoginScreen> {
       // Paso 7b: Guardar roles por tienda
       final rolesForStorage = <int, String>{};
       for (final entry in adminRolesByStore.entries) {
-        rolesForStorage[entry.key] = _permissionsService.getRoleName(entry.value);
+        rolesForStorage[entry.key] = _permissionsService.getRoleName(
+          entry.value,
+        );
       }
       await _userPreferencesService.saveUserRolesByStore(rolesForStorage);
       print('💾 Roles por tienda guardados: $rolesForStorage');
@@ -522,8 +535,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Verificar suscripción antes de navegar al dashboard
       if (mounted) {
-        final hasActiveSubscription = await _subscriptionGuard.hasActiveSubscription(forceRefresh: true);
-        
+        final hasActiveSubscription = await _subscriptionGuard
+            .hasActiveSubscription(forceRefresh: true);
+
         // Guardar datos de suscripción si existe
         if (activeSubscription != null) {
           await _userPreferencesService.saveSubscriptionData(
@@ -537,39 +551,36 @@ class _LoginScreenState extends State<LoginScreen> {
           );
           print('💾 Datos de suscripción guardados en preferencias');
         }
-        
+
         // Si hay múltiples tiendas, mostrar pantalla de selección
         if (userStores.length > 1) {
           print('🏪 Múltiples tiendas detectadas - Mostrando selector');
           Navigator.pushReplacementNamed(
             context,
             '/store-selection',
-            arguments: {
-              'stores': userStores,
-              'defaultStoreId': defaultStoreId,
-            },
+            arguments: {'stores': userStores, 'defaultStoreId': defaultStoreId},
           );
         } else if (hasActiveSubscription) {
           print('✅ Suscripción válida - Navegando al dashboard');
-          
+
           // Verificar si la suscripción está próxima a vencer
           await _checkAndShowSubscriptionWarning(defaultStoreId);
-          
+
           Navigator.pushReplacementNamed(context, '/dashboard');
         } else {
-          print('⚠️ Sin suscripción activa - Navegando a detalles de suscripción');
-          
+          print(
+            '⚠️ Sin suscripción activa - Navegando a detalles de suscripción',
+          );
+
           // Mostrar mensaje informativo
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                _subscriptionGuard.getSubscriptionStatusMessage(),
-              ),
+              content: Text(_subscriptionGuard.getSubscriptionStatusMessage()),
               backgroundColor: _subscriptionGuard.getSubscriptionStatusColor(),
               duration: const Duration(seconds: 5),
             ),
           );
-          
+
           // Navegar a detalles de suscripción
           Navigator.pushReplacementNamed(context, '/subscription-detail');
         }
@@ -582,7 +593,7 @@ class _LoginScreenState extends State<LoginScreen> {
               'Esta es la app de administración. Los vendedores deben usar la app de ventas.';
         } else if (e.toString().contains('NO_ADMIN_PRIVILEGES')) {
           _errorMessage =
-              'No tienes permisos de administrador. Solo gerentes, supervisores y almaceneros pueden acceder.';
+              'No tienes permisos de administrador. Solo gerentes, supervisores, auditores y almaceneros pueden acceder.';
         } else if (e.toString().contains('NO_STORE_ASSIGNED')) {
           _errorMessage =
               'Tu usuario no tiene una tienda asignada. Contacta al administrador.';
@@ -605,121 +616,126 @@ class _LoginScreenState extends State<LoginScreen> {
   void _showSupportDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.support_agent, color: AppColors.primary),
-            SizedBox(width: 8),
-            Text('Contactar Soporte'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Nuestro equipo de soporte está disponible para ayudarte:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.support_agent, color: AppColors.primary),
+                SizedBox(width: 8),
+                Text('Contactar Soporte'),
+              ],
             ),
-            const SizedBox(height: 20),
-            
-            // Teléfono
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.phone, color: AppColors.primary),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Nuestro equipo de soporte está disponible para ayudarte:',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 20),
+
+                // Teléfono
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
                     children: [
-                      const Text(
-                        'Teléfono - Via Whatsapp',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      const Icon(Icons.phone, color: AppColors.primary),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Teléfono - Via Whatsapp',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '+53 53765120',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '+53 53765120',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Email
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.email, color: AppColors.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Email',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'soporteinventtia@gmail.com',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            
-            // Email
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.email, color: AppColors.primary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Email',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'soporteinventtia@gmail.com',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
+                ),
+                const SizedBox(height: 16),
+
+                const Text(
+                  'Horarios de atención: Lunes a Viernes de 9:00 AM a 6:00 PM',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                    fontStyle: FontStyle.italic,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            
-            const Text(
-              'Horarios de atención: Lunes a Viernes de 9:00 AM a 6:00 PM',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-                fontStyle: FontStyle.italic,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -746,137 +762,149 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkAndShowSubscriptionWarning(int idTienda) async {
     try {
       print('⏰ Verificando expiración de suscripción...');
-      
-      final expirationInfo = await _subscriptionService.checkSubscriptionExpiration(idTienda);
-      
+
+      final expirationInfo = await _subscriptionService
+          .checkSubscriptionExpiration(idTienda);
+
       if (expirationInfo != null && mounted) {
         final diasRestantes = expirationInfo['diasRestantes'] as int;
         final fechaFin = expirationInfo['fechaFin'] as DateTime;
         final planNombre = expirationInfo['planNombre'] as String;
         final estado = expirationInfo['estado'] as String;
-        
+
         print('⚠️ Suscripción próxima a vencer: $diasRestantes días restantes');
-        
+
         // Obtener información de la tienda
         String nombreTienda = 'Tu tienda';
-        
+
         try {
-          final tiendaData = await Supabase.instance.client
-              .from('app_dat_tienda')
-              .select('denominacion')
-              .eq('id', idTienda)
-              .single();
+          final tiendaData =
+              await Supabase.instance.client
+                  .from('app_dat_tienda')
+                  .select('denominacion')
+                  .eq('id', idTienda)
+                  .single();
           nombreTienda = tiendaData['denominacion'] ?? nombreTienda;
         } catch (e) {
           print('⚠️ No se pudo obtener nombre de tienda: $e');
         }
-        
+
         final dateFormat = DateFormat('dd/MM/yyyy');
-        
+
         // Mostrar diálogo de advertencia
         await showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(
-                  Icons.warning_amber_rounded,
-                  color: diasRestantes == 0 ? AppColors.error : Colors.orange,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    '⚠️ Suscripción Próxima a Vencer',
-                    style: TextStyle(fontSize: 18),
-                  ),
-                ),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: diasRestantes == 0 
-                          ? AppColors.error.withOpacity(0.1) 
-                          : Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: diasRestantes == 0 
-                            ? AppColors.error.withOpacity(0.3) 
-                            : Colors.orange.shade200,
+          builder:
+              (context) => AlertDialog(
+                title: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color:
+                          diasRestantes == 0 ? AppColors.error : Colors.orange,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        '⚠️ Suscripción Próxima a Vencer',
+                        style: TextStyle(fontSize: 18),
                       ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          diasRestantes == 0
-                              ? '¡Tu suscripción vence HOY!'
-                              : diasRestantes == 1
-                                  ? '¡Tu suscripción vence MAÑANA!'
-                                  : 'Tu suscripción vence en $diasRestantes días',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: diasRestantes == 0 
-                                ? AppColors.error 
-                                : Colors.orange.shade700,
+                  ],
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color:
+                              diasRestantes == 0
+                                  ? AppColors.error.withOpacity(0.1)
+                                  : Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color:
+                                diasRestantes == 0
+                                    ? AppColors.error.withOpacity(0.3)
+                                    : Colors.orange.shade200,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Divider(),
-                        const SizedBox(height: 8),
-                        _buildInfoRow('🏪 Tienda:', nombreTienda),
-                        const SizedBox(height: 6),
-                        _buildInfoRow('📦 Plan:', planNombre),
-                        const SizedBox(height: 6),
-                        _buildInfoRow('📊 Estado:', estado),
-                        const SizedBox(height: 6),
-                        _buildInfoRow('📅 Fecha de vencimiento:', dateFormat.format(fechaFin)),
-                        const SizedBox(height: 6),
-                        _buildInfoRow(
-                          '⏰ Días restantes:',
-                          diasRestantes == 0 ? 'Vence hoy' : '$diasRestantes días',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              diasRestantes == 0
+                                  ? '¡Tu suscripción vence HOY!'
+                                  : diasRestantes == 1
+                                  ? '¡Tu suscripción vence MAÑANA!'
+                                  : 'Tu suscripción vence en $diasRestantes días',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color:
+                                    diasRestantes == 0
+                                        ? AppColors.error
+                                        : Colors.orange.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Divider(),
+                            const SizedBox(height: 8),
+                            _buildInfoRow('🏪 Tienda:', nombreTienda),
+                            const SizedBox(height: 6),
+                            _buildInfoRow('📦 Plan:', planNombre),
+                            const SizedBox(height: 6),
+                            _buildInfoRow('📊 Estado:', estado),
+                            const SizedBox(height: 6),
+                            _buildInfoRow(
+                              '📅 Fecha de vencimiento:',
+                              dateFormat.format(fechaFin),
+                            ),
+                            const SizedBox(height: 6),
+                            _buildInfoRow(
+                              '⏰ Días restantes:',
+                              diasRestantes == 0
+                                  ? 'Vence hoy'
+                                  : '$diasRestantes días',
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Por favor, renueva tu suscripción para continuar disfrutando de todos los servicios sin interrupciones.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Por favor, renueva tu suscripción para continuar disfrutando de todos los servicios sin interrupciones.',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textSecondary,
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Entendido'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      // Navegar a la pantalla de suscripción
+                      Navigator.of(context).pushNamed('/subscription-detail');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
                     ),
+                    child: const Text('Ver Suscripción'),
                   ),
                 ],
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Entendido'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  // Navegar a la pantalla de suscripción
-                  Navigator.of(context).pushNamed('/subscription-detail');
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Ver Suscripción'),
-              ),
-            ],
-          ),
         );
       } else {
         print('✅ Suscripción no requiere advertencia');
@@ -891,22 +919,22 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkAndShowMandatoryUpdate() async {
     try {
       print('🔍 Verificando actualizaciones obligatorias...');
-      
+
       final updateInfo = await UpdateService.checkForUpdates();
-      
+
       if (updateInfo['hay_actualizacion'] == true && mounted) {
         final isObligatory = updateInfo['obligatoria'] == true;
-        
+
         if (isObligatory) {
           print('⚠️ Actualización obligatoria detectada');
-          
+
           // Mostrar diálogo de actualización obligatoria (no se puede cerrar)
           await showDialog(
             context: context,
             barrierDismissible: false,
             builder: (context) => UpdateDialog(updateInfo: updateInfo),
           );
-          
+
           // Si el usuario descargó, no continuar con el login
           // El diálogo no permite cerrar sin actualizar
         } else {
@@ -934,18 +962,10 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
         ),
         const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontSize: 13),
-          ),
-        ),
+        Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
       ],
     );
   }

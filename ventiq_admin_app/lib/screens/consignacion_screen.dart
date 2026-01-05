@@ -3,6 +3,7 @@ import '../config/app_colors.dart';
 import '../services/consignacion_service.dart';
 import '../services/user_preferences_service.dart';
 import '../widgets/admin_drawer.dart';
+import '../utils/navigation_guard.dart';
 import 'crear_contrato_consignacion_screen.dart';
 import 'asignar_productos_consignacion_screen.dart';
 import 'detalle_contrato_consignacion_screen.dart';
@@ -16,29 +17,51 @@ class ConsignacionScreen extends StatefulWidget {
   State<ConsignacionScreen> createState() => _ConsignacionScreenState();
 }
 
-class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTickerProviderStateMixin {
+class _ConsignacionScreenState extends State<ConsignacionScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isLoading = true;
   int? _idTienda;
-  
+
   List<Map<String, dynamic>> _contratos = [];
   Map<String, dynamic> _estadisticas = {};
-  
+
+  bool _canCreateConsignacion = false;
+  bool _canConfirmConsignacion = false;
+  bool _canDeleteConsignacion = false;
+
   // Búsqueda y filtrado
   final TextEditingController _searchController = TextEditingController();
-  int? _filtroEstado; // null = todos, 0 = pendientes, 1 = confirmados, 2 = cancelados
+  int?
+  _filtroEstado; // null = todos, 0 = pendientes, 1 = confirmados, 2 = cancelados
   int _currentPage = 0;
   int _totalRegistros = 0;
   bool _hasMore = false;
   static const int _pageSize = 20;
   bool _isSearching = false;
-  
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _searchController.addListener(_onSearchChanged);
+    _loadPermissions();
     _loadData();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      NavigationGuard.canPerformAction('consignacion.create'),
+      NavigationGuard.canPerformAction('consignacion.confirm'),
+      NavigationGuard.canPerformAction('consignacion.delete'),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _canCreateConsignacion = permissions[0];
+      _canConfirmConsignacion = permissions[1];
+      _canDeleteConsignacion = permissions[2];
+    });
   }
 
   @override
@@ -62,8 +85,12 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
       _idTienda = storeData?['id_tienda'] as int?;
 
       if (_idTienda != null) {
-        final contratos = await ConsignacionService.getActiveContratos(_idTienda!);
-        final estadisticas = await ConsignacionService.getEstadisticas(_idTienda!);
+        final contratos = await ConsignacionService.getActiveContratos(
+          _idTienda!,
+        );
+        final estadisticas = await ConsignacionService.getEstadisticas(
+          _idTienda!,
+        );
 
         setState(() {
           _contratos = contratos;
@@ -88,13 +115,16 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
       final resultado = await ConsignacionService.getContratosFiltrados(
         idTienda: _idTienda!,
         estadoConfirmacion: _filtroEstado,
-        searchTerm: _searchController.text.isEmpty ? null : _searchController.text,
+        searchTerm:
+            _searchController.text.isEmpty ? null : _searchController.text,
         limit: _pageSize,
         offset: _currentPage * _pageSize,
       );
 
       setState(() {
-        _contratos = List<Map<String, dynamic>>.from(resultado['contratos'] ?? []);
+        _contratos = List<Map<String, dynamic>>.from(
+          resultado['contratos'] ?? [],
+        );
         _totalRegistros = resultado['total'] ?? 0;
         _hasMore = resultado['hasMore'] ?? false;
         _isSearching = false;
@@ -131,32 +161,41 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
         ),
       ),
       drawer: const AdminDrawer(),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildResumenTab(),
-                _buildContratosTab(),
-              ],
-            ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const CrearContratoConsignacionScreen(),
-            ),
-          );
-          if (result != null) {
-            _loadData();
-          }
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Nuevo Contrato'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-      ),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : TabBarView(
+                controller: _tabController,
+                children: [_buildResumenTab(), _buildContratosTab()],
+              ),
+      floatingActionButton:
+          !_canCreateConsignacion
+              ? null
+              : FloatingActionButton.extended(
+                onPressed: () async {
+                  if (!_canCreateConsignacion) {
+                    NavigationGuard.showActionDeniedMessage(
+                      context,
+                      'Nuevo contrato',
+                    );
+                    return;
+                  }
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder:
+                          (context) => const CrearContratoConsignacionScreen(),
+                    ),
+                  );
+                  if (result != null) {
+                    _loadData();
+                  }
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Nuevo Contrato'),
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
     );
   }
 
@@ -172,13 +211,10 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
           children: [
             const Text(
               'Estadísticas Generales',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            
+
             // Tarjetas de estadísticas
             Row(
               children: [
@@ -236,24 +272,25 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 24),
             const Text(
               'Contratos Recientes',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            
+
             if (_contratos.isEmpty)
               Center(
                 child: Padding(
                   padding: const EdgeInsets.all(32),
                   child: Column(
                     children: [
-                      Icon(Icons.handshake_outlined, size: 64, color: Colors.grey[400]),
+                      Icon(
+                        Icons.handshake_outlined,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         'No hay contratos activos',
@@ -264,7 +301,9 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                 ),
               )
             else
-              ..._contratos.take(5).map((contrato) => _buildContratoCard(contrato)),
+              ..._contratos
+                  .take(5)
+                  .map((contrato) => _buildContratoCard(contrato)),
           ],
         ),
       ),
@@ -289,23 +328,27 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                   decoration: InputDecoration(
                     hintText: 'Buscar por nombre de tienda...',
                     prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchController.clear();
-                              _onSearchChanged();
-                            },
-                          )
-                        : null,
+                    suffixIcon:
+                        _searchController.text.isNotEmpty
+                            ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                _onSearchChanged();
+                              },
+                            )
+                            : null,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
-                
+
                 // Filtros por estado
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -363,57 +406,68 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
               ],
             ),
           ),
-          
+
           // Lista de contratos
           Expanded(
-            child: _isSearching
-                ? const Center(child: CircularProgressIndicator())
-                : _contratos.isEmpty
+            child:
+                _isSearching
+                    ? const Center(child: CircularProgressIndicator())
+                    : _contratos.isEmpty
                     ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.handshake_outlined, size: 80, color: Colors.grey[400]),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No hay contratos',
-                              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.handshake_outlined,
+                            size: 80,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No hay contratos',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey[600],
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _searchController.text.isNotEmpty
-                                  ? 'No se encontraron contratos con esos criterios'
-                                  : 'Los contratos se gestionan desde el SuperAdmin',
-                              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                              textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _searchController.text.isNotEmpty
+                                ? 'No se encontraron contratos con esos criterios'
+                                : 'Los contratos se gestionan desde el SuperAdmin',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[500],
                             ),
-                          ],
-                        ),
-                      )
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    )
                     : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _contratos.length + (_hasMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (index == _contratos.length) {
-                            // Botón "Cargar más"
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              child: Center(
-                                child: ElevatedButton.icon(
-                                  onPressed: _cargarMas,
-                                  icon: const Icon(Icons.expand_more),
-                                  label: const Text('Cargar más'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primary,
-                                    foregroundColor: Colors.white,
-                                  ),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _contratos.length + (_hasMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == _contratos.length) {
+                          // Botón "Cargar más"
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Center(
+                              child: ElevatedButton.icon(
+                                onPressed: _cargarMas,
+                                icon: const Icon(Icons.expand_more),
+                                label: const Text('Cargar más'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
                                 ),
                               ),
-                            );
-                          }
-                          return _buildContratoCard(_contratos[index]);
-                        },
-                      ),
+                            ),
+                          );
+                        }
+                        return _buildContratoCard(_contratos[index]);
+                      },
+                    ),
           ),
         ],
       ),
@@ -444,8 +498,12 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
     );
   }
 
-
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Card(
       elevation: 2,
       child: Padding(
@@ -477,10 +535,7 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
             const SizedBox(height: 4),
             Text(
               title,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
         ),
@@ -523,7 +578,10 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: esConsignadora ? Colors.blue.withOpacity(0.1) : Colors.green.withOpacity(0.1),
+            color:
+                esConsignadora
+                    ? Colors.blue.withOpacity(0.1)
+                    : Colors.green.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
@@ -626,17 +684,22 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => DetalleContratoConsignacionScreen(
-                                    contrato: {
-                                      ...contrato,
-                                      'id_tienda_actual': _idTienda,
-                                    },
-                                  ),
+                                  builder:
+                                      (context) =>
+                                          DetalleContratoConsignacionScreen(
+                                            contrato: {
+                                              ...contrato,
+                                              'id_tienda_actual': _idTienda,
+                                            },
+                                          ),
                                 ),
                               );
                             },
                             icon: const Icon(Icons.info, size: 20),
-                            label: const Text('Ver Detalle', style: TextStyle(fontSize: 13)),
+                            label: const Text(
+                              'Ver Detalle',
+                              style: TextStyle(fontSize: 13),
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
@@ -651,24 +714,47 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                       Row(
                         children: [
                           // Botón Rescindir: siempre disponible si puede rescindirse
-                          Expanded(
-                            child: FutureBuilder<bool>(
-                              future: ConsignacionService.puedeSerRescindido(contrato['id']),
-                              builder: (context, snapshot) {
-                                final puedeRescindirse = snapshot.data ?? false;
-                                return ElevatedButton.icon(
-                                  onPressed: puedeRescindirse ? () => _mostrarDialogoRescision(contrato) : null,
-                                  icon: const Icon(Icons.delete_forever, size: 20),
-                                  label: const Text('Rescindir', style: TextStyle(fontSize: 13)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: puedeRescindirse ? Colors.red : Colors.grey[300],
-                                    foregroundColor: puedeRescindirse ? Colors.white : Colors.grey,
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                  ),
-                                );
-                              },
+                          if (_canDeleteConsignacion)
+                            Expanded(
+                              child: FutureBuilder<bool>(
+                                future: ConsignacionService.puedeSerRescindido(
+                                  contrato['id'],
+                                ),
+                                builder: (context, snapshot) {
+                                  final puedeRescindirse =
+                                      snapshot.data ?? false;
+                                  return ElevatedButton.icon(
+                                    onPressed:
+                                        puedeRescindirse
+                                            ? () => _mostrarDialogoRescision(
+                                              contrato,
+                                            )
+                                            : null,
+                                    icon: const Icon(
+                                      Icons.delete_forever,
+                                      size: 20,
+                                    ),
+                                    label: const Text(
+                                      'Rescindir',
+                                      style: TextStyle(fontSize: 13),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor:
+                                          puedeRescindirse
+                                              ? Colors.red
+                                              : Colors.grey[300],
+                                      foregroundColor:
+                                          puedeRescindirse
+                                              ? Colors.white
+                                              : Colors.grey,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ] else ...[
@@ -677,31 +763,50 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                       if (estadoConfirmacion == 0) ...[
                         Row(
                           children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () => _confirmarContrato(contrato),
-                                icon: const Icon(Icons.check_circle, size: 20),
-                                label: const Text('Confirmar', style: TextStyle(fontSize: 13)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                            if (_canConfirmConsignacion)
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _confirmarContrato(contrato),
+                                  icon: const Icon(
+                                    Icons.check_circle,
+                                    size: 20,
+                                  ),
+                                  label: const Text(
+                                    'Confirmar',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () => _mostrarDialogoCancelacion(contrato),
-                                icon: const Icon(Icons.cancel, size: 20),
-                                label: const Text('Cancelar', style: TextStyle(fontSize: 13)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                            if (_canConfirmConsignacion &&
+                                _canDeleteConsignacion)
+                              const SizedBox(width: 8),
+                            if (_canDeleteConsignacion)
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed:
+                                      () =>
+                                          _mostrarDialogoCancelacion(contrato),
+                                  icon: const Icon(Icons.cancel, size: 20),
+                                  label: const Text(
+                                    'Cancelar',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -709,24 +814,47 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                       // Botón Rescindir para consignataria: siempre disponible si puede rescindirse
                       Row(
                         children: [
-                          Expanded(
-                            child: FutureBuilder<bool>(
-                              future: ConsignacionService.puedeSerRescindido(contrato['id']),
-                              builder: (context, snapshot) {
-                                final puedeRescindirse = snapshot.data ?? false;
-                                return ElevatedButton.icon(
-                                  onPressed: puedeRescindirse ? () => _mostrarDialogoRescision(contrato) : null,
-                                  icon: const Icon(Icons.delete_forever, size: 20),
-                                  label: const Text('Rescindir', style: TextStyle(fontSize: 13)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: puedeRescindirse ? Colors.red : Colors.grey[300],
-                                    foregroundColor: puedeRescindirse ? Colors.white : Colors.grey,
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                  ),
-                                );
-                              },
+                          if (_canDeleteConsignacion)
+                            Expanded(
+                              child: FutureBuilder<bool>(
+                                future: ConsignacionService.puedeSerRescindido(
+                                  contrato['id'],
+                                ),
+                                builder: (context, snapshot) {
+                                  final puedeRescindirse =
+                                      snapshot.data ?? false;
+                                  return ElevatedButton.icon(
+                                    onPressed:
+                                        puedeRescindirse
+                                            ? () => _mostrarDialogoRescision(
+                                              contrato,
+                                            )
+                                            : null,
+                                    icon: const Icon(
+                                      Icons.delete_forever,
+                                      size: 20,
+                                    ),
+                                    label: const Text(
+                                      'Rescindir',
+                                      style: TextStyle(fontSize: 13),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor:
+                                          puedeRescindirse
+                                              ? Colors.red
+                                              : Colors.grey[300],
+                                      foregroundColor:
+                                          puedeRescindirse
+                                              ? Colors.white
+                                              : Colors.grey,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ],
@@ -739,11 +867,16 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
                             child: ElevatedButton.icon(
                               onPressed: () => _verEnviosConfirmados(contrato),
                               icon: const Icon(Icons.local_shipping, size: 20),
-                              label: const Text('Ver Envíos', style: TextStyle(fontSize: 13)),
+                              label: const Text(
+                                'Ver Envíos',
+                                style: TextStyle(fontSize: 13),
+                              ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
                               ),
                             ),
                           ),
@@ -759,7 +892,6 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
       ),
     );
   }
-
 
   Widget _buildChip(String label, Color color) {
     return Container(
@@ -779,14 +911,13 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
     );
   }
 
-
   Future<void> _verEnviosConfirmados(Map<String, dynamic> contrato) async {
     try {
       // Determinar rol del usuario
       final userPrefs = UserPreferencesService();
       final storeData = await userPrefs.getCurrentStoreInfo();
       final idTienda = storeData?['id_tienda'] as int?;
-      
+
       if (idTienda == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -807,11 +938,12 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => ConsignacionEnviosListadoScreen(
-            idContrato: contrato['id'],
-            rol: rol,
-            contrato: contrato, // Pasar el contrato completo
-          ),
+          builder:
+              (context) => ConsignacionEnviosListadoScreen(
+                idContrato: contrato['id'],
+                rol: rol,
+                contrato: contrato, // Pasar el contrato completo
+              ),
         ),
       );
     } catch (e) {
@@ -830,116 +962,130 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
   void _verDetalleProducto(Map<String, dynamic> producto) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(producto['producto']['denominacion']),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('SKU: ${producto['producto']['sku'] ?? 'N/A'}'),
-            const SizedBox(height: 8),
-            Text('Cantidad Enviada: ${producto['cantidad_enviada']}'),
-            Text('Cantidad Vendida: ${producto['cantidad_vendida']}'),
-            Text('Cantidad Devuelta: ${producto['cantidad_devuelta']}'),
-            Text('Stock Disponible: ${(producto['cantidad_enviada'] as num) - (producto['cantidad_vendida'] as num) - (producto['cantidad_devuelta'] as num)}'),
-            const SizedBox(height: 8),
-            if (producto['precio_venta_sugerido'] != null)
-              Text('Precio Sugerido: \$${producto['precio_venta_sugerido']}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(producto['producto']['denominacion']),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('SKU: ${producto['producto']['sku'] ?? 'N/A'}'),
+                const SizedBox(height: 8),
+                Text('Cantidad Enviada: ${producto['cantidad_enviada']}'),
+                Text('Cantidad Vendida: ${producto['cantidad_vendida']}'),
+                Text('Cantidad Devuelta: ${producto['cantidad_devuelta']}'),
+                Text(
+                  'Stock Disponible: ${(producto['cantidad_enviada'] as num) - (producto['cantidad_vendida'] as num) - (producto['cantidad_devuelta'] as num)}',
+                ),
+                const SizedBox(height: 8),
+                if (producto['precio_venta_sugerido'] != null)
+                  Text(
+                    'Precio Sugerido: \$${producto['precio_venta_sugerido']}',
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _mostrarDialogoRescision(Map<String, dynamic> contrato) {
+    if (!_canDeleteConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Rescindir contrato');
+      return;
+    }
     final motivoController = TextEditingController();
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rescindir Contrato'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.warning, color: Colors.red.shade700, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Esta acción desactivará el contrato y todos sus productos.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.red.shade700,
-                      ),
-                    ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Rescindir Contrato'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
                   ),
-                ],
-              ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning, color: Colors.red.shade700, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Esta acción desactivará el contrato y todos sus productos.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Contrato ID: ${contrato['id']}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tienda: ${contrato['tienda_consignadora']['denominacion']} → ${contrato['tienda_consignataria']['denominacion']}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: motivoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo de rescisión (opcional)',
+                    border: OutlineInputBorder(),
+                    hintText: 'Ej: Acuerdo mutuo, fin de temporada, etc.',
+                  ),
+                  maxLines: 3,
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Contrato ID: ${contrato['id']}',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Tienda: ${contrato['tienda_consignadora']['denominacion']} → ${contrato['tienda_consignataria']['denominacion']}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _rescindirContrato(
+                    contrato['id'],
+                    motivoController.text,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Rescindir'),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: motivoController,
-              decoration: const InputDecoration(
-                labelText: 'Motivo de rescisión (opcional)',
-                border: OutlineInputBorder(),
-                hintText: 'Ej: Acuerdo mutuo, fin de temporada, etc.',
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _rescindirContrato(contrato['id'], motivoController.text);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Rescindir'),
-          ),
-        ],
-      ),
     );
   }
 
   Future<void> _rescindirContrato(int idContrato, String motivo) async {
+    if (!_canDeleteConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Rescindir contrato');
+      return;
+    }
     try {
       final success = await ConsignacionService.rescindirContrato(
         idContrato: idContrato,
@@ -978,6 +1124,10 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
   }
 
   Future<void> _confirmarContrato(Map<String, dynamic> contrato) async {
+    if (!_canConfirmConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Confirmar contrato');
+      return;
+    }
     // Primero, pedir el almacén destino
     final idAlmacenDestino = await _mostrarDialogoSeleccionarAlmacen(
       idTienda: contrato['id_tienda_consignataria'] as int,
@@ -1004,7 +1154,8 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
         idAlmacenDestino: idAlmacenDestino,
         idTiendaConsignadora: contrato['id_tienda_consignadora'] as int,
         idTiendaConsignataria: contrato['id_tienda_consignataria'] as int,
-        nombreTiendaConsignadora: contrato['tienda_consignadora']['denominacion'] as String,
+        nombreTiendaConsignadora:
+            contrato['tienda_consignadora']['denominacion'] as String,
       );
 
       if (zona == null) {
@@ -1027,14 +1178,18 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
       );
 
       // Confirmar el contrato
-      final success = await ConsignacionService.confirmarContrato(contrato['id']);
+      final success = await ConsignacionService.confirmarContrato(
+        contrato['id'],
+      );
 
       if (!mounted) return;
 
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Contrato confirmado y zona de consignación creada exitosamente'),
+            content: Text(
+              '✅ Contrato confirmado y zona de consignación creada exitosamente',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -1092,193 +1247,224 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
     return showDialog<int>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(titulo),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(mensaje),
-              const SizedBox(height: 16),
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                constraints: const BoxConstraints(
-                  maxHeight: 300,
-                  minWidth: 300,
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: almacenes.map((almacen) {
-                      final almacenId = almacen['id'] as int;
-                      final isSelected = idAlmacenSeleccionado == almacenId;
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setState) => AlertDialog(
+                  title: Text(titulo),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(mensaje),
+                      const SizedBox(height: 16),
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey[300]!),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        constraints: const BoxConstraints(
+                          maxHeight: 300,
+                          minWidth: 300,
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children:
+                                almacenes.map((almacen) {
+                                  final almacenId = almacen['id'] as int;
+                                  final isSelected =
+                                      idAlmacenSeleccionado == almacenId;
 
-                      return Container(
-                        color: isSelected ? Colors.blue.shade50 : null,
-                        child: ListTile(
-                          leading: Radio<int>(
-                            value: almacenId,
-                            groupValue: idAlmacenSeleccionado,
-                            onChanged: (value) {
-                              setState(() {
-                                idAlmacenSeleccionado = value;
-                              });
-                            },
-                          ),
-                          title: Text(
-                            almacen['denominacion'] ?? 'Almacén $almacenId',
-                            style: TextStyle(
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            ),
-                          ),
-                          onTap: () {
-                            setState(() {
-                              idAlmacenSeleccionado = almacenId;
-                            });
-                          },
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-              if (idAlmacenSeleccionado == null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      border: Border.all(color: Colors.orange.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.info_outline, color: Colors.orange.shade700, size: 20),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Selecciona un almacén para continuar',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.orange.shade700,
-                            ),
+                                  return Container(
+                                    color:
+                                        isSelected ? Colors.blue.shade50 : null,
+                                    child: ListTile(
+                                      leading: Radio<int>(
+                                        value: almacenId,
+                                        groupValue: idAlmacenSeleccionado,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            idAlmacenSeleccionado = value;
+                                          });
+                                        },
+                                      ),
+                                      title: Text(
+                                        almacen['denominacion'] ??
+                                            'Almacén $almacenId',
+                                        style: TextStyle(
+                                          fontWeight:
+                                              isSelected
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                        ),
+                                      ),
+                                      onTap: () {
+                                        setState(() {
+                                          idAlmacenSeleccionado = almacenId;
+                                        });
+                                      },
+                                    ),
+                                  );
+                                }).toList(),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      if (idAlmacenSeleccionado == null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              border: Border.all(color: Colors.orange.shade300),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: Colors.orange.shade700,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Selecciona un almacén para continuar',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.orange.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed:
+                          idAlmacenSeleccionado == null
+                              ? null
+                              : () =>
+                                  Navigator.pop(context, idAlmacenSeleccionado),
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text('Aceptar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            idAlmacenSeleccionado == null
+                                ? Colors.grey[300]
+                                : Colors.green,
+                        foregroundColor:
+                            idAlmacenSeleccionado == null
+                                ? Colors.grey
+                                : Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
-            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton.icon(
-              onPressed: idAlmacenSeleccionado == null
-                  ? null
-                  : () => Navigator.pop(context, idAlmacenSeleccionado),
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Aceptar'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: idAlmacenSeleccionado == null ? Colors.grey[300] : Colors.green,
-                foregroundColor: idAlmacenSeleccionado == null ? Colors.grey : Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
   void _mostrarDialogoCancelacion(Map<String, dynamic> contrato) {
+    if (!_canDeleteConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Cancelar contrato');
+      return;
+    }
     final motivoController = TextEditingController();
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancelar Contrato'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.warning, color: Colors.red.shade700, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Esta acción cancelará el contrato.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.red.shade700,
-                      ),
-                    ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Cancelar Contrato'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
                   ),
-                ],
-              ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning, color: Colors.red.shade700, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Esta acción cancelará el contrato.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Contrato ID: ${contrato['id']}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tienda: ${contrato['tienda_consignadora']['denominacion']} → ${contrato['tienda_consignataria']['denominacion']}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: motivoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo de cancelación',
+                    border: OutlineInputBorder(),
+                    hintText:
+                        'Ej: No cumple con requisitos, cambio de planes, etc.',
+                  ),
+                  maxLines: 3,
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Contrato ID: ${contrato['id']}',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Tienda: ${contrato['tienda_consignadora']['denominacion']} → ${contrato['tienda_consignataria']['denominacion']}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _cancelarContrato(
+                    contrato['id'],
+                    motivoController.text,
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Cancelar Contrato'),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: motivoController,
-              decoration: const InputDecoration(
-                labelText: 'Motivo de cancelación',
-                border: OutlineInputBorder(),
-                hintText: 'Ej: No cumple con requisitos, cambio de planes, etc.',
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _cancelarContrato(contrato['id'], motivoController.text);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Cancelar Contrato'),
-          ),
-        ],
-      ),
     );
   }
 
   Future<void> _cancelarContrato(int idContrato, String motivo) async {
+    if (!_canDeleteConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Cancelar contrato');
+      return;
+    }
     try {
       final success = await ConsignacionService.cancelarContrato(
         idContrato,
@@ -1315,5 +1501,4 @@ class _ConsignacionScreenState extends State<ConsignacionScreen> with SingleTick
       }
     }
   }
-
 }

@@ -34,19 +34,20 @@ class DashboardService {
         return false;
       }
 
-      // Check if supervisor has at least one valid store with id_tienda
-      final hasValidStore = supervisorStores.any(
-        (store) =>
-            store['id_tienda'] != null &&
-            store['id_tienda'] is int &&
-            store['id_tienda'] > 0,
-      );
+      // Check if user has at least one valid store with id_tienda
+      // (Supervisor o Auditor) - id_tienda puede venir como int o num
+      final hasValidStore = supervisorStores.any((store) {
+        final idTiendaRaw = store['id_tienda'];
+        if (idTiendaRaw is int) return idTiendaRaw > 0;
+        if (idTiendaRaw is num) return idTiendaRaw.toInt() > 0;
+        return false;
+      });
 
       if (hasValidStore) {
-        print('✅ Supervisor has valid store access');
+        print('✅ User has valid store access');
         return true;
       } else {
-        print('❌ Supervisor stores found but no valid id_tienda');
+        print('❌ Stores found but no valid id_tienda');
         return false;
       }
     } catch (e) {

@@ -299,7 +299,7 @@ class _LoginScreenState extends State<LoginScreen> {
               if (hasActiveSubscription) {
                 // Verificar si la suscripción está próxima a vencer
                 await _checkAndShowSubscriptionWarning(idTienda);
-                
+
                 // Login exitoso con suscripción activa - ir al catálogo
                 Navigator.of(context).pushReplacementNamed('/categories');
               } else {
@@ -371,11 +371,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (offlineData == null) {
         print('❌ No hay datos offline guardados');
-        setState(() {
-          _errorMessage =
-              'No hay datos sincronizados. Active modo offline con conexión primero.';
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage =
+                'No hay datos sincronizados. Active modo offline con conexión primero.';
+            _isLoading = false;
+          });
+        }
         return false;
       }
 
@@ -414,6 +416,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       print('✅ Login offline exitoso - Todos los datos restaurados');
       print('🔌 Trabajando en modo offline');
+      await _userPreferencesService.setOfflineMode(true);
 
       // Inicializar servicios inteligentes en segundo plano (también funciona en offline)
       _initializeSmartServices();
@@ -440,10 +443,12 @@ class _LoginScreenState extends State<LoginScreen> {
       return true;
     } catch (e) {
       print('❌ Error en login offline: $e');
-      setState(() {
-        _errorMessage = 'Error en login offline: $e';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Error en login offline: $e';
+          _isLoading = false;
+        });
+      }
       return false;
     }
   }
@@ -546,134 +551,148 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkAndShowSubscriptionWarning(int idTienda) async {
     try {
       print('⏰ Verificando expiración de suscripción...');
-      
-      final expirationInfo = await _subscriptionService.checkSubscriptionExpiration(idTienda);
-      
+
+      final expirationInfo = await _subscriptionService
+          .checkSubscriptionExpiration(idTienda);
+
       if (expirationInfo != null && mounted) {
         final diasRestantes = expirationInfo['diasRestantes'] as int;
         final fechaFin = expirationInfo['fechaFin'] as DateTime;
         final planNombre = expirationInfo['planNombre'] as String;
         final estado = expirationInfo['estado'] as String;
-        
+
         print('⚠️ Suscripción próxima a vencer: $diasRestantes días restantes');
-        
+
         // Obtener información de la tienda
         final idTiendaActual = await _userPreferencesService.getIdTienda();
         String nombreTienda = 'Tu tienda';
-        
+
         if (idTiendaActual != null) {
           try {
-            final tiendaData = await Supabase.instance.client
-                .from('app_dat_tienda')
-                .select('denominacion')
-                .eq('id', idTiendaActual)
-                .single();
+            final tiendaData =
+                await Supabase.instance.client
+                    .from('app_dat_tienda')
+                    .select('denominacion')
+                    .eq('id', idTiendaActual)
+                    .single();
             nombreTienda = tiendaData['denominacion'] ?? nombreTienda;
           } catch (e) {
             print('⚠️ No se pudo obtener nombre de tienda: $e');
           }
         }
-        
+
         final dateFormat = DateFormat('dd/MM/yyyy');
-        
+
         // Mostrar diálogo de advertencia
         await showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(
-                  Icons.warning_amber_rounded,
-                  color: diasRestantes == 0 ? Colors.red : Colors.orange,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    '⚠️ Suscripción Próxima a Vencer',
-                    style: TextStyle(fontSize: 18),
-                  ),
-                ),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: diasRestantes == 0 ? Colors.red.shade50 : Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: diasRestantes == 0 ? Colors.red.shade200 : Colors.orange.shade200,
+          builder:
+              (context) => AlertDialog(
+                title: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: diasRestantes == 0 ? Colors.red : Colors.orange,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        '⚠️ Suscripción Próxima a Vencer',
+                        style: TextStyle(fontSize: 18),
                       ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          diasRestantes == 0
-                              ? '¡Tu suscripción vence HOY!'
-                              : diasRestantes == 1
-                                  ? '¡Tu suscripción vence MAÑANA!'
-                                  : 'Tu suscripción vence en $diasRestantes días',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: diasRestantes == 0 ? Colors.red.shade700 : Colors.orange.shade700,
+                  ],
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color:
+                              diasRestantes == 0
+                                  ? Colors.red.shade50
+                                  : Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color:
+                                diasRestantes == 0
+                                    ? Colors.red.shade200
+                                    : Colors.orange.shade200,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Divider(),
-                        const SizedBox(height: 8),
-                        _buildInfoRow('🏪 Tienda:', nombreTienda),
-                        const SizedBox(height: 6),
-                        _buildInfoRow('📦 Plan:', planNombre),
-                        const SizedBox(height: 6),
-                        _buildInfoRow('📊 Estado:', estado),
-                        const SizedBox(height: 6),
-                        _buildInfoRow('📅 Fecha de vencimiento:', dateFormat.format(fechaFin)),
-                        const SizedBox(height: 6),
-                        _buildInfoRow(
-                          '⏰ Días restantes:',
-                          diasRestantes == 0 ? 'Vence hoy' : '$diasRestantes días',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              diasRestantes == 0
+                                  ? '¡Tu suscripción vence HOY!'
+                                  : diasRestantes == 1
+                                  ? '¡Tu suscripción vence MAÑANA!'
+                                  : 'Tu suscripción vence en $diasRestantes días',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color:
+                                    diasRestantes == 0
+                                        ? Colors.red.shade700
+                                        : Colors.orange.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Divider(),
+                            const SizedBox(height: 8),
+                            _buildInfoRow('🏪 Tienda:', nombreTienda),
+                            const SizedBox(height: 6),
+                            _buildInfoRow('📦 Plan:', planNombre),
+                            const SizedBox(height: 6),
+                            _buildInfoRow('📊 Estado:', estado),
+                            const SizedBox(height: 6),
+                            _buildInfoRow(
+                              '📅 Fecha de vencimiento:',
+                              dateFormat.format(fechaFin),
+                            ),
+                            const SizedBox(height: 6),
+                            _buildInfoRow(
+                              '⏰ Días restantes:',
+                              diasRestantes == 0
+                                  ? 'Vence hoy'
+                                  : '$diasRestantes días',
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Por favor, renueva tu suscripción para continuar disfrutando de todos los servicios sin interrupciones.',
+                        style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Por favor, renueva tu suscripción para continuar disfrutando de todos los servicios sin interrupciones.',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[700],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Entendido'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      // Navegar a la pantalla de suscripción
+                      Navigator.of(context).pushNamed('/subscription-detail');
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4A90E2),
+                      foregroundColor: Colors.white,
                     ),
+                    child: const Text('Ver Suscripción'),
                   ),
                 ],
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Entendido'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  // Navegar a la pantalla de suscripción
-                  Navigator.of(context).pushNamed('/subscription-detail');
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Ver Suscripción'),
-              ),
-            ],
-          ),
         );
       } else {
         print('✅ Suscripción no requiere advertencia');
@@ -690,18 +709,10 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
         ),
         const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontSize: 13),
-          ),
-        ),
+        Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
       ],
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/warehouse_service.dart';
 import '../models/warehouse.dart';
+import '../utils/navigation_guard.dart';
 
 class WarehouseDetailScreen extends StatefulWidget {
   final String warehouseId;
@@ -17,6 +18,9 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   bool _loading = true;
   int? _sort; // abc | type | utilization
 
+  bool _canEditWarehouse = false;
+  bool _canDeleteWarehouse = false;
+
   // Track expanded layouts and their products
   final Map<String, bool> _expandedLayouts = {};
   final Map<String, List<Map<String, dynamic>>> _layoutProducts = {};
@@ -25,7 +29,21 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _loadPermissions();
     _load();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      NavigationGuard.canPerformAction('warehouse.edit'),
+      NavigationGuard.canPerformAction('warehouse.delete'),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _canEditWarehouse = permissions[0];
+      _canDeleteWarehouse = permissions[1];
+    });
   }
 
   Future<void> _load() async {
@@ -210,7 +228,7 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
             ),
           ),
           IconButton(
-            onPressed: () => _onEditBasic(w),
+            onPressed: _canEditWarehouse ? () => _onEditBasic(w) : null,
             icon: const Icon(Icons.edit_outlined, color: Colors.white),
             tooltip: 'Editar información básica',
           ),
@@ -281,7 +299,10 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => _showInitializeInventoryDialog(w),
+                onPressed:
+                    _canEditWarehouse
+                        ? () => _showInitializeInventoryDialog(w)
+                        : null,
                 icon: const Icon(Icons.inventory_2),
                 label: const Text('Inicializar Inventario Faltante'),
                 style: ElevatedButton.styleFrom(
@@ -401,7 +422,8 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                       ),
                     ),
                     IconButton(
-                      onPressed: () => _onAddLayout(w),
+                      onPressed:
+                          _canEditWarehouse ? () => _onAddLayout(w) : null,
                       icon: const Icon(Icons.add, color: AppColors.primary),
                       tooltip: 'Agregar layout',
                     ),
@@ -615,9 +637,11 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                           break;
                       }
                     },
-                    itemBuilder:
-                        (ctx) => const [
-                          PopupMenuItem(
+                    itemBuilder: (ctx) {
+                      final items = <PopupMenuEntry<String>>[];
+                      if (_canEditWarehouse) {
+                        items.add(
+                          const PopupMenuItem(
                             value: 'edit',
                             child: Row(
                               children: [
@@ -627,7 +651,9 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                               ],
                             ),
                           ),
-                          PopupMenuItem(
+                        );
+                        items.add(
+                          const PopupMenuItem(
                             value: 'duplicate',
                             child: Row(
                               children: [
@@ -637,7 +663,11 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                               ],
                             ),
                           ),
-                          PopupMenuItem(
+                        );
+                      }
+                      if (_canDeleteWarehouse) {
+                        items.add(
+                          const PopupMenuItem(
                             value: 'delete',
                             child: Row(
                               children: [
@@ -650,11 +680,17 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                               ],
                             ),
                           ),
-                        ],
-                    child: const Icon(
-                      Icons.more_vert,
-                      color: AppColors.textSecondary,
-                    ),
+                        );
+                      }
+                      return items;
+                    },
+                    child:
+                        _canEditWarehouse || _canDeleteWarehouse
+                            ? const Icon(
+                              Icons.more_vert,
+                              color: AppColors.textSecondary,
+                            )
+                            : const SizedBox.shrink(),
                   ),
                 ],
               ),
@@ -762,13 +798,17 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                         // Usar Container con altura fija para evitar problemas de layout
                         Container(
                           constraints: BoxConstraints(
-                            maxHeight: products.length > 5 ? 200 : products.length * 40.0,
+                            maxHeight:
+                                products.length > 5
+                                    ? 200
+                                    : products.length * 40.0,
                           ),
                           child: ListView.builder(
                             shrinkWrap: true,
-                            physics: products.length > 5 
-                                ? const AlwaysScrollableScrollPhysics()
-                                : const NeverScrollableScrollPhysics(),
+                            physics:
+                                products.length > 5
+                                    ? const AlwaysScrollableScrollPhysics()
+                                    : const NeverScrollableScrollPhysics(),
                             itemCount: products.length,
                             itemBuilder: (context, index) {
                               final product = products[index];
@@ -1061,7 +1101,8 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
                   ),
                 ),
                 IconButton(
-                  onPressed: () => _onEditStockLimits(w),
+                  onPressed:
+                      _canEditWarehouse ? () => _onEditStockLimits(w) : null,
                   icon: const Icon(Icons.tune, color: AppColors.primary),
                   tooltip: 'Gestionar límites',
                 ),
@@ -1117,10 +1158,18 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   }
 
   void _onEditBasic(Warehouse w) {
+    if (!_canEditWarehouse) {
+      NavigationGuard.showActionDeniedMessage(context, 'Editar almacén');
+      return;
+    }
     _showSnack('Editar información básica (pendiente)');
   }
 
   void _onAddLayout(Warehouse w) {
+    if (!_canEditWarehouse) {
+      NavigationGuard.showActionDeniedMessage(context, 'Editar almacén');
+      return;
+    }
     _openLayoutForm(w);
   }
 
@@ -1129,6 +1178,10 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
     WarehouseZone? initial,
     bool isDuplicate = false,
   }) {
+    if (!_canEditWarehouse) {
+      NavigationGuard.showActionDeniedMessage(context, 'Editar almacén');
+      return;
+    }
     print(
       '🔧 Opening layout form - initial: ${initial?.name}, isDuplicate: $isDuplicate',
     );
@@ -1707,6 +1760,10 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   }
 
   void _onDuplicateLayout(Warehouse warehouse, String layoutId) async {
+    if (!_canEditWarehouse) {
+      NavigationGuard.showActionDeniedMessage(context, 'Editar almacén');
+      return;
+    }
     try {
       // Get the original layout data
       final originalZone = warehouse.zones.firstWhere((z) => z.id == layoutId);
@@ -1741,6 +1798,10 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   }
 
   void _onDeleteLayout(Warehouse w, String layoutId) {
+    if (!_canDeleteWarehouse) {
+      NavigationGuard.showActionDeniedMessage(context, 'Eliminar layout');
+      return;
+    }
     _showDeleteLayoutDialog(w, layoutId);
   }
 
@@ -1749,17 +1810,18 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
     // Obtener la zona a eliminar
     final zone = w.zones.firstWhere(
       (z) => z.id == layoutId,
-      orElse: () => WarehouseZone(
-        id: layoutId,
-        warehouseId: w.id,
-        name: 'Zona desconocida',
-        code: '',
-        type: '',
-        conditions: '',
-        capacity: 0,
-        currentOccupancy: 0,
-        locations: [],
-      ),
+      orElse:
+          () => WarehouseZone(
+            id: layoutId,
+            warehouseId: w.id,
+            name: 'Zona desconocida',
+            code: '',
+            type: '',
+            conditions: '',
+            capacity: 0,
+            currentOccupancy: 0,
+            locations: [],
+          ),
     );
 
     // Obtener productos en la zona
@@ -1777,214 +1839,225 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.delete_outline,
-                color: Colors.red,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Eliminar Zona',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Información de la zona
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.layers, size: 16, color: AppColors.primary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                zone.name,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                'Código: ${zone.code}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Información de stock
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: totalStock > 0 ? Colors.red.shade50 : Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: totalStock > 0 ? Colors.red.shade200 : Colors.green.shade200,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          totalStock > 0 ? Icons.warning : Icons.check_circle,
-                          size: 16,
-                          color: totalStock > 0 ? Colors.red : Colors.green,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          totalStock > 0
-                              ? 'Stock disponible detectado'
-                              : 'Sin stock disponible',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: totalStock > 0 ? Colors.red : Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Productos en zona: ${products.length}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    Text(
-                      'Stock total: $totalStock unidades',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Mensaje de validación
-              if (totalStock > 0) ...[
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade50,
+                    color: Colors.red.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 16,
-                        color: Colors.red.shade700,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'No se puede eliminar una zona con stock disponible. Transfiere o vende los productos primero.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.red.shade700,
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.red,
+                    size: 20,
                   ),
                 ),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green.shade200),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        size: 16,
-                        color: Colors.green.shade700,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'La zona puede ser eliminada. No contiene stock disponible.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.green.shade700,
-                          ),
-                        ),
-                      ),
-                    ],
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Eliminar Zona',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Información de la zona
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.layers,
+                              size: 16,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    zone.name,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Código: ${zone.code}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Información de stock
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color:
+                          totalStock > 0
+                              ? Colors.red.shade50
+                              : Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color:
+                            totalStock > 0
+                                ? Colors.red.shade200
+                                : Colors.green.shade200,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              totalStock > 0
+                                  ? Icons.warning
+                                  : Icons.check_circle,
+                              size: 16,
+                              color: totalStock > 0 ? Colors.red : Colors.green,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              totalStock > 0
+                                  ? 'Stock disponible detectado'
+                                  : 'Sin stock disponible',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color:
+                                    totalStock > 0 ? Colors.red : Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Productos en zona: ${products.length}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        Text(
+                          'Stock total: $totalStock unidades',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Mensaje de validación
+                  if (totalStock > 0) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 16,
+                            color: Colors.red.shade700,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'No se puede eliminar una zona con stock disponible. Transfiere o vende los productos primero.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.red.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.green.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle_outline,
+                            size: 16,
+                            color: Colors.green.shade700,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'La zona puede ser eliminada. No contiene stock disponible.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              if (totalStock == 0)
+                ElevatedButton.icon(
+                  onPressed: () => _executeDeleteLayout(w, layoutId),
+                  icon: const Icon(Icons.delete),
+                  label: const Text('Eliminar Zona'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                )
+              else
+                ElevatedButton(
+                  onPressed: null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey.shade300,
+                  ),
+                  child: const Text('Eliminar Zona (Deshabilitado)'),
+                ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          if (totalStock == 0)
-            ElevatedButton.icon(
-              onPressed: () => _executeDeleteLayout(w, layoutId),
-              icon: const Icon(Icons.delete),
-              label: const Text('Eliminar Zona'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-            )
-          else
-            ElevatedButton(
-              onPressed: null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.grey.shade300,
-              ),
-              child: const Text('Eliminar Zona (Deshabilitado)'),
-            ),
-        ],
-      ),
     );
   }
 
@@ -2010,6 +2083,10 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
   }
 
   void _onEditStockLimits(Warehouse w) {
+    if (!_canEditWarehouse) {
+      NavigationGuard.showActionDeniedMessage(context, 'Editar almacén');
+      return;
+    }
     _showSnack('Gestionar límites de stock (pendiente)');
   }
 
@@ -2032,120 +2109,133 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
 
   /// Mostrar diálogo de inicialización de inventario
   Future<void> _showInitializeInventoryDialog(Warehouse w) async {
+    if (!_canEditWarehouse) {
+      NavigationGuard.showActionDeniedMessage(
+        context,
+        'Inicializar inventario',
+      );
+      return;
+    }
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.inventory_2,
-                color: AppColors.primary,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Inicializar Inventario',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.inventory_2,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
                 ),
-              ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Inicializar Inventario',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Esta acción buscará todos los productos de la tienda "${w.tienda?.denominacion ?? 'N/A'}" que no tienen registros de inventario en la primera ubicación del almacén "${w.denominacion ?? w.name}".',
-              style: const TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Esta acción buscará todos los productos de la tienda "${w.tienda?.denominacion ?? 'N/A'}" que no tienen registros de inventario en la primera ubicación del almacén "${w.denominacion ?? w.name}".',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 16,
+                            color: Colors.blue.shade700,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Lo que hará esta función:',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '• Buscar productos sin operaciones de inventario\n'
+                        '• Crear operación inicial con cantidad 0\n'
+                        '• Establecer origen de cambio como "Inventario Inicial"\n'
+                        '• Mostrar detalle de productos procesados',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.warning_outlined,
+                        size: 16,
+                        color: Colors.orange.shade700,
+                      ),
                       const SizedBox(width: 8),
-                      Text(
-                        'Lo que hará esta función:',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue.shade700,
+                      const Expanded(
+                        child: Text(
+                          'Esta acción no se puede deshacer. Solo afectará productos que no tengan registros previos.',
+                          style: TextStyle(fontSize: 12),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '• Buscar productos sin operaciones de inventario\n'
-                    '• Crear operación inicial con cantidad 0\n'
-                    '• Establecer origen de cambio como "Inventario Inicial"\n'
-                    '• Mostrar detalle de productos procesados',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancelar'),
               ),
-              child: Row(
-                children: [
-                  Icon(Icons.warning_outlined, size: 16, color: Colors.orange.shade700),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Esta acción no se puede deshacer. Solo afectará productos que no tengan registros previos.',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _executeInitializeInventory(w);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Inicializar'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _executeInitializeInventory(w);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Inicializar'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2155,21 +2245,22 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Inicializando inventario...'),
-            SizedBox(height: 8),
-            Text(
-              'Por favor espere mientras se procesan los productos',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+      builder:
+          (context) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Inicializando inventario...'),
+                SizedBox(height: 8),
+                Text(
+                  'Por favor espere mientras se procesan los productos',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
     );
 
     try {
@@ -2182,7 +2273,7 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
 
       // Mostrar resultado
       _showInitializationResult(result);
-      
+
       // Recargar solo información básica sin productos
       await _loadBasicInfo();
     } catch (e) {
@@ -2209,87 +2300,101 @@ class _WarehouseDetailScreenState extends State<WarehouseDetailScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: success ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                success ? Icons.check_circle : Icons.error,
-                color: success ? Colors.green : Colors.red,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                success ? 'Inicialización Completada' : 'Error en Inicialización',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Resumen
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: success ? Colors.green.shade50 : Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: success ? Colors.green.shade200 : Colors.red.shade200,
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color:
+                        success
+                            ? Colors.green.withOpacity(0.1)
+                            : Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    success ? Icons.check_circle : Icons.error,
+                    color: success ? Colors.green : Colors.red,
+                    size: 20,
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Resumen:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: success ? Colors.green.shade700 : Colors.red.shade700,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    success
+                        ? 'Inicialización Completada'
+                        : 'Error en Inicialización',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Resumen
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color:
+                          success ? Colors.green.shade50 : Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color:
+                            success
+                                ? Colors.green.shade200
+                                : Colors.red.shade200,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    if (success) ...[
-                      Text('• Productos evaluados: $productosProcessados'),
-                      Text('• Productos inicializados: $productosInsertados'),
-                      Text('• Productos ya existentes: ${productosProcessados - productosInsertados}'),
-                    ],
-                    const SizedBox(height: 8),
-                    Text(
-                      message,
-                      style: const TextStyle(fontSize: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Resumen:',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color:
+                                success
+                                    ? Colors.green.shade700
+                                    : Colors.red.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (success) ...[
+                          Text('• Productos evaluados: $productosProcessados'),
+                          Text(
+                            '• Productos inicializados: $productosInsertados',
+                          ),
+                          Text(
+                            '• Productos ya existentes: ${productosProcessados - productosInsertados}',
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        Text(message, style: const TextStyle(fontSize: 12)),
+                      ],
                     ),
-                  ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
                 ),
+                child: const Text('Cerrar'),
               ),
             ],
           ),
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
     );
   }
 

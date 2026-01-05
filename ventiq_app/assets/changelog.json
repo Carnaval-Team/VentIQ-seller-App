@@ -1,8 +1,30 @@
 {
-  "current_version": "1.8.2",
-  "build": 712,
+  "current_version": "1.8.3",
+  "build": 713,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.8.3",
+      "date": "2026-01-03",
+      "title": "📶 Mejoras de Modo Offline",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Venta offline más estable",
+          "description": "Se corrigió un cierre inesperado al crear la primera venta en modo offline."
+        },
+        {
+          "type": "improvement",
+          "title": "Sincronización más confiable",
+          "description": "Las ventas hechas offline solo se eliminan de pendientes cuando se confirma que se sincronizaron correctamente."
+        },
+        {
+          "type": "improvement",
+          "title": "Datos offline guardados de forma segura",
+          "description": "La descarga de datos para trabajar sin conexión ahora evita estados a medias si la app se cierra durante el proceso."
+        }
+      ]
+    },
     {
       "version": "1.8.2",
       "date": "2026-01-03",

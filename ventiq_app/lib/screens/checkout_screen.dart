@@ -889,9 +889,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (e) {
       _showErrorMessage('Error al crear la orden: $e');
     } finally {
-      setState(() {
-        _isProcessing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
     }
   }
 

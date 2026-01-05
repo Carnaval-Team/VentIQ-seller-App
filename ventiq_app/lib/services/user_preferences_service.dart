@@ -47,6 +47,7 @@ class UserPreferencesService {
   // Offline mode keys
   static const String _offlineModeKey = 'offline_mode_enabled';
   static const String _offlineDataKey = 'offline_data';
+  static const String _offlineDataStagingKey = 'offline_data_staging';
   static const String _offlineUsersKey =
       'offline_users'; // Array de usuarios offline
   static const String _pendingOrdersKey =
@@ -653,6 +654,16 @@ class UserPreferencesService {
     print('UserPreferencesService: Datos offline guardados');
   }
 
+  Future<void> saveOfflineDataTransactional(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(data);
+
+    await prefs.setString(_offlineDataStagingKey, encoded);
+    await prefs.setString(_offlineDataKey, encoded);
+    await prefs.remove(_offlineDataStagingKey);
+    print('UserPreferencesService: Datos offline guardados (transaccional)');
+  }
+
   // Hacer merge inteligente de datos offline (preserva datos existentes)
   Future<void> mergeOfflineData(Map<String, dynamic> newData) async {
     // Obtener datos existentes
@@ -686,7 +697,7 @@ class UserPreferencesService {
     print('  - Productos: ${mergedData['products'] != null ? 'Sí' : 'No'}');
 
     // Guardar datos merged
-    await saveOfflineData(mergedData);
+    await saveOfflineDataTransactional(mergedData);
     print('🔄 Merge de datos offline completado');
   }
 
@@ -695,22 +706,40 @@ class UserPreferencesService {
     final prefs = await SharedPreferences.getInstance();
     final dataString = prefs.getString(_offlineDataKey);
     if (dataString != null) {
-      return jsonDecode(dataString) as Map<String, dynamic>;
+      try {
+        return jsonDecode(dataString) as Map<String, dynamic>;
+      } catch (e) {
+        print('❌ Error decodificando offline_data: $e');
+      }
     }
+
+    final stagingString = prefs.getString(_offlineDataStagingKey);
+    if (stagingString != null) {
+      try {
+        final data = jsonDecode(stagingString) as Map<String, dynamic>;
+        await prefs.setString(_offlineDataKey, stagingString);
+        await prefs.remove(_offlineDataStagingKey);
+        print(
+          'UserPreferencesService: Recuperación de datos offline desde staging',
+        );
+        return data;
+      } catch (e) {
+        print('❌ Error recuperando datos offline desde staging: $e');
+        return null;
+      }
+    }
+
     return null;
   }
 
   // Verificar si hay datos offline disponibles
   Future<bool> hasOfflineData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final dataString = prefs.getString(_offlineDataKey);
-
-    if (dataString == null || dataString.isEmpty) {
-      return false;
-    }
-
     try {
-      final data = jsonDecode(dataString) as Map<String, dynamic>;
+      final data = await getOfflineData();
+
+      if (data == null) {
+        return false;
+      }
 
       // Verificar que hay datos esenciales para modo offline
       final hasCredentials = data['credentials'] != null;
@@ -740,6 +769,7 @@ class UserPreferencesService {
   Future<void> clearOfflineData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_offlineDataKey);
+    await prefs.remove(_offlineDataStagingKey);
     await prefs.setBool(_offlineModeKey, false);
     print('UserPreferencesService: Datos offline eliminados');
   }

@@ -8,6 +8,7 @@ import '../config/app_colors.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../services/permissions_service.dart';
+import '../utils/navigation_guard.dart';
 import '../widgets/marketing_menu_widget.dart';
 import '../screens/add_product_screen.dart';
 import '../widgets/reception_edit_dialog.dart';
@@ -41,6 +42,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _isLoadingProductsUsingIngredient = false;
   final PermissionsService _permissionsService = PermissionsService();
   bool _canEditProduct = false;
+  bool _canDeleteProduct = false;
   bool _isGerente = false;
   bool _isInitializingPrices = false;
   bool _isLoadingPricingData = true;
@@ -65,17 +67,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   void _checkPermissions() async {
     print('🔐 Verificando permisos de edición de producto...');
-    final canEdit = await _permissionsService.canPerformAction('product.edit');
+    final permissions = await Future.wait([
+      _permissionsService.canPerformAction('product.edit'),
+      _permissionsService.canPerformAction('product.delete'),
+    ]);
+    final canEdit = permissions[0];
+    final canDelete = permissions[1];
     print('  • Editar producto: $canEdit');
-    
-    // Verificar si es gerente
-    final userRole = await _permissionsService.getUserRole();
-    final isGerente = userRole == UserRole.gerente;
+    print('  • Eliminar producto: $canDelete');
+
+    // Solo el gerente puede editar productos, así que el permiso es suficiente
+    final isGerente = canEdit;
     print('  • Es Gerente: $isGerente');
-    
+
     print('✅ Puede editar productos: $canEdit');
     setState(() {
       _canEditProduct = canEdit;
+      _canDeleteProduct = canDelete;
       _isGerente = isGerente;
     });
   }
@@ -147,8 +155,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     setState(() => _isLoadingProductsUsingIngredient = true);
     try {
       print('🔍 Cargando productos que usan este producto como ingrediente...');
-      _productsUsingThisIngredient = await ProductService.getProductsUsingThisIngredient(_product.id);
-      print('📊 Productos encontrados que usan este ingrediente: ${_productsUsingThisIngredient.length}');
+      _productsUsingThisIngredient =
+          await ProductService.getProductsUsingThisIngredient(_product.id);
+      print(
+        '📊 Productos encontrados que usan este ingrediente: ${_productsUsingThisIngredient.length}',
+      );
     } catch (e) {
       print('Error loading products using this ingredient: $e');
       _productsUsingThisIngredient = [];
@@ -280,20 +291,26 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         actions: [
           if (_canEditProduct)
             IconButton(icon: const Icon(Icons.edit), onPressed: _editProduct),
-          if (_canEditProduct)
+          if (_canEditProduct || _canDeleteProduct)
             PopupMenuButton<String>(
               onSelected: (value) {
                 switch (value) {
                   case 'duplicate':
                     _duplicateProduct();
                     break;
+                  case 'import_excel':
+                    _importExcelCodes();
+                    break;
                   case 'delete':
                     _showDeleteConfirmation();
                     break;
                 }
               },
-              itemBuilder:
-                  (context) => [
+              itemBuilder: (context) {
+                final items = <PopupMenuEntry<String>>[];
+
+                if (_canEditProduct) {
+                  items.add(
                     const PopupMenuItem(
                       value: 'duplicate',
                       child: Row(
@@ -304,6 +321,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ],
                       ),
                     ),
+                  );
+
+                  items.add(
                     const PopupMenuItem(
                       value: 'import_excel',
                       child: Row(
@@ -317,6 +337,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ],
                       ),
                     ),
+                  );
+                }
+
+                if (_canDeleteProduct) {
+                  items.add(
                     const PopupMenuItem(
                       value: 'delete',
                       child: Row(
@@ -330,7 +355,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ],
                       ),
                     ),
-                  ],
+                  );
+                }
+
+                return items;
+              },
             ),
         ],
       ),
@@ -708,9 +737,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => ProductMovementsScreen(
-                      product: _product,
-                    ),
+                    builder:
+                        (context) => ProductMovementsScreen(product: _product),
                   ),
                 );
               },
@@ -818,42 +846,45 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                         ),
                                       ),
                                     ),
-                                    IconButton(
-                                      icon: const Icon(Icons.edit),
-                                      onPressed: () {
-                                        // Validate operation ID before opening dialog
-                                        final operationId =
-                                            operation['id_operacion'] ??
-                                            operation['id'] ??
-                                            operation['operacion_id'];
-                                        if (operationId == null) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'No se puede editar: ID de operación no válido',
+                                    if (_canEditProduct)
+                                      IconButton(
+                                        icon: const Icon(Icons.edit),
+                                        onPressed: () {
+                                          // Validate operation ID before opening dialog
+                                          final operationId =
+                                              operation['id_operacion'] ??
+                                              operation['id'] ??
+                                              operation['operacion_id'];
+                                          if (operationId == null) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'No se puede editar: ID de operación no válido',
+                                                ),
+                                                backgroundColor: Colors.red,
                                               ),
-                                              backgroundColor: Colors.red,
-                                            ),
-                                          );
-                                          return;
-                                        }
+                                            );
+                                            return;
+                                          }
 
-                                        showDialog(
-                                          context: context,
-                                          builder:
-                                              (context) => ReceptionEditDialog(
-                                                operationId:
-                                                    operationId.toString(),
-                                                operationData: operation,
-                                                onUpdated: () {
-                                                  _loadReceptionOperations();
-                                                },
-                                              ),
-                                        );
-                                      },
-                                    ),
+                                          showDialog(
+                                            context: context,
+                                            builder:
+                                                (
+                                                  context,
+                                                ) => ReceptionEditDialog(
+                                                  operationId:
+                                                      operationId.toString(),
+                                                  operationData: operation,
+                                                  onUpdated: () {
+                                                    _loadReceptionOperations();
+                                                  },
+                                                ),
+                                          );
+                                        },
+                                      ),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
@@ -1303,46 +1334,48 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: Colors.grey[300]!),
                   ),
-                  child: _product.imageUrl.isNotEmpty
-                      ? Stack(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.network(
-                                _product.imageUrl,
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                height: double.infinity,
-                                errorBuilder: (context, error, stackTrace) => Icon(
-                                  Icons.image_not_supported,
-                                  color: Colors.grey[400],
+                  child:
+                      _product.imageUrl.isNotEmpty
+                          ? Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  _product.imageUrl,
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  errorBuilder:
+                                      (context, error, stackTrace) => Icon(
+                                        Icons.image_not_supported,
+                                        color: Colors.grey[400],
+                                      ),
                                 ),
                               ),
-                            ),
-                            // Indicador de que se puede hacer clic
-                            Positioned(
-                              top: 2,
-                              right: 2,
-                              child: Container(
-                                padding: const EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.6),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(
-                                  Icons.zoom_in,
-                                  color: Colors.white,
-                                  size: 12,
+                              // Indicador de que se puede hacer clic
+                              Positioned(
+                                top: 2,
+                                right: 2,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.6),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(
+                                    Icons.zoom_in,
+                                    color: Colors.white,
+                                    size: 12,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        )
-                      : Icon(
-                          Icons.inventory_2,
-                          color: Colors.grey[400],
-                          size: 40,
-                        ),
+                            ],
+                          )
+                          : Icon(
+                            Icons.inventory_2,
+                            color: Colors.grey[400],
+                            size: 40,
+                          ),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1581,9 +1614,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
 
     // Verificar si todos los precios promedio son 0
-    final allPricesZero = _product.presentaciones.isEmpty ||
-        _product.presentaciones.every((pres) =>
-            (pres['precio_promedio'] ?? 0.0) == 0.0);
+    final allPricesZero =
+        _product.presentaciones.isEmpty ||
+        _product.presentaciones.every(
+          (pres) => (pres['precio_promedio'] ?? 0.0) == 0.0,
+        );
 
     return _buildInfoCard(
       title: 'Información de Precios',
@@ -1603,10 +1638,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 icon: const Icon(Icons.edit, size: 18),
                 onPressed: _editBasePriceDialog,
                 tooltip: 'Editar precio base',
-                constraints: const BoxConstraints(
-                  minWidth: 32,
-                minHeight: 32,
-                ),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 padding: EdgeInsets.zero,
               ),
           ],
@@ -1662,21 +1694,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _isInitializingPrices
-                          ? null
-                          : _initializeAveragePrices,
-                      icon: _isInitializingPrices
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.orange[700]!,
+                      onPressed:
+                          _isInitializingPrices
+                              ? null
+                              : _initializeAveragePrices,
+                      icon:
+                          _isInitializingPrices
+                              ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.orange[700]!,
+                                  ),
                                 ),
-                              ),
-                            )
-                          : const Icon(Icons.calculate),
+                              )
+                              : const Icon(Icons.calculate),
                       label: Text(
                         _isInitializingPrices
                             ? 'Inicializando...'
@@ -2171,7 +2205,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   Widget _buildIsIngredientSection() {
     return _buildInfoCard(
-      title: 'Es Ingrediente${_productsUsingThisIngredient.isNotEmpty ? ' (${_productsUsingThisIngredient.length})' : ''}',
+      title:
+          'Es Ingrediente${_productsUsingThisIngredient.isNotEmpty ? ' (${_productsUsingThisIngredient.length})' : ''}',
       icon: Icons.restaurant,
       children: [
         if (_isLoadingProductsUsingIngredient)
@@ -2221,112 +2256,117 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ],
                     ),
                     child: Row(
-                    children: [
-                      // Icono del producto
-                      Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[100],
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey[200]!),
+                      children: [
+                        // Icono del producto
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey[200]!),
+                          ),
+                          child: Icon(
+                            product['es_elaborado'] == true
+                                ? Icons.restaurant_menu
+                                : product['es_servicio'] == true
+                                ? Icons.room_service
+                                : Icons.inventory_2,
+                            color: Colors.grey[400],
+                            size: 30,
+                          ),
                         ),
-                        child: Icon(
-                          product['es_elaborado'] == true 
-                            ? Icons.restaurant_menu 
-                            : product['es_servicio'] == true
-                              ? Icons.room_service
-                              : Icons.inventory_2,
-                          color: Colors.grey[400],
-                          size: 30,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
+                        const SizedBox(width: 16),
 
-                      // Información del producto
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              product['denominacion_producto'] ?? 'Producto sin nombre',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            if (product['sku_producto'] != null &&
-                                product['sku_producto'].toString().isNotEmpty)
+                        // Información del producto
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               Text(
-                                'SKU: ${product['sku_producto']}',
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 13,
+                                product['denominacion_producto'] ??
+                                    'Producto sin nombre',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
                                 ),
                               ),
-                            const SizedBox(height: 8),
+                              const SizedBox(height: 4),
+                              if (product['sku_producto'] != null &&
+                                  product['sku_producto'].toString().isNotEmpty)
+                                Text(
+                                  'SKU: ${product['sku_producto']}',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              const SizedBox(height: 8),
 
-                            // Cantidad necesaria y unidad
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange[50],
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: Colors.orange[200]!),
-                                  ),
-                                  child: Text(
-                                    '${product['cantidad_necesaria']} ${product['unidad_medida']}',
-                                    style: TextStyle(
-                                      color: Colors.orange[700],
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
+                              // Cantidad necesaria y unidad
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange[50],
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: Colors.orange[200]!,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '${product['cantidad_necesaria']} ${product['unidad_medida']}',
+                                      style: TextStyle(
+                                        color: Colors.orange[700],
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                // Tipo de producto
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: product['es_elaborado'] == true
-                                        ? Colors.green[50]
-                                        : product['es_servicio'] == true
-                                          ? Colors.blue[50]
-                                          : Colors.grey[50],
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    product['es_elaborado'] == true
-                                        ? 'Elaborado'
-                                        : product['es_servicio'] == true
+                                  const SizedBox(width: 8),
+                                  // Tipo de producto
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          product['es_elaborado'] == true
+                                              ? Colors.green[50]
+                                              : product['es_servicio'] == true
+                                              ? Colors.blue[50]
+                                              : Colors.grey[50],
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      product['es_elaborado'] == true
+                                          ? 'Elaborado'
+                                          : product['es_servicio'] == true
                                           ? 'Servicio'
                                           : 'Producto',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: product['es_elaborado'] == true
-                                          ? Colors.green[700]
-                                          : product['es_servicio'] == true
-                                            ? Colors.blue[700]
-                                            : Colors.grey[700],
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color:
+                                            product['es_elaborado'] == true
+                                                ? Colors.green[700]
+                                                : product['es_servicio'] == true
+                                                ? Colors.blue[700]
+                                                : Colors.grey[700],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
                     ),
                   ),
                 ),
@@ -2366,7 +2406,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         const SizedBox(height: 4),
                         Text(
                           'Este producto es ingrediente en ${_productsUsingThisIngredient.length} producto(s)',
-                          style: TextStyle(color: Colors.orange[700], fontSize: 14),
+                          style: TextStyle(
+                            color: Colors.orange[700],
+                            fontSize: 14,
+                          ),
                         ),
                       ],
                     ),
@@ -2470,18 +2513,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  Future<void> _navigateToProductDetail(Map<String, dynamic> productData) async {
+  Future<void> _navigateToProductDetail(
+    Map<String, dynamic> productData,
+  ) async {
     try {
-      print('🔍 Navegando al detalle del producto: ${productData['denominacion_producto']}');
+      print(
+        '🔍 Navegando al detalle del producto: ${productData['denominacion_producto']}',
+      );
       print('🔍 ID del producto: ${productData['id_producto_elaborado']}');
-      
+
       // Mostrar indicador de carga
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
       // Obtener el producto completo por ID
@@ -2514,7 +2559,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       if (Navigator.canPop(context)) {
         Navigator.pop(context);
       }
-      
+
       print('❌ Error navegando al detalle del producto: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2526,6 +2571,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   void _editProduct() {
+    if (!_canEditProduct) {
+      NavigationGuard.showActionDeniedMessage(context, 'Editar producto');
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -2549,6 +2598,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _duplicateProduct() async {
+    final canEdit = await _permissionsService.canPerformAction('product.edit');
+    if (!canEdit) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Editar producto');
+      }
+      return;
+    }
     try {
       setState(() => _isLoading = true);
 
@@ -2580,6 +2636,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _importExcelCodes() async {
+    final canEdit = await _permissionsService.canPerformAction('product.edit');
+    if (!canEdit) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Editar producto');
+      }
+      return;
+    }
     try {
       // Seleccionar archivo Excel
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -2605,18 +2668,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         // Procesar filas (empezar desde la fila 1 para saltar encabezados)
         for (int rowIndex = 1; rowIndex < sheet.maxRows; rowIndex++) {
           var row = sheet.rows[rowIndex];
-          
+
           if (row.length >= 2) {
             String? codigo = row[0]?.value?.toString()?.trim();
             String? denominacion = row[1]?.value?.toString()?.trim();
 
             // Filtrar solo los que tienen valor en código
-            if (codigo != null && codigo.isNotEmpty && 
-                denominacion != null && denominacion.isNotEmpty) {
-              validData.add({
-                'codigo': codigo,
-                'denominacion': denominacion,
-              });
+            if (codigo != null &&
+                codigo.isNotEmpty &&
+                denominacion != null &&
+                denominacion.isNotEmpty) {
+              validData.add({'codigo': codigo, 'denominacion': denominacion});
               processedRows++;
             } else {
               skippedRows++;
@@ -2633,102 +2695,116 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         // Mostrar diálogo de confirmación con resumen
         bool? confirmed = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.upload_file, color: Colors.blue),
-                SizedBox(width: 8),
-                Text('Confirmar Importación'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Se procesarán $processedRows registros válidos:'),
-                const SizedBox(height: 8),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 200),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: validData.take(10).map((item) => 
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            '• ${item['denominacion']} → ${item['codigo']}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        )
-                      ).toList() + 
-                      (validData.length > 10 ? [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            '... y ${validData.length - 10} más',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontStyle: FontStyle.italic,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        )
-                      ] : []),
-                    ),
-                  ),
+          builder:
+              (context) => AlertDialog(
+                title: const Row(
+                  children: [
+                    Icon(Icons.upload_file, color: Colors.blue),
+                    SizedBox(width: 8),
+                    Text('Confirmar Importación'),
+                  ],
                 ),
-                if (skippedRows > 0) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Se omitieron $skippedRows filas sin datos válidos',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.orange[700],
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Se procesarán $processedRows registros válidos:'),
+                    const SizedBox(height: 8),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children:
+                              validData
+                                  .take(10)
+                                  .map(
+                                    (item) => Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 2,
+                                      ),
+                                      child: Text(
+                                        '• ${item['denominacion']} → ${item['codigo']}',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                  )
+                                  .toList() +
+                              (validData.length > 10
+                                  ? [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 2,
+                                      ),
+                                      child: Text(
+                                        '... y ${validData.length - 10} más',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ),
+                                  ]
+                                  : []),
+                        ),
+                      ),
                     ),
+                    if (skippedRows > 0) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Se omitieron $skippedRows filas sin datos válidos',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange[700],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Esto actualizará la "denominación corta" de los productos encontrados.',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancelar'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Importar'),
                   ),
                 ],
-                const SizedBox(height: 12),
-                const Text(
-                  'Esto actualizará la "denominación corta" de los productos encontrados.',
-                  style: TextStyle(fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancelar'),
               ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Importar'),
-              ),
-            ],
-          ),
         );
 
         if (confirmed == true) {
           // Procesar actualizaciones usando el método masivo
-          final result = await ProductService.updateMultipleProductShortNames(validData);
-          
+          final result = await ProductService.updateMultipleProductShortNames(
+            validData,
+          );
+
           // Extraer estadísticas del resultado
           final summary = result['summary'] ?? {};
           final updatedCount = summary['successful'] ?? 0;
           final notFoundCount = summary['failed'] ?? 0;
           final totalProcessed = summary['total_processed'] ?? 0;
           final successRate = summary['success_rate'] ?? 0.0;
-          
+
           // Extraer errores detallados si existen
           List<String> errors = [];
           if (result['results'] != null) {
             final results = result['results'] as List<dynamic>;
             for (var res in results) {
               if (res['success'] == false) {
-                final denomination = res['searched_denomination'] ?? 'Desconocido';
+                final denomination =
+                    res['searched_denomination'] ?? 'Desconocido';
                 final error = res['error'] ?? 'Error desconocido';
                 errors.add('$denomination: $error');
               }
@@ -2738,115 +2814,139 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           // Mostrar resultado
           showDialog(
             context: context,
-            builder: (context) => AlertDialog(
-              title: Row(
-                children: [
-                  Icon(
-                    result['success'] == true ? Icons.check_circle : Icons.warning,
-                    color: result['success'] == true ? Colors.green : Colors.orange,
+            builder:
+                (context) => AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(
+                        result['success'] == true
+                            ? Icons.check_circle
+                            : Icons.warning,
+                        color:
+                            result['success'] == true
+                                ? Colors.green
+                                : Colors.orange,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Importación Completada'),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  const Text('Importación Completada'),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Resumen de Procesamiento',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue[800],
-                            ),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          const SizedBox(height: 8),
-                          Text('📊 Total procesados: $totalProcessed'),
-                          Text('✅ Actualizados exitosamente: $updatedCount'),
-                          Text('⚠️ No encontrados/fallidos: $notFoundCount'),
-                          Text('📈 Tasa de éxito: ${successRate.toStringAsFixed(1)}%'),
-                        ],
-                      ),
-                    ),
-                    if (errors.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        '❌ Detalles de errores (${errors.length}):',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(height: 4),
-                      Container(
-                        constraints: const BoxConstraints(maxHeight: 150),
-                        child: SingleChildScrollView(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: errors.take(10).map((error) => 
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 1),
-                                child: Text(
-                                  '• $error',
-                                  style: const TextStyle(fontSize: 12),
+                            children: [
+                              Text(
+                                'Resumen de Procesamiento',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue[800],
                                 ),
-                              )
-                            ).toList() + 
-                            (errors.length > 10 ? [
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 1),
-                                child: Text(
-                                  '... y ${errors.length - 10} errores más',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontStyle: FontStyle.italic,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              )
-                            ] : []),
+                              ),
+                              const SizedBox(height: 8),
+                              Text('📊 Total procesados: $totalProcessed'),
+                              Text(
+                                '✅ Actualizados exitosamente: $updatedCount',
+                              ),
+                              Text(
+                                '⚠️ No encontrados/fallidos: $notFoundCount',
+                              ),
+                              Text(
+                                '📈 Tasa de éxito: ${successRate.toStringAsFixed(1)}%',
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
-                    if (updatedCount > 0) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          '✨ Se actualizaron $updatedCount productos exitosamente',
-                          style: TextStyle(
-                            color: Colors.green[700],
-                            fontWeight: FontWeight.w500,
+                        if (errors.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            '❌ Detalles de errores (${errors.length}):',
+                            style: const TextStyle(fontWeight: FontWeight.w500),
                           ),
-                        ),
+                          const SizedBox(height: 4),
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 150),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children:
+                                    errors
+                                        .take(10)
+                                        .map(
+                                          (error) => Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 1,
+                                            ),
+                                            child: Text(
+                                              '• $error',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                        .toList() +
+                                    (errors.length > 10
+                                        ? [
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 1,
+                                            ),
+                                            child: Text(
+                                              '... y ${errors.length - 10} errores más',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontStyle: FontStyle.italic,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                          ),
+                                        ]
+                                        : []),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (updatedCount > 0) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '✨ Se actualizaron $updatedCount productos exitosamente',
+                              style: TextStyle(
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
                       ),
-                    ],
+                      child: const Text('Cerrar'),
+                    ),
                   ],
                 ),
-              ),
-              actions: [
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Cerrar'),
-                ),
-              ],
-            ),
           );
         }
       }
@@ -2862,7 +2962,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
-  void _showDeleteConfirmation() {
+  void _showDeleteConfirmation() async {
+    final canDelete = await _permissionsService.canPerformAction(
+      'product.delete',
+    );
+    if (!canDelete) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Eliminar producto');
+      }
+      return;
+    }
     showDialog(
       context: context,
       builder:
@@ -2890,6 +2999,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _deleteProduct() async {
+    final canDelete = await _permissionsService.canPerformAction(
+      'product.delete',
+    );
+    if (!canDelete) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Eliminar producto');
+      }
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder:
@@ -3201,8 +3319,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     try {
       print('🔍 Iniciando inicialización de precios promedio...');
 
-      final result =
-          await ProductService.initializePresentationAveragePrices(
+      final result = await ProductService.initializePresentationAveragePrices(
         productId: _product.id,
       );
 
@@ -3273,10 +3390,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             children: [
               Text(
                 'Cantidad: ${presentation['cantidad']?.toString() ?? '1'} unds',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -3315,9 +3429,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 try {
                   final success =
                       await ProductService.updatePresentationAveragePrice(
-                    presentationId: presentation['id'].toString(),
-                    newPrice: newPrice,
-                  );
+                        presentationId: presentation['id'].toString(),
+                        newPrice: newPrice,
+                      );
 
                   if (!mounted) return;
 

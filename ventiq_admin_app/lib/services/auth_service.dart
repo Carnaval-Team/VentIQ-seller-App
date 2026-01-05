@@ -54,13 +54,13 @@ class AuthService {
 
       // Limpiar TODO el caché de permisos (incluyendo roles por tienda)
       PermissionsService().clearAllCache();
-      
+
       // Limpiar caché de suscripción
       await SubscriptionGuardService().clearCache();
-      
+
       // Limpiar TODOS los datos del usuario (tienda, roles, etc.)
       await UserPreferencesService().clearUserData();
-      
+
       print('👋 Admin signed out successfully (local cleanup complete)');
     } catch (e) {
       print('❌ Admin sign out error during cleanup: $e');
@@ -96,19 +96,35 @@ class AuthService {
           .select('*,app_dat_tienda(id,denominacion)')
           .eq('uuid', userId);
 
-      if (response.isEmpty) {
-        print('❌ No supervisor record found for user: $userId');
-        return null;
+      if (response.isNotEmpty) {
+        print('✅ Supervisor found with ${response.length} store(s)');
+        for (var store in response) {
+          print(
+            '   - Store ID: ${store['id_tienda']}, Name: ${store['app_dat_tienda']?['denominacion']}',
+          );
+        }
+        return List<Map<String, dynamic>>.from(response);
       }
 
-      print('✅ Supervisor found with ${response.length} store(s)');
-      for (var store in response) {
-        print(
-          '   - Store ID: ${store['id_tienda']}, Name: ${store['app_dat_tienda']?['denominacion']}',
-        );
+      print('❌ No supervisor record found for user: $userId');
+
+      final auditorResponse = await _supabase
+          .from('auditor')
+          .select('*,app_dat_tienda(id,denominacion)')
+          .eq('uuid', userId);
+
+      if (auditorResponse.isNotEmpty) {
+        print('✅ Auditor found with ${auditorResponse.length} store(s)');
+        for (var store in auditorResponse) {
+          print(
+            '   - Store ID: ${store['id_tienda']}, Name: ${store['app_dat_tienda']?['denominacion']}',
+          );
+        }
+        return List<Map<String, dynamic>>.from(auditorResponse);
       }
 
-      return List<Map<String, dynamic>>.from(response);
+      print('❌ No auditor record found for user: $userId');
+      return null;
     } catch (e) {
       print('❌ Supervisor verification error: $e');
       return null;

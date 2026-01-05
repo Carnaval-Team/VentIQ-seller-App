@@ -12,9 +12,10 @@ class PermissionsService {
 
   // Cache del rol del usuario
   UserRole? _cachedRole;
+  int? _cachedRoleStoreId;
   int? _cachedWarehouseId;
   String? _cachedUserId;
-  
+
   // Cache de roles por tienda
   Map<int, UserRole>? _cachedRolesByStore;
 
@@ -44,21 +45,32 @@ class PermissionsService {
       return _forcedRole!;
     }
 
-    if (_cachedRole != null) {
-      print('💾 Usando rol en caché: ${getRoleName(_cachedRole!)}');
-      return _cachedRole!;
+    final currentStoreId = await _userPrefs.getIdTienda();
+
+    // Si hay una tienda seleccionada, el rol debe ser store-aware
+    if (currentStoreId != null) {
+      if (_cachedRole != null && _cachedRoleStoreId == currentStoreId) {
+        print(
+          '💾 Usando rol en caché (tienda $currentStoreId): ${getRoleName(_cachedRole!)}',
+        );
+        return _cachedRole!;
+      }
+
+      final storeRole = await getUserRoleForStore(currentStoreId);
+      if (storeRole != UserRole.none) {
+        _cachedRole = storeRole;
+        _cachedRoleStoreId = currentStoreId;
+        return storeRole;
+      }
+    } else {
+      // Sin tienda seleccionada, usar caché global si existe
+      if (_cachedRole != null) {
+        print('💾 Usando rol en caché: ${getRoleName(_cachedRole!)}');
+        return _cachedRole!;
+      }
     }
 
     try {
-      // Intentar obtener el rol guardado en preferencias primero
-      final savedRole = await _userPrefs.getAdminRole();
-      if (savedRole != null && savedRole.isNotEmpty) {
-        print('💾 Usando rol guardado en preferencias: $savedRole');
-        final role = _convertStringToUserRole(savedRole);
-        _cachedRole = role;
-        return role;
-      }
-
       final user = _supabase.auth.currentUser;
       if (user == null) {
         print('❌ No hay usuario autenticado');
@@ -81,6 +93,7 @@ class PermissionsService {
       if (gerenteData != null) {
         print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: GERENTE');
         _cachedRole = UserRole.gerente;
+        _cachedRoleStoreId = currentStoreId;
         return UserRole.gerente;
       }
 
@@ -96,10 +109,27 @@ class PermissionsService {
       if (supervisorData != null) {
         print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: SUPERVISOR');
         _cachedRole = UserRole.supervisor;
+        _cachedRoleStoreId = currentStoreId;
         return UserRole.supervisor;
       }
 
-      // 3. Almacenero
+      // 3. Auditor
+      final auditorData =
+          await _supabase
+              .from('auditor')
+              .select('id')
+              .eq('uuid', user.id)
+              .maybeSingle();
+
+      print('  • Auditor: ${auditorData != null ? "✅ Sí" : "❌ No"}');
+      if (auditorData != null) {
+        print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: AUDITOR');
+        _cachedRole = UserRole.auditor;
+        _cachedRoleStoreId = currentStoreId;
+        return UserRole.auditor;
+      }
+
+      // 4. Almacenero
       final almaceneroData =
           await _supabase
               .from('app_dat_almacenero')
@@ -113,11 +143,12 @@ class PermissionsService {
           '✅ ROL DETECTADO Y GUARDADO EN CACHÉ: ALMACENERO (Almacén: ${almaceneroData['id_almacen']})',
         );
         _cachedRole = UserRole.almacenero;
+        _cachedRoleStoreId = currentStoreId;
         _cachedWarehouseId = almaceneroData['id_almacen'] as int?;
         return UserRole.almacenero;
       }
 
-      // 4. Vendedor
+      // 5. Vendedor
       final vendedorData =
           await _supabase
               .from('app_dat_vendedor')
@@ -129,12 +160,14 @@ class PermissionsService {
       if (vendedorData != null) {
         print('✅ ROL DETECTADO Y GUARDADO EN CACHÉ: VENDEDOR');
         _cachedRole = UserRole.vendedor;
+        _cachedRoleStoreId = currentStoreId;
         return UserRole.vendedor;
       }
 
       // Sin rol
       print('❌ No se encontró ningún rol para este usuario');
       _cachedRole = UserRole.none;
+      _cachedRoleStoreId = currentStoreId;
       return UserRole.none;
     } catch (e) {
       print('❌ Error al obtener rol del usuario: $e');
@@ -149,6 +182,8 @@ class PermissionsService {
         return UserRole.gerente;
       case 'supervisor':
         return UserRole.supervisor;
+      case 'auditor':
+        return UserRole.auditor;
       case 'almacenero':
         return UserRole.almacenero;
       case 'vendedor':
@@ -183,7 +218,7 @@ class PermissionsService {
           .select('id_tienda')
           .eq('uuid', user.id);
 
-      if (gerenteData is List && gerenteData.isNotEmpty) {
+      if (gerenteData.isNotEmpty) {
         for (final record in gerenteData) {
           final idTienda = record['id_tienda'] as int;
           rolesByStore[idTienda] = UserRole.gerente;
@@ -197,7 +232,7 @@ class PermissionsService {
           .select('id_tienda')
           .eq('uuid', user.id);
 
-      if (supervisorData is List && supervisorData.isNotEmpty) {
+      if (supervisorData.isNotEmpty) {
         for (final record in supervisorData) {
           final idTienda = record['id_tienda'] as int;
           // Si ya es gerente en esta tienda, mantener el rol más alto
@@ -208,13 +243,30 @@ class PermissionsService {
         }
       }
 
-      // 3. Almaceneros - puede serlo en múltiples almacenes (pero de una sola tienda)
+      // 3. Auditores - puede serlo en múltiples tiendas
+      final auditorData = await _supabase
+          .from('auditor')
+          .select('id_tienda')
+          .eq('uuid', user.id);
+
+      if (auditorData.isNotEmpty) {
+        for (final record in auditorData) {
+          final idTienda = (record['id_tienda'] as num).toInt();
+          // Si ya es gerente o supervisor en esta tienda, mantener el rol más alto
+          if (!rolesByStore.containsKey(idTienda)) {
+            rolesByStore[idTienda] = UserRole.auditor;
+            print('  ✅ Auditor en tienda: $idTienda');
+          }
+        }
+      }
+
+      // 4. Almaceneros - puede serlo en múltiples almacenes (pero de una sola tienda)
       final almaceneroData = await _supabase
           .from('app_dat_almacenero')
           .select('id_almacen, app_dat_almacen(id_tienda)')
           .eq('uuid', user.id);
 
-      if (almaceneroData is List && almaceneroData.isNotEmpty) {
+      if (almaceneroData.isNotEmpty) {
         for (final record in almaceneroData) {
           final idTienda = record['app_dat_almacen']['id_tienda'] as int;
           // Si ya es gerente o supervisor en esta tienda, mantener el rol más alto
@@ -242,18 +294,24 @@ class PermissionsService {
   /// Si no está pero el usuario tiene un solo rol, retorna ese rol
   /// Si no está y hay múltiples roles, retorna none
   Future<UserRole> getUserRoleForStore(int storeId) async {
+    // Primero intentar con roles guardados en preferencias (más rápido y consistente)
+    final storedRoleName = await _userPrefs.getUserRoleForStore(storeId);
+    if (storedRoleName != null && storedRoleName.isNotEmpty) {
+      return _convertStringToUserRole(storedRoleName);
+    }
+
     final rolesByStore = await getUserRolesByStore();
-    
+
     // Si la tienda está en el mapa, retornar ese rol
     if (rolesByStore.containsKey(storeId)) {
       return rolesByStore[storeId]!;
     }
-    
+
     // Si hay un solo rol en el mapa, asumir que es para esta tienda también
     if (rolesByStore.length == 1) {
       return rolesByStore.values.first;
     }
-    
+
     // Si no hay roles o hay múltiples pero no coincide, retornar none
     return UserRole.none;
   }
@@ -290,6 +348,7 @@ class PermissionsService {
   /// al cambiar de tienda. Solo se limpia el rol individual y el almacén.
   void clearCache() {
     _cachedRole = null;
+    _cachedRoleStoreId = null;
     _cachedWarehouseId = null;
     _cachedUserId = null;
     // NO limpiar _cachedRolesByStore - se mantiene durante toda la sesión
@@ -300,6 +359,7 @@ class PermissionsService {
   /// Solo usar al cerrar sesión
   void clearAllCache() {
     _cachedRole = null;
+    _cachedRoleStoreId = null;
     _cachedWarehouseId = null;
     _cachedUserId = null;
     _cachedRolesByStore = null;
@@ -311,21 +371,15 @@ class PermissionsService {
   Future<bool> canAccessScreen(String screenRoute) async {
     final currentStoreId = await _userPrefs.getIdTienda();
     UserRole role;
-    
+
     if (currentStoreId != null) {
       // Obtener rol para la tienda actual
       role = await getUserRoleForStore(currentStoreId);
-      
-      // Si no se encuentra el rol en la tienda, intentar con el rol principal
-      if (role == UserRole.none) {
-        print('⚠️ Rol no encontrado para tienda $currentStoreId, usando rol principal');
-        role = await getUserRole();
-      }
     } else {
       // Fallback al rol principal si no hay tienda seleccionada
       role = await getUserRole();
     }
-    
+
     final permissions = _screenPermissions[screenRoute];
 
     if (permissions == null) {
@@ -341,21 +395,15 @@ class PermissionsService {
   Future<bool> canPerformAction(String action) async {
     final currentStoreId = await _userPrefs.getIdTienda();
     UserRole role;
-    
+
     if (currentStoreId != null) {
       // Obtener rol para la tienda actual
       role = await getUserRoleForStore(currentStoreId);
-      
-      // Si no se encuentra el rol en la tienda, intentar con el rol principal
-      if (role == UserRole.none) {
-        print('⚠️ Rol no encontrado para tienda $currentStoreId, usando rol principal');
-        role = await getUserRole();
-      }
     } else {
       // Fallback al rol principal si no hay tienda seleccionada
       role = await getUserRole();
     }
-    
+
     final permissions = _actionPermissions[action];
 
     print('🔍 canPerformAction("$action")');
@@ -383,21 +431,15 @@ class PermissionsService {
   Future<List<String>> getAllowedScreens() async {
     final currentStoreId = await _userPrefs.getIdTienda();
     UserRole role;
-    
+
     if (currentStoreId != null) {
       // Obtener rol para la tienda actual
       role = await getUserRoleForStore(currentStoreId);
-      
-      // Si no se encuentra el rol en la tienda, intentar con el rol principal
-      if (role == UserRole.none) {
-        print('⚠️ Rol no encontrado para tienda $currentStoreId, usando rol principal');
-        role = await getUserRole();
-      }
     } else {
       // Fallback al rol principal si no hay tienda seleccionada
       role = await getUserRole();
     }
-    
+
     final allowedScreens = <String>[];
 
     _screenPermissions.forEach((route, roles) {
@@ -416,6 +458,8 @@ class PermissionsService {
         return 'Gerente';
       case UserRole.supervisor:
         return 'Supervisor';
+      case UserRole.auditor:
+        return 'Auditor';
       case UserRole.almacenero:
         return 'Almacenero';
       case UserRole.vendedor:
@@ -430,22 +474,32 @@ class PermissionsService {
   // =====================================================
   static const Map<String, List<UserRole>> _screenPermissions = {
     // Dashboard
-    '/dashboard': [UserRole.gerente, UserRole.supervisor, UserRole.almacenero],
-    '/unified-dashboard': [UserRole.gerente],
-    '/dashboard-web': [UserRole.gerente],
+    '/dashboard': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+      UserRole.almacenero,
+    ],
+    '/unified-dashboard': [UserRole.gerente, UserRole.auditor],
+    '/dashboard-web': [UserRole.gerente, UserRole.auditor],
 
     // Productos (Almacenero NO tiene acceso)
-    '/products': [UserRole.gerente, UserRole.supervisor],
-    '/products-dashboard': [UserRole.gerente, UserRole.supervisor],
+    '/products': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    '/products-dashboard': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+    ],
     '/add-product': [UserRole.gerente],
-    '/categories': [UserRole.gerente, UserRole.supervisor],
-    '/tpv-prices': [UserRole.gerente, UserRole.supervisor],
+    '/categories': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    '/tpv-prices': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
 
     // Inventario (Almacenero NO tiene acceso a vista general)
-    '/inventory': [UserRole.gerente, UserRole.supervisor],
+    '/inventory': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
     '/inventory-operations': [
       UserRole.gerente,
       UserRole.supervisor,
+      UserRole.auditor,
       UserRole.almacenero,
     ],
     '/inventory-reception': [UserRole.gerente, UserRole.almacenero],
@@ -455,57 +509,91 @@ class PermissionsService {
     '/inventory-history': [
       UserRole.gerente,
       UserRole.supervisor,
+      UserRole.auditor,
       UserRole.almacenero,
     ],
 
     // Almacenes (Almacenero solo ve su almacén)
-    '/warehouse': [UserRole.gerente, UserRole.supervisor, UserRole.almacenero],
+    '/warehouse': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+      UserRole.almacenero,
+    ],
     '/add-warehouse': [UserRole.gerente],
 
     // Ventas (Almacenero NO tiene acceso)
-    '/sales': [UserRole.gerente, UserRole.supervisor],
-    '/promotions': [UserRole.gerente],
+    '/sales': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    '/promotions': [UserRole.gerente, UserRole.auditor],
 
     // Finanzas (Solo Gerente)
-    '/financial': [UserRole.gerente],
-    '/financial-dashboard': [UserRole.gerente],
-    '/financial-reports': [UserRole.gerente],
-    '/financial-expenses': [UserRole.gerente],
-    '/financial-setup': [UserRole.gerente],
-    '/financial-configuration': [UserRole.gerente],
-    '/production-costs': [UserRole.gerente],
-    '/cost-assignments': [UserRole.gerente],
-    '/cost-audit': [UserRole.gerente],
-    '/exchange-rates': [UserRole.gerente],
+    '/financial': [UserRole.gerente, UserRole.auditor],
+    '/financial-dashboard': [UserRole.gerente, UserRole.auditor],
+    '/financial-reports': [UserRole.gerente, UserRole.auditor],
+    '/financial-expenses': [UserRole.gerente, UserRole.auditor],
+    '/financial-setup': [UserRole.gerente, UserRole.auditor],
+    '/financial-configuration': [UserRole.gerente, UserRole.auditor],
+    '/production-costs': [UserRole.gerente, UserRole.auditor],
+    '/cost-assignments': [UserRole.gerente, UserRole.auditor],
+    '/cost-audit': [UserRole.gerente, UserRole.auditor],
+    '/exchange-rates': [UserRole.gerente, UserRole.auditor],
 
     // Marketing y CRM (Solo Gerente)
     '/marketing-dashboard': [UserRole.gerente],
-    '/campaigns': [UserRole.gerente],
-    '/communications': [UserRole.gerente],
-    '/segments': [UserRole.gerente],
-    '/loyalty': [UserRole.gerente],
-    '/crm-dashboard': [UserRole.gerente],
-    '/crm-analytics': [UserRole.gerente],
-    '/crm-relationships': [UserRole.gerente],
-    '/customers': [UserRole.gerente],
+    '/campaigns': [UserRole.gerente, UserRole.auditor],
+    '/communications': [UserRole.gerente, UserRole.auditor],
+    '/segments': [UserRole.gerente, UserRole.auditor],
+    '/loyalty': [UserRole.gerente, UserRole.auditor],
+    '/crm-dashboard': [UserRole.gerente, UserRole.auditor],
+    '/crm-analytics': [UserRole.gerente, UserRole.auditor],
+    // Compatibilidad: algunas pantallas usan /relationships
+    '/crm-relationships': [UserRole.gerente, UserRole.auditor],
+    '/relationships': [UserRole.gerente, UserRole.auditor],
+    '/customers': [UserRole.gerente, UserRole.auditor],
+    '/interacciones-clientes': [UserRole.gerente, UserRole.auditor],
 
     // Proveedores
-    '/suppliers': [UserRole.gerente, UserRole.supervisor],
-    '/supplier-detail': [UserRole.gerente, UserRole.supervisor],
+    '/suppliers': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    '/supplier-detail': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+    ],
     '/add-supplier': [UserRole.gerente],
-    '/supplier-reports': [UserRole.gerente, UserRole.supervisor],
+    '/supplier-reports': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+    ],
 
     // Personal
-    '/workers': [UserRole.gerente, UserRole.supervisor],
-    '/tpv-management': [UserRole.gerente, UserRole.supervisor],
-    '/vendor-management': [UserRole.gerente, UserRole.supervisor],
+    '/workers': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+    '/tpv-management': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+    ],
+    '/vendor-management': [
+      UserRole.gerente,
+      UserRole.supervisor,
+      UserRole.auditor,
+    ],
 
     // Configuración (Solo Gerente)
     '/settings': [UserRole.gerente],
     '/excel-import': [UserRole.gerente],
 
+    // Consignaciones
+    '/consignacion': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+
+    // Dispositivos
+    '/wifi-printers': [UserRole.gerente, UserRole.auditor],
+
     // Análisis
-    '/analytics': [UserRole.gerente, UserRole.supervisor],
+    '/analytics': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
+
+    // Costos (alias de rutas históricas)
+    '/restaurant-costs': [UserRole.gerente, UserRole.auditor],
   };
 
   // =====================================================
@@ -519,6 +607,7 @@ class PermissionsService {
     'product.view': [
       UserRole.gerente,
       UserRole.supervisor,
+      UserRole.auditor,
       UserRole.almacenero,
     ],
 
@@ -531,6 +620,7 @@ class PermissionsService {
     'inventory.view': [
       UserRole.gerente,
       UserRole.supervisor,
+      UserRole.auditor,
       UserRole.almacenero,
     ],
 
@@ -541,6 +631,7 @@ class PermissionsService {
     'warehouse.view': [
       UserRole.gerente,
       UserRole.supervisor,
+      UserRole.auditor,
       UserRole.almacenero,
     ],
 
@@ -548,27 +639,69 @@ class PermissionsService {
     'worker.create': [UserRole.gerente],
     'worker.edit': [UserRole.gerente],
     'worker.delete': [UserRole.gerente],
-    'worker.view': [UserRole.gerente, UserRole.supervisor],
+    'worker.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
 
     // Ventas
-    'sales.view': [UserRole.gerente, UserRole.supervisor],
+    'sales.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
     'sales.modify': [UserRole.gerente],
 
     // Proveedores
     'supplier.create': [UserRole.gerente],
     'supplier.edit': [UserRole.gerente],
     'supplier.delete': [UserRole.gerente],
-    'supplier.view': [UserRole.gerente, UserRole.supervisor],
+    'supplier.view': [UserRole.gerente, UserRole.supervisor, UserRole.auditor],
 
     // Finanzas
-    'financial.view': [UserRole.gerente],
+    'financial.view': [UserRole.gerente, UserRole.auditor],
     'financial.edit': [UserRole.gerente],
 
     // Configuración
     'settings.view': [UserRole.gerente],
     'settings.edit': [UserRole.gerente],
+
+    // TPVs
+    'tpv.create': [UserRole.gerente, UserRole.supervisor],
+    'tpv.edit': [UserRole.gerente, UserRole.supervisor],
+    'tpv.delete': [UserRole.gerente, UserRole.supervisor],
+
+    // Precios por TPV
+    'tpv_price.create': [UserRole.gerente, UserRole.supervisor],
+    'tpv_price.edit': [UserRole.gerente, UserRole.supervisor],
+    'tpv_price.delete': [UserRole.gerente, UserRole.supervisor],
+    'tpv_price.restore': [UserRole.gerente, UserRole.supervisor],
+    'tpv_price.import': [UserRole.gerente, UserRole.supervisor],
+
+    // Vendedores / asignación TPV
+    'vendor.assign_tpv': [UserRole.gerente, UserRole.supervisor],
+    'vendor.unassign_tpv': [UserRole.gerente, UserRole.supervisor],
+    'vendor.create': [UserRole.gerente, UserRole.supervisor],
+    'vendor.delete': [UserRole.gerente, UserRole.supervisor],
+
+    // Clientes (CRM)
+    'customer.create': [UserRole.gerente],
+    'customer.edit': [UserRole.gerente],
+    'customer.delete': [UserRole.gerente],
+
+    // CRM - Relaciones
+    'crm.relationship.create': [UserRole.gerente],
+    'crm.relationship.edit': [UserRole.gerente],
+    'crm.relationship.delete': [UserRole.gerente],
+
+    // Marketing
+    'marketing.create': [UserRole.gerente],
+    'marketing.edit': [UserRole.gerente],
+    'marketing.delete': [UserRole.gerente],
+
+    // Consignaciones
+    'consignacion.create': [UserRole.gerente, UserRole.supervisor],
+    'consignacion.edit': [UserRole.gerente, UserRole.supervisor],
+    'consignacion.delete': [UserRole.gerente, UserRole.supervisor],
+    'consignacion.confirm': [UserRole.gerente, UserRole.supervisor],
+
+    // Impresoras / dispositivos
+    'printers.edit': [UserRole.gerente],
   };
 }
 
 /// Enum de roles de usuario
-enum UserRole { gerente, supervisor, almacenero, vendedor, none }
+enum UserRole { gerente, supervisor, auditor, almacenero, vendedor, none }

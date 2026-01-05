@@ -14,6 +14,7 @@ import 'inventory_extractionbysale_screen.dart'; // Venta por Acuerdo
 import 'inventory_dashboard.dart';
 import 'consignacion_screen.dart'; // Consignación
 import '../widgets/notification_widget.dart';
+import '../services/permissions_service.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -27,13 +28,39 @@ class _InventoryScreenState extends State<InventoryScreen>
   late TabController _tabController;
   bool _isLoading = true;
   String _errorMessage = '';
+  final PermissionsService _permissionsService = PermissionsService();
+  bool _canCreateInventoryOperations = false;
+  bool _canCreateReception = false;
+  bool _canCreateTransfer = false;
+  bool _canCreateAdjustment = false;
+  bool _canCreateExtraction = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
+    _checkPermissions();
     _loadInitialData();
+  }
+
+  Future<void> _checkPermissions() async {
+    final permissions = await Future.wait([
+      _permissionsService.canPerformAction('inventory.create_reception'),
+      _permissionsService.canPerformAction('inventory.create_transfer'),
+      _permissionsService.canPerformAction('inventory.create_adjustment'),
+      _permissionsService.canPerformAction('inventory.create_extraction'),
+    ]);
+
+    final canCreate = permissions.any((p) => p);
+    if (!mounted) return;
+    setState(() {
+      _canCreateInventoryOperations = canCreate;
+      _canCreateReception = permissions[0];
+      _canCreateTransfer = permissions[1];
+      _canCreateAdjustment = permissions[2];
+      _canCreateExtraction = permissions[3];
+    });
   }
 
   @override
@@ -117,93 +144,104 @@ class _InventoryScreenState extends State<InventoryScreen>
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
-                        _buildMenuOption(
-                          icon: Icons.input,
-                          title: 'Recepción de Productos',
-                          subtitle: 'Registrar entrada de mercancía',
-                          color: const Color(0xFF10B981),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToReception();
-                          },
-                        ),
+                        if (_canCreateReception)
+                          _buildMenuOption(
+                            icon: Icons.input,
+                            title: 'Recepción de Productos',
+                            subtitle: 'Registrar entrada de mercancía',
+                            color: const Color(0xFF10B981),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _navigateToReception();
+                            },
+                          ),
 
-                        _buildMenuOption(
-                          icon: Icons.swap_horiz,
-                          title: 'Transferencia entre Almacenes',
-                          subtitle: 'Mover productos entre ubicaciones',
-                          color: const Color(0xFF4A90E2),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToTransfer();
-                          },
-                        ),
+                        if (_canCreateTransfer)
+                          _buildMenuOption(
+                            icon: Icons.swap_horiz,
+                            title: 'Transferencia entre Almacenes',
+                            subtitle: 'Mover productos entre ubicaciones',
+                            color: const Color(0xFF4A90E2),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _navigateToTransfer();
+                            },
+                          ),
 
-                        _buildMenuOption(
-                          icon: Icons.trending_up,
-                          title: 'Ajuste por Exceso',
-                          subtitle: 'Reducir inventario por sobrante',
-                          color: const Color(0xFFFF6B35),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToExcessAdjustment();
-                          },
-                        ),
+                        if (_canCreateAdjustment)
+                          _buildMenuOption(
+                            icon: Icons.trending_up,
+                            title: 'Ajuste por Exceso',
+                            subtitle: 'Reducir inventario por sobrante',
+                            color: const Color(0xFFFF6B35),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _navigateToExcessAdjustment();
+                            },
+                          ),
 
-                        _buildMenuOption(
-                          icon: Icons.trending_down,
-                          title: 'Ajuste por Faltante',
-                          subtitle: 'Aumentar inventario por faltante',
-                          color: const Color(0xFFFF8C42),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToShortageAdjustment();
-                          },
-                        ),
+                        if (_canCreateAdjustment)
+                          _buildMenuOption(
+                            icon: Icons.trending_down,
+                            title: 'Ajuste por Faltante',
+                            subtitle: 'Aumentar inventario por faltante',
+                            color: const Color(0xFFFF8C42),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _navigateToShortageAdjustment();
+                            },
+                          ),
 
-                        _buildMenuOption(
-                          icon: Icons.output,
-                          title: 'Extracción de Productos',
-                          subtitle: 'Registrar salida de mercancía',
-                          color: const Color(0xFFEF4444),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToExtraction();
-                          },
-                        ),
+                        if (_canCreateExtraction)
+                          _buildMenuOption(
+                            icon: Icons.output,
+                            title: 'Extracción de Productos',
+                            subtitle: 'Registrar salida de mercancía',
+                            color: const Color(0xFFEF4444),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _navigateToExtraction();
+                            },
+                          ),
 
-                        _buildMenuOption(
-                          icon: Icons.output,
-                          title: 'Extracción de Productos Elaborados',
-                          subtitle: 'Registrar salida de productos elaborados',
-                          color: const Color(0xFFEF4444),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToElaboratedProductsExtraction();
-                          },
-                        ),
+                        if (_canCreateExtraction)
+                          _buildMenuOption(
+                            icon: Icons.output,
+                            title: 'Extracción de Productos Elaborados',
+                            subtitle:
+                                'Registrar salida de productos elaborados',
+                            color: const Color(0xFFEF4444),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _navigateToElaboratedProductsExtraction();
+                            },
+                          ),
 
-                        _buildMenuOption(
-                          icon: Icons.point_of_sale,
-                          title: 'Venta por Acuerdo',
-                          subtitle: 'Registrar venta directa con precio personalizado',
-                          color: const Color(0xFF10B981),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToSaleByAgreement();
-                          },
-                        ),
+                        if (_canCreateExtraction)
+                          _buildMenuOption(
+                            icon: Icons.point_of_sale,
+                            title: 'Venta por Acuerdo',
+                            subtitle:
+                                'Registrar venta directa con precio personalizado',
+                            color: const Color(0xFF10B981),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _navigateToSaleByAgreement();
+                            },
+                          ),
 
-                        _buildMenuOption(
-                          icon: Icons.handshake,
-                          title: 'Asignar Productos en Consignación',
-                          subtitle: 'Enviar productos a otra tienda en consignación',
-                          color: const Color(0xFF9333EA),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _navigateToConsignacion();
-                          },
-                        ),
+                        if (_canCreateTransfer)
+                          _buildMenuOption(
+                            icon: Icons.handshake,
+                            title: 'Asignar Productos en Consignación',
+                            subtitle:
+                                'Enviar productos a otra tienda en consignación',
+                            color: const Color(0xFF9333EA),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _navigateToConsignacion();
+                            },
+                          ),
 
                         _buildMenuOption(
                           icon: Icons.filter_list,
@@ -271,9 +309,7 @@ class _InventoryScreenState extends State<InventoryScreen>
   void _navigateToConsignacion() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const ConsignacionScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const ConsignacionScreen()),
     );
   }
 
@@ -354,6 +390,10 @@ class _InventoryScreenState extends State<InventoryScreen>
 
   Widget? _buildFloatingActionButton() {
     // Show FAB on all tabs now
+    if (!_canCreateInventoryOperations) {
+      return null;
+    }
+
     return FloatingActionButton(
       onPressed: _showFabOptions,
       backgroundColor: AppColors.primary,
@@ -399,7 +439,7 @@ class _InventoryScreenState extends State<InventoryScreen>
           indicatorColor: Colors.white,
           tabs: const [
             Tab(text: 'Dashboard', icon: Icon(Icons.dashboard, size: 18)),
-            Tab(text: 'Stock', icon: Icon(Icons.inventory_2, size: 18)),            
+            Tab(text: 'Stock', icon: Icon(Icons.inventory_2, size: 18)),
             Tab(text: 'Movimientos', icon: Icon(Icons.swap_horiz, size: 18)),
             Tab(text: 'Almacenes', icon: Icon(Icons.warehouse, size: 18)),
           ],
@@ -438,7 +478,7 @@ class _InventoryScreenState extends State<InventoryScreen>
                 controller: _tabController,
                 children: [
                   const InventoryDashboard(),
-                  const InventoryStockScreen(),                  
+                  const InventoryStockScreen(),
                   const InventoryOperationsScreen(),
                   const InventoryWarehouseScreen(),
                 ],

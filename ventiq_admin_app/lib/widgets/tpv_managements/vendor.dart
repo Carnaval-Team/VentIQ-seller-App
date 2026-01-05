@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../services/vendedor_service.dart';
 import '../../config/app_colors.dart';
 import 'vendor_details.dart';
+import '../../utils/navigation_guard.dart';
 
 /// Widget principal para la lista de vendedores
 /// Responsabilidades:
@@ -27,10 +28,30 @@ class _VendorListWidgetState extends State<VendorListWidget> {
   List<Map<String, dynamic>> _vendedores = [];
   bool _isLoading = true;
 
+  bool _canAssignTpv = false;
+  bool _canUnassignTpv = false;
+  bool _canDeleteVendor = false;
+
   @override
   void initState() {
     super.initState();
+    _loadPermissions();
     _loadVendedores();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      NavigationGuard.canPerformAction('vendor.assign_tpv'),
+      NavigationGuard.canPerformAction('vendor.unassign_tpv'),
+      NavigationGuard.canPerformAction('vendor.delete'),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _canAssignTpv = permissions[0];
+      _canUnassignTpv = permissions[1];
+      _canDeleteVendor = permissions[2];
+    });
   }
 
   @override
@@ -64,9 +85,10 @@ class _VendorListWidgetState extends State<VendorListWidget> {
     return _vendedores.where((vendedor) {
       final trabajador = vendedor['trabajador'] as Map<String, dynamic>?;
       if (trabajador == null) return false;
-      
-      final nombre = '${trabajador['nombres'] ?? ''} ${trabajador['apellidos'] ?? ''}'
-          .toLowerCase();
+
+      final nombre =
+          '${trabajador['nombres'] ?? ''} ${trabajador['apellidos'] ?? ''}'
+              .toLowerCase();
       final query = widget.searchQuery.toLowerCase();
       return nombre.contains(query);
     }).toList();
@@ -79,16 +101,14 @@ class _VendorListWidgetState extends State<VendorListWidget> {
     }
 
     return Column(
-      children: [
-        _buildStatsCard(),
-        Expanded(child: _buildVendedoresList()),
-      ],
+      children: [_buildStatsCard(), Expanded(child: _buildVendedoresList())],
     );
   }
 
   Widget _buildStatsCard() {
     final totalVendedores = _vendedores.length;
-    final vendedoresConTpv = _vendedores.where((v) => v['id_tpv'] != null).length;
+    final vendedoresConTpv =
+        _vendedores.where((v) => v['id_tpv'] != null).length;
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -110,7 +130,11 @@ class _VendorListWidgetState extends State<VendorListWidget> {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _buildStatItem('Total', totalVendedores.toString(), Icons.people),
-          _buildStatItem('Con TPV', vendedoresConTpv.toString(), Icons.point_of_sale),
+          _buildStatItem(
+            'Con TPV',
+            vendedoresConTpv.toString(),
+            Icons.point_of_sale,
+          ),
           _buildStatItem(
             'Sin TPV',
             (totalVendedores - vendedoresConTpv).toString(),
@@ -166,7 +190,8 @@ class _VendorListWidgetState extends State<VendorListWidget> {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: filteredVendedores.length,
-      itemBuilder: (context, index) => _buildVendedorCard(filteredVendedores[index]),
+      itemBuilder:
+          (context, index) => _buildVendedorCard(filteredVendedores[index]),
     );
   }
 
@@ -175,9 +200,10 @@ class _VendorListWidgetState extends State<VendorListWidget> {
     final tpv = vendedor['tpv'] as Map<String, dynamic>?;
     final hasTpv = tpv != null;
 
-    final nombre = trabajador != null
-        ? '${trabajador['nombres'] ?? ''} ${trabajador['apellidos'] ?? ''}'
-        : 'Sin nombre';
+    final nombre =
+        trabajador != null
+            ? '${trabajador['nombres'] ?? ''} ${trabajador['apellidos'] ?? ''}'
+            : 'Sin nombre';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -213,58 +239,74 @@ class _VendorListWidgetState extends State<VendorListWidget> {
                       if (trabajador?['id_roll'] != null)
                         Text(
                           'ID Trabajador: ${trabajador!['id']}',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 13,
+                          ),
                         ),
                     ],
                   ),
                 ),
                 PopupMenuButton<String>(
                   onSelected: (value) => _handleVendedorAction(value, vendedor),
-                  itemBuilder: (context) => [
-                    if (hasTpv)
-                      const PopupMenuItem(
-                        value: 'reassign',
-                        child: Row(
-                          children: [
-                            Icon(Icons.swap_horiz, size: 20),
-                            SizedBox(width: 8),
-                            Text('Reasignar TPV'),
-                          ],
-                        ),
-                      ),
-                    if (hasTpv)
-                      const PopupMenuItem(
-                        value: 'unassign',
-                        child: Row(
-                          children: [
-                            Icon(Icons.remove_circle, size: 20, color: Colors.orange),
-                            SizedBox(width: 8),
-                            Text('Desasignar TPV'),
-                          ],
-                        ),
-                      ),
-                    if (!hasTpv)
-                      const PopupMenuItem(
-                        value: 'assign',
-                        child: Row(
-                          children: [
-                            Icon(Icons.add_circle, size: 20, color: Colors.green),
-                            SizedBox(width: 8),
-                            Text('Asignar TPV'),
-                          ],
-                        ),
-                      ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete, size: 20, color: Colors.red),
-                          SizedBox(width: 8),
-                          Text('Eliminar', style: TextStyle(color: Colors.red)),
-                        ],
-                      ),
-                    ),
-                  ],
+                  itemBuilder:
+                      (context) => [
+                        if (hasTpv && _canAssignTpv)
+                          const PopupMenuItem(
+                            value: 'reassign',
+                            child: Row(
+                              children: [
+                                Icon(Icons.swap_horiz, size: 20),
+                                SizedBox(width: 8),
+                                Text('Reasignar TPV'),
+                              ],
+                            ),
+                          ),
+                        if (hasTpv && _canUnassignTpv)
+                          const PopupMenuItem(
+                            value: 'unassign',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.remove_circle,
+                                  size: 20,
+                                  color: Colors.orange,
+                                ),
+                                SizedBox(width: 8),
+                                Text('Desasignar TPV'),
+                              ],
+                            ),
+                          ),
+                        if (!hasTpv && _canAssignTpv)
+                          const PopupMenuItem(
+                            value: 'assign',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.add_circle,
+                                  size: 20,
+                                  color: Colors.green,
+                                ),
+                                SizedBox(width: 8),
+                                Text('Asignar TPV'),
+                              ],
+                            ),
+                          ),
+                        if (_canDeleteVendor)
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete, size: 20, color: Colors.red),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Eliminar',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                 ),
               ],
             ),
@@ -323,6 +365,10 @@ class _VendorListWidgetState extends State<VendorListWidget> {
   void _handleVendedorAction(String action, Map<String, dynamic> vendedor) {
     switch (action) {
       case 'assign':
+        if (!_canAssignTpv) {
+          NavigationGuard.showActionDeniedMessage(context, 'Asignar TPV');
+          return;
+        }
         VendorDetailsDialog.showAssignTpvDialog(
           context: context,
           vendedor: vendedor,
@@ -333,6 +379,10 @@ class _VendorListWidgetState extends State<VendorListWidget> {
         );
         break;
       case 'reassign':
+        if (!_canAssignTpv) {
+          NavigationGuard.showActionDeniedMessage(context, 'Reasignar TPV');
+          return;
+        }
         VendorDetailsDialog.showReassignTpvDialog(
           context: context,
           vendedor: vendedor,
@@ -343,6 +393,10 @@ class _VendorListWidgetState extends State<VendorListWidget> {
         );
         break;
       case 'unassign':
+        if (!_canUnassignTpv) {
+          NavigationGuard.showActionDeniedMessage(context, 'Desasignar TPV');
+          return;
+        }
         VendorDetailsDialog.showUnassignConfirmation(
           context: context,
           vendedor: vendedor,
@@ -353,6 +407,10 @@ class _VendorListWidgetState extends State<VendorListWidget> {
         );
         break;
       case 'delete':
+        if (!_canDeleteVendor) {
+          NavigationGuard.showActionDeniedMessage(context, 'Eliminar vendedor');
+          return;
+        }
         VendorDetailsDialog.showDeleteConfirmation(
           context: context,
           vendedor: vendedor,

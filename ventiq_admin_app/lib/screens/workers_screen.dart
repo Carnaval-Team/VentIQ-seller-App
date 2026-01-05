@@ -47,6 +47,9 @@ class _WorkersScreenState extends State<WorkersScreen>
   bool _isLoadingRoles = true;
   bool _isLoadingDeleted = true; // 🆕 Estado de carga de eliminados
 
+  bool _canEditWorkers = false;
+  bool _canDeleteWorkers = false;
+
   // Filtros
   String _selectedRole = 'Todos';
 
@@ -72,7 +75,21 @@ class _WorkersScreenState extends State<WorkersScreen>
     _tabController.addListener(() {
       setState(() {});
     });
+    _loadPermissions();
     _initializeData();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      NavigationGuard.canPerformAction('worker.edit'),
+      NavigationGuard.canPerformAction('worker.delete'),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _canEditWorkers = permissions[0];
+      _canDeleteWorkers = permissions[1];
+    });
   }
 
   @override
@@ -200,11 +217,12 @@ class _WorkersScreenState extends State<WorkersScreen>
               return const SizedBox.shrink();
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.sync, color: Colors.white),
-            onPressed: _showSyncUUIDDialog,
-            tooltip: 'Sincronizar UUID desde Roles',
-          ),
+          if (_canEditWorkers)
+            IconButton(
+              icon: const Icon(Icons.sync, color: Colors.white),
+              onPressed: _showSyncUUIDDialog,
+              tooltip: 'Sincronizar UUID desde Roles',
+            ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () => _initializeData(),
@@ -230,10 +248,7 @@ class _WorkersScreenState extends State<WorkersScreen>
               text: 'Roles',
               icon: Icon(Icons.admin_panel_settings, size: 18),
             ),
-            Tab(
-              text: 'Rec. Hum.',
-              icon: Icon(Icons.attach_money, size: 18),
-            ),
+            Tab(text: 'Rec. Hum.', icon: Icon(Icons.attach_money, size: 18)),
           ],
         ),
       ),
@@ -246,17 +261,18 @@ class _WorkersScreenState extends State<WorkersScreen>
         ],
       ),
       endDrawer: const AdminDrawer(),
-      floatingActionButton: _tabController.index == 2 && _shifts.isNotEmpty
-          ? FloatingActionButton.extended(
-              onPressed: _exportHRReportToPDF,
-              backgroundColor: AppColors.primary,
-              icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
-              label: const Text(
-                'Exportar PDF',
-                style: TextStyle(color: Colors.white),
-              ),
-            )
-          : null,
+      floatingActionButton:
+          _tabController.index == 2 && _shifts.isNotEmpty
+              ? FloatingActionButton.extended(
+                onPressed: _exportHRReportToPDF,
+                backgroundColor: AppColors.primary,
+                icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
+                label: const Text(
+                  'Exportar PDF',
+                  style: TextStyle(color: Colors.white),
+                ),
+              )
+              : null,
       bottomNavigationBar: AdminBottomNavigation(
         currentIndex: 3,
         onTap: _onBottomNavTap,
@@ -368,6 +384,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                   'Todos',
                   'gerente',
                   'supervisor',
+                  'auditor',
                   'vendedor',
                   'almacenero',
                 ].map((role) {
@@ -507,25 +524,27 @@ class _WorkersScreenState extends State<WorkersScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Botón para crear usuario si no tiene UUID
-                  if (!worker.tieneUsuario)
+                  if (!worker.tieneUsuario && _canEditWorkers)
                     IconButton(
                       icon: const Icon(Icons.person_add, size: 18),
                       onPressed: () => _showCreateUserDialog(worker),
                       tooltip: 'Crear Usuario',
                       color: Colors.green,
                     ),
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 18),
-                    onPressed: () => _showEditWorkerDialog(worker),
-                    tooltip: 'Editar',
-                    color: AppColors.primary,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, size: 18),
-                    onPressed: () => _showDeleteWorkerDialog(worker),
-                    tooltip: 'Eliminar',
-                    color: Colors.red,
-                  ),
+                  if (_canEditWorkers)
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 18),
+                      onPressed: () => _showEditWorkerDialog(worker),
+                      tooltip: 'Editar',
+                      color: AppColors.primary,
+                    ),
+                  if (_canDeleteWorkers)
+                    IconButton(
+                      icon: const Icon(Icons.delete, size: 18),
+                      onPressed: () => _showDeleteWorkerDialog(worker),
+                      tooltip: 'Eliminar',
+                      color: Colors.red,
+                    ),
                 ],
               ),
             ],
@@ -585,6 +604,8 @@ class _WorkersScreenState extends State<WorkersScreen>
         return Colors.purple;
       case 'supervisor':
         return Colors.orange;
+      case 'auditor':
+        return Colors.teal;
       case 'vendedor':
         return AppColors.primary;
       case 'almacenero':
@@ -600,6 +621,8 @@ class _WorkersScreenState extends State<WorkersScreen>
         return 'Gerente';
       case 'supervisor':
         return 'Supervisor';
+      case 'auditor':
+        return 'Auditor';
       case 'vendedor':
         return 'Vendedor';
       case 'almacenero':
@@ -680,6 +703,12 @@ class _WorkersScreenState extends State<WorkersScreen>
           'label': 'Supervisor',
           'icon': Icons.supervisor_account,
           'color': Colors.orange,
+        };
+      case 'auditor':
+        return {
+          'label': 'Auditor',
+          'icon': Icons.fact_check,
+          'color': Colors.teal,
         };
       case 'almacenero':
         return {
@@ -959,17 +988,18 @@ class _WorkersScreenState extends State<WorkersScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _showEditWorkerDialog(worker);
-                        },
-                        icon: const Icon(Icons.edit),
-                        label: const Text('Editar'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
+                      if (_canEditWorkers)
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _showEditWorkerDialog(worker);
+                          },
+                          icon: const Icon(Icons.edit),
+                          label: const Text('Editar'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                          ),
                         ),
-                      ),
                       OutlinedButton.icon(
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close),
@@ -1086,9 +1116,12 @@ class _WorkersScreenState extends State<WorkersScreen>
                             prefixIcon: Icon(Icons.attach_money),
                             border: OutlineInputBorder(),
                             hintText: '0.00',
-                            helperText: 'Salario en moneda local por hora trabajada',
+                            helperText:
+                                'Salario en moneda local por hora trabajada',
                           ),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
                         ),
                         const SizedBox(height: 16),
                         const Divider(),
@@ -1254,6 +1287,7 @@ class _WorkersScreenState extends State<WorkersScreen>
                                   [
                                         'gerente',
                                         'supervisor',
+                                        'auditor',
                                         'vendedor',
                                         'almacenero',
                                       ]
@@ -1379,7 +1413,9 @@ class _WorkersScreenState extends State<WorkersScreen>
                           () => _createWorkerFlexible(
                             nombres: nombresController.text,
                             apellidos: apellidosController.text,
-                            salarioHoras: double.tryParse(salarioHorasController.text) ?? 0.0, // 💰 NUEVO
+                            salarioHoras:
+                                double.tryParse(salarioHorasController.text) ??
+                                0.0, // 💰 NUEVO
                             crearUsuario: crearUsuario,
                             email: emailController.text,
                             password: passwordController.text,
@@ -1548,20 +1584,23 @@ class _WorkersScreenState extends State<WorkersScreen>
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.edit, size: 18),
-                  onPressed: () => _showEditRoleDialog(role),
-                  tooltip: 'Editar',
-                  color: AppColors.primary,
-                ),
+                if (_canEditWorkers)
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 18),
+                    onPressed: () => _showEditRoleDialog(role),
+                    tooltip: 'Editar',
+                    color: AppColors.primary,
+                  ),
                 IconButton(
                   icon: const Icon(Icons.delete, size: 18),
                   onPressed:
-                      workerCount > 0
+                      !_canDeleteWorkers || workerCount > 0
                           ? null
                           : () => _showDeleteRoleDialog(role),
                   tooltip:
-                      workerCount > 0
+                      !_canDeleteWorkers
+                          ? 'Sin permisos'
+                          : workerCount > 0
                           ? 'No se puede eliminar (tiene trabajadores asignados)'
                           : 'Eliminar',
                   color: workerCount > 0 ? Colors.grey : Colors.red,
@@ -1662,7 +1701,7 @@ class _WorkersScreenState extends State<WorkersScreen>
       if (crearUsuario) {
         print('🔐 Registrando usuario en Supabase Auth...');
         final supabase = Supabase.instance.client;
-        
+
         try {
           final authResponse = await supabase.auth.signUp(
             email: email!,
@@ -1683,23 +1722,29 @@ class _WorkersScreenState extends State<WorkersScreen>
           print('✅ Usuario registrado con UUID: $userUuid');
         } catch (signUpError) {
           // Verificar si el error es por usuario ya existente
-          if (signUpError.toString().contains('user_already_exists') || 
+          if (signUpError.toString().contains('user_already_exists') ||
               signUpError.toString().contains('User already registered')) {
-            print('⚠️ Usuario ya existe, intentando vincular con credenciales existentes...');
-            
+            print(
+              '⚠️ Usuario ya existe, intentando vincular con credenciales existentes...',
+            );
+
             try {
               // Intentar autenticar con el usuario existente
               final loginResponse = await supabase.auth.signInWithPassword(
                 email: email!,
                 password: password!,
               );
-              
+
               if (loginResponse.user != null) {
                 userUuid = loginResponse.user!.id;
                 userAlreadyExisted = true;
-                print('✅ Usuario existente autenticado exitosamente con UUID: $userUuid');
+                print(
+                  '✅ Usuario existente autenticado exitosamente con UUID: $userUuid',
+                );
               } else {
-                throw Exception('No se pudo obtener el UUID del usuario existente');
+                throw Exception(
+                  'No se pudo obtener el UUID del usuario existente',
+                );
               }
             } catch (loginError) {
               print('❌ Error al autenticar usuario existente: $loginError');
@@ -1779,11 +1824,16 @@ class _WorkersScreenState extends State<WorkersScreen>
                 children: [
                   Icon(
                     Icons.check_circle,
-                    color: userAlreadyExisted ? Colors.orange : Colors.green.shade600,
+                    color:
+                        userAlreadyExisted
+                            ? Colors.orange
+                            : Colors.green.shade600,
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    userAlreadyExisted ? 'Trabajador Vinculado' : 'Trabajador Creado',
+                    userAlreadyExisted
+                        ? 'Trabajador Vinculado'
+                        : 'Trabajador Creado',
                   ),
                 ],
               ),
@@ -1799,9 +1849,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: userAlreadyExisted
-                            ? Colors.orange.shade50
-                            : Colors.green.shade50,
+                        color:
+                            userAlreadyExisted
+                                ? Colors.orange.shade50
+                                : Colors.green.shade50,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -2637,10 +2688,10 @@ class _WorkersScreenState extends State<WorkersScreen>
       // Paso 1: Registrar usuario en Supabase Auth
       print('🔐 Registrando usuario en Supabase Auth...');
       final supabase = Supabase.instance.client;
-      
+
       String? userUuid;
       bool userAlreadyExisted = false;
-      
+
       try {
         final authResponse = await supabase.auth.signUp(
           email: email,
@@ -2661,23 +2712,29 @@ class _WorkersScreenState extends State<WorkersScreen>
         print('✅ Usuario registrado con UUID: $userUuid');
       } catch (signUpError) {
         // Verificar si el error es por usuario ya existente
-        if (signUpError.toString().contains('user_already_exists') || 
+        if (signUpError.toString().contains('user_already_exists') ||
             signUpError.toString().contains('User already registered')) {
-          print('⚠️ Usuario ya existe, intentando vincular con credenciales existentes...');
-          
+          print(
+            '⚠️ Usuario ya existe, intentando vincular con credenciales existentes...',
+          );
+
           try {
             // Intentar autenticar con el usuario existente
             final loginResponse = await supabase.auth.signInWithPassword(
               email: email,
               password: password,
             );
-            
+
             if (loginResponse.user != null) {
               userUuid = loginResponse.user!.id;
               userAlreadyExisted = true;
-              print('✅ Usuario existente autenticado exitosamente con UUID: $userUuid');
+              print(
+                '✅ Usuario existente autenticado exitosamente con UUID: $userUuid',
+              );
             } else {
-              throw Exception('No se pudo obtener el UUID del usuario existente');
+              throw Exception(
+                'No se pudo obtener el UUID del usuario existente',
+              );
             }
           } catch (loginError) {
             print('❌ Error al autenticar usuario existente: $loginError');
@@ -2717,7 +2774,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                 children: [
                   Icon(
                     Icons.check_circle,
-                    color: userAlreadyExisted ? Colors.orange : Colors.green.shade600,
+                    color:
+                        userAlreadyExisted
+                            ? Colors.orange
+                            : Colors.green.shade600,
                   ),
                   const SizedBox(width: 12),
                   Text(
@@ -2738,9 +2798,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: userAlreadyExisted
-                          ? Colors.orange.shade50
-                          : Colors.green.shade50,
+                      color:
+                          userAlreadyExisted
+                              ? Colors.orange.shade50
+                              : Colors.green.shade50,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
@@ -3004,190 +3065,207 @@ class _WorkersScreenState extends State<WorkersScreen>
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.edit, color: AppColors.primary),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text('Editar Horas Trab.'),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.edit, color: AppColors.primary),
+                const SizedBox(width: 12),
+                const Expanded(child: Text('Editar Horas Trab.')),
+              ],
             ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-            // Información del trabajador
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
+            content: SingleChildScrollView(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.person, size: 16, color: Colors.blue.shade700),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          worker.trabajadorNombre,
+                  // Información del trabajador
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.person,
+                              size: 16,
+                              color: Colors.blue.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                worker.trabajadorNombre,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.blue.shade900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.badge,
+                              size: 16,
+                              color: Colors.blue.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              worker.rolNombre,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.attach_money,
+                              size: 16,
+                              color: Colors.green.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '\$${worker.salarioHora.toStringAsFixed(2)}/hora',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Campo de horas
+                  TextField(
+                    controller: hoursController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Horas Trabajadas',
+                      hintText: '0.00',
+                      prefixIcon: const Icon(Icons.access_time),
+                      suffixText: 'horas',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    autofocus: true,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Cálculo de salario
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Salario Total:',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            color: Colors.blue.shade900,
+                            color: Colors.green.shade900,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.badge, size: 16, color: Colors.blue.shade700),
-                      const SizedBox(width: 8),
-                      Text(
-                        worker.rolNombre,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blue.shade700,
+                        ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: hoursController,
+                          builder: (context, value, child) {
+                            final hours = double.tryParse(value.text) ?? 0.0;
+                            final total = hours * worker.salarioHora;
+                            return Text(
+                              '\$${total.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade700,
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.attach_money, size: 16, color: Colors.green.shade700),
-                      const SizedBox(width: 8),
-                      Text(
-                        '\$${worker.salarioHora.toStringAsFixed(2)}/hora',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.green.shade700,
-                          fontWeight: FontWeight.w600,
+                  const SizedBox(height: 12),
+
+                  // Advertencia
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.warning_amber,
+                          size: 16,
+                          color: Colors.orange.shade700,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Este cambio quedará registrado como edición manual',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.orange.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            
-            // Campo de horas
-            TextField(
-              controller: hoursController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Horas Trabajadas',
-                hintText: '0.00',
-                prefixIcon: const Icon(Icons.access_time),
-                suffixText: 'horas',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  final newHours = double.tryParse(hoursController.text);
+                  if (newHours == null || newHours < 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Por favor ingresa un valor válido'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.pop(context, true);
+                },
+                icon: const Icon(Icons.save, size: 18),
+                label: const Text('Guardar'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
                 ),
               ),
-              autofocus: true,
-            ),
-            const SizedBox(height: 12),
-            
-            // Cálculo de salario
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.shade200),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Salario Total:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Colors.green.shade900,
-                    ),
-                  ),
-                  ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: hoursController,
-                    builder: (context, value, child) {
-                      final hours = double.tryParse(value.text) ?? 0.0;
-                      final total = hours * worker.salarioHora;
-                      return Text(
-                        '\$${total.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green.shade700,
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            
-            // Advertencia
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.warning_amber, size: 16, color: Colors.orange.shade700),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Este cambio quedará registrado como edición manual',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.orange.shade900,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () {
-              final newHours = double.tryParse(hoursController.text);
-              if (newHours == null || newHours < 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Por favor ingresa un valor válido'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-              Navigator.pop(context, true);
-            },
-            icon: const Icon(Icons.save, size: 18),
-            label: const Text('Guardar'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-            ),
-          ),
-        ],
-      ),
     );
 
     if (result == true && mounted) {
@@ -3199,15 +3277,19 @@ class _WorkersScreenState extends State<WorkersScreen>
   }
 
   // Actualizar horas trabajadas en la base de datos
-  Future<void> _updateWorkerHours(ShiftWorkerHours worker, double newHours) async {
+  Future<void> _updateWorkerHours(
+    ShiftWorkerHours worker,
+    double newHours,
+  ) async {
     try {
       // Mostrar loading
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
+        builder:
+            (context) => const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
       );
 
       // Actualizar en la base de datos
@@ -3323,54 +3405,55 @@ class _WorkersScreenState extends State<WorkersScreen>
 
         // Lista de turnos
         Expanded(
-          child: _isLoadingShifts
-              ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(color: AppColors.primary),
-                      SizedBox(height: 16),
-                      Text(
-                        'Cargando datos de RR.HH...',
-                        style: TextStyle(color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                )
-              : _shifts.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.calendar_today_outlined,
-                            size: 64,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'No hay turnos en este período',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Selecciona otro rango de fechas',
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _shifts.length,
-                      itemBuilder: (context, index) {
-                        final shift = _shifts[index];
-                        return _buildShiftCard(shift);
-                      },
+          child:
+              _isLoadingShifts
+                  ? const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: AppColors.primary),
+                        SizedBox(height: 16),
+                        Text(
+                          'Cargando datos de RR.HH...',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      ],
                     ),
+                  )
+                  : _shifts.isEmpty
+                  ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.calendar_today_outlined,
+                          size: 64,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'No hay turnos en este período',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Selecciona otro rango de fechas',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  )
+                  : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _shifts.length,
+                    itemBuilder: (context, index) {
+                      final shift = _shifts[index];
+                      return _buildShiftCard(shift);
+                    },
+                  ),
         ),
       ],
     );
@@ -3464,15 +3547,17 @@ class _WorkersScreenState extends State<WorkersScreen>
     }
   }
 
- 
-  
   Widget _buildShiftCard(ShiftWithWorkers shift) {
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
     final hasWorkers = shift.trabajadores.isNotEmpty;
-    
+
     // ✅ Convertir fechas UTC a hora de La Habana (UTC-4)
-    final fechaAperturaLocal = shift.fechaApertura.toUtc().subtract(const Duration(hours: 4));
-    final fechaCierreLocal = shift.fechaCierre?.toUtc().subtract(const Duration(hours: 4));
+    final fechaAperturaLocal = shift.fechaApertura.toUtc().subtract(
+      const Duration(hours: 4),
+    );
+    final fechaCierreLocal = shift.fechaCierre?.toUtc().subtract(
+      const Duration(hours: 4),
+    );
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -3486,9 +3571,10 @@ class _WorkersScreenState extends State<WorkersScreen>
           leading: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: shift.isOpen
-                  ? Colors.green.withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.1),
+              color:
+                  shift.isOpen
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.grey.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -3526,9 +3612,10 @@ class _WorkersScreenState extends State<WorkersScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: hasWorkers
-                      ? Colors.blue.withOpacity(0.1)
-                      : Colors.orange.withOpacity(0.1),
+                  color:
+                      hasWorkers
+                          ? Colors.blue.withOpacity(0.1)
+                          : Colors.orange.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -3556,13 +3643,12 @@ class _WorkersScreenState extends State<WorkersScreen>
               const SizedBox(height: 8),
               const Text(
                 'Trabajadores del Turno',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
-              ...shift.trabajadores.map((worker) => _buildWorkerHoursCard(worker)),
+              ...shift.trabajadores.map(
+                (worker) => _buildWorkerHoursCard(worker),
+              ),
             ] else
               const Padding(
                 padding: EdgeInsets.all(16),
@@ -3582,10 +3668,14 @@ class _WorkersScreenState extends State<WorkersScreen>
 
   Widget _buildWorkerHoursCard(ShiftWorkerHours worker) {
     final timeFormat = DateFormat('HH:mm');
-    
+
     // ✅ Convertir horas UTC a hora de La Habana (UTC-4)
-    final horaEntradaLocal = worker.horaEntrada.toUtc().subtract(const Duration(hours: 4));
-    final horaSalidaLocal = worker.horaSalida?.toUtc().subtract(const Duration(hours: 4));
+    final horaEntradaLocal = worker.horaEntrada.toUtc().subtract(
+      const Duration(hours: 4),
+    );
+    final horaSalidaLocal = worker.horaSalida?.toUtc().subtract(
+      const Duration(hours: 4),
+    );
 
     return InkWell(
       onTap: () => _showEditHoursDialog(worker),
@@ -3605,101 +3695,120 @@ class _WorkersScreenState extends State<WorkersScreen>
             Padding(
               padding: const EdgeInsets.all(0),
               child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: AppColors.primary.withOpacity(0.1),
-            child: Text(
-              worker.trabajadorNombre.substring(0, 1).toUpperCase(),
-              style: const TextStyle(
-                color: AppColors.primary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  worker.trabajadorNombre,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  worker.rolNombre,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(Icons.login, size: 12, color: Colors.grey[600]),
-                    const SizedBox(width: 4),
-                    Text(
-                      timeFormat.format(horaEntradaLocal),
-                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: AppColors.primary.withOpacity(0.1),
+                    child: Text(
+                      worker.trabajadorNombre.substring(0, 1).toUpperCase(),
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    if (worker.horaSalida != null) ...[
-                      const SizedBox(width: 8),
-                      Icon(Icons.logout, size: 12, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          worker.trabajadorNombre,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          worker.rolNombre,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.login,
+                              size: 12,
+                              color: Colors.grey[600],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              timeFormat.format(horaEntradaLocal),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            if (worker.horaSalida != null) ...[
+                              const SizedBox(width: 8),
+                              Icon(
+                                Icons.logout,
+                                size: 12,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                timeFormat.format(horaSalidaLocal!),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              worker.isWorking
+                                  ? Colors.green.withOpacity(0.1)
+                                  : Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          worker.horasTrabajadasFormatted,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color:
+                                worker.isWorking ? Colors.green : Colors.blue,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
                       Text(
-                        timeFormat.format(horaSalidaLocal!),
-                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                        '\$${worker.salarioHora.toStringAsFixed(2)}/h',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        worker.salarioTotalFormatted,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
                       ),
                     ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: worker.isWorking
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  worker.horasTrabajadasFormatted,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: worker.isWorking ? Colors.green : Colors.blue,
                   ),
-                ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                '\$${worker.salarioHora.toStringAsFixed(2)}/h',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                worker.salarioTotalFormatted,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
             ),
             // Badge "MANUAL" diagonal por delante (como "new product")
             if (worker.isManuallyEdited)
@@ -3707,17 +3816,18 @@ class _WorkersScreenState extends State<WorkersScreen>
                 top: 0,
                 left: -35,
                 child: Transform.rotate(
-                  angle: -0.785398, // -45 grados en radianes (-π/4) para diagonal izquierda
+                  angle:
+                      -0.785398, // -45 grados en radianes (-π/4) para diagonal izquierda
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.centerLeft,
                         end: Alignment.centerRight,
-                        colors: [
-                          Colors.amber.shade600,
-                          Colors.amber.shade400,
-                        ],
+                        colors: [Colors.amber.shade600, Colors.amber.shade400],
                       ),
                       boxShadow: [
                         BoxShadow(
@@ -3762,9 +3872,10 @@ class _WorkersScreenState extends State<WorkersScreen>
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
+        builder:
+            (context) => const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
       );
 
       // Generar PDF
@@ -3784,7 +3895,8 @@ class _WorkersScreenState extends State<WorkersScreen>
       await Share.shareXFiles(
         [XFile(file.path, mimeType: 'application/pdf')],
         subject: 'Desglose de Salarios por Trabajadores',
-        text: 'Reporte generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+        text:
+            'Reporte generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
       );
 
       if (mounted) {
@@ -3822,7 +3934,7 @@ class _WorkersScreenState extends State<WorkersScreen>
 
     // Calcular resumen por trabajador
     final trabajadoresMap = <int, Map<String, dynamic>>{};
-    
+
     for (final shift in _shifts) {
       for (final worker in shift.trabajadores) {
         if (!trabajadoresMap.containsKey(worker.idTrabajador)) {
@@ -3834,10 +3946,12 @@ class _WorkersScreenState extends State<WorkersScreen>
             'totalSalario': 0.0,
           };
         }
-        
+
         if (worker.horasTrabajadas != null) {
-          trabajadoresMap[worker.idTrabajador]!['totalHoras'] += worker.horasTrabajadas!;
-          trabajadoresMap[worker.idTrabajador]!['totalSalario'] += worker.salarioTotal;
+          trabajadoresMap[worker.idTrabajador]!['totalHoras'] +=
+              worker.horasTrabajadas!;
+          trabajadoresMap[worker.idTrabajador]!['totalSalario'] +=
+              worker.salarioTotal;
         }
       }
     }
@@ -3900,14 +4014,18 @@ class _WorkersScreenState extends State<WorkersScreen>
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text('Total Turnos: ${_hrSummary!.totalTurnos}'),
-                      pw.Text('Total Trabajadores: ${_hrSummary!.totalTrabajadores}'),
+                      pw.Text(
+                        'Total Trabajadores: ${_hrSummary!.totalTrabajadores}',
+                      ),
                     ],
                   ),
                   pw.SizedBox(height: 4),
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text('Total Horas: ${_hrSummary!.totalHorasTrabajadas.toStringAsFixed(2)}h'),
+                      pw.Text(
+                        'Total Horas: ${_hrSummary!.totalHorasTrabajadas.toStringAsFixed(2)}h',
+                      ),
                       pw.Text(
                         'Total Salarios: ${_hrSummary!.totalSalariosFormatted}',
                         style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
@@ -3923,10 +4041,7 @@ class _WorkersScreenState extends State<WorkersScreen>
             // Listado de trabajadores
             pw.Text(
               'DETALLE POR TRABAJADOR',
-              style: pw.TextStyle(
-                fontSize: 14,
-                fontWeight: pw.FontWeight.bold,
-              ),
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 12),
 
@@ -3949,21 +4064,30 @@ class _WorkersScreenState extends State<WorkersScreen>
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(
                         'Trabajador',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(
                         'Rol',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 10,
+                        ),
                       ),
                     ),
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(
                         'Horas',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 10,
+                        ),
                         textAlign: pw.TextAlign.center,
                       ),
                     ),
@@ -3971,7 +4095,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(
                         '\$/Hora',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 10,
+                        ),
                         textAlign: pw.TextAlign.right,
                       ),
                     ),
@@ -3979,7 +4106,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(
                         'Total',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 10,
+                        ),
                         textAlign: pw.TextAlign.right,
                       ),
                     ),
@@ -4023,7 +4153,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                         padding: const pw.EdgeInsets.all(6),
                         child: pw.Text(
                           '\$${trabajador['totalSalario'].toStringAsFixed(2)}',
-                          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                          style: pw.TextStyle(
+                            fontSize: 9,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
                           textAlign: pw.TextAlign.right,
                         ),
                       ),
@@ -4038,18 +4171,19 @@ class _WorkersScreenState extends State<WorkersScreen>
             // Desglose por turnos
             pw.Text(
               'DESGLOSE POR TURNOS',
-              style: pw.TextStyle(
-                fontSize: 14,
-                fontWeight: pw.FontWeight.bold,
-              ),
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 12),
 
             // Lista de turnos
             ..._shifts.map((shift) {
               // Convertir fechas UTC a hora de La Habana (UTC-4) para PDF
-              final fechaAperturaLocal = shift.fechaApertura.toUtc().subtract(const Duration(hours: 4));
-              final fechaCierreLocal = shift.fechaCierre?.toUtc().subtract(const Duration(hours: 4));
+              final fechaAperturaLocal = shift.fechaApertura.toUtc().subtract(
+                const Duration(hours: 4),
+              );
+              final fechaCierreLocal = shift.fechaCierre?.toUtc().subtract(
+                const Duration(hours: 4),
+              );
 
               return pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -4100,7 +4234,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                   // Tabla de trabajadores del turno
                   if (shift.trabajadores.isNotEmpty)
                     pw.Table(
-                      border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                      border: pw.TableBorder.all(
+                        color: PdfColors.grey300,
+                        width: 0.5,
+                      ),
                       columnWidths: {
                         0: const pw.FlexColumnWidth(3),
                         1: const pw.FlexColumnWidth(1.5),
@@ -4110,20 +4247,28 @@ class _WorkersScreenState extends State<WorkersScreen>
                       },
                       children: [
                         pw.TableRow(
-                          decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                          decoration: const pw.BoxDecoration(
+                            color: PdfColors.grey200,
+                          ),
                           children: [
                             pw.Padding(
                               padding: const pw.EdgeInsets.all(4),
                               child: pw.Text(
                                 'Trabajador',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 8,
+                                ),
                               ),
                             ),
                             pw.Padding(
                               padding: const pw.EdgeInsets.all(4),
                               child: pw.Text(
                                 'Entrada',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 8,
+                                ),
                                 textAlign: pw.TextAlign.center,
                               ),
                             ),
@@ -4131,7 +4276,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                               padding: const pw.EdgeInsets.all(4),
                               child: pw.Text(
                                 'Salida',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 8,
+                                ),
                                 textAlign: pw.TextAlign.center,
                               ),
                             ),
@@ -4139,7 +4287,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                               padding: const pw.EdgeInsets.all(4),
                               child: pw.Text(
                                 'Horas',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 8,
+                                ),
                                 textAlign: pw.TextAlign.center,
                               ),
                             ),
@@ -4147,7 +4298,10 @@ class _WorkersScreenState extends State<WorkersScreen>
                               padding: const pw.EdgeInsets.all(4),
                               child: pw.Text(
                                 'Salario',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                  fontSize: 8,
+                                ),
                                 textAlign: pw.TextAlign.right,
                               ),
                             ),
@@ -4155,8 +4309,12 @@ class _WorkersScreenState extends State<WorkersScreen>
                         ),
                         ...shift.trabajadores.map((worker) {
                           // Convertir horas UTC a hora de La Habana (UTC-4) para PDF
-                          final horaEntradaLocal = worker.horaEntrada.toUtc().subtract(const Duration(hours: 4));
-                          final horaSalidaLocal = worker.horaSalida?.toUtc().subtract(const Duration(hours: 4));
+                          final horaEntradaLocal = worker.horaEntrada
+                              .toUtc()
+                              .subtract(const Duration(hours: 4));
+                          final horaSalidaLocal = worker.horaSalida
+                              ?.toUtc()
+                              .subtract(const Duration(hours: 4));
 
                           return pw.TableRow(
                             children: [

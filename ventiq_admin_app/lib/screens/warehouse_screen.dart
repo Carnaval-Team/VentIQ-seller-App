@@ -5,6 +5,7 @@ import '../widgets/admin_bottom_navigation.dart';
 import '../models/warehouse.dart';
 import '../services/warehouse_service.dart';
 import 'warehouse_detail_screen.dart';
+import '../utils/navigation_guard.dart';
 
 class WarehouseScreen extends StatefulWidget {
   const WarehouseScreen({super.key});
@@ -20,7 +21,10 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   String _direccionFilter = '';
   bool _loading = true;
   DateTime? _lastSearchAt;
-  
+
+  bool _canCreateWarehouse = false;
+  bool _canEditWarehouse = false;
+
   // Pagination variables
   WarehousePagination? _pagination;
   int _currentPage = 1;
@@ -30,12 +34,26 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   @override
   void initState() {
     super.initState();
+    _loadPermissions();
     _loadData();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      NavigationGuard.canPerformAction('warehouse.create'),
+      NavigationGuard.canPerformAction('warehouse.edit'),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _canCreateWarehouse = permissions[0];
+      _canEditWarehouse = permissions[1];
+    });
   }
 
   Future<void> _loadData({bool isRefresh = true}) async {
     print('🔄 _loadData iniciado - isRefresh: $isRefresh');
-    
+
     if (isRefresh) {
       setState(() {
         _loading = true;
@@ -44,20 +62,24 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     } else {
       setState(() => _loadingMore = true);
     }
-    
+
     try {
       print('📦 Cargando stores...');
       // Load stores for filter
       final stores = await _service.listStores();
       print('📦 Stores cargados: ${stores.length}');
-      
+
       print('🏭 Cargando almacenes con paginación...');
-      print('  - Filtro denominación: ${_search.isNotEmpty ? _search : 'null'}');
-      print('  - Filtro dirección: ${_direccionFilter.isNotEmpty ? _direccionFilter : 'null'}');
+      print(
+        '  - Filtro denominación: ${_search.isNotEmpty ? _search : 'null'}',
+      );
+      print(
+        '  - Filtro dirección: ${_direccionFilter.isNotEmpty ? _direccionFilter : 'null'}',
+      );
       print('  - Filtro tienda: null (sin filtro)');
       print('  - Página: ${isRefresh ? 1 : _currentPage}');
       print('  - Por página: $_itemsPerPage');
-      
+
       // Load warehouses with pagination
       final response = await _service.listWarehousesWithPagination(
         denominacionFilter: _search.isNotEmpty ? _search : null,
@@ -66,24 +88,30 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         pagina: isRefresh ? 1 : _currentPage,
         porPagina: _itemsPerPage,
       );
-      
+
       print('✅ Respuesta recibida:');
       print('  - Almacenes: ${response.almacenes.length}');
-      print('  - Paginación: ${response.paginacion.paginaActual}/${response.paginacion.totalPaginas}');
+      print(
+        '  - Paginación: ${response.paginacion.paginaActual}/${response.paginacion.totalPaginas}',
+      );
       print('  - Total almacenes: ${response.paginacion.totalAlmacenes}');
-      
+
       setState(() {
         // Ya no necesitamos stores para filtros
-        
+
         if (isRefresh) {
           _warehouses = response.almacenes;
           _currentPage = 1;
-          print('🔄 Lista de almacenes actualizada (refresh): ${_warehouses.length}');
+          print(
+            '🔄 Lista de almacenes actualizada (refresh): ${_warehouses.length}',
+          );
         } else {
           _warehouses.addAll(response.almacenes);
-          print('➕ Almacenes agregados: ${response.almacenes.length}, Total: ${_warehouses.length}');
+          print(
+            '➕ Almacenes agregados: ${response.almacenes.length}, Total: ${_warehouses.length}',
+          );
         }
-        
+
         _pagination = response.paginacion;
         _loading = false;
         _loadingMore = false;
@@ -95,7 +123,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         _loading = false;
         _loadingMore = false;
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -106,7 +134,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       }
     }
   }
-  
+
   Future<void> _loadMoreData() async {
     if (_pagination != null && _pagination!.tieneSiguiente && !_loadingMore) {
       _currentPage++;
@@ -133,88 +161,111 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
-              tooltip: 'Menú',
-            ),
+            builder:
+                (context) => IconButton(
+                  icon: const Icon(Icons.menu, color: Colors.white),
+                  onPressed: () => Scaffold.of(context).openEndDrawer(),
+                  tooltip: 'Menú',
+                ),
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: () => _loadData(isRefresh: true),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildFilters(),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Almacenes',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: _onAddWarehouse,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Agregar almacén'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: _warehouses.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No hay almacenes',
-                                style: TextStyle(color: AppColors.textSecondary),
-                              ),
-                            )
-                          : Column(
-                              children: [
-                                Expanded(
-                                  child: ListView.builder(
-                                    itemCount: _warehouses.length + (_pagination?.tieneSiguiente == true ? 1 : 0),
-                                    itemBuilder: (context, index) {
-                                      if (index == _warehouses.length) {
-                                        // Load more button
-                                        return Padding(
-                                          padding: const EdgeInsets.all(16.0),
-                                          child: _loadingMore
-                                              ? const Center(child: CircularProgressIndicator())
-                                              : ElevatedButton(
-                                                  onPressed: _loadMoreData,
-                                                  child: const Text('Cargar más'),
-                                                ),
-                                        );
-                                      }
-                                      
-                                      final w = _warehouses[index];
-                                      return _WarehouseCard(
-                                        warehouse: w,
-                                        onEdit: () => _onEditWarehouse(w),
-                                        onView: () => _onViewWarehouse(w),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                if (_pagination != null) _buildPaginationInfo(),
-                              ],
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                onRefresh: () => _loadData(isRefresh: true),
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildFilters(),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Almacenes',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
                             ),
-                    ),
-                  ],
+                          ),
+                          if (_canCreateWarehouse)
+                            ElevatedButton.icon(
+                              onPressed: _onAddWarehouse,
+                              icon: const Icon(Icons.add),
+                              label: const Text('Agregar almacén'),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child:
+                            _warehouses.isEmpty
+                                ? const Center(
+                                  child: Text(
+                                    'No hay almacenes',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                )
+                                : Column(
+                                  children: [
+                                    Expanded(
+                                      child: ListView.builder(
+                                        itemCount:
+                                            _warehouses.length +
+                                            (_pagination?.tieneSiguiente == true
+                                                ? 1
+                                                : 0),
+                                        itemBuilder: (context, index) {
+                                          if (index == _warehouses.length) {
+                                            // Load more button
+                                            return Padding(
+                                              padding: const EdgeInsets.all(
+                                                16.0,
+                                              ),
+                                              child:
+                                                  _loadingMore
+                                                      ? const Center(
+                                                        child:
+                                                            CircularProgressIndicator(),
+                                                      )
+                                                      : ElevatedButton(
+                                                        onPressed:
+                                                            _loadMoreData,
+                                                        child: const Text(
+                                                          'Cargar más',
+                                                        ),
+                                                      ),
+                                            );
+                                          }
+
+                                          final w = _warehouses[index];
+                                          return _WarehouseCard(
+                                            warehouse: w,
+                                            onEdit:
+                                                _canEditWarehouse
+                                                    ? () => _onEditWarehouse(w)
+                                                    : null,
+                                            onView: () => _onViewWarehouse(w),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    if (_pagination != null)
+                                      _buildPaginationInfo(),
+                                  ],
+                                ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
       endDrawer: const AdminDrawer(),
       bottomNavigationBar: AdminBottomNavigation(
         currentRoute: '/warehouse',
@@ -281,7 +332,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
   Widget _buildPaginationInfo() {
     if (_pagination == null) return const SizedBox.shrink();
-    
+
     return Container(
       padding: const EdgeInsets.all(12.0),
       decoration: BoxDecoration(
@@ -300,9 +351,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           ),
           Text(
             '${_pagination!.totalAlmacenes} almacenes total',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-            ),
+            style: const TextStyle(color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -319,9 +368,9 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
   void _onEditWarehouse(Warehouse w) {
     // Placeholder: in future, open edit modal
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Editar: ${w.name} (pendiente)')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Editar: ${w.name} (pendiente)')));
   }
 
   Future<void> _onViewWarehouse(Warehouse w) async {
@@ -337,12 +386,12 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
 class _WarehouseCard extends StatelessWidget {
   final Warehouse warehouse;
-  final VoidCallback onEdit;
+  final VoidCallback? onEdit;
   final VoidCallback onView;
 
   const _WarehouseCard({
     required this.warehouse,
-    required this.onEdit,
+    this.onEdit,
     required this.onView,
   });
 
@@ -421,13 +470,14 @@ class _WarehouseCard extends StatelessWidget {
                         color: AppColors.primary,
                         iconSize: 20,
                       ),
-                      IconButton(
-                        onPressed: onEdit,
-                        icon: const Icon(Icons.edit_outlined),
-                        tooltip: 'Editar',
-                        color: AppColors.textSecondary,
-                        iconSize: 20,
-                      ),
+                      if (onEdit != null)
+                        IconButton(
+                          onPressed: onEdit,
+                          icon: const Icon(Icons.edit_outlined),
+                          tooltip: 'Editar',
+                          color: AppColors.textSecondary,
+                          iconSize: 20,
+                        ),
                     ],
                   ),
                 ],
@@ -435,9 +485,17 @@ class _WarehouseCard extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  _compactBadge(Icons.layers_outlined, '${warehouse.zones.length}', 'Layouts'),
+                  _compactBadge(
+                    Icons.layers_outlined,
+                    '${warehouse.zones.length}',
+                    'Layouts',
+                  ),
                   const SizedBox(width: 12),
-                  _compactBadge(Icons.inventory_outlined, '${warehouse.limitesStockCount}', 'Límites'),
+                  _compactBadge(
+                    Icons.inventory_outlined,
+                    '${warehouse.limitesStockCount}',
+                    'Límites',
+                  ),
                   const SizedBox(width: 12),
                   _statusBadge(warehouse.type),
                 ],
@@ -466,10 +524,7 @@ class _WarehouseCard extends StatelessWidget {
         const SizedBox(width: 2),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ],
     );

@@ -1,8 +1,30 @@
 {
-  "current_version": "1.6.7",
-  "build": 167,
+  "current_version": "1.7.0",
+  "build": 170,
   "app_name": "ventiq_admin",
   "changelogs": [
+    {
+      "version": "1.7.0",
+      "date": "2026-01-05",
+      "title": "🔒 Nuevo rol Auditor (Solo lectura)",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo rol Auditor",
+          "description": "Agregamos el rol Auditor para revisiones: permite consultar la información sin modificarla."
+        },
+        {
+          "type": "improvement",
+          "title": "Acceso de solo lectura en secciones clave",
+          "description": "El rol Auditor ahora puede ver datos en módulos como consignaciones, clientes y configuración de impresoras, pero sin crear, editar, eliminar o confirmar acciones."
+        },
+        {
+          "type": "improvement",
+          "title": "Permisos más consistentes por tienda",
+          "description": "Mejoramos el control de permisos para que se mantenga correcto al cambiar de tienda."
+        }
+      ]
+    },
     {
       "version": "1.6.7",
       "date": "2026-01-03",

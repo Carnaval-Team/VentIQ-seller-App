@@ -6,6 +6,7 @@ import '../services/consignacion_envio_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/currency_display_service.dart';
 import 'confirmar_recepcion_consignacion_screen.dart';
+import '../utils/navigation_guard.dart';
 
 class ConsignacionEnvioDetallesScreen extends StatefulWidget {
   final int idEnvio;
@@ -26,21 +27,37 @@ class _ConsignacionEnvioDetallesScreenState
     extends State<ConsignacionEnvioDetallesScreen> {
   late Future<Map<String, dynamic>?> _detallesFuture;
   late Future<List<Map<String, dynamic>>> _productosFuture;
-  
+
   double _tasaCambio = 440.0; // Valor por defecto
   bool _isLoadingTasa = true;
   bool _isAccepting = false;
 
+  bool _canManageConsignacion = false;
+
   @override
   void initState() {
     super.initState();
+    _loadPermissions();
     _loadTasaCambio();
     _refrescar();
   }
 
+  Future<void> _loadPermissions() async {
+    final canManage = await NavigationGuard.canPerformAction(
+      'consignacion.edit',
+    );
+    if (!mounted) return;
+    setState(() {
+      _canManageConsignacion = canManage;
+    });
+  }
+
   Future<void> _loadTasaCambio() async {
     try {
-      final rate = await CurrencyDisplayService.getExchangeRateForDisplay('USD', 'CUP');
+      final rate = await CurrencyDisplayService.getExchangeRateForDisplay(
+        'USD',
+        'CUP',
+      );
       if (mounted) {
         setState(() {
           _tasaCambio = rate;
@@ -63,30 +80,28 @@ class _ConsignacionEnvioDetallesScreenState
   void _refrescar() {
     print('🔄 Refrescando detalles del envío ${widget.idEnvio}');
     setState(() {
-      _detallesFuture =
-          ConsignacionEnvioListadoService.obtenerDetallesEnvio(widget.idEnvio)
-              .then((detalles) {
-            if (detalles != null) {
-              print('📋 Detalles recibidos en pantalla:');
-              print('   - Almacén Origen: ${detalles['almacen_origen']}');
-              print('   - Almacén Destino: ${detalles['almacen_destino']}');
-              print('   - Porcentaje Comisión: ${detalles['porcentaje_comision']}');
-              print('   - Todas las claves: ${detalles.keys.toList()}');
-            }
-            return detalles;
-          });
-      _productosFuture =
-          ConsignacionEnvioListadoService.obtenerProductosEnvio(widget.idEnvio);
+      _detallesFuture = ConsignacionEnvioListadoService.obtenerDetallesEnvio(
+        widget.idEnvio,
+      ).then((detalles) {
+        if (detalles != null) {
+          print('📋 Detalles recibidos en pantalla:');
+          print('   - Almacén Origen: ${detalles['almacen_origen']}');
+          print('   - Almacén Destino: ${detalles['almacen_destino']}');
+          print('   - Porcentaje Comisión: ${detalles['porcentaje_comision']}');
+          print('   - Todas las claves: ${detalles.keys.toList()}');
+        }
+        return detalles;
+      });
+      _productosFuture = ConsignacionEnvioListadoService.obtenerProductosEnvio(
+        widget.idEnvio,
+      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detalles del Envío'),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Detalles del Envío'), elevation: 0),
       body: FutureBuilder<Map<String, dynamic>?>(
         future: _detallesFuture,
         builder: (context, snapshot) {
@@ -114,35 +129,54 @@ class _ConsignacionEnvioDetallesScreenState
 
           final detalles = snapshot.data!;
           final estadoEnvioRaw = detalles['estado_envio'];
-          final estadoEnvio = estadoEnvioRaw is num
-              ? estadoEnvioRaw.toInt()
-              : int.tryParse(estadoEnvioRaw?.toString() ?? '');
-          
+          final estadoEnvio =
+              estadoEnvioRaw is num
+                  ? estadoEnvioRaw.toInt()
+                  : int.tryParse(estadoEnvioRaw?.toString() ?? '');
+
           final tipoEnvioRaw = detalles['tipo_envio'];
-          final tipoEnvio = tipoEnvioRaw is num
-              ? tipoEnvioRaw.toInt()
-              : int.tryParse(tipoEnvioRaw?.toString() ?? '') ?? 1;
+          final tipoEnvio =
+              tipoEnvioRaw is num
+                  ? tipoEnvioRaw.toInt()
+                  : int.tryParse(tipoEnvioRaw?.toString() ?? '') ?? 1;
 
           // Lógica de permisos de edición
           // El consignatario PUEDE editar precios en PROPUESTO y EN_TRANSITO
           bool puedeEditar = false;
-          if (tipoEnvio == 1 && widget.rol == 'consignatario' && 
-              (estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO || 
-               estadoEnvio == ConsignacionEnvioListadoService.ESTADO_EN_TRANSITO)) {
+          if (_canManageConsignacion &&
+              tipoEnvio == 1 &&
+              widget.rol == 'consignatario' &&
+              (estadoEnvio ==
+                      ConsignacionEnvioListadoService.ESTADO_PROPUESTO ||
+                  estadoEnvio ==
+                      ConsignacionEnvioListadoService.ESTADO_EN_TRANSITO)) {
             puedeEditar = true;
           }
 
           // Acciones para que el CONSIGNADOR gestione la devolución desde el detalle
-          bool puedeGestionarDevolucionConsignador = (tipoEnvio == 2 && widget.rol == 'consignador' && estadoEnvio == 1);
-          
+          bool puedeGestionarDevolucionConsignador =
+              (_canManageConsignacion &&
+                  tipoEnvio == 2 &&
+                  widget.rol == 'consignador' &&
+                  estadoEnvio == 1);
+
           // Botón "Verificar Envío" para CONSIGNATARIO cuando envío está PROPUESTO
-          bool puedeVerificarEnvio = (tipoEnvio == 1 && widget.rol == 'consignatario' && estadoEnvio == ConsignacionEnvioListadoService.ESTADO_PROPUESTO);
+          bool puedeVerificarEnvio =
+              (_canManageConsignacion &&
+                  tipoEnvio == 1 &&
+                  widget.rol == 'consignatario' &&
+                  estadoEnvio ==
+                      ConsignacionEnvioListadoService.ESTADO_PROPUESTO);
 
           // Acciones de CANCELACIÓN (quien crea, puede cancelar antes de avanzar)
-          bool puedeCancelar = (
-            (tipoEnvio == 1 && widget.rol == 'consignador' && estadoEnvio == 1) || // Consignador cancela envío propuesto
-            (tipoEnvio == 2 && widget.rol == 'consignatario' && estadoEnvio == 1)    // Consignatario cancela devolución propuesta
-          );
+          bool puedeCancelar =
+              (_canManageConsignacion &&
+                  ((tipoEnvio == 1 &&
+                          widget.rol == 'consignador' &&
+                          estadoEnvio == 1) ||
+                      (tipoEnvio == 2 &&
+                          widget.rol == 'consignatario' &&
+                          estadoEnvio == 1)));
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -152,7 +186,7 @@ class _ConsignacionEnvioDetallesScreenState
                 _buildSeccionDetalles(detalles),
                 const SizedBox(height: 24),
                 _buildSeccionProductos(puedeEditar: puedeEditar),
-                
+
                 if (puedeVerificarEnvio) ...[
                   const SizedBox(height: 24),
                   _buildBotonVerificarEnvio(detalles),
@@ -190,9 +224,18 @@ class _ConsignacionEnvioDetallesScreenState
             _buildFilaDetalle('Envío', detalles['numero_envio']),
             _buildFilaDetalle('Estado', detalles['estado_envio_texto']),
             _buildFilaDetalle('Consignadora', detalles['tienda_consignadora']),
-            _buildFilaDetalle('Consignataria', detalles['tienda_consignataria']),
-            _buildFilaDetalle('Almacén Origen', detalles['almacen_origen'] ?? 'N/A'),
-            _buildFilaDetalle('Almacén Destino', detalles['almacen_destino'] ?? 'N/A'),
+            _buildFilaDetalle(
+              'Consignataria',
+              detalles['tienda_consignataria'],
+            ),
+            _buildFilaDetalle(
+              'Almacén Origen',
+              detalles['almacen_origen'] ?? 'N/A',
+            ),
+            _buildFilaDetalle(
+              'Almacén Destino',
+              detalles['almacen_destino'] ?? 'N/A',
+            ),
             _buildFilaDetalle(
               'Cantidad Total Unidades',
               '${(detalles['cantidad_total_unidades'] as num?)?.toStringAsFixed(0) ?? '0'} u.',
@@ -262,8 +305,10 @@ class _ConsignacionEnvioDetallesScreenState
         FutureBuilder<List<Map<String, dynamic>>>(
           future: _productosFuture,
           builder: (context, snapshot) {
-            debugPrint('🔍 Estado FutureBuilder productos: ${snapshot.connectionState}');
-            
+            debugPrint(
+              '🔍 Estado FutureBuilder productos: ${snapshot.connectionState}',
+            );
+
             if (snapshot.connectionState == ConnectionState.waiting) {
               debugPrint('⏳ Cargando productos...');
               return const Center(child: CircularProgressIndicator());
@@ -276,7 +321,11 @@ class _ConsignacionEnvioDetallesScreenState
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: Colors.red,
+                    ),
                     const SizedBox(height: 8),
                     Text('Error: ${snapshot.error}'),
                   ],
@@ -286,7 +335,7 @@ class _ConsignacionEnvioDetallesScreenState
 
             final productos = snapshot.data ?? [];
             debugPrint('📦 Productos recibidos: ${productos.length}');
-            
+
             if (productos.isNotEmpty) {
               debugPrint('📋 Primer producto: ${productos[0]}');
             }
@@ -296,7 +345,11 @@ class _ConsignacionEnvioDetallesScreenState
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.inbox_outlined, size: 48, color: Colors.grey),
+                    const Icon(
+                      Icons.inbox_outlined,
+                      size: 48,
+                      color: Colors.grey,
+                    ),
                     const SizedBox(height: 8),
                     const Text('No hay productos en este envío'),
                   ],
@@ -327,10 +380,17 @@ class _ConsignacionEnvioDetallesScreenState
     Map<String, dynamic> producto, {
     required bool puedeEditar,
   }) {
-    final nombreProducto = producto['producto_denominacion'] as String? ?? producto['nombre_producto'] as String? ?? 'N/A';
-    final sku = producto['producto_sku'] as String? ?? producto['sku'] as String? ?? 'N/A';
+    final nombreProducto =
+        producto['producto_denominacion'] as String? ??
+        producto['nombre_producto'] as String? ??
+        'N/A';
+    final sku =
+        producto['producto_sku'] as String? ??
+        producto['sku'] as String? ??
+        'N/A';
     final cantidad = producto['cantidad_propuesta'] ?? 0;
-    final precioCostoUsd = (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+    final precioCostoUsd =
+        (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
     final precioVentaCup = (producto['precio_venta_cup'] as num?)?.toDouble();
 
     return Padding(
@@ -373,16 +433,16 @@ class _ConsignacionEnvioDetallesScreenState
                       ),
                       Text(
                         'SKU: $sku',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                       ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.green.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(6),
@@ -403,7 +463,10 @@ class _ConsignacionEnvioDetallesScreenState
               children: [
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.orange.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(4),
@@ -422,7 +485,10 @@ class _ConsignacionEnvioDetallesScreenState
                   const SizedBox(width: 8),
                   Expanded(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.purple.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(4),
@@ -446,18 +512,11 @@ class _ConsignacionEnvioDetallesScreenState
     );
   }
 
-  
   Widget _buildProductoInfo(String label, String valor) {
     return Column(
       children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-        ),
-        Text(
-          valor,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+        Text(label, style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+        Text(valor, style: const TextStyle(fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -468,10 +527,7 @@ class _ConsignacionEnvioDetallesScreenState
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(color: Colors.grey[600]),
-          ),
+          Text(label, style: TextStyle(color: Colors.grey[600])),
           Text(
             valor.toString(),
             style: const TextStyle(fontWeight: FontWeight.bold),
@@ -495,121 +551,137 @@ class _ConsignacionEnvioDetallesScreenState
     }
     return fecha.toString();
   }
-  
+
   // Botones flotantes o al final
   // --- Funciones de Acción ---
 
   Future<void> _rechazarProducto({required int idEnvioProducto}) async {
+    if (!_canManageConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Rechazar producto');
+      return;
+    }
     final motivoController = TextEditingController();
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rechazar producto'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('¿Rechazar este producto del envío?'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: motivoController,
-              decoration: const InputDecoration(
-                labelText: 'Motivo del rechazo',
-                border: OutlineInputBorder(),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Rechazar producto'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('¿Rechazar este producto del envío?'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: motivoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo del rechazo',
+                    border: OutlineInputBorder(),
+                  ),
+                  minLines: 2,
+                  maxLines: 4,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
               ),
-              minLines: 2,
-              maxLines: 4,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Rechazar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Rechazar'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed != true) return;
-    
+
     final motivo = motivoController.text.trim();
     if (motivo.isEmpty) {
-      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ingrese motivo')));
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Ingrese motivo')));
       return;
     }
-    
+
     final userId = await UserPreferencesService().getUserId();
-    
+
     try {
-      final result = await ConsignacionEnvioListadoService.rechazarProductoEnvio(
-        widget.idEnvio,
-        idEnvioProducto,
-        userId!,
-        motivo,
-      );
-      
+      final result =
+          await ConsignacionEnvioListadoService.rechazarProductoEnvio(
+            widget.idEnvio,
+            idEnvioProducto,
+            userId!,
+            motivo,
+          );
+
       if (mounted) {
-         _refrescar();
-         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Producto rechazado')));
+        _refrescar();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Producto rechazado')));
       }
-    } catch(e) {
+    } catch (e) {
       debugPrint(e.toString());
     }
   }
 
   Future<void> _rechazarEnvioGlobal() async {
+    if (!_canManageConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Rechazar envío');
+      return;
+    }
     final motivoController = TextEditingController();
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rechazar Envío Completo'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '¿Estás seguro de que deseas rechazar este envío por completo? '
-              'Esta acción devolverá los productos al stock del consignador.',
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Rechazar Envío Completo'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '¿Estás seguro de que deseas rechazar este envío por completo? '
+                  'Esta acción devolverá los productos al stock del consignador.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: motivoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo del rechazo',
+                    border: OutlineInputBorder(),
+                    hintText: 'Ej: Diferencia en cantidades, mal estado, etc.',
+                  ),
+                  minLines: 2,
+                  maxLines: 4,
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: motivoController,
-              decoration: const InputDecoration(
-                labelText: 'Motivo del rechazo',
-                border: OutlineInputBorder(),
-                hintText: 'Ej: Diferencia en cantidades, mal estado, etc.',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
               ),
-              minLines: 2,
-              maxLines: 4,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Confirmar Rechazo'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Confirmar Rechazo'),
-          ),
-        ],
-      ),
     );
 
     if (confirmed != true) return;
@@ -618,7 +690,9 @@ class _ConsignacionEnvioDetallesScreenState
     if (motivo.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Por favor, indica un motivo de rechazo')),
+          const SnackBar(
+            content: Text('Por favor, indica un motivo de rechazo'),
+          ),
         );
       }
       return;
@@ -653,10 +727,7 @@ class _ConsignacionEnvioDetallesScreenState
       debugPrint('❌ Error rechazando envío: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -684,13 +755,17 @@ class _ConsignacionEnvioDetallesScreenState
   }
 
   Future<void> _navegarAVerificarEnvio(Map<String, dynamic> detalles) async {
+    if (!_canManageConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Verificar envío');
+      return;
+    }
     // Logging: Mostrar todos los detalles recibidos
     debugPrint('📋 ===== VERIFICAR ENVÍO =====');
     debugPrint('📋 Detalles completos recibidos:');
     detalles.forEach((key, value) {
       debugPrint('   - $key: $value (${value.runtimeType})');
     });
-    
+
     // Navegar a ConfirmarRecepcionConsignacionScreen
     final idContrato = detalles['id_contrato_consignacion'];
     final idTiendaOrigen = detalles['id_tienda_consignadora'];
@@ -727,21 +802,24 @@ class _ConsignacionEnvioDetallesScreenState
       return;
     }
 
-    debugPrint('✅ Todos los datos están presentes. Navegando a ConfirmarRecepcionConsignacionScreen...');
+    debugPrint(
+      '✅ Todos los datos están presentes. Navegando a ConfirmarRecepcionConsignacionScreen...',
+    );
 
     if (!mounted) return;
 
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ConfirmarRecepcionConsignacionScreen(
-          idContrato: idContrato,
-          idTiendaOrigen: idTiendaOrigen,
-          idTiendaDestino: idTiendaDestino,
-          idAlmacenOrigen: idAlmacenOrigen,
-          idAlmacenDestino: idAlmacenDestino,
-          idEnvio: widget.idEnvio, // Pasar el ID del envío
-        ),
+        builder:
+            (context) => ConfirmarRecepcionConsignacionScreen(
+              idContrato: idContrato,
+              idTiendaOrigen: idTiendaOrigen,
+              idTiendaDestino: idTiendaDestino,
+              idAlmacenOrigen: idAlmacenOrigen,
+              idAlmacenDestino: idAlmacenDestino,
+              idEnvio: widget.idEnvio, // Pasar el ID del envío
+            ),
       ),
     );
 
@@ -791,7 +869,13 @@ class _ConsignacionEnvioDetallesScreenState
     );
   }
 
-  Future<void> _mostrarDialogoAprobarDevolucion(Map<String, dynamic> envio) async {
+  Future<void> _mostrarDialogoAprobarDevolucion(
+    Map<String, dynamic> envio,
+  ) async {
+    if (!_canManageConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Aprobar devolución');
+      return;
+    }
     int? idAlmacenSeleccionado;
     bool cargandoAlmacenes = true;
     List<Map<String, dynamic>> almacenes = [];
@@ -817,48 +901,69 @@ class _ConsignacionEnvioDetallesScreenState
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Aprobar Devolución'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Al aprobar la devolución se reintegrarán los productos a tu inventario. Selecciona el almacén de recepción:'),
-              const SizedBox(height: 16),
-              if (cargandoAlmacenes)
-                const Center(child: CircularProgressIndicator())
-              else if (almacenes.isEmpty)
-                const Text('No tienes almacenes configurados', style: TextStyle(color: Colors.red))
-              else
-                DropdownButtonFormField<int>(
-                  value: idAlmacenSeleccionado,
-                  items: almacenes.map((a) => DropdownMenuItem<int>(
-                    value: a['id'],
-                    child: Text(a['denominacion']),
-                  )).toList(),
-                  onChanged: (val) => setDialogState(() => idAlmacenSeleccionado = val),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    labelText: 'Almacén de Recepción',
-                    border: OutlineInputBorder()
+      builder:
+          (context) => StatefulBuilder(
+            builder:
+                (context, setDialogState) => AlertDialog(
+                  title: const Text('Aprobar Devolución'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Al aprobar la devolución se reintegrarán los productos a tu inventario. Selecciona el almacén de recepción:',
+                      ),
+                      const SizedBox(height: 16),
+                      if (cargandoAlmacenes)
+                        const Center(child: CircularProgressIndicator())
+                      else if (almacenes.isEmpty)
+                        const Text(
+                          'No tienes almacenes configurados',
+                          style: TextStyle(color: Colors.red),
+                        )
+                      else
+                        DropdownButtonFormField<int>(
+                          value: idAlmacenSeleccionado,
+                          items:
+                              almacenes
+                                  .map(
+                                    (a) => DropdownMenuItem<int>(
+                                      value: a['id'],
+                                      child: Text(a['denominacion']),
+                                    ),
+                                  )
+                                  .toList(),
+                          onChanged:
+                              (val) => setDialogState(
+                                () => idAlmacenSeleccionado = val,
+                              ),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            labelText: 'Almacén de Recepción',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                    ],
                   ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('CANCELAR'),
+                    ),
+                    ElevatedButton(
+                      onPressed:
+                          idAlmacenSeleccionado == null
+                              ? null
+                              : () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('APROBAR Y RECIBIR'),
+                    ),
+                  ],
                 ),
-            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('CANCELAR')
-            ),
-            ElevatedButton(
-              onPressed: idAlmacenSeleccionado == null ? null : () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-              child: const Text('APROBAR Y RECIBIR'),
-            ),
-          ],
-        ),
-      ),
     );
 
     if (confirm == true && idAlmacenSeleccionado != null) {
@@ -877,17 +982,25 @@ class _ConsignacionEnvioDetallesScreenState
 
       if (result != null && result['success'] == true) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('✅ Devolución procesada y stock reintegrado exitosamente'),
-          backgroundColor: Colors.green
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '✅ Devolución procesada y stock reintegrado exitosamente',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.pop(context, true); // Volver avisando que hubo cambios
       } else {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('❌ Error: ${result?['mensaje'] ?? 'Error desconocido'}'),
-          backgroundColor: Colors.red
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '❌ Error: ${result?['mensaje'] ?? 'Error desconocido'}',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -912,36 +1025,49 @@ class _ConsignacionEnvioDetallesScreenState
   }
 
   Future<void> _mostrarDialogoCancelar() async {
+    if (!_canManageConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Cancelar solicitud');
+      return;
+    }
     final motivoController = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancelar Solicitud'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('¿Estás seguro de que deseas cancelar esta solicitud? Los productos reservados volverán al inventario.'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: motivoController,
-              decoration: const InputDecoration(
-                labelText: 'Motivo (opcional)',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Cancelar Solicitud'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '¿Estás seguro de que deseas cancelar esta solicitud? Los productos reservados volverán al inventario.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: motivoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo (opcional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('NO, VOLVER')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-            child: const Text('SÍ, CANCELAR'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('NO, VOLVER'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('SÍ, CANCELAR'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -953,21 +1079,27 @@ class _ConsignacionEnvioDetallesScreenState
         final result = await ConsignacionEnvioListadoService.cancelarEnvio(
           widget.idEnvio,
           user.id,
-          motivoController.text.trim().isEmpty ? null : motivoController.text.trim(),
+          motivoController.text.trim().isEmpty
+              ? null
+              : motivoController.text.trim(),
         );
 
         if (mounted) {
           if (result['success'] == true) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('✅ Solicitud cancelada exitosamente'),
-              backgroundColor: Colors.green
-            ));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Solicitud cancelada exitosamente'),
+                backgroundColor: Colors.green,
+              ),
+            );
             Navigator.pop(context, true);
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('❌ Error: ${result['mensaje']}'),
-              backgroundColor: Colors.red
-            ));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('❌ Error: ${result['mensaje']}'),
+                backgroundColor: Colors.red,
+              ),
+            );
           }
         }
       } catch (e) {

@@ -27,12 +27,22 @@ class _FinancialScreenState extends State<FinancialScreen>
   bool _isLoading = true;
   int _pendingOperationsCount = 0;
   List<Map<String, dynamic>> _recentActivities = [];
+  bool _canEditFinancial = false;
 
   @override
   void initState() {
     super.initState();
     // ScreenProtectionMixin ya llama a super.initState() y verifica permisos
+    _loadPermissions();
     _loadData();
+  }
+
+  Future<void> _loadPermissions() async {
+    final canEdit = await NavigationGuard.canPerformAction('financial.edit');
+    if (!mounted) return;
+    setState(() {
+      _canEditFinancial = canEdit;
+    });
   }
 
   Future<void> _loadData() async {
@@ -407,7 +417,10 @@ class _FinancialScreenState extends State<FinancialScreen>
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _isInitializing ? null : _initializeFinancialSystem,
+                onPressed:
+                    _isInitializing || !_canEditFinancial
+                        ? null
+                        : _initializeFinancialSystem,
                 icon:
                     _isInitializing
                         ? const SizedBox(

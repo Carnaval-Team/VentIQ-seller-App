@@ -37,13 +37,13 @@ class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
     // Obtener tienda actual y rol para esa tienda
     final currentStoreId = await _userPrefs.getIdTienda();
     UserRole userRole;
-    
+
     if (currentStoreId != null) {
       userRole = await _permissionsService.getUserRoleForStore(currentStoreId);
     } else {
       userRole = await _permissionsService.getUserRole();
     }
-    
+
     final items = <BottomNavigationBarItem>[];
     final routes = <String>[];
 
@@ -58,7 +58,9 @@ class _AdminBottomNavigationState extends State<AdminBottomNavigation> {
     routes.add('/dashboard');
 
     // Productos - Solo Gerente y Supervisor
-    if (userRole == UserRole.gerente || userRole == UserRole.supervisor) {
+    if (userRole == UserRole.gerente ||
+        userRole == UserRole.supervisor ||
+        userRole == UserRole.auditor) {
       items.add(
         const BottomNavigationBarItem(
           icon: Icon(Icons.inventory_2_outlined),

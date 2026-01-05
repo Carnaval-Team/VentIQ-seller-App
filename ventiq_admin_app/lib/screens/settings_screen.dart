@@ -16,6 +16,7 @@ import '../services/store_data_service.dart';
 import '../services/store_service.dart';
 import '../services/catalogo_service.dart';
 import '../utils/screen_protection_mixin.dart';
+import '../utils/navigation_guard.dart';
 import 'store_data_management_screen.dart';
 import 'catalogo_productos_screen.dart';
 
@@ -43,17 +44,27 @@ class _SettingsScreenState extends State<SettingsScreen>
       GlobalKey<State<UnitsTabView>>();
   final GlobalKey<State<CarnavalTabView>> _carnavalTabKey =
       GlobalKey<State<CarnavalTabView>>();
-  
+
   final StoreDataService _storeDataService = StoreDataService();
   final CatalogoService _catalogoService = CatalogoService();
   Map<String, dynamic>? _storeData;
   bool _loadingStoreData = true;
   int? _storeId;
+  bool _canEditSettings = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 7, vsync: this, initialIndex: 1);
+    _loadPermissions();
+  }
+
+  Future<void> _loadPermissions() async {
+    final canEdit = await NavigationGuard.canPerformAction('settings.edit');
+    if (!mounted) return;
+    setState(() {
+      _canEditSettings = canEdit;
+    });
   }
 
   @override
@@ -132,21 +143,24 @@ class _SettingsScreenState extends State<SettingsScreen>
         currentRoute: '/settings',
         onTap: _onBottomNavTap,
       ),
-      floatingActionButton: AnimatedBuilder(
-        animation: _tabController,
-        builder: (context, child) {
-          // Ocultar FAB en la pestaña de Carnaval (índice 5)
-          // También se puede ocultar en Global (índice 0) si se desea
-          final isHidden = _tabController.index == 5;
-          return isHidden
-              ? const SizedBox.shrink()
-              : FloatingActionButton(
-                onPressed: _showAddDialog,
-                backgroundColor: AppColors.primary,
-                child: const Icon(Icons.add, color: Colors.white),
-              );
-        },
-      ),
+      floatingActionButton:
+          !_canEditSettings
+              ? null
+              : AnimatedBuilder(
+                animation: _tabController,
+                builder: (context, child) {
+                  // Ocultar FAB en la pestaña de Carnaval (índice 5)
+                  // También se puede ocultar en Global (índice 0) si se desea
+                  final isHidden = _tabController.index == 5;
+                  return isHidden
+                      ? const SizedBox.shrink()
+                      : FloatingActionButton(
+                        onPressed: _showAddDialog,
+                        backgroundColor: AppColors.primary,
+                        child: const Icon(Icons.add, color: Colors.white),
+                      );
+                },
+              ),
     );
   }
 
@@ -255,10 +269,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 children: [
                   const Text(
                     'Información de la Tienda',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
                   _buildInfoRow(
@@ -293,10 +304,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 children: [
                   const Text(
                     'Ubicación Geográfica',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
                   _buildInfoRow(
@@ -313,7 +321,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const SizedBox(height: 12),
                   _buildInfoRow(
                     'Coordenadas',
-                    _storeData!['latitude'] != null && _storeData!['longitude'] != null
+                    _storeData!['latitude'] != null &&
+                            _storeData!['longitude'] != null
                         ? '${_storeData!['latitude']}, ${_storeData!['longitude']}'
                         : 'No especificadas',
                     Icons.map,
@@ -333,10 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 children: [
                   const Text(
                     'Horario de Atención',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
                   _buildDiasTrabajoSelector(),
@@ -349,7 +355,9 @@ class _SettingsScreenState extends State<SettingsScreen>
           const SizedBox(height: 24),
 
           // Mapa con ubicación
-          if (_storeData != null && _storeData!['latitude'] != null && _storeData!['longitude'] != null)
+          if (_storeData != null &&
+              _storeData!['latitude'] != null &&
+              _storeData!['longitude'] != null)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -366,10 +374,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     const SizedBox(height: 16),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: SizedBox(
-                        height: 350,
-                        child: _buildMapPreview(),
-                      ),
+                      child: SizedBox(height: 350, child: _buildMapPreview()),
                     ),
                   ],
                 ),
@@ -449,13 +454,17 @@ class _SettingsScreenState extends State<SettingsScreen>
                                 ),
                               ),
                               FutureBuilder<bool>(
-                                future: _catalogoService.obtenerMostrarEnCatalogoTienda(_storeId!),
+                                future: _catalogoService
+                                    .obtenerMostrarEnCatalogoTienda(_storeId!),
                                 builder: (context, snapshot) {
-                                  if (snapshot.connectionState == ConnectionState.waiting) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
                                     return const SizedBox(
                                       width: 24,
                                       height: 24,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
                                     );
                                   }
 
@@ -464,10 +473,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     value: mostrar,
                                     onChanged: (value) async {
                                       try {
-                                        await _catalogoService.actualizarMostrarEnCatalogoTienda(_storeId!, value);
+                                        await _catalogoService
+                                            .actualizarMostrarEnCatalogoTienda(
+                                              _storeId!,
+                                              value,
+                                            );
                                         if (mounted) {
                                           setState(() {});
-                                          ScaffoldMessenger.of(context).showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             SnackBar(
                                               content: Text(
                                                 value
@@ -481,11 +496,20 @@ class _SettingsScreenState extends State<SettingsScreen>
                                       } catch (e) {
                                         if (mounted) {
                                           setState(() {});
-                                          ScaffoldMessenger.of(context).showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             SnackBar(
-                                              content: Text(e.toString().replaceAll('Exception: ', '')),
+                                              content: Text(
+                                                e.toString().replaceAll(
+                                                  'Exception: ',
+                                                  '',
+                                                ),
+                                              ),
                                               backgroundColor: Colors.red,
-                                              duration: const Duration(seconds: 5),
+                                              duration: const Duration(
+                                                seconds: 5,
+                                              ),
                                             ),
                                           );
                                         }
@@ -511,21 +535,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                   const SizedBox(height: 16),
                   FutureBuilder<bool>(
-                    future: _catalogoService.obtenerMostrarEnCatalogoTienda(_storeId!),
+                    future: _catalogoService.obtenerMostrarEnCatalogoTienda(
+                      _storeId!,
+                    ),
                     builder: (context, snapshot) {
                       final mostrarEnCatalogo = snapshot.data ?? false;
-                      
+
                       if (!mostrarEnCatalogo) {
                         return const SizedBox.shrink();
                       }
-                      
+
                       return SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
                           onPressed: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (context) => const CatalogoProductosScreen(),
+                                builder:
+                                    (context) =>
+                                        const CatalogoProductosScreen(),
                               ),
                             );
                           },
@@ -551,22 +579,24 @@ class _SettingsScreenState extends State<SettingsScreen>
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => StoreDataManagementScreen(
-                      storeId: _storeId!,
-                    ),
-                  ),
-                ).then((_) {
-                  // Recargar datos después de volver
-                  if (mounted) {
-                    setState(() {
-                      _storeData = null;
-                      _loadingStoreData = true;
+                Navigator.of(context)
+                    .push(
+                      MaterialPageRoute(
+                        builder:
+                            (context) =>
+                                StoreDataManagementScreen(storeId: _storeId!),
+                      ),
+                    )
+                    .then((_) {
+                      // Recargar datos después de volver
+                      if (mounted) {
+                        setState(() {
+                          _storeData = null;
+                          _loadingStoreData = true;
+                        });
+                        _getStoreIdFromContext();
+                      }
                     });
-                    _getStoreIdFromContext();
-                  }
-                });
               },
               icon: const Icon(Icons.edit),
               label: const Text('Editar Información de la Tienda'),
@@ -587,23 +617,22 @@ class _SettingsScreenState extends State<SettingsScreen>
     final lng = (_storeData?['longitude'] as num?)?.toDouble() ?? 0.0;
 
     return FlutterMap(
-      options: MapOptions(
-        center: LatLng(lat, lng),
-        zoom: 13.0,
-      ),
+      options: MapOptions(center: LatLng(lat, lng), zoom: 13.0),
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'VentIQAdmin/1.6.0 (+https://ventiq.com; contact: support@ventiq.com)',
+          userAgentPackageName:
+              'VentIQAdmin/1.6.0 (+https://ventiq.com; contact: support@ventiq.com)',
           tileSize: 256,
         ),
         RichAttributionWidget(
           attributions: [
             TextSourceAttribution(
               'OpenStreetMap contributors',
-              onTap: () => launchUrl(
-                Uri.parse('https://openstreetmap.org/copyright'),
-              ),
+              onTap:
+                  () => launchUrl(
+                    Uri.parse('https://openstreetmap.org/copyright'),
+                  ),
             ),
           ],
         ),
@@ -741,7 +770,12 @@ class _SettingsScreenState extends State<SettingsScreen>
     // ya que AdminBottomNavigation usa _handleTap internamente
   }
 
-  Widget _buildEditableRow(String label, String value, IconData icon, String fieldKey) {
+  Widget _buildEditableRow(
+    String label,
+    String value,
+    IconData icon,
+    String fieldKey,
+  ) {
     return Row(
       children: [
         Icon(icon, size: 20, color: Colors.grey.shade600),
@@ -762,7 +796,10 @@ class _SettingsScreenState extends State<SettingsScreen>
               GestureDetector(
                 onTap: () => _showEditDialog(label, value, fieldKey),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.grey.shade300),
                     borderRadius: BorderRadius.circular(6),
@@ -794,48 +831,49 @@ class _SettingsScreenState extends State<SettingsScreen>
     final controller = TextEditingController(text: currentValue);
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Editar $label'),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            hintText: 'Ingresa $label',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+      builder:
+          (context) => AlertDialog(
+            title: Text('Editar $label'),
+            content: TextField(
+              controller: controller,
+              decoration: InputDecoration(
+                hintText: 'Ingresa $label',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  await _updateStoreField(fieldKey, controller.text);
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('✅ $label actualizado'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Guardar'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              await _updateStoreField(fieldKey, controller.text);
-              if (mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('✅ $label actualizado'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
     );
   }
 
   Future<void> _updateStoreField(String fieldKey, String value) async {
     try {
       if (_storeId == null) return;
-      
+
       await _storeDataService.updateStoreField(_storeId!, fieldKey, value);
-      
+
       if (mounted) {
         setState(() {
           _storeData![fieldKey] = value;
@@ -845,51 +883,58 @@ class _SettingsScreenState extends State<SettingsScreen>
       print('Error actualizando campo: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
   }
 
   Widget _buildDiasTrabajoSelector() {
-    final diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-    final diasSeleccionados = _parsearDiasTrabajoJSON(_storeData!['dias_trabajo']);
+    final diasSemana = [
+      'Lunes',
+      'Martes',
+      'Miércoles',
+      'Jueves',
+      'Viernes',
+      'Sábado',
+      'Domingo',
+    ];
+    final diasSeleccionados = _parsearDiasTrabajoJSON(
+      _storeData!['dias_trabajo'],
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           'Días de Trabajo',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: diasSemana.map((dia) {
-            final isSelected = diasSeleccionados.contains(dia.toLowerCase());
-            return FilterChip(
-              label: Text(dia),
-              selected: isSelected,
-              onSelected: (selected) async {
-                final nuevosDias = List<String>.from(diasSeleccionados);
-                if (selected) {
-                  nuevosDias.add(dia.toLowerCase());
-                } else {
-                  nuevosDias.removeWhere((d) => d == dia.toLowerCase());
-                }
-                await _guardarDiasTrabajoJSON(nuevosDias);
-              },
-              backgroundColor: Colors.grey.shade200,
-              selectedColor: Colors.green.shade300,
-            );
-          }).toList(),
+          children:
+              diasSemana.map((dia) {
+                final isSelected = diasSeleccionados.contains(
+                  dia.toLowerCase(),
+                );
+                return FilterChip(
+                  label: Text(dia),
+                  selected: isSelected,
+                  onSelected: (selected) async {
+                    final nuevosDias = List<String>.from(diasSeleccionados);
+                    if (selected) {
+                      nuevosDias.add(dia.toLowerCase());
+                    } else {
+                      nuevosDias.removeWhere((d) => d == dia.toLowerCase());
+                    }
+                    await _guardarDiasTrabajoJSON(nuevosDias);
+                  },
+                  backgroundColor: Colors.grey.shade200,
+                  selectedColor: Colors.green.shade300,
+                );
+              }).toList(),
         ),
       ],
     );
@@ -904,10 +949,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       children: [
         const Text(
           'Horarios',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
         Row(
@@ -933,7 +975,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildTimePickerField(String label, String currentTime, String fieldKey) {
+  Widget _buildTimePickerField(
+    String label,
+    String currentTime,
+    String fieldKey,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -960,7 +1006,10 @@ class _SettingsScreenState extends State<SettingsScreen>
               children: [
                 Text(
                   currentTime.substring(0, 5),
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 Icon(Icons.access_time, size: 18, color: Colors.blue.shade600),
               ],
@@ -971,7 +1020,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Future<void> _selectTime(String label, String currentTime, String fieldKey) async {
+  Future<void> _selectTime(
+    String label,
+    String currentTime,
+    String fieldKey,
+  ) async {
     final timeParts = currentTime.split(':');
     final initialTime = TimeOfDay(
       hour: int.parse(timeParts[0]),
@@ -984,7 +1037,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
 
     if (pickedTime != null) {
-      final formattedTime = '${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}:00';
+      final formattedTime =
+          '${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}:00';
       await _updateStoreField(fieldKey, formattedTime);
     }
   }
@@ -1008,10 +1062,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _guardarDiasTrabajoJSON(List<String> dias) async {
     try {
       if (_storeId == null) return;
-      
+
       final diasJSON = jsonEncode(dias);
-      await _storeDataService.updateStoreField(_storeId!, 'dias_trabajo', diasJSON);
-      
+      await _storeDataService.updateStoreField(
+        _storeId!,
+        'dias_trabajo',
+        diasJSON,
+      );
+
       if (mounted) {
         setState(() {
           _storeData!['dias_trabajo'] = diasJSON;

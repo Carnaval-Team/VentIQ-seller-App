@@ -3,12 +3,13 @@ import '../../models/supplier.dart';
 import '../../models/supplier_contact.dart';
 import '../../services/supplier_service.dart';
 import 'add_edit_supplier_screen.dart';
+import '../../utils/navigation_guard.dart';
 
 class SupplierDetailScreen extends StatefulWidget {
   final Supplier supplier;
-  
+
   const SupplierDetailScreen({super.key, required this.supplier});
-  
+
   @override
   State<SupplierDetailScreen> createState() => _SupplierDetailScreenState();
 }
@@ -20,21 +21,18 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
   bool _isLoadingMetrics = true;
   bool _isLoadingContacts = true;
   String _errorMessage = '';
-  
+
   @override
   void initState() {
     super.initState();
     _supplier = widget.supplier;
     _loadSupplierData();
   }
-  
+
   Future<void> _loadSupplierData() async {
-    await Future.wait([
-      _loadMetrics(),
-      _loadContacts(),
-    ]);
+    await Future.wait([_loadMetrics(), _loadContacts()]);
   }
-  
+
   Future<void> _loadMetrics() async {
     try {
       setState(() => _isLoadingMetrics = true);
@@ -50,7 +48,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       });
     }
   }
-  
+
   Future<void> _loadContacts() async {
     try {
       setState(() => _isLoadingContacts = true);
@@ -64,7 +62,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       print('Error al cargar contactos: $e');
     }
   }
-  
+
   Future<void> _navigateToEdit() async {
     final result = await Navigator.push(
       context,
@@ -72,7 +70,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
         builder: (context) => AddEditSupplierScreen(supplier: _supplier),
       ),
     );
-    
+
     if (result == true) {
       // Recargar datos del proveedor
       final updatedSupplier = await SupplierService.getSupplierById(
@@ -85,17 +83,25 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_supplier.denominacion),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: _navigateToEdit,
-            tooltip: 'Editar proveedor',
+          FutureBuilder<bool>(
+            future: NavigationGuard.canPerformAction('supplier.edit'),
+            builder: (context, snapshot) {
+              if (snapshot.data == true) {
+                return IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: _navigateToEdit,
+                  tooltip: 'Editar proveedor',
+                );
+              }
+              return const SizedBox.shrink();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -113,19 +119,19 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
             children: [
               // Información básica
               _buildBasicInfoCard(),
-              
+
               const SizedBox(height: 16),
-              
+
               // Métricas
               _buildMetricsCard(),
-              
+
               const SizedBox(height: 16),
-              
+
               // Contactos
               _buildContactsCard(),
-              
+
               const SizedBox(height: 16),
-              
+
               // Información adicional
               _buildAdditionalInfoCard(),
             ],
@@ -134,7 +140,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       ),
     );
   }
-  
+
   Widget _buildBasicInfoCard() {
     return Card(
       child: Padding(
@@ -156,28 +162,28 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             _buildInfoRow('Nombre', _supplier.denominacion),
             _buildInfoRow('Código SKU', _supplier.skuCodigo),
-            
+
             if (_supplier.direccion != null)
               _buildInfoRow('Dirección', _supplier.direccion!),
-            
+
             if (_supplier.ubicacion != null)
               _buildInfoRow('Ubicación', _supplier.ubicacion!),
-            
+
             if (_supplier.leadTime != null)
               _buildInfoRow('Tiempo de Entrega', _supplier.leadTimeDisplay),
-            
+
             _buildInfoRow('Creado', _formatDate(_supplier.createdAt)),
           ],
         ),
       ),
     );
   }
-  
+
   Widget _buildMetricsCard() {
     return Card(
       child: Padding(
@@ -199,9 +205,9 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             if (_isLoadingMetrics)
               const Center(child: CircularProgressIndicator())
             else if (_metrics != null)
@@ -213,7 +219,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       ),
     );
   }
-  
+
   Widget _buildMetricsContent() {
     final metrics = _metrics!;
     return Column(
@@ -239,9 +245,9 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
             ),
           ],
         ),
-        
+
         const SizedBox(height: 12),
-        
+
         Row(
           children: [
             Expanded(
@@ -263,15 +269,15 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
             ),
           ],
         ),
-        
+
         const SizedBox(height: 12),
-        
+
         if (metrics['ultima_recepcion'] != null)
           _buildInfoRow(
             'Última Recepción',
             _formatDate(DateTime.parse(metrics['ultima_recepcion'])),
           ),
-        
+
         _buildInfoRow(
           'Performance Score',
           metrics['performance_score'] ?? 'Sin datos',
@@ -279,8 +285,13 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       ],
     );
   }
-  
-  Widget _buildMetricTile(String label, String value, IconData icon, Color color) {
+
+  Widget _buildMetricTile(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -302,17 +313,14 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
           ),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
-            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildContactsCard() {
     return Card(
       child: Padding(
@@ -334,9 +342,9 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             if (_isLoadingContacts)
               const Center(child: CircularProgressIndicator())
             else if (_contacts.isEmpty)
@@ -348,7 +356,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       ),
     );
   }
-  
+
   Widget _buildContactTile(SupplierContact contact) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -365,14 +373,15 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
             children: [
               Text(
                 contact.nombre,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               if (contact.isPrimary) ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.blue.shade100,
                     borderRadius: BorderRadius.circular(4),
@@ -389,18 +398,15 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
               ],
             ],
           ),
-          
+
           if (contact.cargo != null) ...[
             const SizedBox(height: 4),
             Text(
               contact.cargo!,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
-          
+
           if (contact.telefono != null || contact.email != null) ...[
             const SizedBox(height: 8),
             if (contact.telefono != null)
@@ -408,10 +414,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                 children: [
                   Icon(Icons.phone, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 4),
-                  Text(
-                    contact.telefono!,
-                    style: const TextStyle(fontSize: 12),
-                  ),
+                  Text(contact.telefono!, style: const TextStyle(fontSize: 12)),
                 ],
               ),
             if (contact.email != null) ...[
@@ -420,10 +423,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                 children: [
                   Icon(Icons.email, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 4),
-                  Text(
-                    contact.email!,
-                    style: const TextStyle(fontSize: 12),
-                  ),
+                  Text(contact.email!, style: const TextStyle(fontSize: 12)),
                 ],
               ),
             ],
@@ -432,7 +432,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       ),
     );
   }
-  
+
   Widget _buildAdditionalInfoCard() {
     return Card(
       child: Padding(
@@ -454,12 +454,12 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             _buildInfoRow('ID', _supplier.id.toString()),
             _buildInfoRow('Estado', _supplier.isActive ? 'Activo' : 'Inactivo'),
-            
+
             if (_supplier.hasMetrics)
               _buildInfoRow('Nivel de Performance', _supplier.performanceLevel),
           ],
@@ -467,7 +467,7 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
       ),
     );
   }
-  
+
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -488,17 +488,14 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen> {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
           ),
         ],
       ),
     );
   }
-  
+
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }

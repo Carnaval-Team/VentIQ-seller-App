@@ -4,6 +4,7 @@ import '../../services/supplier_service.dart';
 import '../../widgets/supplier/supplier_card.dart';
 import 'add_edit_supplier_screen.dart';
 import 'supplier_detail_screen.dart';
+import '../../utils/navigation_guard.dart';
 
 class SuppliersListScreen extends StatefulWidget {
   const SuppliersListScreen({super.key});
@@ -18,11 +19,30 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
   bool _isLoading = true;
   String _searchQuery = '';
   String _errorMessage = '';
+  bool _canCreateSupplier = false;
+  bool _canEditSupplier = false;
+  bool _canDeleteSupplier = false;
 
   @override
   void initState() {
     super.initState();
+    _loadPermissions();
     _loadSuppliers();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      NavigationGuard.canPerformAction('supplier.create'),
+      NavigationGuard.canPerformAction('supplier.edit'),
+      NavigationGuard.canPerformAction('supplier.delete'),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _canCreateSupplier = permissions[0];
+      _canEditSupplier = permissions[1];
+      _canDeleteSupplier = permissions[2];
+    });
   }
 
   Future<void> _loadSuppliers() async {
@@ -178,10 +198,18 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
           Expanded(child: _buildContent()),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _navigateToAddSupplier,
-        tooltip: 'Agregar proveedor',
-        child: const Icon(Icons.add),
+      floatingActionButton: FutureBuilder<bool>(
+        future: NavigationGuard.canPerformAction('supplier.create'),
+        builder: (context, snapshot) {
+          if (snapshot.data == true) {
+            return FloatingActionButton(
+              onPressed: _navigateToAddSupplier,
+              tooltip: 'Agregar proveedor',
+              child: const Icon(Icons.add),
+            );
+          }
+          return const SizedBox.shrink();
+        },
       ),
     );
   }
@@ -326,8 +354,12 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
             supplier: supplier,
             showMetrics: true,
             onTap: () => _navigateToSupplierDetail(supplier),
-            onEdit: () => _navigateToEditSupplier(supplier),
-            onDelete: () => _deleteSupplier(supplier),
+            onEdit:
+                _canEditSupplier
+                    ? () => _navigateToEditSupplier(supplier)
+                    : null,
+            onDelete:
+                _canDeleteSupplier ? () => _deleteSupplier(supplier) : null,
             onViewDetails: () => _navigateToSupplierDetail(supplier),
           );
         },
@@ -358,7 +390,7 @@ class _SuppliersListScreenState extends State<SuppliersListScreen> {
           if (_searchQuery.isEmpty) ...[
             const SizedBox(height: 24),
             ElevatedButton.icon(
-              onPressed: _navigateToAddSupplier,
+              onPressed: _canCreateSupplier ? _navigateToAddSupplier : null,
               icon: const Icon(Icons.add),
               label: const Text('Agregar Proveedor'),
             ),

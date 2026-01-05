@@ -4,16 +4,14 @@ import '../models/tpv_price.dart';
 import '../config/app_colors.dart';
 import '../services/tpv_service.dart';
 import '../widgets/tpv_managements/add_price_tpv_product.dart';
+import '../utils/navigation_guard.dart';
 
 class TpvPricesScreen extends StatefulWidget {
   final int? tpvId;
   final int? productId;
-  
-  const TpvPricesScreen({
-    Key? key,
-    this.tpvId,
-    this.productId,
-  }) : super(key: key);
+
+  const TpvPricesScreen({Key? key, this.tpvId, this.productId})
+    : super(key: key);
 
   @override
   State<TpvPricesScreen> createState() => _TpvPricesScreenState();
@@ -24,30 +22,52 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
   List<TpvPrice> _filteredPrices = [];
   List<Map<String, dynamic>> _tpvs = [];
   List<Map<String, dynamic>> _products = [];
-  
+
   bool _isLoading = true;
   String _searchQuery = '';
   int? _selectedTpv;
   int? _selectedProduct;
   bool _showDeleted = false;
-  
+
+  bool _canCreatePrice = false;
+  bool _canEditPrice = false;
+  bool _canDeletePrice = false;
+  bool _canRestorePrice = false;
+  bool _canImportPrices = false;
+
   @override
   void initState() {
     super.initState();
     _selectedTpv = widget.tpvId;
     _selectedProduct = widget.productId;
+    _loadPermissions();
     _loadData();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      NavigationGuard.canPerformAction('tpv_price.create'),
+      NavigationGuard.canPerformAction('tpv_price.edit'),
+      NavigationGuard.canPerformAction('tpv_price.delete'),
+      NavigationGuard.canPerformAction('tpv_price.restore'),
+      NavigationGuard.canPerformAction('tpv_price.import'),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _canCreatePrice = permissions[0];
+      _canEditPrice = permissions[1];
+      _canDeletePrice = permissions[2];
+      _canRestorePrice = permissions[3];
+      _canImportPrices = permissions[4];
+    });
   }
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    
+
     try {
-      await Future.wait([
-        _loadPrices(),
-        _loadTpvs(),
-        _loadProducts(),
-      ]);
+      await Future.wait([_loadPrices(), _loadTpvs(), _loadProducts()]);
       _applyFilters();
     } catch (e) {
       print('Error cargando datos: $e');
@@ -58,7 +78,7 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
 
   Future<void> _loadPrices() async {
     List<TpvPrice> prices = [];
-    
+
     if (widget.tpvId != null) {
       prices = await TpvPriceService.getTpvPrices(
         widget.tpvId!,
@@ -76,7 +96,7 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
       // Por ahora lista vacía, implementar paginación después
       prices = [];
     }
-    
+
     setState(() {
       _prices = prices;
     });
@@ -98,31 +118,36 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
 
   void _applyFilters() {
     List<TpvPrice> filtered = List.from(_prices);
-    
+
     // Filtro por búsqueda
     if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((price) {
-        final productName = price.productoNombre?.toLowerCase() ?? '';
-        final tpvName = price.tpvNombre?.toLowerCase() ?? '';
-        final sku = price.productoSku?.toLowerCase() ?? '';
-        final query = _searchQuery.toLowerCase();
-        
-        return productName.contains(query) ||
-               tpvName.contains(query) ||
-               sku.contains(query);
-      }).toList();
+      filtered =
+          filtered.where((price) {
+            final productName = price.productoNombre?.toLowerCase() ?? '';
+            final tpvName = price.tpvNombre?.toLowerCase() ?? '';
+            final sku = price.productoSku?.toLowerCase() ?? '';
+            final query = _searchQuery.toLowerCase();
+
+            return productName.contains(query) ||
+                tpvName.contains(query) ||
+                sku.contains(query);
+          }).toList();
     }
-    
+
     // Filtro por TPV
     if (_selectedTpv != null) {
-      filtered = filtered.where((price) => price.idTpv == _selectedTpv).toList();
+      filtered =
+          filtered.where((price) => price.idTpv == _selectedTpv).toList();
     }
-    
+
     // Filtro por producto
     if (_selectedProduct != null) {
-      filtered = filtered.where((price) => price.idProducto == _selectedProduct).toList();
+      filtered =
+          filtered
+              .where((price) => price.idProducto == _selectedProduct)
+              .toList();
     }
-    
+
     setState(() {
       _filteredPrices = filtered;
     });
@@ -151,20 +176,24 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                _buildFilters(),
-                _buildStats(),
-                Expanded(child: _buildPricesList()),
-              ],
-            ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddPriceDialog,
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                children: [
+                  _buildFilters(),
+                  _buildStats(),
+                  Expanded(child: _buildPricesList()),
+                ],
+              ),
+      floatingActionButton:
+          _canCreatePrice
+              ? FloatingActionButton(
+                onPressed: _showAddPriceDialog,
+                backgroundColor: AppColors.primary,
+                child: const Icon(Icons.add, color: Colors.white),
+              )
+              : null,
     );
   }
 
@@ -210,7 +239,10 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(color: Colors.grey.shade300),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                   onChanged: (value) {
                     setState(() => _searchQuery = value);
@@ -226,7 +258,10 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                   value: _selectedTpv,
                   isExpanded: true, // Importante para evitar overflow
@@ -238,19 +273,26 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    ..._tpvs.map((tpv) => DropdownMenuItem<int>(
-                      value: tpv['id'],
-                      child: Text(
-                        tpv['denominacion'] ?? 'TPV',
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    )).toList(),
+                    ..._tpvs
+                        .map(
+                          (tpv) => DropdownMenuItem<int>(
+                            value: tpv['id'],
+                            child: Text(
+                              tpv['denominacion'] ?? 'TPV',
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ],
-                  onChanged: widget.tpvId == null ? (value) {
-                    setState(() => _selectedTpv = value);
-                    _applyFilters();
-                  } : null,
+                  onChanged:
+                      widget.tpvId == null
+                          ? (value) {
+                            setState(() => _selectedTpv = value);
+                            _applyFilters();
+                          }
+                          : null,
                 ),
               ),
             ],
@@ -270,15 +312,16 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
                   dense: true,
                 ),
               ),
-              ElevatedButton.icon(
-                onPressed: _showImportDialog,
-                icon: const Icon(Icons.upload_file),
-                label: const Text('Importar'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.success,
-                  foregroundColor: Colors.white,
+              if (_canImportPrices)
+                ElevatedButton.icon(
+                  onPressed: _showImportDialog,
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text('Importar'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.success,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
-              ),
             ],
           ),
         ],
@@ -288,24 +331,51 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
 
   Widget _buildStats() {
     final totalPrices = _filteredPrices.length;
-    final activePrices = _filteredPrices.where((p) => p.esActivo && !p.isDeleted).length;
+    final activePrices =
+        _filteredPrices.where((p) => p.esActivo && !p.isDeleted).length;
     final deletedPrices = _filteredPrices.where((p) => p.isDeleted).length;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          Expanded(child: _buildStatCard('Total', totalPrices.toString(), Icons.list, AppColors.primary)),
+          Expanded(
+            child: _buildStatCard(
+              'Total',
+              totalPrices.toString(),
+              Icons.list,
+              AppColors.primary,
+            ),
+          ),
           const SizedBox(width: 12),
-          Expanded(child: _buildStatCard('Activos', activePrices.toString(), Icons.check_circle, AppColors.success)),
+          Expanded(
+            child: _buildStatCard(
+              'Activos',
+              activePrices.toString(),
+              Icons.check_circle,
+              AppColors.success,
+            ),
+          ),
           const SizedBox(width: 12),
-          Expanded(child: _buildStatCard('Eliminados', deletedPrices.toString(), Icons.delete, AppColors.error)),
+          Expanded(
+            child: _buildStatCard(
+              'Eliminados',
+              deletedPrices.toString(),
+              Icons.delete,
+              AppColors.error,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -327,10 +397,7 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
           ),
           Text(
             title,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -343,26 +410,16 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.attach_money,
-              size: 64,
-              color: AppColors.textSecondary,
-            ),
+            Icon(Icons.attach_money, size: 64, color: AppColors.textSecondary),
             const SizedBox(height: 16),
             Text(
               'No hay precios específicos',
-              style: TextStyle(
-                fontSize: 18,
-                color: AppColors.textSecondary,
-              ),
+              style: TextStyle(fontSize: 18, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 8),
             Text(
               'Agrega precios diferenciados por TPV',
-              style: TextStyle(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-              ),
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
             ),
           ],
         ),
@@ -434,26 +491,52 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
                 ),
                 PopupMenuButton<String>(
                   onSelected: (value) => _handlePriceAction(value, price),
-                  itemBuilder: (context) => [
-                    if (!price.isDeleted) ...[
-                      const PopupMenuItem(value: 'edit', child: Text('Editar')),
-                      const PopupMenuItem(value: 'duplicate', child: Text('Duplicar')),
-                      const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                    ] else ...[
-                      const PopupMenuItem(value: 'restore', child: Text('Restaurar')),
-                    ],
-                    const PopupMenuItem(value: 'details', child: Text('Ver Detalles')),
-                  ],
+                  itemBuilder:
+                      (context) => [
+                        if (!price.isDeleted) ...[
+                          if (_canEditPrice)
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: Text('Editar'),
+                            ),
+                          if (_canEditPrice)
+                            const PopupMenuItem(
+                              value: 'duplicate',
+                              child: Text('Duplicar'),
+                            ),
+                          if (_canDeletePrice)
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Eliminar'),
+                            ),
+                        ] else ...[
+                          if (_canRestorePrice)
+                            const PopupMenuItem(
+                              value: 'restore',
+                              child: Text('Restaurar'),
+                            ),
+                        ],
+                        const PopupMenuItem(
+                          value: 'details',
+                          child: Text('Ver Detalles'),
+                        ),
+                      ],
                 ),
               ],
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                _buildInfoChip('Desde: ${_formatDate(price.fechaDesde)}', Icons.calendar_today),
+                _buildInfoChip(
+                  'Desde: ${_formatDate(price.fechaDesde)}',
+                  Icons.calendar_today,
+                ),
                 const SizedBox(width: 8),
                 if (price.fechaHasta != null)
-                  _buildInfoChip('Hasta: ${_formatDate(price.fechaHasta!)}', Icons.event),
+                  _buildInfoChip(
+                    'Hasta: ${_formatDate(price.fechaHasta!)}',
+                    Icons.event,
+                  ),
               ],
             ),
           ],
@@ -523,15 +606,31 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
   void _handlePriceAction(String action, TpvPrice price) {
     switch (action) {
       case 'edit':
+        if (!_canEditPrice) {
+          NavigationGuard.showActionDeniedMessage(context, 'Editar precio');
+          return;
+        }
         _showEditPriceDialog(price);
         break;
       case 'duplicate':
+        if (!_canEditPrice) {
+          NavigationGuard.showActionDeniedMessage(context, 'Duplicar precio');
+          return;
+        }
         _showDuplicatePriceDialog(price);
         break;
       case 'delete':
+        if (!_canDeletePrice) {
+          NavigationGuard.showActionDeniedMessage(context, 'Eliminar precio');
+          return;
+        }
         _showDeleteConfirmation(price);
         break;
       case 'restore':
+        if (!_canRestorePrice) {
+          NavigationGuard.showActionDeniedMessage(context, 'Restaurar precio');
+          return;
+        }
         _restorePrice(price);
         break;
       case 'details':
@@ -541,60 +640,81 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
   }
 
   void _showAddPriceDialog() {
+    if (!_canCreatePrice) {
+      NavigationGuard.showActionDeniedMessage(context, 'Crear precio');
+      return;
+    }
     showDialog(
       context: context,
-      builder: (context) => AddPriceTpvProductDialog(
-        tpvId: widget.tpvId,
-        productId: widget.productId,
-        onSuccess: _loadData,
-      ),
+      builder:
+          (context) => AddPriceTpvProductDialog(
+            tpvId: widget.tpvId,
+            productId: widget.productId,
+            onSuccess: _loadData,
+          ),
     );
   }
 
   void _showEditPriceDialog(TpvPrice price) {
+    if (!_canEditPrice) {
+      NavigationGuard.showActionDeniedMessage(context, 'Editar precio');
+      return;
+    }
     showDialog(
       context: context,
-      builder: (context) => AddPriceTpvProductDialog(
-        tpvId: widget.tpvId,
-        productId: widget.productId,
-        existingPrice: price,
-        onSuccess: _loadData,
-      ),
+      builder:
+          (context) => AddPriceTpvProductDialog(
+            tpvId: widget.tpvId,
+            productId: widget.productId,
+            existingPrice: price,
+            onSuccess: _loadData,
+          ),
     );
   }
 
   void _showDuplicatePriceDialog(TpvPrice price) {
     // Implementar duplicación
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Duplicar precio ID: ${price.id}')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Duplicar precio ID: ${price.id}')));
   }
 
   void _showDeleteConfirmation(TpvPrice price) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar Eliminación'),
-        content: Text('¿Eliminar el precio de ${price.productoNombre} para ${price.tpvNombre}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Confirmar Eliminación'),
+            content: Text(
+              '¿Eliminar el precio de ${price.productoNombre} para ${price.tpvNombre}?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _deletePrice(price);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                ),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _deletePrice(price);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
   }
 
   void _deletePrice(TpvPrice price) async {
+    if (!_canDeletePrice) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Eliminar precio');
+      }
+      return;
+    }
     final success = await TpvPriceService.deleteTpvPrice(price.id);
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -602,13 +722,19 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
       );
       _loadData();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error al eliminar precio')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Error al eliminar precio')));
     }
   }
 
   void _restorePrice(TpvPrice price) async {
+    if (!_canRestorePrice) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Restaurar precio');
+      }
+      return;
+    }
     final success = await TpvPriceService.restoreTpvPrice(price.id);
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -630,6 +756,10 @@ class _TpvPricesScreenState extends State<TpvPricesScreen> {
   }
 
   void _showImportDialog() {
+    if (!_canImportPrices) {
+      NavigationGuard.showActionDeniedMessage(context, 'Importar precios');
+      return;
+    }
     // Implementar importación masiva
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Importación masiva - Por implementar')),

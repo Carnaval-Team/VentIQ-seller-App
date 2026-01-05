@@ -91,18 +91,19 @@ class AutoSyncService {
   Future<void> performImmediateSync() async {
     try {
       print('⚡ Ejecutando sincronización inmediata...');
-      
+
       // Verificar si el modo offline está activado
-      final isOfflineModeEnabled = await _userPreferencesService.isOfflineModeEnabled();
-      
+      final isOfflineModeEnabled =
+          await _userPreferencesService.isOfflineModeEnabled();
+
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline activado - Omitiendo sincronización inmediata');
         return;
       }
-      
+
       // Ejecutar sincronización inmediata
       await _performSync();
-      
+
       print('✅ Sincronización inmediata completada');
     } catch (e) {
       print('❌ Error en sincronización inmediata: $e');
@@ -245,7 +246,9 @@ class AutoSyncService {
             ),
           );
           final isFirstSync = _syncCount == 0;
-          print('  📂 Sincronizando categorías (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})');
+          print(
+            '  📂 Sincronizando categorías (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})',
+          );
           syncedData['categories'] = await _syncCategories();
           syncedItems.add('categorías');
           print('  ✅ Categorías sincronizadas');
@@ -253,7 +256,9 @@ class AutoSyncService {
           print('  ❌ Error sincronizando categorías: $e');
         }
       } else {
-        print('  ⏭️ Omitiendo categorías (sincronización #$_syncCount, próxima en ${3 - (_syncCount % 3)})');
+        print(
+          '  ⏭️ Omitiendo categorías (sincronización #$_syncCount, próxima en ${3 - (_syncCount % 3)})',
+        );
       }
 
       // 6. Sincronizar productos (siempre en primera sincronización, luego cada 5 sincronizaciones)
@@ -267,7 +272,9 @@ class AutoSyncService {
             ),
           );
           final isFirstSync = _syncCount == 0;
-          print('  📦 Sincronizando productos (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})');
+          print(
+            '  📦 Sincronizando productos (${isFirstSync ? "primera carga" : "sincronización periódica #$_syncCount"})',
+          );
           syncedData['products'] = await _syncProducts();
           syncedItems.add('productos');
           print('  ✅ Productos sincronizados');
@@ -275,7 +282,9 @@ class AutoSyncService {
           print('  ❌ Error sincronizando productos: $e');
         }
       } else {
-        print('  ⏭️ Omitiendo productos (sincronización #$_syncCount, próxima en ${5 - (_syncCount % 5)})');
+        print(
+          '  ⏭️ Omitiendo productos (sincronización #$_syncCount, próxima en ${5 - (_syncCount % 5)})',
+        );
       }
 
       // 7. Sincronizar turno y resumen
@@ -289,13 +298,13 @@ class AutoSyncService {
         );
         final turnoData = await _syncTurno();
         syncedData['turno'] = turnoData; // Para datos offline generales
-        
+
         // ✅ CORREGIDO: También guardar en la clave específica de turno offline
         if (turnoData != null) {
           await _userPreferencesService.saveOfflineTurno(turnoData);
           print('  💾 Turno guardado en cache offline específico');
         }
-        
+
         await _syncTurnoResumen();
         await _syncResumenCierre();
         syncedItems.add('turno');
@@ -459,7 +468,9 @@ class AutoSyncService {
     final Map<String, List<Map<String, dynamic>>> productsByCategory = {};
 
     final categories = await categoryService.getCategories();
-    print('🔄 AutoSync: Sincronizando productos de ${categories.length} categorías...');
+    print(
+      '🔄 AutoSync: Sincronizando productos de ${categories.length} categorías...',
+    );
 
     for (var category in categories) {
       // Sincronizar todas las categorías para cobertura completa
@@ -473,16 +484,23 @@ class AutoSyncService {
         final subcategory = entry.key;
         final products = entry.value;
 
-        print('    📦 Subcategoría "$subcategory": ${products.length} productos');
-        
+        print(
+          '    📦 Subcategoría "$subcategory": ${products.length} productos',
+        );
+
         // 🚀 PROCESAMIENTO CONCURRENTE: Procesar productos en lotes de 5
         const batchSize = 5;
         for (var i = 0; i < products.length; i += batchSize) {
-          final endIndex = (i + batchSize < products.length) ? i + batchSize : products.length;
+          final endIndex =
+              (i + batchSize < products.length)
+                  ? i + batchSize
+                  : products.length;
           final batch = products.sublist(i, endIndex);
-          
-          print('      🔄 Procesando lote ${(i ~/ batchSize) + 1} (${batch.length} productos)...');
-          
+
+          print(
+            '      🔄 Procesando lote ${(i ~/ batchSize) + 1} (${batch.length} productos)...',
+          );
+
           // Procesar todos los productos del lote en paralelo
           final batchResults = await Future.wait(
             batch.map((prod) async {
@@ -493,8 +511,10 @@ class AutoSyncService {
                   params: {'id_producto_param': prod.id},
                 );
 
-                print('      ✅ ${prod.denominacion} (ID: ${prod.id}) - Detalles obtenidos');
-                
+                print(
+                  '      ✅ ${prod.denominacion} (ID: ${prod.id}) - Detalles obtenidos',
+                );
+
                 return {
                   'success': true,
                   'data': {
@@ -511,8 +531,10 @@ class AutoSyncService {
                 };
               } catch (e) {
                 // En caso de error, retornar solo datos básicos
-                print('      ⚠️ ${prod.denominacion} (ID: ${prod.id}) - Solo datos básicos: $e');
-                
+                print(
+                  '      ⚠️ ${prod.denominacion} (ID: ${prod.id}) - Solo datos básicos: $e',
+                );
+
                 return {
                   'success': false,
                   'data': {
@@ -529,21 +551,28 @@ class AutoSyncService {
               }
             }),
           );
-          
+
           // Agregar todos los resultados del lote a la lista
           for (var result in batchResults) {
             allProducts.add(result['data'] as Map<String, dynamic>);
           }
-          
-          print('      ✅ Lote completado: ${batchResults.length} productos procesados');
+
+          print(
+            '      ✅ Lote completado: ${batchResults.length} productos procesados',
+          );
         }
       }
 
       productsByCategory[category.id.toString()] = allProducts;
-      print('  ✅ Categoría "${category.name}": ${allProducts.length} productos sincronizados');
+      print(
+        '  ✅ Categoría "${category.name}": ${allProducts.length} productos sincronizados',
+      );
     }
 
-    final totalProducts = productsByCategory.values.fold(0, (sum, list) => sum + list.length);
+    final totalProducts = productsByCategory.values.fold(
+      0,
+      (sum, list) => sum + list.length,
+    );
     print('🎉 AutoSync: Total de productos sincronizados: $totalProducts');
     return productsByCategory;
   }
@@ -599,16 +628,19 @@ class AutoSyncService {
 
         if (resumenCierreResponse != null) {
           Map<String, dynamic> resumenCierre;
-          
+
           // Manejar tanto List como Map de respuesta
-          if (resumenCierreResponse is List && resumenCierreResponse.isNotEmpty) {
+          if (resumenCierreResponse is List &&
+              resumenCierreResponse.isNotEmpty) {
             // Si es una lista, tomar el primer elemento
             resumenCierre = resumenCierreResponse[0] as Map<String, dynamic>;
           } else if (resumenCierreResponse is Map<String, dynamic>) {
             // Si ya es un mapa, usarlo directamente
             resumenCierre = resumenCierreResponse;
           } else {
-            print('⚠️ AutoSync: Formato de respuesta no reconocido para resumen de cierre');
+            print(
+              '⚠️ AutoSync: Formato de respuesta no reconocido para resumen de cierre',
+            );
             return;
           }
 
@@ -627,22 +659,27 @@ class AutoSyncService {
     try {
       // Obtener egresos del turno actual usando TurnoService
       final egresos = await TurnoService.getEgresosEnriquecidos();
-      
+
       if (egresos.isNotEmpty) {
         // Convertir egresos a formato Map para cache
-        final egresosData = egresos.map((egreso) => {
-          'id_egreso': egreso.idEgreso,
-          'monto_entrega': egreso.montoEntrega,
-          'motivo_entrega': egreso.motivoEntrega,
-          'nombre_autoriza': egreso.nombreAutoriza,
-          'nombre_recibe': egreso.nombreRecibe,
-          'es_digital': egreso.esDigital,
-          'fecha_entrega': egreso.fechaEntrega.toIso8601String(),
-          'id_medio_pago': egreso.idMedioPago,
-          'turno_estado': egreso.turnoEstado,
-          'medio_pago': egreso.medioPago,
-        }).toList();
-        
+        final egresosData =
+            egresos
+                .map(
+                  (egreso) => {
+                    'id_egreso': egreso.idEgreso,
+                    'monto_entrega': egreso.montoEntrega,
+                    'motivo_entrega': egreso.motivoEntrega,
+                    'nombre_autoriza': egreso.nombreAutoriza,
+                    'nombre_recibe': egreso.nombreRecibe,
+                    'es_digital': egreso.esDigital,
+                    'fecha_entrega': egreso.fechaEntrega.toIso8601String(),
+                    'id_medio_pago': egreso.idMedioPago,
+                    'turno_estado': egreso.turnoEstado,
+                    'medio_pago': egreso.medioPago,
+                  },
+                )
+                .toList();
+
         // Guardar en cache para uso offline
         await _userPreferencesService.saveEgresosCache(egresosData);
         print('  📊 ${egresos.length} egresos sincronizados automáticamente');
@@ -659,7 +696,7 @@ class AutoSyncService {
   /// Sincronizar egresos offline pendientes
   Future<int> _syncOfflineEgresos() async {
     final egresosOffline = await _userPreferencesService.getEgresosOffline();
-    
+
     if (egresosOffline.isEmpty) {
       print('  📝 No hay egresos offline pendientes');
       return 0;
@@ -696,9 +733,10 @@ class AutoSyncService {
         } else {
           print('    ❌ Error en servicio de egreso: ${result['message']}');
         }
-
       } catch (e) {
-        print('    ❌ Error sincronizando egreso offline ${egresoData['offline_id']}: $e');
+        print(
+          '    ❌ Error sincronizando egreso offline ${egresoData['offline_id']}: $e',
+        );
         // Continúa con el siguiente egreso sin interrumpir el proceso
       }
     }
@@ -750,7 +788,7 @@ class AutoSyncService {
   /// Sincronizar ventas offline pendientes
   Future<int> _syncOfflineSales() async {
     final pendingOrders = await _userPreferencesService.getPendingOrders();
-    
+
     if (pendingOrders.isEmpty) {
       print('  📝 No hay ventas offline pendientes');
       return 0;
@@ -758,10 +796,16 @@ class AutoSyncService {
 
     print('  🔄 Sincronizando ${pendingOrders.length} ventas offline...');
     int syncedCount = 0;
+    final syncedOrderIds = <String>[];
 
     for (var orderData in pendingOrders) {
       try {
-        print('    - Procesando venta offline: ${orderData['id']}');
+        final orderId = orderData['id']?.toString();
+        if (orderId == null || orderId.isEmpty) {
+          throw Exception('Orden offline sin ID');
+        }
+
+        print('    - Procesando venta offline: $orderId');
 
         // 1. Registrar cliente si hay datos
         await _registerClientFromOfflineData(orderData);
@@ -770,28 +814,30 @@ class AutoSyncService {
         await _registerSaleInSupabase(orderData);
 
         // 3. Completar la orden según su estado
-        final estado = orderData['estado'] ?? 'completada';
-        await _completeOrderWithStatus(orderData['id'], estado);
+        final estado = (orderData['estado'] ?? 'completada').toString();
+        await _completeOrderWithStatus(orderId, estado);
 
         syncedCount++;
-        print('    ✅ Venta offline sincronizada: ${orderData['id']}');
-
+        syncedOrderIds.add(orderId);
+        print('    ✅ Venta offline sincronizada: $orderId');
       } catch (e) {
         print('    ❌ Error sincronizando venta offline ${orderData['id']}: $e');
         // Continúa con la siguiente venta sin interrumpir el proceso
       }
     }
 
-    if (syncedCount > 0) {
+    if (syncedOrderIds.isNotEmpty) {
       // Limpiar las órdenes sincronizadas exitosamente
-      await _cleanupSyncedOrders(syncedCount);
+      await _cleanupSyncedOrders(syncedOrderIds);
     }
 
     return syncedCount;
   }
 
   /// Registrar cliente desde datos offline
-  Future<void> _registerClientFromOfflineData(Map<String, dynamic> orderData) async {
+  Future<void> _registerClientFromOfflineData(
+    Map<String, dynamic> orderData,
+  ) async {
     final buyerName = orderData['buyer_name'] ?? orderData['buyerName'];
     final buyerPhone = orderData['buyer_phone'] ?? orderData['buyerPhone'];
 
@@ -850,17 +896,22 @@ class AutoSyncService {
     for (final itemData in itemsData) {
       final inventoryMetadata = itemData['inventory_metadata'] ?? {};
       print('    🔄 AUTO SYNC - Inventory Metadata: $inventoryMetadata');
-      
+
       // ✅ CORREGIDO: Calcular precio unitario correcto desde subtotal
-      final subtotal = itemData['subtotal'] ?? (itemData['precio_unitario'] * itemData['cantidad']);
+      final subtotal =
+          itemData['subtotal'] ??
+          (itemData['precio_unitario'] * itemData['cantidad']);
       final cantidad = itemData['cantidad'] as num;
-      final precioUnitarioCorrect = cantidad > 0 ? (subtotal / cantidad) : itemData['precio_unitario'];
-      
-      print('    🔄 AUTO SYNC - Producto: ${itemData['denominacion'] ?? itemData['id_producto']}');
+      final precioUnitarioCorrect =
+          cantidad > 0 ? (subtotal / cantidad) : itemData['precio_unitario'];
+
+      print(
+        '    🔄 AUTO SYNC - Producto: ${itemData['denominacion'] ?? itemData['id_producto']}',
+      );
       print('      - Precio unitario base: \$${itemData['precio_unitario']}');
       print('      - Subtotal con método de pago: \$${subtotal}');
       print('      - Precio unitario correcto: \$${precioUnitarioCorrect}');
-      
+
       productos.add({
         'id_producto': itemData['id_producto'],
         'id_variante': inventoryMetadata['id_variante'],
@@ -868,8 +919,11 @@ class AutoSyncService {
         'id_ubicacion': inventoryMetadata['id_ubicacion'],
         'id_presentacion': inventoryMetadata['id_presentacion'],
         'cantidad': itemData['cantidad'],
-        'precio_unitario': precioUnitarioCorrect, // ✅ Precio correcto según método de pago
-        'sku_producto': inventoryMetadata['sku_producto'] ?? itemData['id_producto'].toString(),
+        'precio_unitario':
+            precioUnitarioCorrect, // ✅ Precio correcto según método de pago
+        'sku_producto':
+            inventoryMetadata['sku_producto'] ??
+            itemData['id_producto'].toString(),
         'sku_ubicacion': inventoryMetadata['sku_ubicacion'],
         'es_producto_venta': true,
       });
@@ -883,7 +937,8 @@ class AutoSyncService {
         'p_denominacion': 'Venta Auto Sync - ${orderData['id']}',
         'p_estado_inicial': 1, // Estado enviada
         'p_id_tpv': idTpv,
-        'p_observaciones': orderData['notas'] ?? 'Sincronización automática de venta offline',
+        'p_observaciones':
+            orderData['notas'] ?? 'Sincronización automática de venta offline',
         'p_productos': productos,
         'p_uuid': userId,
         'p_id_cliente': orderData['idCliente'],
@@ -900,7 +955,10 @@ class AutoSyncService {
         // Registrar desgloses de pago si existen
         final paymentBreakdown = orderData['desglose_pagos'] as List<dynamic>?;
         if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
-          await _registerPaymentBreakdownFromOfflineData(operationId, paymentBreakdown);
+          await _registerPaymentBreakdownFromOfflineData(
+            operationId,
+            paymentBreakdown,
+          );
         }
       }
     } else {
@@ -922,7 +980,8 @@ class AutoSyncService {
         pagos.add({
           'id_medio_pago': paymentData['id_medio_pago'],
           'monto': paymentData['monto'],
-          'referencia_pago': 'Pago Auto Sync - ${DateTime.now().millisecondsSinceEpoch}',
+          'referencia_pago':
+              'Pago Auto Sync - ${DateTime.now().millisecondsSinceEpoch}',
         });
       }
 
@@ -933,7 +992,9 @@ class AutoSyncService {
       );
 
       if (response == true) {
-        print('    ✅ Desgloses de pago registrados para operación: $operationId');
+        print(
+          '    ✅ Desgloses de pago registrados para operación: $operationId',
+        );
       } else {
         throw Exception('Error en el registro de pagos');
       }
@@ -951,28 +1012,38 @@ class AutoSyncService {
   }
 
   /// Limpiar órdenes sincronizadas exitosamente
-  Future<void> _cleanupSyncedOrders(int syncedCount) async {
+  Future<void> _cleanupSyncedOrders(List<String> syncedOrderIds) async {
     try {
       // Obtener órdenes actuales
       final currentOrders = await _userPreferencesService.getPendingOrders();
-      
-      // Remover las primeras N órdenes que fueron sincronizadas
-      if (currentOrders.length >= syncedCount) {
-        final remainingOrders = currentOrders.skip(syncedCount).toList();
-        
+
+      final syncedSet = syncedOrderIds.toSet();
+
+      final remainingOrders =
+          currentOrders.where((order) {
+            final orderId = order['id']?.toString();
+            if (orderId == null) return true;
+            return !syncedSet.contains(orderId);
+          }).toList();
+
+      final removedCount = currentOrders.length - remainingOrders.length;
+
+      if (removedCount > 0) {
         // Guardar las órdenes restantes
         await _userPreferencesService.clearPendingOrders();
         for (final order in remainingOrders) {
           await _userPreferencesService.savePendingOrder(order);
         }
-        
-        print('  🧹 Limpiadas $syncedCount órdenes sincronizadas, ${remainingOrders.length} pendientes');
       }
+
+      print(
+        '  🧹 Limpiadas $removedCount órdenes sincronizadas, ${remainingOrders.length} pendientes',
+      );
     } catch (e) {
       print('  ⚠️ Error limpiando órdenes sincronizadas: $e');
     }
   }
-  
+
   /// Forzar una sincronización inmediata
   Future<void> forceSyncNow() async {
     if (_isSyncing) {
@@ -999,18 +1070,20 @@ class AutoSyncService {
   Future<void> _syncStoreConfig() async {
     try {
       print('🔧 Sincronizando configuración de tienda...');
-      
+
       // Obtener ID de tienda
       final idTienda = await _userPreferencesService.getIdTienda();
-      
+
       if (idTienda == null) {
-        print('❌ No se pudo obtener ID de tienda para sincronizar configuración');
+        print(
+          '❌ No se pudo obtener ID de tienda para sincronizar configuración',
+        );
         return;
       }
-      
+
       // Sincronizar configuración usando StoreConfigService
       final success = await StoreConfigService.syncStoreConfig(idTienda);
-      
+
       if (success) {
         print('✅ Configuración de tienda sincronizada exitosamente');
       } else {

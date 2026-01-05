@@ -4,6 +4,7 @@ import '../widgets/admin_drawer.dart';
 import '../widgets/admin_bottom_navigation.dart';
 import '../models/customer.dart';
 import '../services/customer_service.dart';
+import '../utils/navigation_guard.dart';
 
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
@@ -23,9 +24,12 @@ class _CustomersScreenState extends State<CustomersScreen>
   String _sortBy = 'Nombre';
   List<Customer> _filteredCustomers = [];
   String _errorMessage = '';
+
+  bool _canManageCustomers = false;
   @override
   void initState() {
     super.initState();
+    _loadPermissions();
     _searchController.addListener(() {
       setState(() {
         _searchQuery = _searchController.text;
@@ -34,6 +38,19 @@ class _CustomersScreenState extends State<CustomersScreen>
     });
     _tabController = TabController(length: 3, vsync: this);
     _loadCustomersData();
+  }
+
+  Future<void> _loadPermissions() async {
+    final permissions = await Future.wait([
+      NavigationGuard.canPerformAction('customer.create'),
+      NavigationGuard.canPerformAction('customer.edit'),
+      NavigationGuard.canPerformAction('customer.delete'),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _canManageCustomers = permissions.any((p) => p);
+    });
   }
 
   @override
@@ -129,11 +146,12 @@ class _CustomersScreenState extends State<CustomersScreen>
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: Colors.white),
-            onPressed: _showAddCustomerDialog,
-            tooltip: 'Agregar Cliente',
-          ),
+          if (_canManageCustomers)
+            IconButton(
+              icon: const Icon(Icons.add, color: Colors.white),
+              onPressed: _showAddCustomerDialog,
+              tooltip: 'Agregar Cliente',
+            ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadCustomersData,
@@ -613,14 +631,15 @@ class _CustomersScreenState extends State<CustomersScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      ElevatedButton.icon(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.edit),
-                        label: const Text('Editar'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
+                      if (_canManageCustomers)
+                        ElevatedButton.icon(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.edit),
+                          label: const Text('Editar'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                          ),
                         ),
-                      ),
                       OutlinedButton.icon(
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close),
@@ -669,6 +688,10 @@ class _CustomersScreenState extends State<CustomersScreen>
   }
 
   void _showAddCustomerDialog() {
+    if (!_canManageCustomers) {
+      NavigationGuard.showActionDeniedMessage(context, 'Agregar cliente');
+      return;
+    }
     final nameController = TextEditingController();
     final emailController = TextEditingController();
     final phoneController = TextEditingController();

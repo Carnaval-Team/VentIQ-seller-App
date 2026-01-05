@@ -6,14 +6,13 @@ import '../services/liquidacion_service.dart';
 import 'liquidaciones_list_screen.dart';
 import 'operaciones_venta_consignacion_screen.dart';
 import 'productos_zona_destino_screen.dart';
+import '../utils/navigation_guard.dart';
 
 class DetalleContratoConsignacionScreen extends StatefulWidget {
   final Map<String, dynamic> contrato;
 
-  const DetalleContratoConsignacionScreen({
-    Key? key,
-    required this.contrato,
-  }) : super(key: key);
+  const DetalleContratoConsignacionScreen({Key? key, required this.contrato})
+    : super(key: key);
 
   @override
   State<DetalleContratoConsignacionScreen> createState() =>
@@ -28,28 +27,46 @@ class _DetalleContratoConsignacionScreenState
   bool _puedeRescindirse = false;
   double _totalDineroEnviado = 0.0;
 
+  bool _canDeleteConsignacion = false;
+
   @override
   void initState() {
     super.initState();
-    debugPrint('🔍 [INIT] Inicializando pantalla de detalle del contrato ID: ${widget.contrato['id']}');
+    debugPrint(
+      '🔍 [INIT] Inicializando pantalla de detalle del contrato ID: ${widget.contrato['id']}',
+    );
+    _loadPermissions();
     _loadMovimientosYEstadisticas();
     _verificarRescision();
     _calcularTotalDineroEnviado();
     _loadTotalesContrato();
   }
 
+  Future<void> _loadPermissions() async {
+    final canDelete = await NavigationGuard.canPerformAction(
+      'consignacion.delete',
+    );
+    if (!mounted) return;
+    setState(() {
+      _canDeleteConsignacion = canDelete;
+    });
+  }
+
   Future<void> _verificarRescision() async {
     try {
       debugPrint('🔍 [RESCISION] Verificando si contrato puede rescindirse...');
-      final puedeRescindirse =
-          await ConsignacionService.puedeSerRescindido(widget.contrato['id']);
-      
+      final puedeRescindirse = await ConsignacionService.puedeSerRescindido(
+        widget.contrato['id'],
+      );
+
       if (mounted) {
         setState(() {
           _puedeRescindirse = puedeRescindirse;
           _isLoading = false;
         });
-        debugPrint('✅ [RESCISION] Contrato puede rescindirse: $puedeRescindirse');
+        debugPrint(
+          '✅ [RESCISION] Contrato puede rescindirse: $puedeRescindirse',
+        );
       }
     } catch (e) {
       debugPrint('❌ [RESCISION] Error verificando rescisión: $e');
@@ -62,10 +79,11 @@ class _DetalleContratoConsignacionScreenState
   Future<void> _calcularTotalDineroEnviado() async {
     try {
       debugPrint('💰 [TOTAL] Obteniendo monto_total del contrato...');
-      
+
       // Obtener el monto_total directamente del contrato
-      final montoTotal = (widget.contrato['monto_total'] as num?)?.toDouble() ?? 0.0;
-      
+      final montoTotal =
+          (widget.contrato['monto_total'] as num?)?.toDouble() ?? 0.0;
+
       if (mounted) {
         setState(() {
           _totalDineroEnviado = montoTotal;
@@ -80,11 +98,11 @@ class _DetalleContratoConsignacionScreenState
   Future<void> _loadTotalesContrato() async {
     try {
       debugPrint('💰 [LIQUIDACIONES] Cargando totales del contrato...');
-      
+
       final totales = await LiquidacionService.obtenerTotalesContrato(
         widget.contrato['id'],
       );
-      
+
       if (mounted) {
         setState(() {
           _totalesContrato = totales;
@@ -104,18 +122,23 @@ class _DetalleContratoConsignacionScreenState
       debugPrint('📊 [LOAD] Iniciando carga de estadísticas');
       debugPrint('📊 [LOAD] ID Contrato: ${widget.contrato['id']}');
 
-      debugPrint('📊 [LOAD] Obteniendo estadísticas consolidadas (TODO el tiempo)...');
-      final estadisticas = await ConsignacionMovimientosService.getEstadisticasVentas(
-        idContrato: widget.contrato['id'],
-        fechaDesde: null,
-        fechaHasta: null,
+      debugPrint(
+        '📊 [LOAD] Obteniendo estadísticas consolidadas (TODO el tiempo)...',
       );
+      final estadisticas =
+          await ConsignacionMovimientosService.getEstadisticasVentas(
+            idContrato: widget.contrato['id'],
+            fechaDesde: null,
+            fechaHasta: null,
+          );
       debugPrint('✅ [LOAD] Estadísticas obtenidas:');
       debugPrint('  📈 Total Enviado: ${estadisticas['totalEnviado']}');
       debugPrint('  📈 Total Vendido: ${estadisticas['totalVendido']}');
       debugPrint('  📈 Total Devuelto: ${estadisticas['totalDevuelto']}');
       debugPrint('  📈 Total Pendiente: ${estadisticas['totalPendiente']}');
-      debugPrint('  📈 Total Monto Ventas: ${estadisticas['totalMontoVentas']}');
+      debugPrint(
+        '  📈 Total Monto Ventas: ${estadisticas['totalMontoVentas']}',
+      );
 
       if (mounted) {
         setState(() {
@@ -131,7 +154,8 @@ class _DetalleContratoConsignacionScreenState
   @override
   Widget build(BuildContext context) {
     final esConsignadora =
-        widget.contrato['id_tienda_consignadora'] == widget.contrato['id_tienda_actual'];
+        widget.contrato['id_tienda_consignadora'] ==
+        widget.contrato['id_tienda_actual'];
 
     return Scaffold(
       appBar: AppBar(
@@ -139,23 +163,24 @@ class _DetalleContratoConsignacionScreenState
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              child: Column(
-                children: [
-                  // Información del contrato
-                  _buildContratoInfo(),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
+                child: Column(
+                  children: [
+                    // Información del contrato
+                    _buildContratoInfo(),
 
-                  // Estadísticas de ventas y productos
-                  _buildEstadisticasSection(),
+                    // Estadísticas de ventas y productos
+                    _buildEstadisticasSection(),
 
-                  // Opción de rescindir
-                  if (_puedeRescindirse)
-                    _buildRescindirSection(),
-                ],
+                    // Opción de rescindir
+                    if (_puedeRescindirse && _canDeleteConsignacion)
+                      _buildRescindirSection(),
+                  ],
+                ),
               ),
-            ),
     );
   }
 
@@ -196,10 +221,7 @@ class _DetalleContratoConsignacionScreenState
                       ),
                       Text(
                         'ID: ${widget.contrato['id']}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                     ],
                   ),
@@ -306,21 +328,29 @@ class _DetalleContratoConsignacionScreenState
               child: ElevatedButton.icon(
                 onPressed: () {
                   // Determinar si es consignatario o consignador
-                  final esConsignatario = widget.contrato['id_tienda_consignataria'] == widget.contrato['id_tienda_actual'];
-                  final nombreTiendaOtra = esConsignatario
-                      ? widget.contrato['tienda_consignadora']['denominacion']
-                      : widget.contrato['tienda_consignataria']['denominacion'];
-                  
+                  final esConsignatario =
+                      widget.contrato['id_tienda_consignataria'] ==
+                      widget.contrato['id_tienda_actual'];
+                  final nombreTiendaOtra =
+                      esConsignatario
+                          ? widget
+                              .contrato['tienda_consignadora']['denominacion']
+                          : widget
+                              .contrato['tienda_consignataria']['denominacion'];
+
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => LiquidacionesListScreen(
-                        contratoId: widget.contrato['id'],
-                        esConsignatario: esConsignatario,
-                        nombreTiendaOtra: nombreTiendaOtra,
-                      ),
+                      builder:
+                          (context) => LiquidacionesListScreen(
+                            contratoId: widget.contrato['id'],
+                            esConsignatario: esConsignatario,
+                            nombreTiendaOtra: nombreTiendaOtra,
+                          ),
                     ),
-                  ).then((_) => _loadTotalesContrato()); // Recargar totales al volver
+                  ).then(
+                    (_) => _loadTotalesContrato(),
+                  ); // Recargar totales al volver
                 },
                 icon: const Icon(Icons.account_balance_wallet, size: 20),
                 label: const Text('Gestionar Liquidaciones'),
@@ -338,15 +368,17 @@ class _DetalleContratoConsignacionScreenState
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () {
-                  final titulo = '${widget.contrato['tienda_consignadora']['denominacion']} → ${widget.contrato['tienda_consignataria']['denominacion']}';
+                  final titulo =
+                      '${widget.contrato['tienda_consignadora']['denominacion']} → ${widget.contrato['tienda_consignataria']['denominacion']}';
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ProductosZonaDestinoScreen(
-                        idContrato: widget.contrato['id'],
-                        tituloContrato: titulo,
-                        idZonaDestino: widget.contrato['id_layout_destino'],
-                      ),
+                      builder:
+                          (context) => ProductosZonaDestinoScreen(
+                            idContrato: widget.contrato['id'],
+                            tituloContrato: titulo,
+                            idZonaDestino: widget.contrato['id_layout_destino'],
+                          ),
                     ),
                   );
                 },
@@ -398,10 +430,7 @@ class _DetalleContratoConsignacionScreenState
   Widget _buildInfoRow(String label, String value, Color color) {
     return Row(
       children: [
-        Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(width: 8),
         Expanded(
           child: Container(
@@ -413,10 +442,7 @@ class _DetalleContratoConsignacionScreenState
             ),
             child: Text(
               value,
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                color: color,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w500, color: color),
             ),
           ),
         ),
@@ -481,11 +507,7 @@ class _DetalleContratoConsignacionScreenState
                     color: Colors.red.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(
-                    Icons.cancel,
-                    color: Colors.red,
-                    size: 28,
-                  ),
+                  child: const Icon(Icons.cancel, color: Colors.red, size: 28),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -516,10 +538,7 @@ class _DetalleContratoConsignacionScreenState
             const SizedBox(height: 16),
             Text(
               'Puedes rescindir este contrato ya que todos los productos han sido completamente vendidos o devueltos.',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.red.shade800,
-              ),
+              style: TextStyle(fontSize: 13, color: Colors.red.shade800),
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -541,90 +560,95 @@ class _DetalleContratoConsignacionScreenState
     );
   }
 
-
   void _mostrarDialogoRescision() {
+    if (!_canDeleteConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Rescindir contrato');
+      return;
+    }
     final motivoController = TextEditingController();
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rescindir Contrato'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.warning, color: Colors.red.shade700, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Esta acción desactivará el contrato y todos sus productos.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.red.shade700,
-                      ),
-                    ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Rescindir Contrato'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
                   ),
-                ],
-              ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning, color: Colors.red.shade700, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Esta acción desactivará el contrato y todos sus productos.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Contrato ID: ${widget.contrato['id']}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tienda: ${widget.contrato['tienda_consignadora']['denominacion']} → ${widget.contrato['tienda_consignataria']['denominacion']}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: motivoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo de rescisión (opcional)',
+                    border: OutlineInputBorder(),
+                    hintText: 'Ej: Acuerdo mutuo, fin de temporada, etc.',
+                  ),
+                  maxLines: 3,
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Contrato ID: ${widget.contrato['id']}',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Tienda: ${widget.contrato['tienda_consignadora']['denominacion']} → ${widget.contrato['tienda_consignataria']['denominacion']}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _rescindirContrato(motivoController.text);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Rescindir'),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: motivoController,
-              decoration: const InputDecoration(
-                labelText: 'Motivo de rescisión (opcional)',
-                border: OutlineInputBorder(),
-                hintText: 'Ej: Acuerdo mutuo, fin de temporada, etc.',
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _rescindirContrato(motivoController.text);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Rescindir'),
-          ),
-        ],
-      ),
     );
   }
 
   Future<void> _rescindirContrato(String motivo) async {
+    if (!_canDeleteConsignacion) {
+      NavigationGuard.showActionDeniedMessage(context, 'Rescindir contrato');
+      return;
+    }
     try {
       final success = await ConsignacionService.rescindirContrato(
         idContrato: widget.contrato['id'],
@@ -677,7 +701,7 @@ class _DetalleContratoConsignacionScreenState
     final totalDevuelto = _estadisticas['totalDevuelto'] as num? ?? 0;
     final totalPendiente = _estadisticas['totalPendiente'] as num? ?? 0;
     final totalMontoVentas = _estadisticas['totalMontoVentas'] as num? ?? 0;
-    
+
     final totalLiquidado = _totalesContrato['total_liquidado'] as num? ?? 0;
     final saldoPendiente = _totalesContrato['saldo_pendiente'] as num? ?? 0;
 
@@ -708,17 +732,14 @@ class _DetalleContratoConsignacionScreenState
                   children: [
                     const Text(
                       'Estadísticas del Contrato',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     Text(
                       'Almacén: ${widget.contrato['id_almacen_destino']}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                   ],
                 ),
@@ -800,7 +821,7 @@ class _DetalleContratoConsignacionScreenState
               ),
             ],
           ),
-          
+
           // Porcentaje de venta
           const SizedBox(height: 16),
           Container(
@@ -839,10 +860,15 @@ class _DetalleContratoConsignacionScreenState
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: totalEnviado > 0 ? (totalVendido / totalEnviado).toDouble() : 0,
+                    value:
+                        totalEnviado > 0
+                            ? (totalVendido / totalEnviado).toDouble()
+                            : 0,
                     minHeight: 8,
                     backgroundColor: Colors.blue.shade100,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade600),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Colors.blue.shade600,
+                    ),
                   ),
                 ),
               ],
@@ -858,11 +884,16 @@ class _DetalleContratoConsignacionScreenState
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => OperacionesVentaConsignacionScreen(
-                      contratoId: widget.contrato['id'],
-                      nombreConsignadora: widget.contrato['tienda_consignadora']['denominacion'],
-                      nombreConsignataria: widget.contrato['tienda_consignataria']['denominacion'],
-                    ),
+                    builder:
+                        (context) => OperacionesVentaConsignacionScreen(
+                          contratoId: widget.contrato['id'],
+                          nombreConsignadora:
+                              widget
+                                  .contrato['tienda_consignadora']['denominacion'],
+                          nombreConsignataria:
+                              widget
+                                  .contrato['tienda_consignataria']['denominacion'],
+                        ),
                   ),
                 );
               },
@@ -913,5 +944,4 @@ class _DetalleContratoConsignacionScreenState
       ),
     );
   }
-
 }

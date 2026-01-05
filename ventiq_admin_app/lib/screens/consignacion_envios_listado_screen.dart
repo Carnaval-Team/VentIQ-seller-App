@@ -7,6 +7,7 @@ import '../services/consignacion_envio_service.dart';
 import 'consignacion_envio_detalles_screen.dart';
 import 'asignar_productos_consignacion_screen.dart';
 import '../config/app_colors.dart';
+import '../utils/navigation_guard.dart';
 
 class ConsignacionEnviosListadoScreen extends StatefulWidget {
   final int? idContrato;
@@ -32,11 +33,24 @@ class _ConsignacionEnviosListadoScreenState
   late Future<List<Map<String, dynamic>>> _enviosFuture;
   int? _estadoSeleccionado;
 
+  bool _canManageEnvios = false;
+
   @override
   void initState() {
     super.initState();
     _estadoSeleccionado = widget.estadoFiltro;
+    _loadPermissions();
     _cargarEnvios();
+  }
+
+  Future<void> _loadPermissions() async {
+    final canManage = await NavigationGuard.canPerformAction(
+      'consignacion.edit',
+    );
+    if (!mounted) return;
+    setState(() {
+      _canManageEnvios = canManage;
+    });
   }
 
   void _cargarEnvios() {
@@ -44,11 +58,10 @@ class _ConsignacionEnviosListadoScreenState
       if (widget.idContrato != null) {
         _enviosFuture =
             ConsignacionEnvioListadoService.obtenerEnviosPorContrato(
-          widget.idContrato!,
-        );
+              widget.idContrato!,
+            );
       } else if (_estadoSeleccionado != null) {
-        _enviosFuture =
-            ConsignacionEnvioListadoService.obtenerEnviosPorEstado(
+        _enviosFuture = ConsignacionEnvioListadoService.obtenerEnviosPorEstado(
           _estadoSeleccionado!,
         );
       } else {
@@ -91,7 +104,11 @@ class _ConsignacionEnviosListadoScreenState
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                        const Icon(
+                          Icons.error_outline,
+                          size: 48,
+                          color: Colors.red,
+                        ),
                         const SizedBox(height: 16),
                         Text('Error: ${snapshot.error}'),
                         const SizedBox(height: 16),
@@ -111,7 +128,11 @@ class _ConsignacionEnviosListadoScreenState
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.inbox_outlined, size: 48, color: Colors.grey),
+                        const Icon(
+                          Icons.inbox_outlined,
+                          size: 48,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(height: 16),
                         const Text(
                           'No hay envíos',
@@ -140,13 +161,13 @@ class _ConsignacionEnviosListadoScreenState
           ),
         ],
       ),
-      floatingActionButton: _buildFABMenu(),
+      floatingActionButton: _canManageEnvios ? _buildFABMenu() : null,
     );
   }
 
   Widget _buildFABMenu() {
     final bool canCreate = widget.idContrato != null && widget.contrato != null;
-    if (!canCreate) return const SizedBox.shrink();
+    if (!canCreate || !_canManageEnvios) return const SizedBox.shrink();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -156,13 +177,18 @@ class _ConsignacionEnviosListadoScreenState
           FloatingActionButton.extended(
             heroTag: 'new_envio',
             onPressed: () async {
+              if (!_canManageEnvios) {
+                NavigationGuard.showActionDeniedMessage(context, 'Crear envío');
+                return;
+              }
               final result = await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => AsignarProductosConsignacionScreen(
-                    idContrato: widget.idContrato!,
-                    contrato: widget.contrato!,
-                  ),
+                  builder:
+                      (context) => AsignarProductosConsignacionScreen(
+                        idContrato: widget.idContrato!,
+                        contrato: widget.contrato!,
+                      ),
                 ),
               );
               if (result == true) _cargarEnvios();
@@ -171,21 +197,32 @@ class _ConsignacionEnviosListadoScreenState
             icon: const Icon(Icons.add_box, color: Colors.white),
             label: const Text(
               'CREAR ENVÍO',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         if (widget.rol == 'consignatario')
           FloatingActionButton.extended(
             heroTag: 'new_devolucion',
             onPressed: () async {
+              if (!_canManageEnvios) {
+                NavigationGuard.showActionDeniedMessage(
+                  context,
+                  'Crear devolución',
+                );
+                return;
+              }
               final result = await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => AsignarProductosConsignacionScreen(
-                    idContrato: widget.idContrato!,
-                    contrato: widget.contrato!,
-                    isDevolucion: true,
-                  ),
+                  builder:
+                      (context) => AsignarProductosConsignacionScreen(
+                        idContrato: widget.idContrato!,
+                        contrato: widget.contrato!,
+                        isDevolucion: true,
+                      ),
                 ),
               );
               if (result == true) _cargarEnvios();
@@ -194,7 +231,10 @@ class _ConsignacionEnviosListadoScreenState
             icon: const Icon(Icons.replay, color: Colors.white),
             label: const Text(
               'CREAR DEVOLUCIÓN',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
       ],
@@ -258,7 +298,8 @@ class _ConsignacionEnviosListadoScreenState
 
   Widget _buildEnvioCard(Map<String, dynamic> envio) {
     final estado = (envio['estado_envio'] as num?)?.toInt() ?? 0;
-    final estadoTexto = (envio['estado_envio_texto'] as String?) ??
+    final estadoTexto =
+        (envio['estado_envio_texto'] as String?) ??
         ConsignacionEnvioListadoService.obtenerTextoEstado(estado);
     final numeroEnvio = envio['numero_envio'] as String? ?? 'N/A';
     final tiendaConsignadora = envio['tienda_consignadora'] as String? ?? 'N/A';
@@ -269,9 +310,12 @@ class _ConsignacionEnviosListadoScreenState
     final cantidadTotal = (envio['cantidad_total_unidades'] as num?) ?? 0;
     final valorTotal = (envio['valor_total_costo'] as num?) ?? 0;
     final fechaPropuestaRaw = envio['fecha_propuesta'];
-    final fechaPropuesta = fechaPropuestaRaw is String
-        ? DateTime.parse(fechaPropuestaRaw)
-        : (fechaPropuestaRaw is DateTime ? fechaPropuestaRaw : DateTime.now());
+    final fechaPropuesta =
+        fechaPropuestaRaw is String
+            ? DateTime.parse(fechaPropuestaRaw)
+            : (fechaPropuestaRaw is DateTime
+                ? fechaPropuestaRaw
+                : DateTime.now());
     final productosAceptados =
         (envio['productos_aceptados'] as num?)?.toInt() ?? 0;
     final productosRechazados =
@@ -297,14 +341,17 @@ class _ConsignacionEnviosListadoScreenState
                     children: [
                       Row(
                         children: [
-                          Text(numeroEnvio,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          Text(
+                            numeroEnvio,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           if (tipoEnvio == 2) ...[
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.deepOrange.shade100,
                                 borderRadius: BorderRadius.circular(4),
@@ -312,9 +359,10 @@ class _ConsignacionEnviosListadoScreenState
                               child: const Text(
                                 'DEVOLUCIÓN',
                                 style: TextStyle(
-                                    color: Colors.deepOrange,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold),
+                                  color: Colors.deepOrange,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
@@ -379,8 +427,11 @@ class _ConsignacionEnviosListadoScreenState
       ),
       child: Text(
         texto,
-        style:
-            TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -389,11 +440,17 @@ class _ConsignacionEnviosListadoScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(4)),
-      child: Text(label,
-          style: TextStyle(
-              fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 
@@ -425,8 +482,10 @@ class _ConsignacionEnviosListadoScreenState
       children: [
         Text(icono, style: const TextStyle(fontSize: 14)),
         const SizedBox(height: 2),
-        Text(texto,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+        Text(
+          texto,
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+        ),
       ],
     );
   }
@@ -453,8 +512,11 @@ class _ConsignacionEnviosListadoScreenState
   void _mostrarDetalles(int idEnvio) async {
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) =>
-            ConsignacionEnvioDetallesScreen(idEnvio: idEnvio, rol: widget.rol),
+        builder:
+            (context) => ConsignacionEnvioDetallesScreen(
+              idEnvio: idEnvio,
+              rol: widget.rol,
+            ),
       ),
     );
     if (result == true) _cargarEnvios();

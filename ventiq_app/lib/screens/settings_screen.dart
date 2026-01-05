@@ -2499,13 +2499,28 @@ class _SyncDialogState extends State<_SyncDialog> {
         }
       }
 
+      final idTienda = await widget.userPreferencesService.getIdTienda();
+      final idTpv = await widget.userPreferencesService.getIdTpv();
+      final userId = await widget.userPreferencesService.getUserId();
+
+      offlineData['meta'] = {
+        'schema_version': 1,
+        'created_at': DateTime.now().toIso8601String(),
+        'id_tienda': idTienda,
+        'id_tpv': idTpv,
+        'user_id': userId,
+        'source': 'manual',
+      };
+
       // Limpiar datos offline después de procesamiento exitoso
+      // Guardar todos los datos offline actualizados
+      await widget.userPreferencesService.saveOfflineDataTransactional(
+        offlineData,
+      );
+      await widget.userPreferencesService.setOfflineMode(true);
+
       await widget.userPreferencesService.clearAllOfflineData();
       print('🗑️ Datos offline anteriores limpiados');
-
-      // Guardar todos los datos offline actualizados
-      await widget.userPreferencesService.saveOfflineData(offlineData);
-      await widget.userPreferencesService.setOfflineMode(true);
 
       // Logging de datos guardados
       print('💾 Datos offline guardados:');

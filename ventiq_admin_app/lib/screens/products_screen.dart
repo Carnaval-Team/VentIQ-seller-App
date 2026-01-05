@@ -34,6 +34,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
   int? _selectedCategoryId;
   final PermissionsService _permissionsService = PermissionsService();
   bool _canCreateProduct = false;
+  bool _canEditProduct = false;
+  bool _canDeleteProduct = false;
 
   @override
   void initState() {
@@ -45,13 +47,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   void _checkPermissions() async {
     print('🔐 Verificando permisos de productos...');
-    final canCreate = await _permissionsService.canPerformAction(
-      'product.create',
-    );
+    final permissions = await Future.wait([
+      _permissionsService.canPerformAction('product.create'),
+      _permissionsService.canPerformAction('product.edit'),
+      _permissionsService.canPerformAction('product.delete'),
+    ]);
+
+    final canCreate = permissions[0];
+    final canEdit = permissions[1];
+    final canDelete = permissions[2];
+
     print('  • Crear producto: $canCreate');
-    print('✅ Puede crear productos: $canCreate');
+    print('  • Editar producto: $canEdit');
+    print('  • Eliminar producto: $canDelete');
+
+    if (!mounted) return;
     setState(() {
       _canCreateProduct = canCreate;
+      _canEditProduct = canEdit;
+      _canDeleteProduct = canDelete;
     });
   }
 
@@ -136,7 +150,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ),
           if (_canCreateProduct)
             IconButton(
-              onPressed: () => NavigationGuard.navigateWithPermission(context, '/excel-import'),
+              onPressed:
+                  () => NavigationGuard.navigateWithPermission(
+                    context,
+                    '/excel-import',
+                  ),
               icon: const Icon(Icons.upload_file),
               tooltip: 'Importar desde Excel',
             ),
@@ -309,11 +327,21 @@ class _ProductsScreenState extends State<ProductsScreen> {
               product.categoryName.toLowerCase().contains(
                 _searchQuery.toLowerCase(),
               ) ||
-              product.brand.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+              product.brand.toLowerCase().contains(
+                _searchQuery.toLowerCase(),
+              ) ||
               product.sku.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-              product.description.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-              (product.descripcionCorta?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false) ||
-              (product.nombreComercial?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false);
+              product.description.toLowerCase().contains(
+                _searchQuery.toLowerCase(),
+              ) ||
+              (product.descripcionCorta?.toLowerCase().contains(
+                    _searchQuery.toLowerCase(),
+                  ) ??
+                  false) ||
+              (product.nombreComercial?.toLowerCase().contains(
+                    _searchQuery.toLowerCase(),
+                  ) ??
+                  false);
 
           // El filtro de categoría ya se aplica en la carga de datos
           return matchesSearch;
@@ -371,7 +399,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 : 'Intenta con otros términos de búsqueda',
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
-          if (_searchQuery.isEmpty) ...[
+          if (_searchQuery.isEmpty && _canCreateProduct) ...[
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _showAddProductDialog,
@@ -519,16 +547,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             color: AppColors.textLight,
                           ),
                         ),
-                        if(product.nombreComercial != null)
-                        const SizedBox(height: 2),
-                        if(product.nombreComercial != null)
-                        Text(
-                          '${product.nombreComercial}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textLight,
+                        if (product.nombreComercial != null)
+                          const SizedBox(height: 2),
+                        if (product.nombreComercial != null)
+                          Text(
+                            '${product.nombreComercial}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textLight,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -654,24 +682,27 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         color: AppColors.info,
                         tooltip: 'Ver detalles',
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.edit, size: 20),
-                        onPressed: () => _showEditProductDialog(product),
-                        color: AppColors.primary,
-                        tooltip: 'Editar',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_a_photo, size: 20),
-                        onPressed: () => _showAddImageDialog(product),
-                        color: Colors.orange,
-                        tooltip: 'Gestionar imagen',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, size: 20),
-                        onPressed: () => _showDeleteConfirmation(product),
-                        color: AppColors.error,
-                        tooltip: 'Eliminar',
-                      ),
+                      if (_canEditProduct)
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 20),
+                          onPressed: () => _showEditProductDialog(product),
+                          color: AppColors.primary,
+                          tooltip: 'Editar',
+                        ),
+                      if (_canEditProduct)
+                        IconButton(
+                          icon: const Icon(Icons.add_a_photo, size: 20),
+                          onPressed: () => _showAddImageDialog(product),
+                          color: Colors.orange,
+                          tooltip: 'Gestionar imagen',
+                        ),
+                      if (_canDeleteProduct)
+                        IconButton(
+                          icon: const Icon(Icons.delete, size: 20),
+                          onPressed: () => _showDeleteConfirmation(product),
+                          color: AppColors.error,
+                          tooltip: 'Eliminar',
+                        ),
                     ],
                   ),
                 ],
@@ -752,15 +783,28 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   void _showAddProductDialog() async {
+    final canCreate = await _permissionsService.canPerformAction(
+      'product.create',
+    );
+    if (!canCreate) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Crear producto');
+      }
+      return;
+    }
     // Navegar a la pantalla de agregar producto
     await NavigationGuard.navigateWithPermission(context, '/add-product');
-    
+
     // Recargar la lista de productos cuando regrese
     _loadProducts();
   }
 
   void _showProductDetails(Product product) {
-    NavigationGuard.navigateWithPermission(context, '/product-detail', arguments: product);
+    NavigationGuard.navigateWithPermission(
+      context,
+      '/product-detail',
+      arguments: product,
+    );
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -944,25 +988,33 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
-  void _showEditProductDialog(Product product) {
+  Future<void> _showEditProductDialog(Product product) async {
+    final canEdit = await _permissionsService.canPerformAction('product.edit');
+    if (!canEdit) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Editar producto');
+      }
+      return;
+    }
     // ✅ ACTUALIZADO: Usar Navigator.push como en product_detail_screen para consistencia
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AddProductScreen(
-          product: product,
-          onProductSaved: () {
-            // Recargar la lista de productos después de editar
-            print('🔄 Producto editado, recargando lista...');
-            _loadProducts();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Producto actualizado exitosamente'),
-                backgroundColor: AppColors.success,
-              ),
-            );
-          },
-        ),
+        builder:
+            (context) => AddProductScreen(
+              product: product,
+              onProductSaved: () {
+                // Recargar la lista de productos después de editar
+                print('🔄 Producto editado, recargando lista...');
+                _loadProducts();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Producto actualizado exitosamente'),
+                    backgroundColor: AppColors.success,
+                  ),
+                );
+              },
+            ),
       ),
     );
   }
@@ -997,8 +1049,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
-
   void _showDeleteConfirmation(Product product) async {
+    final canDelete = await _permissionsService.canPerformAction(
+      'product.delete',
+    );
+    if (!canDelete) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Eliminar producto');
+      }
+      return;
+    }
     // Verificar si el producto tiene stock antes de mostrar el diálogo
     if (await _hasStock(product)) {
       _showStockWarningDialog(product);
@@ -1407,18 +1467,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
   void _onBottomNavTap(int index) {
     switch (index) {
       case 0: // Dashboard
-        NavigationGuard.navigateAndRemoveUntil(
-          context,
-          '/dashboard',
-        );
+        NavigationGuard.navigateAndRemoveUntil(context, '/dashboard');
         break;
       case 1: // Productos (current)
         break;
       case 2: // Inventario
         NavigationGuard.navigateWithPermission(context, '/inventory');
         break;
-      case 3: // Configuración
-        NavigationGuard.navigateWithPermission(context, '/settings');
+      case 3: // Almacenes
+        NavigationGuard.navigateWithPermission(context, '/warehouse');
         break;
     }
   }
@@ -1428,17 +1485,23 @@ class _ProductsScreenState extends State<ProductsScreen> {
     try {
       // Verificar primero el stock disponible del producto
       if (product.stockDisponible > 0) {
-        print('🔍 Producto ${product.denominacion} tiene stock: ${product.stockDisponible}');
+        print(
+          '🔍 Producto ${product.denominacion} tiene stock: ${product.stockDisponible}',
+        );
         return true;
       }
 
       // Verificar también las ubicaciones de stock para mayor precisión
-      final stockLocations = await ProductService.getProductStockLocations(product.id.toString());
-      
+      final stockLocations = await ProductService.getProductStockLocations(
+        product.id.toString(),
+      );
+
       for (var location in stockLocations) {
         final cantidad = (location['cantidad_final'] ?? 0).toDouble();
         if (cantidad > 0) {
-          print('🔍 Producto ${product.denominacion} tiene stock en ubicación: $cantidad');
+          print(
+            '🔍 Producto ${product.denominacion} tiene stock en ubicación: $cantidad',
+          );
           return true;
         }
       }
@@ -1457,122 +1520,122 @@ class _ProductsScreenState extends State<ProductsScreen> {
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning, color: AppColors.warning, size: 28),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'No se puede eliminar',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.warning,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.warning.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.warning.withOpacity(0.3),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '📦 PRODUCTO CON STOCK',
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.warning, color: AppColors.warning, size: 28),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'No se puede eliminar',
                     style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.warning,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'El producto "${product.denominacion}" tiene stock disponible (${product.stockDisponible.toStringAsFixed(0)} unidades).',
-                    style: const TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+                      color: AppColors.warning,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Para poder eliminar este producto, primero debes:',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.warning.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '📦 PRODUCTO CON STOCK',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.warning,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'El producto "${product.denominacion}" tiene stock disponible (${product.stockDisponible.toStringAsFixed(0)} unidades).',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Para poder eliminar este producto, primero debes:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildRequirementItem('📤 Realizar extracciones de inventario'),
+                _buildRequirementItem(
+                  '🔄 Transferir el stock a otros productos',
+                ),
+                _buildRequirementItem('📊 Ajustar el inventario a cero'),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.info.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: AppColors.info, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Puedes gestionar el inventario desde la sección "Inventario" del menú principal.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.info,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            _buildRequirementItem('📤 Realizar extracciones de inventario'),
-            _buildRequirementItem('🔄 Transferir el stock a otros productos'),
-            _buildRequirementItem('📊 Ajustar el inventario a cero'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.info.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.info.withOpacity(0.3),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Entendido'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  NavigationGuard.navigateWithPermission(context, '/inventory');
+                },
+                icon: const Icon(Icons.inventory_2, size: 18),
+                label: const Text('Ir a Inventario'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                 ),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    color: AppColors.info,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Puedes gestionar el inventario desde la sección "Inventario" del menú principal.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.info,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Entendido'),
+            ],
           ),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.of(context).pop();
-              NavigationGuard.navigateWithPermission(context, '/inventory');
-            },
-            icon: const Icon(Icons.inventory_2, size: 18),
-            label: const Text('Ir a Inventario'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1608,17 +1671,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   /// Muestra el diálogo para gestionar la imagen del producto
-  void _showAddImageDialog(Product product) {
+  Future<void> _showAddImageDialog(Product product) async {
+    final canEdit = await _permissionsService.canPerformAction('product.edit');
+    if (!canEdit) {
+      if (mounted) {
+        NavigationGuard.showActionDeniedMessage(context, 'Editar producto');
+      }
+      return;
+    }
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => _AddImageDialog(
-        product: product,
-        onImageUpdated: () {
-          _loadProducts(); // Recargar productos para mostrar la nueva imagen
-        },
-      ),
+      builder:
+          (context) => _AddImageDialog(
+            product: product,
+            onImageUpdated: () {
+              _loadProducts(); // Recargar productos para mostrar la nueva imagen
+            },
+          ),
     );
   }
 }
@@ -1628,10 +1699,7 @@ class _AddImageDialog extends StatefulWidget {
   final Product product;
   final VoidCallback onImageUpdated;
 
-  const _AddImageDialog({
-    required this.product,
-    required this.onImageUpdated,
-  });
+  const _AddImageDialog({required this.product, required this.onImageUpdated});
 
   @override
   State<_AddImageDialog> createState() => _AddImageDialogState();
@@ -1648,7 +1716,8 @@ class _AddImageDialogState extends State<_AddImageDialog> {
       final Uint8List? bytes = await ImagePickerService.pickImage();
 
       if (bytes != null) {
-        final fileName = 'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final fileName =
+            'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
         // Subir imagen y actualizar producto
         final success = await ProductService.updateProductImage(
@@ -1665,7 +1734,7 @@ class _AddImageDialogState extends State<_AddImageDialog> {
               backgroundColor: AppColors.success,
             ),
           );
-          
+
           // Ejecutar callback para recargar la lista
           widget.onImageUpdated();
         } else if (mounted) {
@@ -1706,7 +1775,8 @@ class _AddImageDialogState extends State<_AddImageDialog> {
 
       if (image != null) {
         final bytes = await image.readAsBytes();
-        final fileName = 'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final fileName =
+            'product_${widget.product.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
         // Subir imagen y actualizar producto
         final success = await ProductService.updateProductImage(
@@ -1723,7 +1793,7 @@ class _AddImageDialogState extends State<_AddImageDialog> {
               backgroundColor: AppColors.success,
             ),
           );
-          
+
           // Ejecutar callback para recargar la lista
           widget.onImageUpdated();
         } else if (mounted) {
@@ -1768,7 +1838,7 @@ class _AddImageDialogState extends State<_AddImageDialog> {
             backgroundColor: AppColors.success,
           ),
         );
-        
+
         // Ejecutar callback para recargar la lista
         widget.onImageUpdated();
       } else if (mounted) {
@@ -1821,11 +1891,7 @@ class _AddImageDialogState extends State<_AddImageDialog> {
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.add_a_photo,
-                  color: Colors.orange[600],
-                  size: 28,
-                ),
+                Icon(Icons.add_a_photo, color: Colors.orange[600], size: 28),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -1866,7 +1932,7 @@ class _AddImageDialogState extends State<_AddImageDialog> {
               ],
             ),
           ),
-          
+
           // Imagen actual
           if (widget.product.imageUrl.isNotEmpty) ...[
             Container(
@@ -1904,7 +1970,7 @@ class _AddImageDialogState extends State<_AddImageDialog> {
             ),
             const SizedBox(height: 16),
           ],
-          
+
           // Opciones
           if (!_isLoading) ...[
             if (kIsWeb) ...[

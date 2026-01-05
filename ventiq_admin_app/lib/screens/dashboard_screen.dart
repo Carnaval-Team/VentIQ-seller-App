@@ -22,7 +22,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProtectionMixin {
+class _DashboardScreenState extends State<DashboardScreen>
+    with SubscriptionProtectionMixin {
   @override
   String get protectedRoute => '/dashboard';
   bool _isLoading = true;
@@ -67,12 +68,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
     try {
       // Verificar suscripción con el NavigationGuard
       final hasValidSubscription = await NavigationGuard.hasValidSubscription();
-      
+
       if (!hasValidSubscription && mounted) {
         print('⚠️ Dashboard cargado sin suscripción válida - redirigiendo');
-        
+
         // Usar el NavigationGuard para redirección
-        await NavigationGuard.checkSubscriptionAndRedirect(context, '/dashboard');
+        await NavigationGuard.checkSubscriptionAndRedirect(
+          context,
+          '/dashboard',
+        );
       } else {
         print('✅ Dashboard cargado con suscripción válida');
       }
@@ -128,7 +132,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
       // Llamar a ambas funciones en paralelo
       print('🔄 Loading dashboard data for period: $_selectedTimeFilter');
       final results = await Future.wait([
-        DashboardService.getStoreAnalysis(periodo: _selectedTimeFilter)
+        DashboardService.getStoreAnalysis(periodo: _selectedTimeFilter),
       ]);
 
       final realData = results[0];
@@ -267,9 +271,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
               future: _permissionsService.getUserRolesByStore(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
+                  return const Center(child: CircularProgressIndicator());
                 }
 
                 final rolesByStore = snapshot.data ?? {};
@@ -283,8 +285,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
                     final isCurrentStore =
                         store['denominacion'] == _currentStoreName;
                     final userRole = rolesByStore[storeId] ?? UserRole.none;
-                    final roleName =
-                        _permissionsService.getRoleName(userRole);
+                    final roleName = _permissionsService.getRoleName(userRole);
 
                     return ListTile(
                       leading: CircleAvatar(
@@ -295,15 +296,12 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
                         child: Icon(
                           Icons.store,
                           color:
-                              isCurrentStore
-                                  ? Colors.white
-                                  : AppColors.primary,
+                              isCurrentStore ? Colors.white : AppColors.primary,
                           size: 20,
                         ),
                       ),
                       title: Text(
-                        store['denominacion'] ??
-                            'Tienda ${store['id_tienda']}',
+                        store['denominacion'] ?? 'Tienda ${store['id_tienda']}',
                         style: TextStyle(
                           fontWeight:
                               isCurrentStore
@@ -323,8 +321,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: _getRoleColor(userRole)
-                                  .withOpacity(0.1),
+                              color: _getRoleColor(userRole).withOpacity(0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -370,13 +367,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
     }
   }
 
-  /// Obtener color según el rol
   Color _getRoleColor(UserRole role) {
     switch (role) {
       case UserRole.gerente:
         return Colors.green;
       case UserRole.supervisor:
         return Colors.blue;
+      case UserRole.auditor:
+        return Colors.teal;
       case UserRole.almacenero:
         return Colors.orange;
       case UserRole.vendedor:
@@ -415,11 +413,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
 
       // Obtener el rol para esta tienda y guardarlo
       final userRole = await _permissionsService.getUserRoleForStore(storeId);
-      print('🔄 Rol obtenido para tienda $storeId: ${_permissionsService.getRoleName(userRole)}');
-      
+      print(
+        '🔄 Rol obtenido para tienda $storeId: ${_permissionsService.getRoleName(userRole)}',
+      );
+
       // Guardar el rol en preferencias para esta tienda
       final rolesByStore = await _userPreferencesService.getUserRolesByStore();
-      rolesByStore[storeId] = _permissionsService.getRoleName(userRole).toLowerCase();
+      rolesByStore[storeId] =
+          _permissionsService.getRoleName(userRole).toLowerCase();
       await _userPreferencesService.saveUserRolesByStore(rolesByStore);
       print('💾 Rol guardado para tienda $storeId: ${rolesByStore[storeId]}');
 
@@ -464,54 +465,56 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
 
   @override
   Widget build(BuildContext context) {
-    return buildProtectedContent(Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text(
-          'Dashboard Ejecutivo',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: true,
-        backgroundColor: AppColors.primary,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          // Store selector button
-          if (_userStores.length > 1)
-            IconButton(
-              icon: const Icon(Icons.store, color: Colors.white),
-              onPressed: _showStoreSelectionDialog,
-              tooltip: 'Seleccionar Tienda: $_currentStoreName',
+    return buildProtectedContent(
+      Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: const Text(
+            'Dashboard Ejecutivo',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 20,
             ),
-          // Notification widget
-          const NotificationWidget(),
-          Builder(
-            builder:
-                (context) => IconButton(
-                  icon: const Icon(Icons.menu, color: Colors.white),
-                  onPressed: () => Scaffold.of(context).openEndDrawer(),
-                  tooltip: 'Menú',
-                ),
           ),
-        ],
+          centerTitle: true,
+          backgroundColor: AppColors.primary,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            // Store selector button
+            if (_userStores.length > 1)
+              IconButton(
+                icon: const Icon(Icons.store, color: Colors.white),
+                onPressed: _showStoreSelectionDialog,
+                tooltip: 'Seleccionar Tienda: $_currentStoreName',
+              ),
+            // Notification widget
+            const NotificationWidget(),
+            Builder(
+              builder:
+                  (context) => IconButton(
+                    icon: const Icon(Icons.menu, color: Colors.white),
+                    onPressed: () => Scaffold.of(context).openEndDrawer(),
+                    tooltip: 'Menú',
+                  ),
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            _isLoading ? _buildLoadingState() : _buildDashboard(),
+            // USD Rate Chip positioned at bottom left
+            Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
+          ],
+        ),
+        endDrawer: const AdminDrawer(),
+        bottomNavigationBar: AdminBottomNavigation(
+          currentRoute: '/dashboard',
+          onTap: _onBottomNavTap,
+        ),
       ),
-      body: Stack(
-        children: [
-          _isLoading ? _buildLoadingState() : _buildDashboard(),
-          // USD Rate Chip positioned at bottom left
-          Positioned(bottom: 16, left: 16, child: _buildUsdRateChip()),
-        ],
-      ),
-      endDrawer: const AdminDrawer(),
-      bottomNavigationBar: AdminBottomNavigation(
-        currentRoute: '/dashboard',
-        onTap: _onBottomNavTap,
-      ),
-    ));
+    );
   }
 
   Widget _buildLoadingState() {
@@ -686,7 +689,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
                     '${(_dashboardData['salesChange'] ?? 0.0) >= 0 ? '+' : '-'} ${(_dashboardData['salesChange'] ?? 0.0).toStringAsFixed(2)}% ${_getPreviousPeriodLabel()}',
                 icon: Icons.trending_up,
                 color: AppColors.success,
-                onTap: () => NavigationGuard.navigateWithPermission(context, '/sales'),
+                onTap:
+                    () => NavigationGuard.navigateWithPermission(
+                      context,
+                      '/sales',
+                    ),
               ),
             ),
           ],
@@ -701,7 +708,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
                 subtitle: '${_dashboardData['outOfStock'] ?? 0} sin stock',
                 icon: Icons.inventory,
                 color: AppColors.warning,
-                onTap: () => NavigationGuard.navigateWithPermission(context, '/products'),
+                onTap:
+                    () => NavigationGuard.navigateWithPermission(
+                      context,
+                      '/products',
+                    ),
               ),
             ),
             const SizedBox(width: 12),
@@ -712,7 +723,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
                     '\$${_formatCurrency(_dashboardData['totalExpenses']?.toDouble() ?? 0.0)}',
                 subtitle: _getPeriodLabel(),
                 icon: Icons.money_off,
-                onTap: () => NavigationGuard.navigateWithPermission(context, '/sales'),
+                onTap:
+                    () => NavigationGuard.navigateWithPermission(
+                      context,
+                      '/sales',
+                    ),
                 color: AppColors.error,
               ),
             ),
@@ -1138,19 +1153,24 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
               'Productos',
               Icons.inventory_2,
               AppColors.primary,
-              () => NavigationGuard.navigateWithPermission(context, '/products-dashboard'),
+              () => NavigationGuard.navigateWithPermission(
+                context,
+                '/products-dashboard',
+              ),
             ),
             _buildQuickActionCard(
               'Categorías',
               Icons.category,
               AppColors.success,
-              () => NavigationGuard.navigateWithPermission(context, '/settings'),
+              () =>
+                  NavigationGuard.navigateWithPermission(context, '/settings'),
             ),
             _buildQuickActionCard(
               'Inventario',
               Icons.warehouse,
               AppColors.warning,
-              () => NavigationGuard.navigateWithPermission(context, '/inventory'),
+              () =>
+                  NavigationGuard.navigateWithPermission(context, '/inventory'),
             ),
             _buildQuickActionCard(
               'Ventas',
@@ -1533,14 +1553,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
       // Obtener el changelog más reciente para obtener la versión actual
       final changelog = await _changelogService.getLatestChangelog();
       if (changelog == null) return;
-      
+
       // Verificar si es primera vez o hay nueva versión
-      final shouldShowChangelog = await _userPreferencesService.isFirstTimeOpening(changelog.version);
+      final shouldShowChangelog = await _userPreferencesService
+          .isFirstTimeOpening(changelog.version);
 
       if (shouldShowChangelog) {
         // Wait a bit for the screen to load
         await Future.delayed(const Duration(milliseconds: 1500));
-        
+
         if (mounted) {
           await showDialog(
             context: context,
@@ -1550,10 +1571,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SubscriptionProt
 
           // Guardar la versión actual del changelog
           await _userPreferencesService.saveAppVersion(changelog.version);
-          print('📱 Changelog mostrado y versión guardada: ${changelog.version}');
+          print(
+            '📱 Changelog mostrado y versión guardada: ${changelog.version}',
+          );
         }
       } else {
-        print('📱 Changelog no mostrado - Versión actual: ${changelog.version}');
+        print(
+          '📱 Changelog no mostrado - Versión actual: ${changelog.version}',
+        );
       }
     } catch (e) {
       debugPrint('Error checking changelog: $e');
