@@ -472,12 +472,17 @@ class _MarginDialogState extends State<_MarginDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<int>(
+                isExpanded: true,
                 value: _selectedProductId,
                 decoration: const InputDecoration(labelText: 'Producto'),
                 items: _products.map((product) {
                   return DropdownMenuItem<int>(
                     value: product['id'],
-                    child: Text(product['denominacion'] ?? 'Producto ${product['id']}'),
+                    child: Text(
+                      product['denominacion'] ?? 'Producto ${product['id']}',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
                   );
                 }).toList(),
                 onChanged: isEditing ? null : (value) {
@@ -494,6 +499,7 @@ class _MarginDialogState extends State<_MarginDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<int>(
+                isExpanded: true,
                 value: _selectedVariantId,
                 decoration: const InputDecoration(labelText: 'Variante (Opcional)'),
                 items: [
@@ -504,7 +510,11 @@ class _MarginDialogState extends State<_MarginDialog> {
                   ..._variants.map((variant) {
                     return DropdownMenuItem<int>(
                       value: variant['id'],
-                      child: Text(variant['denominacion'] ?? 'Variante ${variant['id']}'),
+                      child: Text(
+                        variant['denominacion'] ?? 'Variante ${variant['id']}',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     );
                   }).toList(),
                 ],
@@ -514,6 +524,7 @@ class _MarginDialogState extends State<_MarginDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<int>(
+                isExpanded: true,
                 value: _marginType,
                 decoration: const InputDecoration(labelText: 'Tipo de Margen'),
                 items: const [
