@@ -413,6 +413,7 @@ class FinancialService {
                 .select('id')
                 .eq('tipo_origen', 'operacion_recepcion')
                 .eq('id_referencia_origen', reception['id'])
+                .limit(1)
                 .maybeSingle();
 
         if (existingExpense == null) {
@@ -545,6 +546,7 @@ class FinancialService {
       int processedCount = 0;
       int skippedExisting = 0;
       int skippedRejected = 0;
+      int skippedProcessed = 0;
 
       for (final withdrawal in response) {
         processedCount++;
@@ -554,8 +556,12 @@ class FinancialService {
             await _supabase
                 .from('app_cont_gastos')
                 .select('id')
-                .eq('tipo_origen', 'egreso_efectivo')
+                .inFilter('tipo_origen', [
+                  'egreso_efectivo',
+                  'entrega_efectivo',
+                ])
                 .eq('id_referencia_origen', withdrawal['id'])
+                .limit(1)
                 .maybeSingle();
 
         if (existingExpense != null) {
@@ -564,24 +570,28 @@ class FinancialService {
           continue;
         }
 
-        // También verificar si el egreso fue rechazado
-        Map<String, dynamic>? rejectedWithdrawal;
+        Map<String, dynamic>? processedWithdrawal;
         try {
-          rejectedWithdrawal =
+          processedWithdrawal =
               await _supabase
                   .from('app_cont_egresos_procesados')
-                  .select('id')
+                  .select('id, estado')
                   .eq('id_egreso', withdrawal['id'])
-                  .eq('estado', 'rechazado')
+                  .limit(1)
                   .maybeSingle();
         } catch (e) {
           print('⚠️ Tabla app_cont_egresos_procesados no existe o error: $e');
-          rejectedWithdrawal = null;
+          processedWithdrawal = null;
         }
 
-        if (rejectedWithdrawal != null) {
-          skippedRejected++;
-          print('⏭️ Entrega ${withdrawal['id']} fue rechazada previamente');
+        if (processedWithdrawal != null) {
+          final estado = (processedWithdrawal['estado'] ?? '').toString();
+          if (estado == 'rechazado') {
+            skippedRejected++;
+          } else {
+            skippedProcessed++;
+          }
+          print('⏭️ Entrega ${withdrawal['id']} ya fue procesada: $estado');
           continue;
         }
 
@@ -645,6 +655,7 @@ class FinancialService {
       print('  - Procesadas: $processedCount');
       print('  - Omitidas (ya tienen gasto): $skippedExisting');
       print('  - Omitidas (rechazadas): $skippedRejected');
+      print('  - Omitidas (procesadas): $skippedProcessed');
       print('  - Pendientes finales: ${pendingWithdrawals.length}');
 
       return pendingWithdrawals;
@@ -657,6 +668,19 @@ class FinancialService {
   /// Marcar operación como procesada
   Future<void> _markOperationAsProcessed(Map<String, dynamic> operation) async {
     try {
+      if (operation['tipo_operacion'] == 'entrega_efectivo') {
+        final userId = _supabase.auth.currentUser?.id;
+        if (userId == null || userId.isEmpty) {
+          throw Exception('No hay usuario autenticado para procesar el egreso');
+        }
+        await _supabase.from('app_cont_egresos_procesados').upsert({
+          'id_egreso': operation['id'],
+          'estado': 'aceptado',
+          'procesado_por': userId,
+          'fecha_procesado': DateTime.now().toIso8601String(),
+        }, onConflict: 'id_egreso');
+        return;
+      }
       // Crear registro en tabla de control de operaciones procesadas
       await _supabase.from('app_cont_operacion_gasto').insert({
         'id_operacion': operation['id'],
@@ -668,6 +692,25 @@ class FinancialService {
         'procesado': true,
       });
     } catch (e) {
+      if (e is PostgrestException) {
+        print(
+          '⚠️ Error marcando operación como procesada (Postgrest): code=${e.code}, message=${e.message}, details=${e.details}',
+        );
+      }
+      if (e is PostgrestException && e.code == 'PGRST205') {
+        await _logActivity(
+          tipoActividad: 'operacion_procesada',
+          descripcion:
+              'Operación marcada como procesada: ${operation['tipo_operacion'] ?? ''}',
+          entidadTipo: 'operacion',
+          entidadId: operation['id'] is int ? operation['id'] as int : null,
+          metadata: {
+            'id_operacion': operation['id'],
+            'tipo_operacion': operation['tipo_operacion'],
+          },
+        );
+        return;
+      }
       // No es crítico si falla, solo para auditoría
       print('⚠️ No se pudo marcar operación como procesada: $e');
     }
@@ -679,6 +722,21 @@ class FinancialService {
     String reason,
   ) async {
     try {
+      if (operation['tipo_operacion'] == 'entrega_efectivo') {
+        final userId = _supabase.auth.currentUser?.id;
+        if (userId == null || userId.isEmpty) {
+          throw Exception('No hay usuario autenticado para omitir el egreso');
+        }
+        await _supabase.from('app_cont_egresos_procesados').upsert({
+          'id_egreso': operation['id'],
+          'estado': 'rechazado',
+          'procesado_por': userId,
+          'fecha_procesado': DateTime.now().toIso8601String(),
+          'motivo_rechazo': reason,
+        }, onConflict: 'id_egreso');
+        print('✅ Operación omitida exitosamente');
+        return true;
+      }
       await _supabase.from('app_cont_operacion_gasto').insert({
         'id_operacion': operation['id'],
         'tipo_operacion': operation['tipo_operacion'],
@@ -690,6 +748,27 @@ class FinancialService {
       print('✅ Operación omitida exitosamente');
       return true;
     } catch (e) {
+      if (e is PostgrestException) {
+        print(
+          '❌ Error omitiendo operación (Postgrest): code=${e.code}, message=${e.message}, details=${e.details}',
+        );
+      }
+      if (e is PostgrestException && e.code == 'PGRST205') {
+        await _logActivity(
+          tipoActividad: 'operacion_omitida',
+          descripcion:
+              'Operación omitida: ${operation['tipo_operacion'] ?? ''} - $reason',
+          entidadTipo: 'operacion',
+          entidadId: operation['id'] is int ? operation['id'] as int : null,
+          metadata: {
+            'id_operacion': operation['id'],
+            'tipo_operacion': operation['tipo_operacion'],
+            'motivo_omision': reason,
+          },
+        );
+        print('✅ Operación omitida exitosamente');
+        return true;
+      }
       print('❌ Error omitiendo operación: $e');
       return false;
     }
@@ -1101,15 +1180,24 @@ class FinancialService {
         }
 
         // Obtener nombre de variante si existe
-        if (margin['id_variante'] != null) {
+        if (margin['id_variante'] != null && margin['id_variante'] != 0) {
           try {
             final variant =
                 await _supabase
                     .from('app_dat_variantes')
-                    .select('denominacion')
+                    .select('''
+                  id,
+                  id_atributo,
+                  app_dat_atributos!inner(denominacion)
+                ''')
                     .eq('id', margin['id_variante'])
                     .single();
-            enrichedMargin['variante_nombre'] = variant['denominacion'];
+
+            final attribute =
+                variant['app_dat_atributos'] as Map<String, dynamic>?;
+            enrichedMargin['variante_nombre'] =
+                attribute?['denominacion'] ??
+                'Variante ${margin['id_variante']}';
           } catch (e) {
             enrichedMargin['variante_nombre'] =
                 'Variante ${margin['id_variante']}';
@@ -1297,12 +1385,64 @@ class FinancialService {
   /// Obtener variantes de un producto
   Future<List<Map<String, dynamic>>> getProductVariants(int productId) async {
     try {
-      final variants = await _supabase
+      final productSubcategories = await _supabase
+          .from('app_dat_productos_subcategorias')
+          .select('id_sub_categoria')
+          .eq('id_producto', productId);
+
+      int? _toInt(dynamic v) {
+        if (v == null) return null;
+        if (v is int) return v;
+        if (v is num) return v.toInt();
+        if (v is String) return int.tryParse(v);
+        return null;
+      }
+
+      final subcategoryIds =
+          (productSubcategories as List<dynamic>)
+              .map((r) => (r as Map<String, dynamic>)['id_sub_categoria'])
+              .map(_toInt)
+              .whereType<int>()
+              .toSet()
+              .toList();
+
+      if (subcategoryIds.isEmpty) {
+        return [];
+      }
+
+      final variantsResponse = await _supabase
           .from('app_dat_variantes')
-          .select('id, denominacion, descripcion')
-          .eq('id_producto', productId)
-          .order('denominacion');
-      return List<Map<String, dynamic>>.from(variants);
+          .select('''
+            id,
+            id_sub_categoria,
+            id_atributo,
+            app_dat_atributos!inner(denominacion, descripcion)
+          ''')
+          .inFilter('id_sub_categoria', subcategoryIds)
+          .order('id_atributo');
+
+      final variants =
+          (variantsResponse as List<dynamic>).map((row) {
+            final rowMap = row as Map<String, dynamic>;
+            final attribute =
+                rowMap['app_dat_atributos'] as Map<String, dynamic>?;
+
+            return <String, dynamic>{
+              'id': rowMap['id'],
+              'id_sub_categoria': rowMap['id_sub_categoria'],
+              'id_atributo': rowMap['id_atributo'],
+              'denominacion': attribute?['denominacion'],
+              'descripcion': attribute?['descripcion'],
+            };
+          }).toList();
+
+      variants.sort((a, b) {
+        final da = (a['denominacion'] ?? '').toString().toLowerCase();
+        final db = (b['denominacion'] ?? '').toString().toLowerCase();
+        return da.compareTo(db);
+      });
+
+      return variants;
     } catch (e) {
       print('❌ Error obteniendo variantes: $e');
       rethrow;
@@ -2085,11 +2225,11 @@ class FinancialService {
     required double assignedAmount,
   }) async {
     try {
-      await _supabase.from('app_cont_gasto_asignacion').insert({
+      await _supabase.from('app_cont_gasto_asignacion').upsert({
         'id_gasto': expenseId,
         'id_asignacion': assignmentId,
         'monto_asignado': assignedAmount,
-      });
+      }, onConflict: 'id_gasto,id_asignacion');
 
       print('✅ Asignación de gasto creada exitosamente');
       return true;
@@ -2111,6 +2251,15 @@ class FinancialService {
       final storeId = await _getStoreId();
       final userId = await _getUserId();
 
+      final rawTipoOperacion =
+          (operation['tipo_operacion'] ?? 'recepcion').toString();
+      final tipoOrigen =
+          rawTipoOperacion == 'recepcion'
+              ? 'operacion_recepcion'
+              : rawTipoOperacion == 'entrega_efectivo'
+              ? 'egreso_efectivo'
+              : _truncateString(rawTipoOperacion, 20);
+
       final expenseData = {
         'monto': operation['monto'],
         'fecha':
@@ -2122,10 +2271,7 @@ class FinancialService {
         'id_tipo_costo': costTypeId ?? operation['id_tipo_costo'] ?? 1,
         'id_tienda': storeId,
         'uuid': userId,
-        'tipo_origen': _truncateString(
-          operation['tipo_operacion'] ?? 'recepcion',
-          20,
-        ),
+        'tipo_origen': tipoOrigen,
         'id_referencia_origen': operation['id_referencia'] ?? operation['id'],
       };
 
@@ -2156,12 +2302,12 @@ class FinancialService {
 
       // CREAR RELACIÓN EXPLÍCITA GASTO-ASIGNACIÓN
       try {
-        await _supabase.from('app_cont_gasto_asignacion').insert({
+        await _supabase.from('app_cont_gasto_asignacion').upsert({
           'id_gasto': expenseId,
           'id_asignacion': assignmentId,
           'monto_asignado':
               double.tryParse(operation['monto'].toString()) ?? 0.0,
-        });
+        }, onConflict: 'id_gasto,id_asignacion');
         print(
           '✅ Relación gasto-asignación creada: gasto=$expenseId, asignación=$assignmentId',
         );
