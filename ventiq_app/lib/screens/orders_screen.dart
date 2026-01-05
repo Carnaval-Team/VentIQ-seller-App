@@ -661,8 +661,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ),
                     ),
                     // Botón de impresión pequeño para órdenes con pago confirmado o completadas
-                    if (order.status == OrderStatus.pagoConfirmado ||
-                        order.status == OrderStatus.completada)
+                    if (_canPrintOrder(order))
                       Container(
                         margin: const EdgeInsets.only(left: 8),
                         child: InkWell(
@@ -721,6 +720,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final regex = RegExp(r'Venta desde orden (\d+)');
     final match = regex.firstMatch(notas);
     return match?.group(1);
+  }
+
+  bool _canPrintOrder(Order order) {
+    if (order.status == OrderStatus.pagoConfirmado ||
+        order.status == OrderStatus.completada) {
+      return true;
+    }
+
+    final isCarnavalOrder = _getCarnavalOrderId(order.notas) != null;
+    if (isCarnavalOrder &&
+        (order.status == OrderStatus.enviada ||
+            order.status == OrderStatus.procesando || 
+            order.status == OrderStatus.pendienteDeSincronizacion)) {
+      return true;
+    }
+
+    return false;
   }
 
   String _formatDate(DateTime date) {
@@ -1065,8 +1081,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         const SizedBox(height: 12),
 
         // Botón de imprimir (siempre disponible para órdenes con pago confirmado o completadas)
-        if (order.status == OrderStatus.pagoConfirmado ||
-            order.status == OrderStatus.completada) ...[
+        if (_canPrintOrder(order)) ...[
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
