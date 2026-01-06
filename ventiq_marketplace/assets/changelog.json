@@ -1,8 +1,25 @@
 {
-  "current_version": "1.2.2",
-  "build": 5,
+  "current_version": "1.2.3",
+  "build": 6,
   "app_name": "ventiq_marketplace",
   "changelogs": [
+    {
+      "version": "1.2.3",
+      "date": "2026-01-06",
+      "title": "📦 Estado de stock más claro en productos",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Indicador de stock (Disponible / Casi agotado / Agotado)",
+          "description": "Ahora verás un indicador claro del stock en los productos: Disponible (verde), Casi agotado (ámbar) y Agotado (rojo)."
+        },
+        {
+          "type": "improvement",
+          "title": "Se muestra en listas, tarjetas y detalle del producto",
+          "description": "El estado de stock aparece en las tarjetas de productos (incluyendo resultados de búsqueda y más vendidos), en el detalle del producto y también en la sección de productos relacionados."
+        }
+      ]
+    },
     {
       "version": "1.2.2",
       "date": "2026-01-02",
