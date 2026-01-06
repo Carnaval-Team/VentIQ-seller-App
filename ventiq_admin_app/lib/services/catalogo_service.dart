@@ -152,8 +152,9 @@ class CatalogoService {
   /// Actualiza el estado mostrar_en_catalogo de la tienda
   Future<bool> actualizarMostrarEnCatalogoTienda(
     int idTienda,
-    bool mostrarEnCatalogo,
-  ) async {
+    bool mostrarEnCatalogo, {
+    int? layoutCatalogo,
+  }) async {
     try {
       print('🏪 Actualizando mostrar_en_catalogo para tienda: $idTienda');
       
@@ -177,9 +178,17 @@ class CatalogoService {
         }
       }
       
+      final Map<String, dynamic> updates = {
+        'mostrar_en_catalogo': mostrarEnCatalogo
+      };
+
+      if (layoutCatalogo != null) {
+        updates['layout_catalogo'] = layoutCatalogo;
+      }
+      
       await _supabase
           .from('app_dat_tienda')
-          .update({'mostrar_en_catalogo': mostrarEnCatalogo})
+          .update(updates)
           .eq('id', idTienda);
 
       print('✅ Tienda actualizada');

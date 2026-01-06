@@ -2166,10 +2166,18 @@ class _ProductQuantityWithPriceDialogState
     setState(() => _isLoadingVariants = true);
 
     try {
-      print('🔍 Obteniendo variantes del producto ${widget.product['id']}...');
+      final productId = widget.product['id'] ?? widget.product['id_producto'];
+      
+      if (productId == null) {
+        print('❌ Error: El producto no tiene un ID válido');
+        setState(() => _isLoadingVariants = false);
+        return;
+      }
+
+      print('🔍 Obteniendo variantes del producto $productId...');
       
       final variants = await InventoryService.getProductVariantsInLocation(
-        idProducto: widget.product['id'] as int,
+        idProducto: productId is int ? productId : int.parse(productId.toString()),
         idLayout: sourceLayoutId,
       );
 
@@ -2219,7 +2227,13 @@ class _ProductQuantityWithPriceDialogState
       print('📍 _loadRealStockForVariant iniciado');
       print('📋 Variante recibida: $variant');
       
-      final idProducto = widget.product['id'] as int;
+      final rawId = widget.product['id'] ?? widget.product['id_producto'];
+      if (rawId == null) {
+        print('⚠️ No se puede obtener stock real: ID de producto nulo');
+        return;
+      }
+
+      final idProducto = rawId is int ? rawId : int.parse(rawId.toString());
       final idUbicacion = int.tryParse(widget.sourceLocation!.id);
       final idPresentacion = variant['id_presentacion'] as int?;
 

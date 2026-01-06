@@ -8,6 +8,7 @@ import '../services/user_preferences_service.dart';
 import '../services/permissions_service.dart';
 import '../services/printer_manager.dart';
 import '../services/wifi_printer_service.dart';
+import '../services/export_service.dart';
 
 class InventoryOperationsScreen extends StatefulWidget {
   const InventoryOperationsScreen({super.key});
@@ -2591,39 +2592,79 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
     );
   }
 
-  /// 🖨️ Construir botón de impresión
+  /// 🖨️ Construir botones de impresión y exportación
   Widget _buildPrintButton(Map<String, dynamic> operation) {
     // Obtener el estado de la operación
     final estadoNombre = (operation['estado_nombre'] ?? '').toString().toLowerCase().trim();
-    
+
     // Validar si la operación está completada
-    final isCompleted = estadoNombre.contains('completada') || 
+    final isCompleted = estadoNombre.contains('completada') ||
                         estadoNombre.contains('completed') ||
                         estadoNombre.contains('finalizada');
-    
-    print('🖨️ Print Button - Estado: "$estadoNombre", ¿Completada?: $isCompleted');
-    
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: isCompleted ? () => _printOperation(operation) : null,
-        icon: const Icon(Icons.print),
-        label: Text(
-          isCompleted 
-              ? 'Imprimir Operación' 
-              : 'Solo se pueden imprimir operaciones completadas',
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isCompleted 
-              ? const Color(0xFF4A90E2)
-              : Colors.grey[400],
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+
+    print('🖨️ Print & PDF Buttons - Estado: "$estadoNombre", ¿Completada?: $isCompleted');
+
+    if (!isCompleted) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: null,
+          icon: const Icon(Icons.print),
+          label: const Text(
+            'Solo se pueden imprimir o exportar operaciones completadas',
+            style: TextStyle(fontSize: 12),
+            textAlign: TextAlign.center,
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.grey[400],
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         ),
-      ),
+      );
+    }
+
+    return Row(
+      children: [
+        // Botón imprimir
+        Expanded(
+          flex: 5,
+          child: ElevatedButton.icon(
+            onPressed: () => _printOperation(operation),
+            icon: const Icon(Icons.print),
+            label: const Text('Imprimir'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4A90E2),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Botón Exportar PDF
+        Expanded(
+          flex: 4,
+          child: ElevatedButton.icon(
+            onPressed: () => _exportToPdf(operation),
+            icon: const Icon(Icons.picture_as_pdf),
+            label: const Text('Exportar PDF'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE53935), // Rojo para PDF
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2879,6 +2920,76 @@ class _InventoryOperationsScreenState extends State<InventoryOperationsScreen> {
           Navigator.pop(context);
         } catch (_) {}
         _showPrintError('Error Bluetooth', 'Error al imprimir por Bluetooth: $e');
+      }
+    }
+  }
+
+  /// 📄 Exportar operación a PDF
+  Future<void> _exportToPdf(Map<String, dynamic> operation) async {
+    try {
+      final exportService = ExportService();
+      
+      // Extraer items de los detalles
+      List<Map<String, dynamic>> items = [];
+      if (operation['detalles'] != null && operation['detalles'] is Map) {
+        final detallesMap = operation['detalles'] as Map<String, dynamic>;
+        
+        // Intentar obtener de 'items' directo
+        if (detallesMap['items'] != null && detallesMap['items'] is List) {
+          items = List<Map<String, dynamic>>.from(detallesMap['items']);
+        }
+        
+        // Si no hay items, intentar de 'detalles_especificos'
+        if (items.isEmpty && 
+            detallesMap['detalles_especificos'] != null && 
+            detallesMap['detalles_especificos'] is Map) {
+          final especificos = detallesMap['detalles_especificos'] as Map<String, dynamic>;
+          if (especificos['items'] != null && especificos['items'] is List) {
+            items = List<Map<String, dynamic>>.from(especificos['items']);
+          }
+        }
+      }
+
+      if (!mounted) return;
+
+      // Mostrar diálogo de progreso
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF4A90E2)),
+              SizedBox(height: 16),
+              Text('Generando PDF...'),
+            ],
+          ),
+        ),
+      );
+
+      await exportService.exportInventoryOperationPdf(
+        context: context,
+        operation: operation,
+        items: items,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // Cerrar diálogo de progreso
+      }
+    } catch (e) {
+      print('❌ Error al exportar a PDF: $e');
+      if (mounted) {
+        try {
+          Navigator.pop(context); // Intentar cerrar diálogo si existe
+        } catch (_) {}
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al exportar a PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
