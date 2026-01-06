@@ -15,6 +15,8 @@ import '../widgets/carnaval_tab_view.dart';
 import '../services/store_data_service.dart';
 import '../services/store_service.dart';
 import '../services/catalogo_service.dart';
+import '../services/warehouse_service.dart';
+import '../models/warehouse.dart';
 import '../utils/screen_protection_mixin.dart';
 import '../utils/navigation_guard.dart';
 import 'store_data_management_screen.dart';
@@ -47,6 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   final StoreDataService _storeDataService = StoreDataService();
   final CatalogoService _catalogoService = CatalogoService();
+  final WarehouseService _warehouseService = WarehouseService();
   Map<String, dynamic>? _storeData;
   bool _loadingStoreData = true;
   int? _storeId;
@@ -232,6 +235,59 @@ class _SettingsScreenState extends State<SettingsScreen>
       }
       return null;
     }
+  }
+
+  Future<void> _handleCatalogToggle(
+    bool value,
+    int? layoutId, {
+    String? successMessage,
+  }) async {
+    try {
+      await _catalogoService.actualizarMostrarEnCatalogoTienda(
+        _storeId!,
+        value,
+        layoutCatalogo: layoutId,
+      );
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              successMessage ??
+                  (value ? '✅ Catálogo habilitado' : '✅ Catálogo deshabilitado'),
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showZoneSelectionDialog() async {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return _WarehouseZoneSelector(
+          storeId: _storeId!,
+          warehouseService: _warehouseService,
+          onSelected: (layoutId) {
+            Navigator.of(context).pop();
+            _handleCatalogToggle(true, layoutId);
+          },
+        );
+      },
+    );
   }
 
   Widget _buildStoreDataContent() {
@@ -472,47 +528,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   return Switch(
                                     value: mostrar,
                                     onChanged: (value) async {
-                                      try {
-                                        await _catalogoService
-                                            .actualizarMostrarEnCatalogoTienda(
-                                              _storeId!,
-                                              value,
-                                            );
-                                        if (mounted) {
-                                          setState(() {});
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                value
-                                                    ? '✅ Catálogo habilitado'
-                                                    : '✅ Catálogo deshabilitado',
-                                              ),
-                                              backgroundColor: Colors.green,
-                                            ),
-                                          );
-                                        }
-                                      } catch (e) {
-                                        if (mounted) {
-                                          setState(() {});
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                e.toString().replaceAll(
-                                                  'Exception: ',
-                                                  '',
-                                                ),
-                                              ),
-                                              backgroundColor: Colors.red,
-                                              duration: const Duration(
-                                                seconds: 5,
-                                              ),
-                                            ),
-                                          );
-                                        }
+                                      if (value) {
+                                        _showZoneSelectionDialog();
+                                      } else {
+                                        _handleCatalogToggle(false, null);
                                       }
                                     },
                                     activeColor: Colors.green,
@@ -1078,5 +1097,122 @@ class _SettingsScreenState extends State<SettingsScreen>
     } catch (e) {
       print('Error guardando días de trabajo: $e');
     }
+  }
+}
+
+class _WarehouseZoneSelector extends StatefulWidget {
+  final int storeId;
+  final WarehouseService warehouseService;
+  final Function(int) onSelected;
+
+  const _WarehouseZoneSelector({
+    required this.storeId,
+    required this.warehouseService,
+    required this.onSelected,
+  });
+
+  @override
+  State<_WarehouseZoneSelector> createState() => _WarehouseZoneSelectorState();
+}
+
+class _WarehouseZoneSelectorState extends State<_WarehouseZoneSelector> {
+  bool _loading = true;
+  List<Warehouse> _warehouses = [];
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWarehouses();
+  }
+
+  Future<void> _loadWarehouses() async {
+    try {
+      final warehouses = await widget.warehouseService.listWarehouses(
+        storeId: widget.storeId.toString(),
+      );
+      if (mounted) {
+        setState(() {
+          _warehouses = warehouses;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Calcular Inventario desde...'),
+      content:
+          _loading
+              ? const SizedBox(
+                height: 200,
+                child: Center(child: CircularProgressIndicator()),
+              )
+              : _errorMessage != null
+              ? Text('Error: $_errorMessage', style: const TextStyle(color: Colors.red))
+              : _warehouses.isEmpty
+              ? const Text('No hay almacenes configurados para esta tienda.')
+              : SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _warehouses.length,
+                  itemBuilder: (context, index) {
+                    final warehouse = _warehouses[index];
+                    return ExpansionTile(
+                      leading: const Icon(Icons.warehouse),
+                      title: Text(warehouse.denominacion),
+                      subtitle: Text(warehouse.direccion),
+                      children:
+                          warehouse.zones.isEmpty
+                              ? [
+                                const Padding(
+                                  padding: EdgeInsets.all(8.0),
+                                  child: Text('Sin zonas configuradas'),
+                                ),
+                              ]
+                              : warehouse.zones.map((zone) {
+                                return ListTile(
+                                  leading: const Icon(Icons.location_on),
+                                  title: Text(zone.name),
+                                  subtitle: Text(
+                                    zone.type.toUpperCase(),
+                                    style: const TextStyle(fontSize: 10),
+                                  ),
+                                  onTap: () {
+                                    final id = int.tryParse(zone.id);
+                                    if (id != null) {
+                                      widget.onSelected(id);
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('ID de zona inválido'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                );
+                              }).toList(),
+                    );
+                  },
+                ),
+              ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+      ],
+    );
   }
 }

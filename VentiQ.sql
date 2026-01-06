@@ -339,6 +339,7 @@ CREATE TABLE public.app_dat_configuracion_tienda (
   permite_vender_aun_sin_disponibilidad boolean DEFAULT false,
   no_solicitar_cliente boolean NOT NULL DEFAULT false,
   tpv_trabajador_encargado_carnaval jsonb,
+  allow_discount_on_vendedor boolean NOT NULL DEFAULT false,
   CONSTRAINT app_dat_configuracion_tienda_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_configuracion_tienda_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id)
 );
@@ -979,12 +980,16 @@ CREATE TABLE public.app_dat_producto_consignacion_duplicado (
   id_tienda_destino integer NOT NULL,
   fecha_duplicacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
   duplicado_por uuid,
+  id_presentacion_original bigint,
+  id_presentacion_duplicada bigint,
   CONSTRAINT app_dat_producto_consignacion_duplicado_pkey PRIMARY KEY (id),
   CONSTRAINT app_dat_producto_consignacion_duplica_id_producto_original_fkey FOREIGN KEY (id_producto_original) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_producto_consignacion_duplic_id_producto_duplicado_fkey FOREIGN KEY (id_producto_duplicado) REFERENCES public.app_dat_producto(id),
   CONSTRAINT app_dat_producto_consignacion_dup_id_contrato_consignacion_fkey FOREIGN KEY (id_contrato_consignacion) REFERENCES public.app_dat_contrato_consignacion(id),
   CONSTRAINT app_dat_producto_consignacion_duplicado_id_tienda_origen_fkey FOREIGN KEY (id_tienda_origen) REFERENCES public.app_dat_tienda(id),
-  CONSTRAINT app_dat_producto_consignacion_duplicado_id_tienda_destino_fkey FOREIGN KEY (id_tienda_destino) REFERENCES public.app_dat_tienda(id)
+  CONSTRAINT app_dat_producto_consignacion_duplicado_id_tienda_destino_fkey FOREIGN KEY (id_tienda_destino) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT fk_pcd_presentacion_original FOREIGN KEY (id_presentacion_original) REFERENCES public.app_dat_producto_presentacion(id),
+  CONSTRAINT fk_pcd_presentacion_duplicada FOREIGN KEY (id_presentacion_duplicada) REFERENCES public.app_dat_producto_presentacion(id)
 );
 CREATE TABLE public.app_dat_producto_etiquetas (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -1631,6 +1636,17 @@ CREATE TABLE public.app_versiones (
   fecha_lanzamiento timestamp without time zone DEFAULT now(),
   activa boolean DEFAULT true,
   CONSTRAINT app_versiones_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.auditor (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  uuid uuid NOT NULL,
+  id_tienda bigint NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  id_trabajador bigint,
+  CONSTRAINT auditor_pkey PRIMARY KEY (id),
+  CONSTRAINT app_dat_auditor_id_tienda_fkey FOREIGN KEY (id_tienda) REFERENCES public.app_dat_tienda(id),
+  CONSTRAINT app_dat_auditor_id_trabajador_fkey FOREIGN KEY (id_trabajador) REFERENCES public.app_dat_trabajadores(id),
+  CONSTRAINT app_dat_auditor_uuid_fkey FOREIGN KEY (uuid) REFERENCES auth.users(id)
 );
 CREATE TABLE public.monedas (
   codigo character NOT NULL,

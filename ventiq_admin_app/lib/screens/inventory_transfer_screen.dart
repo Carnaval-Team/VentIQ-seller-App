@@ -95,12 +95,20 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         ),
       );
       return;
+    // Asegurar que el producto tiene los campos necesarios normalizados
+    final productWithId = Map<String, dynamic>.from(product);
+    if (productWithId['id_producto'] == null && productWithId['id'] != null) {
+      productWithId['id_producto'] = productWithId['id'];
     }
+    if (productWithId['id'] == null && productWithId['id_producto'] != null) {
+      productWithId['id'] = productWithId['id_producto'];
+    }
+
     showDialog(
       context: context,
       builder:
           (context) => TransferProductQuantityDialog(
-            product: product,
+            product: productWithId,
             sourceLayoutId: _getZoneIdFromLocation(_selectedSourceLocation!),
             onAdd: (productData) {
               print('🔍 DEBUG: Producto agregado a _selectedProducts:');

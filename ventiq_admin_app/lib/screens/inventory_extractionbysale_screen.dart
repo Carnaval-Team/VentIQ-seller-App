@@ -246,11 +246,17 @@ class _InventoryExtractionBySaleScreenState
       return;
     }
 
+    // Asegurar que el producto tiene el campo 'id' (puede venir como 'id_producto')
+    final productWithId = Map<String, dynamic>.from(product);
+    if (productWithId['id'] == null && productWithId['id_producto'] != null) {
+      productWithId['id'] = productWithId['id_producto'];
+    }
+
     showDialog(
       context: context,
       builder:
           (context) => _ProductQuantityWithPriceDialog(
-            product: product,
+            product: productWithId,
             sourceLocation: _selectedSourceLocation,
             onProductAdded: (productData) {
               print('productData');
@@ -261,6 +267,8 @@ class _InventoryExtractionBySaleScreenState
             },
           ),
     );
+    print('_selectedProducts');
+    print(_selectedProducts);
   }
 
   void _removeProductFromExtraction(int index) {
@@ -2140,29 +2148,65 @@ class _ProductQuantityWithPriceDialogState
   }
 
   Future<void> _loadLocationSpecificVariants() async {
-    if (widget.sourceLocation == null) return;
+    print('🔄 _loadLocationSpecificVariants iniciado');
+    
+    if (widget.sourceLocation == null) {
+      print('⚠️ sourceLocation es nulo');
+      return;
+    }
 
     final sourceLayoutId = int.tryParse(widget.sourceLocation!.id);
-    if (sourceLayoutId == null) return;
+    if (sourceLayoutId == null) {
+      print('⚠️ No se pudo parsear sourceLayoutId: ${widget.sourceLocation!.id}');
+      return;
+    }
+
+    print('📍 sourceLayoutId: $sourceLayoutId');
 
     setState(() => _isLoadingVariants = true);
 
     try {
+      final productId = widget.product['id'] ?? widget.product['id_producto'];
+      
+      if (productId == null) {
+        print('❌ Error: El producto no tiene un ID válido');
+        setState(() => _isLoadingVariants = false);
+        return;
+      }
+
+      print('🔍 Obteniendo variantes del producto $productId...');
+      
       final variants = await InventoryService.getProductVariantsInLocation(
-        idProducto: widget.product['id'] as int,
+        idProducto: productId is int ? productId : int.parse(productId.toString()),
         idLayout: sourceLayoutId,
       );
+
+      print('✅ Variantes obtenidas: ${variants.length}');
+      print('📋 Variantes: $variants');
 
       setState(() {
         _availableVariants = variants;
         if (variants.isNotEmpty) {
           _selectedVariant = variants.first;
-          _maxAvailableStock =
-              _selectedVariant!['stock_disponible']?.toDouble() ?? 0.0;
+          print('✅ Variante seleccionada: $_selectedVariant');
         }
+      });
+
+      // Cargar stock real DESPUÉS de establecer la variante
+      if (_selectedVariant != null) {
+        print('📦 Cargando stock real para variante seleccionada...');
+        await _loadRealStockForVariant(_selectedVariant!);
+      } else {
+        print('⚠️ _selectedVariant es nulo después de cargar variantes');
+      }
+
+      setState(() {
         _isLoadingVariants = false;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ Error en _loadLocationSpecificVariants: $e');
+      print('📍 StackTrace: $stackTrace');
+      
       setState(() => _isLoadingVariants = false);
       // Fallback data
       _availableVariants = [
@@ -2178,12 +2222,63 @@ class _ProductQuantityWithPriceDialogState
     }
   }
 
+  Future<void> _loadRealStockForVariant(Map<String, dynamic> variant) async {
+    try {
+      print('📍 _loadRealStockForVariant iniciado');
+      print('📋 Variante recibida: $variant');
+      
+      final rawId = widget.product['id'] ?? widget.product['id_producto'];
+      if (rawId == null) {
+        print('⚠️ No se puede obtener stock real: ID de producto nulo');
+        return;
+      }
+
+      final idProducto = rawId is int ? rawId : int.parse(rawId.toString());
+      final idUbicacion = int.tryParse(widget.sourceLocation!.id);
+      final idPresentacion = variant['id_presentacion'] as int?;
+
+      print('🔎 idProducto: $idProducto, idUbicacion: $idUbicacion, idPresentacion: $idPresentacion');
+
+      if (idUbicacion == null || idPresentacion == null) {
+        print('⚠️ No se puede obtener stock real: ubicación o presentación nula');
+        print('   - idUbicacion: $idUbicacion');
+        print('   - idPresentacion: $idPresentacion');
+        return;
+      }
+
+      print('✅ Parámetros válidos, llamando a getStockRealByLocationPresentation...');
+
+      // Obtener stock real de app_dat_inventario_productos
+      final stockReal = await InventoryService.getStockRealByLocationPresentation(
+        idProducto: idProducto,
+        idUbicacion: idUbicacion,
+        idPresentacion: idPresentacion,
+      );
+
+      print('✅ Stock real recibido: $stockReal');
+
+      setState(() {
+        _maxAvailableStock = stockReal;
+        print('📊 Stock real actualizado para variante: $stockReal unidades');
+      });
+    } catch (e, stackTrace) {
+      print('❌ Error cargando stock real: $e');
+      print('📍 StackTrace: $stackTrace');
+      // Mantener el stock de la variante si hay error
+    }
+  }
+
   void _onVariantChanged(Map<String, dynamic>? variant) {
     setState(() {
       _selectedVariant = variant;
       _maxAvailableStock = variant?['stock_disponible']?.toDouble() ?? 0.0;
       _quantityController.clear();
     });
+    
+    // Cargar stock real cuando cambia la variante
+    if (variant != null) {
+      _loadRealStockForVariant(variant);
+    }
   }
 
   void _submitProduct() {

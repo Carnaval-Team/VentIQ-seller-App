@@ -1033,8 +1033,16 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     setState(() => _isLoadingVariants = true);
 
     try {
+      final rawId = widget.product['id'] ?? widget.product['id_producto'];
+      if (rawId == null) {
+        print('❌ Error: El producto no tiene un ID válido');
+        setState(() => _isLoadingVariants = false);
+        return;
+      }
+      final productId = rawId is int ? rawId : int.parse(rawId.toString());
+
       final variants = await InventoryService.getProductVariantsInLocation(
-        idProducto: widget.product['id'] as int,
+        idProducto: productId,
         idLayout: sourceLayoutId,
       );
 
@@ -1087,13 +1095,21 @@ class _ProductQuantityDialogState extends State<_ProductQuantityDialog> {
     setState(() => _isLoadingPresentations = true);
 
     try {
+      final rawId = widget.product['id'] ?? widget.product['id_producto'];
+      if (rawId == null) {
+        print('⚠️ No se puede obtener presentaciones: ID de producto nulo');
+        setState(() => _isLoadingPresentations = false);
+        return;
+      }
+      final productId = rawId is int ? rawId : int.parse(rawId.toString());
+
       print(
-        '🔍 DEBUG: Cargando presentaciones para producto ${widget.product['id']}',
+        '🔍 DEBUG: Cargando presentaciones para producto $productId',
       );
 
       final presentations =
           await InventoryService.getProductPresentationsInZone(
-            idProducto: widget.product['id'] as int,
+            idProducto: productId,
             idLayout: sourceLayoutId,
           );
 

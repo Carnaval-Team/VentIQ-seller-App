@@ -102,34 +102,94 @@ class ExportService {
 
         await Share.shareXFiles(
           [XFile(file.path, mimeType: mimeType)],
-          subject: offerTitle,
-          text:
-              'Documento generado el ${DateFormat('dd/MM/yyyy HH:mm').format(issuedAt)}',
+          subject: 'Oferta Comercial - $storeName',
+          text: 'Se adjunta la oferta comercial solicitada.',
         );
       }
 
       if (context.mounted) {
-        final message =
-            kIsWeb
-                ? 'Archivo PDF descargado exitosamente'
-                : 'Archivo PDF generado y compartido exitosamente';
-
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
+          const SnackBar(
+            content: Text('PDF generado exitosamente'),
+            backgroundColor: AppColors.success,
           ),
         );
       }
     } catch (e) {
-      print('Error al generar oferta comercial PDF: $e');
+      print('Error al exportar oferta a PDF: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al generar el PDF: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Exporta una operación de inventario completada a PDF
+  Future<void> exportInventoryOperationPdf({
+    required BuildContext context,
+    required Map<String, dynamic> operation,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    try {
+      final operationId = operation['id']?.toString() ?? 'N/A';
+      final fileName = 'Operacion_${operationId}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
+
+      final fileBytes = await _generateInventoryOperationPdf(
+        operation: operation,
+        items: items,
+      );
+
+      const mimeType = 'application/pdf';
+
+      if (kIsWeb) {
+        try {
+          _downloadFileWeb(fileBytes, fileName, mimeType);
+        } catch (webError) {
+          print('Error específico de descarga web: $webError');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Problema de compatibilidad del navegador. Intenta con Edge o actualiza tu navegador.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 5),
+              ),
+            );
+          }
+          return;
+        }
+      } else {
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsBytes(fileBytes);
+
+        await Share.shareXFiles(
+          [XFile(file.path, mimeType: mimeType)],
+          subject: 'Operación de Inventario - $operationId',
+          text: 'Comprobante de operación de inventario generado el ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
+        );
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF generado exitosamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error al exportar operación a PDF: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar el PDF: $e'),
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -2200,6 +2260,166 @@ class ExportService {
           );
         }),
       ],
+    );
+  }
+
+  /// Genera un archivo PDF con el contenido de una operación de inventario
+  Future<Uint8List> _generateInventoryOperationPdf({
+    required Map<String, dynamic> operation,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final pdf = pw.Document();
+    final regularFont = await _getRegularFont();
+    final boldFont = await _getBoldFont();
+    final now = DateTime.now();
+    final dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              // Encabezado
+              pw.Center(
+                child: pw.Text(
+                  'INVENTTIA',
+                  style: pw.TextStyle(fontSize: 24, font: boldFont),
+                ),
+              ),
+              pw.Center(
+                child: pw.Text(
+                  'OPERACIÓN DE INVENTARIO',
+                  style: pw.TextStyle(fontSize: 18, font: boldFont),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Divider(),
+              pw.SizedBox(height: 20),
+
+              // Información General
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      _buildPdfInfoRow('ID Operación:', '#${operation['id']}', boldFont, regularFont),
+                      _buildPdfInfoRow('Tipo:', '${operation['tipo_operacion_nombre'] ?? 'N/A'}', boldFont, regularFont),
+                      _buildPdfInfoRow('Estado:', '${operation['estado_nombre'] ?? 'N/A'}', boldFont, regularFont),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      _buildPdfInfoRow('Fecha:', '${dateFormatter.format(DateTime.parse(operation['created_at']))}', boldFont, regularFont),
+                      if (operation['usuario_email'] != null)
+                        _buildPdfInfoRow('Usuario:', '${operation['usuario_email']}', boldFont, regularFont),
+                    ],
+                  ),
+                ],
+              ),
+
+              if (operation['observaciones']?.isNotEmpty == true) ...[
+                pw.SizedBox(height: 10),
+                pw.Text('Observaciones:', style: pw.TextStyle(font: boldFont, fontSize: 10)),
+                pw.Text('${operation['observaciones']}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
+              ],
+
+              pw.SizedBox(height: 30),
+              pw.Text('DETALLE DE PRODUCTOS', style: pw.TextStyle(fontSize: 14, font: boldFont)),
+              pw.SizedBox(height: 10),
+
+              // Tabla de productos
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(3), // Producto
+                  1: const pw.FlexColumnWidth(1), // Cantidad
+                  2: const pw.FlexColumnWidth(1.5), // Ubicación
+                },
+                children: [
+                   pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                    children: [
+                      _buildTableHeader('Producto', font: boldFont),
+                      _buildTableHeader('Cant.', font: boldFont),
+                      _buildTableHeader('Ubicación', font: boldFont),
+                    ],
+                  ),
+                  ...items.map((item) {
+                     final cantidad = item['cantidad_contada'] ?? item['cantidad'] ?? 0;
+                     final productName = item['producto_nombre'] ?? item['nombre_producto'] ?? 'Producto';
+                     final ubicacion = item['ubicacion_nombre'] ?? item['ubicacion'] ?? 'N/A';
+                     return pw.TableRow(
+                       children: [
+                         _buildTableCell(productName, font: regularFont),
+                         _buildTableCell(cantidad.toString(), font: regularFont),
+                         _buildTableCell(ubicacion.toString(), font: regularFont),
+                       ],
+                     );
+                  }),
+                ],
+              ),
+
+              pw.SizedBox(height: 30),
+              pw.Divider(),
+              pw.SizedBox(height: 10),
+              
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.end,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Row(
+                        children: [
+                          pw.Text('Total Items: ', style: pw.TextStyle(font: boldFont, fontSize: 10)),
+                          pw.Text('${items.length}', style: pw.TextStyle(font: regularFont, fontSize: 10)),
+                        ],
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Row(
+                        children: [
+                          pw.Text('Total: ', style: pw.TextStyle(fontSize: 14, font: boldFont)),
+                          pw.Text('\$${(operation['total']?.toDouble() ?? 0.0).toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 14, font: boldFont)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
+              pw.Spacer(),
+              pw.Center(
+                child: pw.Text(
+                  'Comprobante generado por Inventtia - ${dateFormatter.format(now)}',
+                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600, font: regularFont),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  /// Helper para construir una fila de información en PDF
+  pw.Widget _buildPdfInfoRow(String label, String value, pw.Font bold, pw.Font regular) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 4),
+      child: pw.Row(
+        mainAxisSize: pw.MainAxisSize.min,
+        children: [
+          pw.Text(label, style: pw.TextStyle(font: bold, fontSize: 10)),
+          pw.SizedBox(width: 4),
+          pw.Text(value, style: pw.TextStyle(font: regular, fontSize: 10)),
+        ],
+      ),
     );
   }
 }

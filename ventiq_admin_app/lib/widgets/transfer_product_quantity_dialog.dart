@@ -52,12 +52,24 @@ class _TransferProductQuantityDialogState
       print('   - ID Presentación: ${widget.product['id_presentacion']}');
       print('   - ID Ubicación: ${widget.sourceLayoutId}');
 
+      final productId = widget.product['id_producto'] ?? widget.product['id'];
+      final presentationId = widget.product['id_presentacion'];
+
+      if (productId == null) {
+        print('❌ Error: ID de producto nulo en el diálogo de transferencia');
+        setState(() {
+          _errorMessage = 'Error: ID de producto no encontrado';
+          _isLoadingStock = false;
+        });
+        return;
+      }
+
       // Consultar el último registro de inventario para este producto/presentación/ubicación
       final responses = await Supabase.instance.client
           .from('app_dat_inventario_productos')
           .select('cantidad_final')
-          .eq('id_producto', widget.product['id_producto'])
-          .eq('id_presentacion', widget.product['id_presentacion'])
+          .eq('id_producto', productId)
+          .eq('id_presentacion', presentationId)
           .eq('id_ubicacion', widget.sourceLayoutId)
           .order('created_at', ascending: false)
           .limit(1);

@@ -3021,4 +3021,43 @@ class InventoryService {
       };
     }
   }
+
+  /// Obtiene la cantidad real disponible de un producto en una ubicación específica
+  /// Filtra por id_producto, id_ubicacion e id_presentacion
+  /// Retorna la cantidad_final del último registro en app_dat_inventario_productos
+  static Future<double> getStockRealByLocationPresentation({
+    required int idProducto,
+    required int idUbicacion,
+    required int idPresentacion,
+  }) async {
+    try {
+      print('🔍 Obteniendo stock real del producto $idProducto en ubicación $idUbicacion, presentación $idPresentacion...');
+
+      final response = await _supabase.rpc(
+        'get_stock_real_by_location_presentation',
+        params: {
+          'p_id_producto': idProducto,
+          'p_id_ubicacion': idUbicacion,
+          'p_id_presentacion': idPresentacion,
+        },
+      );
+
+      if (response == null || (response is List && response.isEmpty)) {
+        print('⚠️ No se encontró stock para esta combinación, retornando 0');
+        return 0.0;
+      }
+
+      // Handle response as list or single object
+      final data = response is List ? response.first : response;
+      final cantidadDisponible = (data['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+
+      print('✅ Stock real obtenido: $cantidadDisponible unidades');
+      print('📊 ID Inventario: ${data['id_inventario']}, Fecha: ${data['created_at']}');
+
+      return cantidadDisponible;
+    } catch (e) {
+      print('❌ Error obteniendo stock real: $e');
+      return 0.0;
+    }
+  }
 }
