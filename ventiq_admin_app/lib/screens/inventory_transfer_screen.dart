@@ -32,7 +32,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
   WarehouseZone? _selectedDestinationLocation;
   bool _isLoading = false;
   bool _isLoadingWarehouses = true;
-  
+
   // Progress tracking
   double _transferProgress = 0.0;
   String _transferStatus = '';
@@ -95,6 +95,8 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
         ),
       );
       return;
+    }
+
     // Asegurar que el producto tiene los campos necesarios normalizados
     final productWithId = Map<String, dynamic>.from(product);
     if (productWithId['id_producto'] == null && productWithId['id'] != null) {
@@ -140,56 +142,53 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => WillPopScope(
-        onWillPop: () async => false,
-        child: AlertDialog(
-          title: const Text('Procesando Transferencia'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 16),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  value: _transferProgress,
-                  minHeight: 8,
-                  backgroundColor: Colors.grey[300],
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    _transferProgress < 1.0 ? AppColors.primary : Colors.green,
+      builder:
+          (context) => WillPopScope(
+            onWillPop: () async => false,
+            child: AlertDialog(
+              title: const Text('Procesando Transferencia'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: _transferProgress,
+                      minHeight: 8,
+                      backgroundColor: Colors.grey[300],
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _transferProgress < 1.0
+                            ? AppColors.primary
+                            : Colors.green,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                '${(_transferProgress * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _transferStatus,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-              if (_totalSteps > 0) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Paso $_currentStep de $_totalSteps',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
+                  const SizedBox(height: 16),
+                  Text(
+                    '${(_transferProgress * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              ],
-            ],
+                  const SizedBox(height: 12),
+                  Text(
+                    _transferStatus,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                  if (_totalSteps > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Paso $_currentStep de $_totalSteps',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
     );
   }
 
@@ -229,7 +228,7 @@ class _InventoryTransferScreenState extends State<InventoryTransferScreen> {
 
     setState(() => _isLoading = true);
     _showProgressDialog();
-    
+
     // Initialize progress tracking
     _totalSteps = 3; // Validación, Transferencia, Completar operaciones
     _currentStep = 0;
