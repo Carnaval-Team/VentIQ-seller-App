@@ -1,8 +1,21 @@
 {
-  "current_version": "1.7.0",
-  "build": 170,
+  "current_version": "1.7.1",
+  "build": 171,
   "app_name": "ventiq_admin",
   "changelogs": [
+
+    {
+      "version": "1.7.1",
+      "date": "2026-01-06",
+      "title": "🔒 Solución de seguridad",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Filtrado de tienda en selección de almacenes para transferencia para usuarios multitiendas",
+          "description": "Los usuarios con mas de una tienda al seleccionar una se filtran los alamacenes de esa tienda correspondiente y ya no se muestran todos."
+        }
+      ]
+    },
     {
       "version": "1.7.0",
       "date": "2026-01-05",
