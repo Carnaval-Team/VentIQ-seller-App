@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import 'marquee_text.dart';
 import 'supabase_image.dart';
+import 'stock_status_chip.dart';
 
 /// Tarjeta de producto para el marketplace
 class ProductCard extends StatelessWidget {
@@ -12,6 +13,7 @@ class ProductCard extends StatelessWidget {
   final String storeName;
   final double rating;
   final int salesCount;
+  final int? availableStock;
   final VoidCallback onTap;
 
   const ProductCard({
@@ -23,6 +25,7 @@ class ProductCard extends StatelessWidget {
     required this.storeName,
     required this.rating,
     required this.salesCount,
+    this.availableStock,
     required this.onTap,
   });
 
@@ -159,6 +162,25 @@ class ProductCard extends StatelessWidget {
                           ),
                         ],
                       ),
+                    ),
+                  ),
+
+                if (availableStock != null)
+                  Positioned(
+                    bottom: 10,
+                    left: 10,
+                    child: StockStatusChip(
+                      stock: availableStock!,
+                      lowStockThreshold: 10,
+                      showQuantity: false,
+                      fontSize: 10,
+                      iconSize: 12,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      borderRadius: 12,
+                      maxWidth: 120,
                     ),
                   ),
               ],

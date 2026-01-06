@@ -5,6 +5,7 @@ import '../services/product_detail_service.dart';
 import '../services/cart_service.dart';
 import '../widgets/carnaval_fab.dart';
 import '../widgets/supabase_image.dart';
+import '../widgets/stock_status_chip.dart';
 import '../services/rating_service.dart';
 import '../widgets/rating_input_dialog.dart';
 import '../services/store_service.dart'; // Import agregado
@@ -850,7 +851,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 final name = (p['denominacion'] ?? 'Producto').toString();
                 final imageUrl = p['imagen']?.toString();
                 final tieneStock = (p['tiene_stock'] as bool?) ?? false;
-                final stock = (p['stock_disponible'] as num?)?.toDouble();
+                final stockRaw = (p['stock_disponible'] as num?);
                 final metadata = p['metadata'] as Map<String, dynamic>?;
                 final ratingRaw = metadata?['rating_promedio'];
                 final rating = ratingRaw is num
@@ -995,43 +996,32 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                           ),
                                         ),
                                         const Spacer(),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: tieneStock
-                                                ? AppTheme.successColor
-                                                      .withOpacity(0.08)
-                                                : AppTheme.errorColor
-                                                      .withOpacity(0.08),
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                            border: Border.all(
-                                              color: tieneStock
-                                                  ? AppTheme.successColor
-                                                        .withOpacity(0.2)
-                                                  : AppTheme.errorColor
-                                                        .withOpacity(0.2),
-                                              width: 1,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            tieneStock
-                                                ? (stock == null
-                                                      ? 'En stock'
-                                                      : '${stock.toStringAsFixed(0)}')
-                                                : 'Sin stock',
-                                            style: TextStyle(
+                                        Builder(
+                                          builder: (context) {
+                                            const lowStockThreshold = 10;
+                                            final int stockCount =
+                                                stockRaw != null
+                                                ? stockRaw.toInt()
+                                                : (tieneStock
+                                                      ? lowStockThreshold + 1
+                                                      : 0);
+
+                                            return StockStatusChip(
+                                              stock: stockCount,
+                                              lowStockThreshold:
+                                                  lowStockThreshold,
+                                              showQuantity: false,
                                               fontSize: 11,
-                                              fontWeight: FontWeight.w700,
-                                              color: tieneStock
-                                                  ? AppTheme.successColor
-                                                  : AppTheme.errorColor,
-                                            ),
-                                          ),
+                                              iconSize: 13,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
+                                              borderRadius: 10,
+                                              maxWidth: 110,
+                                            );
+                                          },
                                         ),
                                       ],
                                     ),
@@ -1451,43 +1441,29 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               children: [
                 // Stock
                 Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppTheme.successColor.withOpacity(0.1),
-                          AppTheme.successColor.withOpacity(0.05),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppTheme.successColor.withOpacity(0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.inventory_2_rounded,
-                          size: 18,
-                          color: AppTheme.successColor,
+                  child: Builder(
+                    builder: (context) {
+                      const lowStockThreshold = 10;
+                      final stockRaw = _productDetails?['cantidad_total'];
+                      final stock = stockRaw is num
+                          ? stockRaw.toInt()
+                          : int.tryParse(stockRaw?.toString() ?? '') ?? 0;
+
+                      return StockStatusChip(
+                        stock: stock,
+                        lowStockThreshold: lowStockThreshold,
+                        showQuantity: false,
+                        fullWidth: true,
+                        fontSize: 13,
+                        iconSize: 18,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${_productDetails?['cantidad_total'] ?? 0} en stock',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.successColor,
-                          ),
-                        ),
-                      ],
-                    ),
+                        borderRadius: 12,
+                        maxWidth: null,
+                      );
+                    },
                   ),
                 ),
               ],

@@ -1,8 +1,35 @@
 {
-  "current_version": "1.8.4",
-  "build": 714,
+  "current_version": "1.8.5",
+  "build": 715,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.8.5",
+      "date": "2026-01-06",
+      "title": "🔌 Modo Offline Mejorado",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Activación automática más rápida",
+          "description": "El modo offline ahora se activa en 3 segundos cuando pierdes internet (antes 10 segundos)."
+        },
+        {
+          "type": "fix",
+          "title": "Datos guardados correctamente",
+          "description": "Corregido problema donde algunos datos se perdían al preparar el modo offline. Ahora todo se guarda bien."
+        },
+        {
+          "type": "fix",
+          "title": "Descarga sin trabas",
+          "description": "La descarga de datos para trabajar sin internet ya no se queda pegada en el primer paso."
+        },
+        {
+          "type": "improvement",
+          "title": "Indicador de conexión visible",
+          "description": "Ahora puedes ver si estás online u offline en la parte superior de las pantallas principales."
+        }
+      ]
+    },
     {
       "version": "1.8.4",
       "date": "2026-01-05",

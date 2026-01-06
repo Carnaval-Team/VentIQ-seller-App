@@ -832,7 +832,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         .toDouble(),
                 imageUrl: product['imagen'],
                 storeName: 'Ver detalle', // Simplify for search result
-                availableStock: 10, // Dummy or fetch if available
+                availableStock: (product['stock_disponible'] is num)
+                    ? (product['stock_disponible'] as num).toInt()
+                    : int.tryParse(
+                            product['stock_disponible']?.toString() ?? '',
+                          ) ??
+                          0,
                 rating: 0,
                 presentations: const [], // Detailed view handles this
                 onTap: () {
@@ -1355,6 +1360,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: _bestSellingProducts.length,
                   itemBuilder: (context, index) {
                     final product = _bestSellingProducts[index];
+
+                    final hasStockField =
+                        product.containsKey('stock_disponible') ||
+                        product.containsKey('stock') ||
+                        product.containsKey('cantidad_total');
+
+                    final dynamic stockValue =
+                        product['stock_disponible'] ??
+                        product['stock'] ??
+                        product['cantidad_total'];
+
+                    final int? availableStock = hasStockField
+                        ? (stockValue is num
+                              ? stockValue.toInt()
+                              : int.tryParse(stockValue?.toString() ?? '') ?? 0)
+                        : null;
+
                     return Padding(
                       padding: const EdgeInsets.only(right: AppTheme.paddingM),
                       child: ProductCard(
@@ -1374,6 +1396,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             0.0,
                         salesCount:
                             (product['total_vendido'] as num?)?.toInt() ?? 0,
+                        availableStock: availableStock,
                         onTap: () {
                           Navigator.push(
                             context,

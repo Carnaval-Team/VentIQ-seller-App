@@ -2443,6 +2443,8 @@ class _SyncDialogState extends State<_SyncDialog> {
   Future<void> _startSync() async {
     try {
       final Map<String, dynamic> offlineData = {};
+      final List<String> successfulSteps = [];
+      final List<String> failedSteps = [];
 
       for (int i = 0; i < _tasks.length; i++) {
         final task = _tasks[i];
@@ -2451,51 +2453,66 @@ class _SyncDialogState extends State<_SyncDialog> {
           _progress = (i + 1) / _tasks.length;
         });
 
-        // Simular delay para mostrar progreso
-        await Future.delayed(const Duration(milliseconds: 800));
-
-        // Aquí irían las llamadas reales a los servicios
-        switch (task['key']) {
-          case 'reauth':
-            await _reauth();
-            break;
-          case 'pending_operations':
-            await _processPendingOperations();
-            break;
-          case 'pending_orders':
-            await _processPendingOrders();
-            break;
-          case 'credentials':
-            offlineData['credentials'] = await _syncCredentials();
-            break;
-          case 'turno':
-            offlineData['turno'] = await _syncTurno();
-            // También sincronizar el resumen de turno anterior para apertura/cierre
-            await _syncTurnoResumen();
-            // Sincronizar resumen de cierre diario para CierreScreen y VentaTotalScreen
-            await _syncResumenCierre();
-            break;
-          case 'egresos':
-            await _syncEgresos();
-            break;
-          case 'store_config':
-            await _syncStoreConfig();
-            break;
-          case 'promotions':
-            offlineData['promotions'] = await _syncPromotions();
-            break;
-          case 'payment_methods':
-            offlineData['payment_methods'] = await _syncPaymentMethods();
-            break;
-          case 'categories':
-            offlineData['categories'] = await _syncCategories();
-            break;
-          case 'products':
-            offlineData['products'] = await _syncProducts();
-            break;
-          case 'orders':
-            offlineData['orders'] = await _syncOrders();
-            break;
+        // Procesar cada paso, continuando incluso si uno falla
+        try {
+          switch (task['key']) {
+            case 'reauth':
+              await _reauth();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'pending_operations':
+              await _processPendingOperations();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'pending_orders':
+              await _processPendingOrders();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'credentials':
+              offlineData['credentials'] = await _syncCredentials();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'turno':
+              offlineData['turno'] = await _syncTurno();
+              // También sincronizar el resumen de turno anterior para apertura/cierre
+              await _syncTurnoResumen();
+              // Sincronizar resumen de cierre diario para CierreScreen y VentaTotalScreen
+              await _syncResumenCierre();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'egresos':
+              await _syncEgresos();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'store_config':
+              await _syncStoreConfig();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'promotions':
+              offlineData['promotions'] = await _syncPromotions();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'payment_methods':
+              offlineData['payment_methods'] = await _syncPaymentMethods();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'categories':
+              offlineData['categories'] = await _syncCategories();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'products':
+              offlineData['products'] = await _syncProducts();
+              successfulSteps.add(task['name']!);
+              break;
+            case 'orders':
+              offlineData['orders'] = await _syncOrders();
+              successfulSteps.add(task['name']!);
+              break;
+          }
+        } catch (e) {
+          print('⚠️ Error en paso "${task['name']}": $e');
+          failedSteps.add(task['name']!);
+          // Continuar con el siguiente paso incluso si este falló
         }
       }
 
@@ -2543,9 +2560,23 @@ class _SyncDialogState extends State<_SyncDialog> {
       );
       print('✅ Modo offline activado');
 
+      // Logging de resultados
+      print('📊 Resumen de sincronización:');
+      print(
+        '  ✅ Pasos exitosos (${successfulSteps.length}): ${successfulSteps.join(", ")}',
+      );
+      if (failedSteps.isNotEmpty) {
+        print(
+          '  ⚠️ Pasos fallidos (${failedSteps.length}): ${failedSteps.join(", ")}',
+        );
+      }
+
       setState(() {
         _isCompleted = true;
-        _currentTask = '¡Sincronización completada!';
+        _currentTask =
+            failedSteps.isEmpty
+                ? '¡Sincronización completada!'
+                : '¡Sincronización completada con ${failedSteps.length} advertencias!';
       });
 
       // Esperar un momento antes de cerrar
@@ -2640,6 +2671,11 @@ class _SyncDialogState extends State<_SyncDialog> {
         if (response.isNotEmpty) {
           final turnoData = response.first;
           print('✅ Turno abierto sincronizado: ID ${turnoData['id']}');
+
+          // ✅ CRÍTICO: Guardar en cache específico de turno offline (igual que auto_sync)
+          await widget.userPreferencesService.saveOfflineTurno(turnoData);
+          print('  💾 Turno guardado en cache offline específico');
+
           return turnoData;
         }
       }

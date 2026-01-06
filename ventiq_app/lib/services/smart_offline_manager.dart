@@ -27,7 +27,9 @@ class SmartOfflineManager {
   DateTime? _lastAutoActivation;
 
   // Configuración
-  static const Duration _connectionLostThreshold = Duration(seconds: 10); // Aumentado de 10 a 30 segundos para evitar falsos positivos
+  static const Duration _connectionLostThreshold = Duration(
+    seconds: 3,
+  ); // Reducido de 10s a 3s para activación más rápida
   static const Duration _autoActivationCooldown = Duration(minutes: 5);
 
   // Stream para notificar eventos del manager
@@ -215,7 +217,9 @@ class SmartOfflineManager {
     }
 
     // Esperar un poco para confirmar que la conexión realmente se perdió
-    print('⏳ Esperando ${_connectionLostThreshold.inSeconds}s para confirmar pérdida de conexión...');
+    print(
+      '⏳ Esperando ${_connectionLostThreshold.inSeconds}s para confirmar pérdida de conexión...',
+    );
     await Future.delayed(_connectionLostThreshold);
 
     // Verificar nuevamente el estado de conexión
@@ -226,7 +230,7 @@ class SmartOfflineManager {
       // Verificación adicional: intentar hacer una petición real
       print('🌐 Haciendo verificación adicional de conectividad real...');
       final hasRealConnection = await _connectivityService.checkConnectivity();
-      
+
       if (!hasRealConnection) {
         print(
           '🚨 Conexión perdida confirmada (verificación doble) - Activando modo offline automáticamente',
@@ -342,33 +346,40 @@ class SmartOfflineManager {
         }
       }
     } else {
-      print('🔌 Modo offline activado - Verificando si fue activado automáticamente...');
+      print(
+        '🔌 Modo offline activado - Verificando si fue activado automáticamente...',
+      );
 
       // Verificar si el modo offline fue activado automáticamente
       if (!_wasOfflineModeManuallyEnabled) {
-        print('🔄 Modo offline fue activado automáticamente - Desactivando automáticamente...');
-        
+        print(
+          '🔄 Modo offline fue activado automáticamente - Desactivando automáticamente...',
+        );
+
         try {
           // Desactivar modo offline automáticamente
           await _userPreferencesService.setOfflineMode(false);
-          
+
           // Iniciar sincronización automática
           if (!_autoSyncService.isRunning) {
             await _autoSyncService.startAutoSync();
           }
-          
+
           _eventController.add(
             SmartOfflineEvent(
               type: SmartOfflineEventType.offlineModeAutoDeactivated,
               timestamp: DateTime.now(),
-              message: 'Modo offline desactivado automáticamente tras restauración de conexión',
+              message:
+                  'Modo offline desactivado automáticamente tras restauración de conexión',
             ),
           );
-          
-          print('✅ Modo offline desactivado automáticamente y sincronización iniciada');
+
+          print(
+            '✅ Modo offline desactivado automáticamente y sincronización iniciada',
+          );
         } catch (e) {
           print('❌ Error desactivando modo offline automáticamente: $e');
-          
+
           _eventController.add(
             SmartOfflineEvent(
               type: SmartOfflineEventType.error,
@@ -379,8 +390,10 @@ class SmartOfflineManager {
           );
         }
       } else {
-        print('👤 Modo offline fue activado manualmente - Manteniendo estado actual');
-        
+        print(
+          '👤 Modo offline fue activado manualmente - Manteniendo estado actual',
+        );
+
         // Si el modo offline fue activado manualmente, solo informar al usuario
         _eventController.add(
           SmartOfflineEvent(

@@ -4,6 +4,7 @@ import '../services/user_preferences_service.dart';
 import '../services/turno_service.dart';
 import '../models/inventory_product.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../widgets/connection_status_widget.dart';
 
 class AperturaScreen extends StatefulWidget {
   const AperturaScreen({Key? key}) : super(key: key);
@@ -550,6 +551,14 @@ class _AperturaScreenState extends State<AperturaScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Center(
+              child: ConnectionStatusWidget(showDetails: true, compact: true),
+            ),
+          ),
+        ],
       ),
       body: Form(
         key: _formKey,

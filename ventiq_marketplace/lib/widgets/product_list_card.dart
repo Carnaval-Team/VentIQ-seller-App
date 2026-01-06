@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import 'supabase_image.dart';
+import 'stock_status_chip.dart';
 
 /// Tarjeta de producto para vista de lista
 class ProductListCard extends StatelessWidget {
@@ -265,41 +266,15 @@ class ProductListCard extends StatelessWidget {
   }
 
   Widget _buildStockInfo() {
-    final bool isLowStock = availableStock < 10;
-    final Color stockColor = isLowStock
-        ? AppTheme.errorColor
-        : AppTheme.textSecondary.withOpacity(0.8);
-
-    return Container(
+    return StockStatusChip(
+      stock: availableStock,
+      lowStockThreshold: 10,
+      showQuantity: false,
+      fontSize: 11,
+      iconSize: 13,
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: isLowStock
-            ? AppTheme.errorColor.withOpacity(0.08)
-            : Colors.grey.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: isLowStock
-              ? AppTheme.errorColor.withOpacity(0.2)
-              : Colors.grey.withOpacity(0.15),
-          width: 0.5,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.inventory_2_rounded, size: 13, color: stockColor),
-          const SizedBox(width: 4),
-          Text(
-            '$availableStock',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: stockColor,
-              letterSpacing: -0.1,
-            ),
-          ),
-        ],
-      ),
+      borderRadius: 6,
+      maxWidth: 96,
     );
   }
 }
