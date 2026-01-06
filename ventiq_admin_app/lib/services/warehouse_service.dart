@@ -87,7 +87,7 @@ class WarehouseService {
     }
   }
 
-   /// Lista almacenes con paginación usando Supabase RPC
+  /// Lista almacenes con paginación usando Supabase RPC
   Future<WarehousePaginationResponse> listWarehousesWithPaginationOK({
     String? denominacionFilter,
     String? direccionFilter,
@@ -173,10 +173,19 @@ class WarehouseService {
     String? search,
   }) async {
     try {
+      String? resolvedStoreId = storeId;
+      if (resolvedStoreId == null) {
+        final idTienda = await _prefsService.getIdTienda();
+        if (idTienda != null) {
+          resolvedStoreId = idTienda.toString();
+        }
+      }
       final response = await listWarehousesWithPagination(
         denominacionFilter: search,
         tiendaFilter:
-            storeId != null && storeId != 'all' ? int.tryParse(storeId) : null,
+            resolvedStoreId != null && resolvedStoreId != 'all'
+                ? int.tryParse(resolvedStoreId)
+                : null,
         pagina: 1,
         porPagina: 100, // Obtener muchos para compatibilidad
       );
@@ -192,10 +201,19 @@ class WarehouseService {
     String? search,
   }) async {
     try {
+      String? resolvedStoreId = storeId;
+      if (resolvedStoreId == null) {
+        final idTienda = await _prefsService.getIdTienda();
+        if (idTienda != null) {
+          resolvedStoreId = idTienda.toString();
+        }
+      }
       final response = await listWarehousesWithPaginationOK(
         denominacionFilter: search,
         tiendaFilter:
-            storeId != null && storeId != 'all' ? int.tryParse(storeId) : null,
+            resolvedStoreId != null && resolvedStoreId != 'all'
+                ? int.tryParse(resolvedStoreId)
+                : null,
         pagina: 1,
         porPagina: 100, // Obtener muchos para compatibilidad
       );
@@ -883,7 +901,6 @@ class WarehouseService {
     }
   }
 
-
   /// Obtiene condiciones disponibles desde Supabase
   Future<List<Map<String, dynamic>>> getCondiciones() async {
     try {
@@ -903,7 +920,6 @@ class WarehouseService {
       rethrow;
     }
   }
-
 
   /// Obtiene productos filtrados por tienda desde Supabase
   Future<List<Map<String, dynamic>>> getProductos() async {
@@ -1000,7 +1016,8 @@ class WarehouseService {
               'fecha_vencimiento': null, // No disponible en esta función
               'created_at': item['fecha_ultima_actualizacion'],
               // Clave única para agrupación por producto
-              'product_key': '${item['id']}_${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
+              'product_key':
+                  '${item['id']}_${item['id_variante'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}',
             };
           }).toList();
 
@@ -1008,15 +1025,15 @@ class WarehouseService {
 
       // Agrupar productos por clave única para eliminar duplicados históricos
       final Map<String, Map<String, dynamic>> groupedProducts = {};
-      
+
       for (final product in rawProducts) {
         final productKey = product['product_key'];
-        
+
         if (!groupedProducts.containsKey(productKey)) {
           // Tomar la primera ocurrencia (más reciente por el ORDER BY de la función SQL)
           groupedProducts[productKey] = Map<String, dynamic>.from(product);
           // print('📦 Agregando producto: ${product['denominacion']} (key: $productKey, stock: ${product['stock_actual']})');
-        } 
+        }
       }
 
       final products = groupedProducts.values.toList();
@@ -1034,7 +1051,6 @@ class WarehouseService {
       rethrow;
     }
   }
-
 
   /// Registrar o actualizar un layout usando RPC
   Future<Map<String, dynamic>?> registerOrUpdateLayout({
@@ -1156,7 +1172,8 @@ class WarehouseService {
         'productos_procesados': productosProcessados,
         'productos_insertados': productosInsertados,
         'detalles': detalles,
-        'message': 'Inicialización completada: $productosInsertados de $productosProcessados productos procesados',
+        'message':
+            'Inicialización completada: $productosInsertados de $productosProcessados productos procesados',
       };
     } catch (e) {
       print('❌ Error en initializeInventoryMissingProducts: $e');
