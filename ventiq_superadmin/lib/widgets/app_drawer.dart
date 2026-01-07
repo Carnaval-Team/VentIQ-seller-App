@@ -55,6 +55,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Carnaval App Tiendas',
                       route: '/carnaval-tiendas',
                     ),
+                    _DrawerItem(
+                      icon: Icons.payment,
+                      title: 'Pago a Proveedores',
+                      route: '/pago-proveedores',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
@@ -251,7 +256,8 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/licencias' ||
                 item.route == '/renovaciones' ||
                 item.route == '/configuracion' ||
-                item.route == '/carnaval-tiendas') {
+                item.route == '/carnaval-tiendas' ||
+                item.route == '/pago-proveedores') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {
               // Para rutas que aún no están implementadas

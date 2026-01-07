@@ -16,6 +16,7 @@ import 'screens/renovaciones_screen.dart';
 import 'screens/configuracion_screen.dart';
 import 'screens/consignacion_screen.dart';
 import 'screens/carnaval_store_mapping_screen.dart';
+import 'screens/pago_proveedores_screen.dart';
 import 'services/auth_service.dart';
 
 void main() async {
@@ -56,6 +57,7 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/configuracion': (context) => const ConfiguracionScreen(),
         '/consignacion': (context) => const ConsignacionScreen(),
         '/carnaval-tiendas': (context) => const CarnavalStoreMappingScreen(),
+        '/pago-proveedores': (context) => const PagoProveedoresScreen(),
       },
     );
   }
