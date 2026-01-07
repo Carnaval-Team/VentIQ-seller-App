@@ -1488,6 +1488,7 @@ class ExportService {
                       includeNombreCorto: includeNombreCorto,
                       includeMarca: includeMarca,
                       includeDescripcionCorta: includeDescripcionCorta,
+                      includeDescripcion: includeDescripcion,
                     ),
                   );
 
@@ -1678,6 +1679,7 @@ class ExportService {
         nombreProducto: item['nombre_producto']?.toString() ?? 'Sin nombre',
         denominacionCorta: item['denominacion_corta']?.toString(),
         nombreComercial: item['nombre_comercial']?.toString(),
+        descripcion: item['descripcion']?.toString(),
         descripcionCorta: item['descripcion_corta']?.toString(),
         idCategoria: int.tryParse(item['id_categoria']?.toString() ?? '0') ?? 0,
         categoria: item['categoria']?.toString() ?? '',
@@ -1978,6 +1980,10 @@ class ExportService {
       headers.add('Descripción Corta');
       columnIndex++;
     }
+    if (includeDescripcion) {
+      headers.add('Descripción');
+      columnIndex++;
+    }
 
     headers.addAll([
       'Cant. Inicial',
@@ -2005,6 +2011,10 @@ class ExportService {
     }
     if (includeDescripcionCorta) {
       sheet.setColumnWidth(currentCol, 30); // Descripción Corta
+      currentCol++;
+    }
+    if (includeDescripcion) {
+      sheet.setColumnWidth(currentCol, 40); // Descripción
       currentCol++;
     }
 
@@ -2076,6 +2086,9 @@ class ExportService {
       }
       if (includeDescripcionCorta) {
         rowData.add(product.descripcionCorta ?? '');
+      }
+      if (includeDescripcion) {
+        rowData.add(product.descripcion ?? '');
       }
 
       // Agregar columnas numéricas
@@ -2186,6 +2199,11 @@ class ExportService {
       columnWidths[columnIndex] = const pw.FlexColumnWidth(2);
       columnIndex++;
     }
+    if (includeDescripcion) {
+      headers.add('Descripción');
+      columnWidths[columnIndex] = const pw.FlexColumnWidth(3);
+      columnIndex++;
+    }
 
     // Agregar columnas numéricas
     headers.addAll([
@@ -2229,6 +2247,9 @@ class ExportService {
           }
           if (includeDescripcionCorta) {
             rowData.add(producto['descripcion_corta']?.toString() ?? '');
+          }
+          if (includeDescripcion) {
+            rowData.add(producto['descripcion']?.toString() ?? '');
           }
 
           // Agregar columnas numéricas
