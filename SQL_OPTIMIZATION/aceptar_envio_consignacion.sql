@@ -4,7 +4,8 @@
 -- PASO 1: Duplica productos si es necesario
 -- PASO 2: Crea operación de RECEPCIÓN
 -- PASO 3: Inserta productos de recepción con presentación correcta
--- PASO 4: Actualiza envío a estado EN_TRANSITO
+-- PASO 4: Actualiza envío a estado CONFIGURADO
+-- PASO 5: Los triggers actualizarán a EN_TRANSITO y ACEPTADO automáticamente
 -- ============================================================================
 
 DROP FUNCTION IF EXISTS public.aceptar_envio_consignacion(
@@ -215,12 +216,13 @@ BEGIN
     );
   END LOOP;
   
-  -- 5. Actualizar envío: asignar operación de recepción y cambiar estado a EN_TRANSITO (estado 3)
+  -- 5. Actualizar envío: asignar operación de recepción y cambiar estado a CONFIGURADO (estado 2)
+  -- Los triggers se encargarán de cambiar a EN TRÁNSITO (3) y ACEPTADO (4) automáticamente
   UPDATE app_dat_consignacion_envio
   SET 
     id_operacion_recepcion = v_id_operacion_recepcion,
-    estado_envio = 3, -- EN_TRANSITO
-    fecha_envio = CURRENT_TIMESTAMP,
+    estado_envio = 2, -- CONFIGURADO (precios configurados por consignatario)
+    fecha_configuracion = CURRENT_TIMESTAMP,
     id_usuario_aceptador = p_id_usuario,
     updated_at = CURRENT_TIMESTAMP
   WHERE id = p_id_envio;

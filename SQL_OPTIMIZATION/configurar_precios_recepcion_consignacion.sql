@@ -1,8 +1,10 @@
 -- ============================================================================
 -- FUNCIÓN: configurar_precios_recepcion_consignacion
 -- DESCRIPCIÓN: Configura precios de venta al aceptar envío
--- PASO 1: Inserta/actualiza precio_venta en app_dat_precio_venta (CUP)
+-- PASO 1: Actualiza precio_venta SOLO si NO es devolución (CUP)
 -- PASO 2: Actualiza precio_unitario en app_dat_recepcion_productos (USD)
+-- PASO 3: Actualiza precio_promedio SOLO si NO es devolución
+-- NOTA: Si es devolución, SOLO actualiza inventario (no precios)
 -- ============================================================================
 
 DROP FUNCTION IF EXISTS public.configurar_precios_recepcion_consignacion(
@@ -34,7 +36,19 @@ DECLARE
   v_precio_promedio_presentacion NUMERIC;
   v_id_tienda_origen BIGINT;
   v_id_envio BIGINT;
+  v_es_devolucion BOOLEAN := FALSE;
 BEGIN
+  -- ⭐ VERIFICAR SI ES DEVOLUCIÓN
+  SELECT EXISTS (
+    SELECT 1 
+    FROM app_dat_consignacion_envio
+    WHERE id_operacion_recepcion = p_id_operacion_recepcion
+      AND tipo_envio = 2  -- Devolución
+  ) INTO v_es_devolucion;
+  
+  IF v_es_devolucion THEN
+    RAISE NOTICE '⚠️ Operación % es devolución - precio promedio NO se actualizará', p_id_operacion_recepcion;
+  END IF;
   -- 1. Para cada producto en la recepción, procesar precios desde parámetro JSON
   FOR v_producto IN
     SELECT 
@@ -57,30 +71,37 @@ BEGIN
     v_precio_costo_usd := COALESCE(v_producto.precio_costo_usd, 0);
     
     -- 1b. Actualizar precio_venta en tienda CONSIGNATARIA (destino)
+    -- ⭐ SOLO si NO es devolución
     -- Los precios de la tienda consignadora NO se tocan
-    -- Solo insertar si precio_venta_cup > 0, si no usar 0 como valor por defecto
-    IF v_precio_venta_cup IS NULL OR v_precio_venta_cup <= 0 THEN
-      v_precio_venta_cup := 0;
+    IF NOT v_es_devolucion THEN
+      -- Solo insertar si precio_venta_cup > 0, si no usar 0 como valor por defecto
+      IF v_precio_venta_cup IS NULL OR v_precio_venta_cup <= 0 THEN
+        v_precio_venta_cup := 0;
+      END IF;
+      
+      -- Primero cerrar el precio anterior (si existe)
+      UPDATE app_dat_precio_venta
+      SET fecha_hasta = CURRENT_DATE - INTERVAL '1 day'
+      WHERE id_producto = v_producto.id_producto
+        AND fecha_hasta IS NULL;
+      
+      -- Luego insertar el nuevo precio (siempre, incluso si es 0)
+      INSERT INTO app_dat_precio_venta (
+        id_producto,
+        precio_venta_cup,
+        fecha_desde,
+        created_at
+      ) VALUES (
+        v_producto.id_producto,
+        v_precio_venta_cup,
+        CURRENT_DATE,
+        CURRENT_TIMESTAMP
+      );
+      
+      RAISE NOTICE '✅ Precio de venta actualizado para producto %: %', v_producto.id_producto, v_precio_venta_cup;
+    ELSE
+      RAISE NOTICE '⚠️ Devolución detectada - precio de venta NO actualizado para producto %', v_producto.id_producto;
     END IF;
-    
-    -- Primero cerrar el precio anterior (si existe)
-    UPDATE app_dat_precio_venta
-    SET fecha_hasta = CURRENT_DATE - INTERVAL '1 day'
-    WHERE id_producto = v_producto.id_producto
-      AND fecha_hasta IS NULL;
-    
-    -- Luego insertar el nuevo precio (siempre, incluso si es 0)
-    INSERT INTO app_dat_precio_venta (
-      id_producto,
-      precio_venta_cup,
-      fecha_desde,
-      created_at
-    ) VALUES (
-      v_producto.id_producto,
-      v_precio_venta_cup,
-      CURRENT_DATE,
-      CURRENT_TIMESTAMP
-    );
     
     -- 1c. Actualizar precio_unitario en app_dat_recepcion_productos
     -- El precio_costo_usd se guarda como precio_unitario en USD
@@ -91,8 +112,8 @@ BEGIN
       AND id_producto = v_producto.id_producto;
     
     -- 1d. Calcular y actualizar precio_promedio en app_dat_producto_presentacion
-    -- Solo si tenemos presentación y precio_costo_usd válido
-    IF v_id_presentacion IS NOT NULL AND v_precio_costo_usd > 0 THEN
+    -- ⭐ SOLO si NO es devolución, tenemos presentación y precio_costo_usd válido
+    IF NOT v_es_devolucion AND v_id_presentacion IS NOT NULL AND v_precio_costo_usd > 0 THEN
       -- Obtener el precio_promedio actual de la presentación
       SELECT COALESCE(pp.precio_promedio, 0)
       INTO v_precio_promedio_presentacion
@@ -126,6 +147,11 @@ BEGIN
         updated_at = CURRENT_TIMESTAMP
       WHERE id_producto = v_producto.id_producto
         AND id_presentacion = v_id_presentacion;
+      
+      RAISE NOTICE '✅ Precio promedio actualizado para producto %: % → %', 
+        v_producto.id_producto, v_precio_promedio_presentacion, v_precio_promedio_nuevo;
+    ELSIF v_es_devolucion THEN
+      RAISE NOTICE '⚠️ Devolución detectada - precio promedio NO actualizado para producto %', v_producto.id_producto;
     END IF;
     
     v_count_precios := v_count_precios + 1;

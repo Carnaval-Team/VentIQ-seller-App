@@ -876,97 +876,66 @@ class _ConsignacionEnvioDetallesScreenState
       NavigationGuard.showActionDeniedMessage(context, 'Aprobar devolución');
       return;
     }
-    int? idAlmacenSeleccionado;
-    bool cargandoAlmacenes = true;
-    List<Map<String, dynamic>> almacenes = [];
 
-    // Cargar almacenes del consignador (tienda consignadora)
-    try {
-      final idTiendaConsignadora = envio['id_tienda_consignadora'];
-      if (idTiendaConsignadora != null) {
-        final response = await Supabase.instance.client
-            .from('app_dat_almacen')
-            .select('id, denominacion')
-            .eq('id_tienda', idTiendaConsignadora);
-        almacenes = List<Map<String, dynamic>>.from(response);
-        if (almacenes.isNotEmpty) idAlmacenSeleccionado = almacenes[0]['id'];
-      }
-      cargandoAlmacenes = false;
-      if (mounted) setState(() {});
-    } catch (e) {
-      debugPrint('Error cargando almacenes: $e');
+    // ⭐ Usar automáticamente el almacén de origen (id_almacen_origen del envío)
+    final idAlmacenOrigen = envio['id_almacen_origen'] as int?;
+    
+    if (idAlmacenOrigen == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ No se pudo determinar el almacén de origen'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
     }
 
     if (!mounted) return;
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) => AlertDialog(
-                  title: const Text('Aprobar Devolución'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Al aprobar la devolución se reintegrarán los productos a tu inventario. Selecciona el almacén de recepción:',
-                      ),
-                      const SizedBox(height: 16),
-                      if (cargandoAlmacenes)
-                        const Center(child: CircularProgressIndicator())
-                      else if (almacenes.isEmpty)
-                        const Text(
-                          'No tienes almacenes configurados',
-                          style: TextStyle(color: Colors.red),
-                        )
-                      else
-                        DropdownButtonFormField<int>(
-                          value: idAlmacenSeleccionado,
-                          items:
-                              almacenes
-                                  .map(
-                                    (a) => DropdownMenuItem<int>(
-                                      value: a['id'],
-                                      child: Text(a['denominacion']),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged:
-                              (val) => setDialogState(
-                                () => idAlmacenSeleccionado = val,
-                              ),
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            labelText: 'Almacén de Recepción',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('CANCELAR'),
-                    ),
-                    ElevatedButton(
-                      onPressed:
-                          idAlmacenSeleccionado == null
-                              ? null
-                              : () => Navigator.pop(context, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('APROBAR Y RECIBIR'),
-                    ),
-                  ],
-                ),
+      builder: (context) => AlertDialog(
+        title: const Text('Aprobar Devolución'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Al aprobar la devolución:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12),
+            Text('• Se creará una operación de extracción PENDIENTE en la tienda consignataria'),
+            SizedBox(height: 8),
+            Text('• Se creará una operación de recepción PENDIENTE en tu tienda'),
+            SizedBox(height: 8),
+            Text('• Los productos se recibirán en el almacén de origen'),
+            SizedBox(height: 12),
+            Text(
+              'Ambas operaciones deberán completarse manualmente para actualizar el inventario.',
+              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCELAR'),
           ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('APROBAR DEVOLUCIÓN'),
+          ),
+        ],
+      ),
     );
 
-    if (confirm == true && idAlmacenSeleccionado != null) {
+    if (confirm == true) {
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) return;
 
@@ -974,7 +943,7 @@ class _ConsignacionEnvioDetallesScreenState
 
       final result = await ConsignacionEnvioService.aprobarDevolucion(
         idEnvio: widget.idEnvio,
-        idAlmacenRecepcion: idAlmacenSeleccionado!,
+        idAlmacenRecepcion: idAlmacenOrigen,  // ⭐ Usar almacén de origen
         idUsuario: user.id,
       );
 
