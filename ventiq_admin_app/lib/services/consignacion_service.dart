@@ -780,7 +780,7 @@ class ConsignacionService {
           params: {
             'p_autorizado_por': email,
             'p_estado_inicial': 1, // 1 = Pendiente (Reserva)
-            'p_id_motivo_operacion': 5, // Transferencia a otra tienda
+            'p_id_motivo_operacion': 21, // Consignación
             'p_id_tienda': idTiendaOrigen,
             'p_observaciones': observaciones,
             'p_productos': productosExtraccion,
@@ -894,7 +894,7 @@ class ConsignacionService {
         params: {
           'p_autorizado_por': email,
           'p_estado_inicial': 1, // 1 = Pendiente (Reserva)
-          'p_id_motivo_operacion': 5, // Transferencia a otra tienda
+          'p_id_motivo_operacion': 21, // Consignación
           'p_id_tienda': idTiendaOrigen,
           'p_observaciones': 'Envío a consignación - Contrato #$idContrato (Reserva inicial)',
           'p_productos': productosExtraccion,
@@ -1819,19 +1819,19 @@ class ConsignacionService {
         }
       }
 
-      // ✅ NUEVO: Actualizar estado del envío a EN_TRANSITO (3) si se proporcionó idEnvio
+      // ✅ NUEVO: Actualizar estado del envío a ACEPTADO (4) si se proporcionó idEnvio
       if (idEnvio != null) {
         try {
           await _supabase
               .from('app_dat_consignacion_envio')
               .update({
-                'estado_envio': 3, // EN_TRANSITO
+                'estado_envio': 4, // ACEPTADO
                 'fecha_envio': DateTime.now().toIso8601String(),
                 'updated_at': DateTime.now().toIso8601String(),
               })
               .eq('id', idEnvio);
           
-          debugPrint('✅ Estado del envío actualizado a EN_TRANSITO (3)');
+          debugPrint('✅ Estado del envío actualizado a ACEPTADO (4)');
         } catch (e) {
           debugPrint('⚠️ Error actualizando estado del envío (no crítico): $e');
         }
