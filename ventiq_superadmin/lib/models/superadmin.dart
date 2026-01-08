@@ -11,6 +11,9 @@ class SuperAdmin {
   final DateTime updatedAt;
   final DateTime? ultimoAcceso;
 
+
+
+  //nuevo a acutlizar 
   SuperAdmin({
     required this.id,
     required this.uuid,
