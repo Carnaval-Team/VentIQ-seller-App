@@ -2434,6 +2434,25 @@ class InventoryService {
       print('\n📊 Iniciando actualización de precios promedio...');
       
       try {
+        // Verificar si esta operación de recepción pertenece a un envío de devolución
+        final envioRecepcion = await _supabase
+            .from('app_dat_consignacion_envio')
+            .select('tipo_envio')
+            .eq('id_operacion_recepcion', idOperacion)
+            .maybeSingle();
+        
+        final esDevolucion = envioRecepcion != null && (envioRecepcion['tipo_envio'] as int?) == 2;
+        
+        if (esDevolucion) {
+          print('⚠️ Esta es una operación de DEVOLUCIÓN - NO se actualizarán los precios promedio');
+          return {
+            'success': true,
+            'message': 'Operación completada (devolución - precios no actualizados)',
+            'operacion_completada': true,
+            'es_devolucion': true,
+          };
+        }
+        
         // Obtener todos los productos recibidos en esta operación
         final productosRecibidos = await _supabase
             .from('app_dat_recepcion_productos')

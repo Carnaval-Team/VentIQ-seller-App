@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/currency_display_service.dart';
 import '../services/liquidacion_service.dart';
+import '../services/consignacion_movimientos_service.dart';
 
 /// Diálogo para crear una nueva liquidación
 /// Permite al consignatario ingresar monto en CUP y ver conversión a USD en tiempo real
@@ -30,11 +31,13 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
   double _montoUsd = 0.0;
   bool _isLoading = false;
   bool _isCreating = false;
+  double _totalMontoVentas = 0.0;
 
   @override
   void initState() {
     super.initState();
     _loadTasaCambio();
+    _cargarTotalVentas();
     _montoCupController.addListener(_calcularConversion);
   }
 
@@ -53,12 +56,34 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
       if (mounted) {
         setState(() {
           _tasaCambio = rate;
-          _isLoading = false;
         });
         debugPrint('💱 Tasa de cambio cargada: 1 CUP = $_tasaCambio USD');
       }
     } catch (e) {
       debugPrint('⚠️ Error cargando tasa de cambio: $e');
+    }
+  }
+
+  Future<void> _cargarTotalVentas() async {
+    try {
+      debugPrint('� Cargando total de ventas para contrato: ${widget.contratoId}');
+      final estadisticas = await ConsignacionMovimientosService.getEstadisticasVentas(
+        idContrato: widget.contratoId,
+        fechaDesde: null,
+        fechaHasta: null,
+      );
+      
+      final totalVentas = (estadisticas['totalMontoVentas'] as num?)?.toDouble() ?? 0.0;
+      debugPrint('✅ Total de ventas cargado: \$${totalVentas.toStringAsFixed(2)} USD');
+      
+      if (mounted) {
+        setState(() {
+          _totalMontoVentas = totalVentas;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error cargando total de ventas: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -76,11 +101,135 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
   Future<void> _crearLiquidacion() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final montoCup = double.parse(_montoCupController.text);
+    final montoUsd = montoCup * _tasaCambio;
+    final totalLiquidadoNuevo = widget.totalLiquidaciones + montoUsd;
+
+    // Verificar si es pago por adelantado
+    if (totalLiquidadoNuevo > _totalMontoVentas) {
+      // Mostrar diálogo de confirmación
+      final confirmar = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Pago por Adelantado'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '⚠️ Atención',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'El monto total liquidado superará el monto de ventas realizadas.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildInfoRow('Total vendido:', '\$${_totalMontoVentas.toStringAsFixed(2)} USD'),
+                const SizedBox(height: 8),
+                _buildInfoRow('Total liquidado actualmente:', '\$${widget.totalLiquidaciones.toStringAsFixed(2)} USD'),
+                const SizedBox(height: 8),
+                _buildInfoRow('Nuevo monto a liquidar:', '\$${montoUsd.toStringAsFixed(2)} USD'),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info, color: Colors.red.shade700, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Total a liquidar:',
+                              style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                            ),
+                            Text(
+                              '\$${totalLiquidadoNuevo.toStringAsFixed(2)} USD',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Exceso: \$${(totalLiquidadoNuevo - _totalMontoVentas).toStringAsFixed(2)} USD',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '¿Deseas continuar con esta liquidación?',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Continuar'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmar != true) return;
+    }
+
     setState(() => _isCreating = true);
 
     try {
-      final montoCup = double.parse(_montoCupController.text);
-      
       final result = await LiquidacionService.crearLiquidacion(
         contratoId: widget.contratoId,
         montoCup: montoCup,
@@ -287,6 +436,15 @@ class _CrearLiquidacionDialogState extends State<CrearLiquidacionDialog> {
                         if (monto == null || monto <= 0) {
                           return 'Monto inválido';
                         }
+                        
+                        // Validar que no supere el saldo pendiente
+                        final saldoPendiente = widget.montoTotalContrato - widget.totalLiquidaciones;
+                        final montoUsd = monto * _tasaCambio;
+                        
+                        if (montoUsd > saldoPendiente) {
+                          return 'El monto no puede superar el saldo pendiente (\$${saldoPendiente.toStringAsFixed(2)} USD)';
+                        }
+                        
                         return null;
                       },
                     ),

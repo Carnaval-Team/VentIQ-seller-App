@@ -44,24 +44,46 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     setState(() => _isLoading = true);
 
     try {
-      final idTienda = widget.isDevolucion 
-          ? widget.contrato['id_tienda_consignataria'] as int
-          : widget.contrato['id_tienda_consignadora'] as int;
-
-      final response = await _supabase
-          .from('app_dat_almacen')
-          .select('''
-            id,
-            denominacion,
-            app_dat_layout_almacen(
+      final List<dynamic> response;
+      
+      if (widget.isDevolucion) {
+        // En devoluciones: solo mostrar el almacén destino del contrato (donde están los productos consignados)
+        final idAlmacen = widget.contrato['id_almacen_destino'] as int?;
+        if (idAlmacen == null) {
+          throw Exception('El contrato no tiene un almacén destino configurado');
+        }
+        
+        response = await _supabase
+            .from('app_dat_almacen')
+            .select('''
               id,
               denominacion,
-              sku_codigo
-            )
-          ''')
-          .eq('id_tienda', idTienda);
+              app_dat_layout_almacen(
+                id,
+                denominacion,
+                sku_codigo
+              )
+            ''')
+            .eq('id', idAlmacen);
+      } else {
+        // Para envíos normales: obtener todos los almacenes de la tienda consignadora
+        final idTienda = widget.contrato['id_tienda_consignadora'] as int;
+        
+        response = await _supabase
+            .from('app_dat_almacen')
+            .select('''
+              id,
+              denominacion,
+              app_dat_layout_almacen(
+                id,
+                denominacion,
+                sku_codigo
+              )
+            ''')
+            .eq('id_tienda', idTienda);
+      }
 
-      final almacenesConZonas = (response as List).map((almacen) {
+      final almacenesConZonas = response.map((almacen) {
         final zonas = almacen['app_dat_layout_almacen'] as List? ?? [];
         return {
           ...almacen as Map<String, dynamic>,
@@ -487,13 +509,236 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
   Future<void> _loadZonaProductos(String key, String zonaId) async {
     setState(() => _loadingZonas[key] = true);
     try {
-      final response = await _supabase.rpc('get_productos_zona_consignacion', params: {'p_id_ubicacion': int.parse(zonaId)}) as List;
+      List<dynamic> response;
+      
+      if (widget.isDevolucion) {
+        // Para devoluciones: solo productos que están en la zona del contrato de consignación
+        // Verificar primero si esta zona pertenece al contrato
+        final zonaContratoCheck = await _supabase
+            .from('app_dat_consignacion_zona')
+            .select('id')
+            .eq('id_contrato', widget.idContrato)
+            .eq('id_zona', int.parse(zonaId))
+            .limit(1);
+        
+        if ((zonaContratoCheck as List).isEmpty) {
+          // Esta zona NO pertenece al contrato, no mostrar productos
+          setState(() {
+            _zonasInventario[key] = [];
+            _loadingZonas[key] = false;
+          });
+          return;
+        }
+        
+        // Obtener productos del inventario en esta zona específica del contrato
+        // Como app_dat_inventario_productos es una tabla de movimientos,
+        // necesitamos obtener solo el último registro (más reciente) por cada combinación única
+        final inventarioResponse = await _supabase
+            .from('app_dat_inventario_productos')
+            .select('''
+              id,
+              cantidad_final,
+              id_producto,
+              id_ubicacion,
+              id_presentacion,
+              id_variante,
+              id_opcion_variante,
+              created_at,
+              app_dat_producto!inner(
+                id,
+                denominacion,
+                sku
+              ),
+              app_dat_producto_presentacion(
+                app_nom_presentacion(
+                  denominacion
+                )
+              ),
+              app_dat_variantes(
+                app_dat_atributos(
+                  denominacion
+                )
+              ),
+              app_dat_atributo_opcion(
+                valor
+              )
+            ''')
+            .eq('id_ubicacion', int.parse(zonaId))
+            .gt('cantidad_final', 0)
+            .order('created_at', ascending: false);
+        
+        // Agrupar por combinación única y quedarse solo con el más reciente
+        final Map<String, dynamic> productosUnicos = {};
+        for (final item in inventarioResponse) {
+          // Crear clave única basada en producto-variante-presentación-opcion
+          final key = '${item['id_producto']}_${item['id_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}';
+          
+          // Solo guardar si no existe o si este es más reciente (ya viene ordenado por created_at desc)
+          if (!productosUnicos.containsKey(key)) {
+            productosUnicos[key] = item;
+          }
+        }
+        
+        response = productosUnicos.values.toList();
+        
+        // Mapear la respuesta para tener la estructura esperada con información de variante/presentación
+        response = response.map((item) {
+          final producto = item['app_dat_producto'] as Map<String, dynamic>;
+          final presentacionData = item['app_dat_producto_presentacion'] as Map<String, dynamic>?;
+          final varianteData = item['app_dat_variantes'] as Map<String, dynamic>?;
+          final atributoOpcion = item['app_dat_atributo_opcion'] as Map<String, dynamic>?;
+          
+          // Extraer denominación de presentación
+          String? presentacionNombre;
+          if (presentacionData != null) {
+            final nomPresentacion = presentacionData['app_nom_presentacion'] as Map<String, dynamic>?;
+            presentacionNombre = nomPresentacion?['denominacion'] as String?;
+          }
+          
+          // Extraer denominación de atributo (variante)
+          String? atributoNombre;
+          if (varianteData != null) {
+            final atributos = varianteData['app_dat_atributos'] as Map<String, dynamic>?;
+            atributoNombre = atributos?['denominacion'] as String?;
+          }
+          
+          // Extraer valor de opción de variante
+          String? opcionValor = atributoOpcion?['valor'] as String?;
+          
+          // Construir denominación completa con variante/presentación
+          String denominacionCompleta = producto['denominacion'] ?? 'Producto';
+          if (presentacionNombre != null && presentacionNombre.isNotEmpty) {
+            denominacionCompleta += ' - $presentacionNombre';
+          }
+          if (atributoNombre != null && atributoNombre.isNotEmpty) {
+            denominacionCompleta += ' ($atributoNombre';
+            if (opcionValor != null && opcionValor.isNotEmpty) {
+              denominacionCompleta += ': $opcionValor';
+            }
+            denominacionCompleta += ')';
+          }
+          
+          return {
+            'id': item['id'],
+            'cantidad_final': item['cantidad_final'],
+            'id_producto': item['id_producto'],
+            'id_ubicacion': item['id_ubicacion'],
+            'id_presentacion': item['id_presentacion'],
+            'id_variante': item['id_variante'],
+            'id_opcion_variante': item['id_opcion_variante'],
+            'denominacion_producto': denominacionCompleta,
+            'sku_producto': producto['sku'],
+          };
+        }).toList();
+      } else {
+        // Para envíos normales: también obtener solo el último registro por combinación única
+        final inventarioResponse = await _supabase
+            .from('app_dat_inventario_productos')
+            .select('''
+              id,
+              cantidad_final,
+              id_producto,
+              id_ubicacion,
+              id_presentacion,
+              id_variante,
+              id_opcion_variante,
+              created_at,
+              app_dat_producto!inner(
+                id,
+                denominacion,
+                sku
+              ),
+              app_dat_producto_presentacion(
+                app_nom_presentacion(
+                  denominacion
+                )
+              ),
+              app_dat_variantes(
+                app_dat_atributos(
+                  denominacion
+                )
+              ),
+              app_dat_atributo_opcion(
+                valor
+              )
+            ''')
+            .eq('id_ubicacion', int.parse(zonaId))
+            .gt('cantidad_final', 0)
+            .order('created_at', ascending: false);
+        
+        // Agrupar por combinación única y quedarse solo con el más reciente
+        final Map<String, dynamic> productosUnicos = {};
+        for (final item in inventarioResponse) {
+          final key = '${item['id_producto']}_${item['id_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}';
+          if (!productosUnicos.containsKey(key)) {
+            productosUnicos[key] = item;
+          }
+        }
+        
+        response = productosUnicos.values.map((item) {
+          final producto = item['app_dat_producto'] as Map<String, dynamic>;
+          final presentacionData = item['app_dat_producto_presentacion'] as Map<String, dynamic>?;
+          final varianteData = item['app_dat_variantes'] as Map<String, dynamic>?;
+          final atributoOpcion = item['app_dat_atributo_opcion'] as Map<String, dynamic>?;
+          
+          // Extraer denominación de presentación
+          String? presentacionNombre;
+          if (presentacionData != null) {
+            final nomPresentacion = presentacionData['app_nom_presentacion'] as Map<String, dynamic>?;
+            presentacionNombre = nomPresentacion?['denominacion'] as String?;
+          }
+          
+          // Extraer denominación de atributo (variante)
+          String? atributoNombre;
+          if (varianteData != null) {
+            final atributos = varianteData['app_dat_atributos'] as Map<String, dynamic>?;
+            atributoNombre = atributos?['denominacion'] as String?;
+          }
+          
+          // Extraer valor de opción de variante
+          String? opcionValor = atributoOpcion?['valor'] as String?;
+          
+          // Construir denominación completa con variante/presentación
+          String denominacionCompleta = producto['denominacion'] ?? 'Producto';
+          if (presentacionNombre != null && presentacionNombre.isNotEmpty) {
+            denominacionCompleta += ' - $presentacionNombre';
+          }
+          if (atributoNombre != null && atributoNombre.isNotEmpty) {
+            denominacionCompleta += ' ($atributoNombre';
+            if (opcionValor != null && opcionValor.isNotEmpty) {
+              denominacionCompleta += ': $opcionValor';
+            }
+            denominacionCompleta += ')';
+          }
+          
+          return {
+            'id': item['id'],
+            'cantidad_final': item['cantidad_final'],
+            'id_producto': item['id_producto'],
+            'id_ubicacion': item['id_ubicacion'],
+            'id_presentacion': item['id_presentacion'],
+            'id_variante': item['id_variante'],
+            'id_opcion_variante': item['id_opcion_variante'],
+            'denominacion_producto': denominacionCompleta,
+            'sku_producto': producto['sku'],
+          };
+        }).toList();
+      }
+      
+      // Ordenar productos alfabéticamente por nombre
+      final productosOrdenados = List<Map<String, dynamic>>.from(response);
+      productosOrdenados.sort((a, b) {
+        final nombreA = (a['denominacion_producto'] as String? ?? '').toLowerCase();
+        final nombreB = (b['denominacion_producto'] as String? ?? '').toLowerCase();
+        return nombreA.compareTo(nombreB);
+      });
+      
       setState(() {
-        _zonasInventario[key] = List<Map<String, dynamic>>.from(response);
+        _zonasInventario[key] = productosOrdenados;
         _loadingZonas[key] = false;
       });
     } catch (e) {
-      debugPrint('Error: $e');
+      debugPrint('Error cargando productos de zona: $e');
       setState(() => _loadingZonas[key] = false);
     }
   }
@@ -531,10 +776,12 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
   late Map<int, TextEditingController> _precioVentaControllers;
   bool _guardando = false;
   double _tasaCambio = 440.0;
+  late final Supabase _supabase;
 
   @override
   void initState() {
     super.initState();
+    _supabase = Supabase.instance;
     _productosConfig = {};
     _precioVentaControllers = {};
     for (var p in widget.productos) {
@@ -546,11 +793,47 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
       // Crear controller para cada producto
       final precioInicial = (p['precio_venta'] > 0 ? p['precio_venta'] : '').toString();
       _precioVentaControllers[p['id']] = TextEditingController(text: precioInicial);
+    }
+    // Cargar tasa de cambio desde la base de datos
+    _cargarTasaCambio();
+  }
+
+  Future<void> _cargarTasaCambio() async {
+    try {
+      debugPrint('Iniciando carga de tasa de cambio...');
       
-      // Obtener tasa de cambio del primer producto
-      if (_tasaCambio == 440.0 && p['tasa_cambio'] != null) {
-        _tasaCambio = (p['tasa_cambio'] as num).toDouble();
+      // Obtener todos los registros para ver qué códigos existen
+      final allResponse = await _supabase.client
+          .from('tasas_conversion')
+          .select('*');
+      debugPrint('Todos los registros de tasas_conversion: $allResponse');
+      
+      var response = <dynamic>[];
+      
+      // Si hay registros, usar el primero (la tasa más reciente)
+      if (allResponse.isNotEmpty) {
+        debugPrint('Registros encontrados: ${allResponse.length}');
+        // Ordenar por fecha más reciente y tomar el primero
+        response = allResponse;
+      } else {
+        debugPrint('No hay registros en tasas_conversion');
       }
+      
+      if (response.isNotEmpty) {
+        final tasaCargada = (response[0]['tasa'] as num).toDouble();
+        debugPrint('Tasa cargada: $tasaCargada');
+        if (mounted) {
+          setState(() {
+            _tasaCambio = tasaCargada;
+            debugPrint('Tasa actualizada en estado: $_tasaCambio');
+          });
+        }
+      } else {
+        debugPrint('No se encontró ninguna tasa de conversión, usando valor por defecto: $_tasaCambio');
+      }
+    } catch (e) {
+      debugPrint('Error cargando tasa de cambio: $e');
+      // Mantener valor por defecto si hay error
     }
   }
 
@@ -604,7 +887,7 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                 final p = widget.productos[index];
                 final config = _productosConfig[p['id']]!;
                 final precioCostoUSD = (p['precio_costo_usd'] ?? 0).toDouble();
-                final precioCostoCUP = (p['precio_costo_cup'] ?? 0).toDouble();
+                final precioCostoCUP = precioCostoUSD * _tasaCambio;  // Convertir USD a CUP usando tasa de cambio
                 final precioVentaCUP = (config['precio_venta'] ?? 0).toDouble();
                 final precioVentaUSD = precioVentaCUP > 0 ? precioVentaCUP / _tasaCambio : 0.0;
                 final gananciaUSD = precioVentaUSD - precioCostoUSD;
