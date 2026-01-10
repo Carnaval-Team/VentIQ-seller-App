@@ -20,6 +20,8 @@ enum NotificationConsentStatus {
 
 class UserPreferencesService {
   static const String _appVersionKey = 'app_version_marketplace';
+  static const String _migrationDialogShownKey =
+      'migration_dialog_shown_marketplace';
 
   static const String _lastUpdateDialogShownKey =
       'last_update_dialog_shown_marketplace';
@@ -184,5 +186,21 @@ class UserPreferencesService {
     } catch (_) {
       return true;
     }
+  }
+
+  Future<bool> shouldShowMigrationDialog() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return !(prefs.getBool(_migrationDialogShownKey) ?? false);
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> markMigrationDialogShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_migrationDialogShownKey, true);
+    } catch (_) {}
   }
 }
