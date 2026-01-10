@@ -83,6 +83,81 @@ lib/
 
 Desarrollado por el equipo de VentIQ
 
+## Publicación en Google Play (Android)
+
+### Checklist rápido
+
+- [ ] `pubspec.yaml` tiene el `version:` correcto (cada release debe incrementar el `+buildNumber`).
+- [ ] `android/app/build.gradle.kts` usa `applicationId` definitivo (no cambiar después de publicar).
+- [ ] Keystore de subida (`upload-keystore.jks`) creado y guardado en un lugar seguro.
+- [ ] `android/key.properties` creado (NO se sube a git).
+- [ ] Se genera `app-release.aab` firmado correctamente.
+
+### 1) Configurar identificador de la app (applicationId)
+
+El identificador Android debe ser único y estable.
+
+- `applicationId` / `namespace`: `com.inventtia.marketplace`
+
+### 2) Crear el keystore de release (Upload Key)
+
+En Windows, usando el `keytool` del JDK. Recomendación: guardar el keystore en `android/app/`.
+
+Ejemplo (elige tus propias contraseñas):
+
+```bash
+keytool -genkeypair -v -keystore upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Notas:
+
+- `storePassword`: contraseña del keystore (la defines tú).
+- `keyPassword`: contraseña del alias/llave (puede ser la misma que `storePassword`).
+- `keyAlias`: el alias que elegiste (ej: `upload`).
+
+### 3) Crear `android/key.properties` (NO versionar)
+
+Crear el archivo `android/key.properties` con estos campos:
+
+```properties
+storePassword=TU_STORE_PASSWORD
+keyPassword=TU_KEY_PASSWORD
+keyAlias=upload
+storeFile=upload-keystore.jks
+```
+
+Importante:
+
+- `storeFile` se resuelve relativo a `android/app/`.
+- No publiques este archivo ni el `.jks`.
+
+### 4) Generar el Android App Bundle (AAB)
+
+Desde la carpeta `ventiq_marketplace/`:
+
+```bash
+flutter clean
+flutter pub get
+flutter build appbundle --release
+```
+
+Salida esperada:
+
+- `build/app/outputs/bundle/release/app-release.aab`
+
+### 5) Subir a Google Play Console
+
+Pasos recomendados:
+
+1. Crear la app en Play Console.
+2. En **App integrity**, habilitar **Play App Signing** (por defecto).
+3. Subir el `app-release.aab` en un nuevo release (Internal testing recomendado primero).
+4. Completar:
+   - Ficha de la tienda (nombre, descripción, screenshots, íconos).
+   - Data Safety / permisos.
+   - Política de privacidad (URL pública).
+5. Enviar a revisión.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

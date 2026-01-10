@@ -1246,7 +1246,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                               stock: stockCount,
                                               lowStockThreshold:
                                                   lowStockThreshold,
-                                              showQuantity: false,
+                                              showQuantity: true,
                                               fontSize: 11,
                                               iconSize: 13,
                                               padding:

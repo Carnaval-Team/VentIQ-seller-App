@@ -1,4 +1,4 @@
-package com.example.ventiq_marketplace
+package com.inventtia.marketplace
 
 import io.flutter.embedding.android.FlutterActivity
 
