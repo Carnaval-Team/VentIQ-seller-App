@@ -2,16 +2,19 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/notification_model.dart';
 import '../services/app_navigation_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'user_preferences_service.dart';
 import 'user_session_service.dart';
+import 'background_service.dart';
 
-class NotificationService {
+class NotificationService with WidgetsBindingObserver {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
@@ -72,6 +75,8 @@ class NotificationService {
   bool _realtimeActive = false;
   String? _realtimeUserId;
 
+  AppLifecycleState? _lastLifecycleState;
+
   Uint8List? _persistentBarLargeIconBytes;
 
   DateTime? _parseNullableDate(dynamic value) {
@@ -79,6 +84,16 @@ class NotificationService {
     if (value is DateTime) return value;
     if (value is String) return DateTime.tryParse(value);
     return null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lastLifecycleState = state;
+    try {
+      if (state == AppLifecycleState.resumed) {
+        unawaited(_startOrSchedulePersistentBar());
+      }
+    } catch (_) {}
   }
 
   Future<String?> _resolveUserId() async {
@@ -96,6 +111,12 @@ class NotificationService {
     }
 
     try {
+      // Intentar persistir el userId para el servicio de segundo plano
+      final uuid = await _resolveUserId();
+      if (uuid != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_id', uuid);
+      }
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
@@ -124,6 +145,10 @@ class NotificationService {
 
       await _ensureDefaultAndroidChannel();
       await _ensurePersistentBarAndroidChannel();
+
+      try {
+        WidgetsBinding.instance.addObserver(this);
+      } catch (_) {}
 
       _initialized = true;
     } catch (_) {}
@@ -414,6 +439,17 @@ class NotificationService {
       _realtimeUserId = uuid;
 
       await _startOrSchedulePersistentBar();
+
+      // Inicializar el servicio de segundo plano
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
+        // Asegurar que el userId esté persistido
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_id', uuid);
+
+        await BackgroundServiceManager.initializeService();
+      }
     } catch (_) {}
   }
 
@@ -507,7 +543,7 @@ class NotificationService {
     } catch (_) {}
   }
 
-  Future<void> _startOrSchedulePersistentBar({Duration? repeatInterval}) async {
+  Future<void> _startOrSchedulePersistentBar() async {
     if (kIsWeb) return;
     if (defaultTargetPlatform != TargetPlatform.android) return;
 
@@ -519,8 +555,6 @@ class NotificationService {
       if (uuid == null) return;
 
       await initialize();
-
-      final interval = repeatInterval ?? const Duration(minutes: 10);
 
       final largeIcon = await _getPersistentBarLargeIcon();
 
@@ -535,6 +569,7 @@ class NotificationService {
         enableLights: false,
         silent: true,
         autoCancel: false,
+        ongoing: true,
         onlyAlertOnce: true,
         showWhen: false,
         icon: '@mipmap/ic_launcher',
@@ -580,18 +615,6 @@ class NotificationService {
           'Inventta Catalogo',
           'Accesos rápidos',
           details,
-          payload: payload,
-        );
-      } catch (_) {}
-
-      try {
-        await _notificationsPlugin.periodicallyShowWithDuration(
-          _persistentBarNotificationId,
-          'Inventta Catalogo',
-          'Accesos rápidos',
-          interval,
-          details,
-          androidScheduleMode: AndroidScheduleMode.inexact,
           payload: payload,
         );
       } catch (_) {}

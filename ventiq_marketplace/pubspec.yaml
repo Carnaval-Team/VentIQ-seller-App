@@ -49,6 +49,7 @@ dependencies:
   cached_network_image: ^3.4.1
   qr_flutter: ^4.1.0
   app_links: ^6.4.1
+  flutter_background_service: ^5.1.0
 
 dev_dependencies:
   flutter_test:

@@ -4,6 +4,7 @@ import 'config/app_theme.dart';
 import 'config/supabase_config.dart';
 import 'services/app_navigation_service.dart';
 import 'services/notification_service.dart';
+import 'services/background_service.dart';
 import 'screens/splash_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/auth_screen.dart';
@@ -20,6 +21,9 @@ void main() async {
   );
 
   await NotificationService().initialize();
+
+  // Registrar el servicio de segundo plano
+  await BackgroundServiceManager.initializeService();
 
   runApp(const InventtiaMarketplaceApp());
 }
