@@ -79,6 +79,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _runStartupDialogs() async {
     await _checkForChangelog();
     if (!mounted) return;
+    await _maybeShowMigrationInfo();
+    if (!mounted) return;
     await _checkForUpdatesAfterNavigation();
     if (!mounted) return;
     await _notificationService.syncNotificationConsentWithSupabase();
@@ -86,6 +88,55 @@ class _HomeScreenState extends State<HomeScreen> {
     await _maybeShowNotificationConsentPrompt();
     if (!mounted) return;
     await _notificationService.initializeUserNotifications();
+  }
+
+  Future<void> _maybeShowMigrationInfo() async {
+    try {
+      final shouldShow = await _preferencesService.shouldShowMigrationDialog();
+      if (!shouldShow) return;
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.info_outline, color: AppTheme.primaryColor),
+              SizedBox(width: 8),
+              Expanded(child: Text('Información Importante')),
+            ],
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Estamos migrando los datos y cambiamos la app.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 12),
+              Text(
+                'Si tiene otra app con el mismo nombre es recomendable desinstalarla antes de actualizar.',
+              ),
+              SizedBox(height: 12),
+              Text(
+                'La versión estable tiene de nombre Inventtia Marketplace LTS. Las otras no tendrán más soporte y puedes eliminarlas.',
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () async {
+                await _preferencesService.markMigrationDialogShown();
+                if (context.mounted) Navigator.of(context).pop();
+              },
+              child: const Text('Entendido'),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {}
   }
 
   Future<void> _onNotificationsPressed() async {

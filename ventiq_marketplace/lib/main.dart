@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/app_theme.dart';
 import 'config/supabase_config.dart';
@@ -23,7 +24,11 @@ void main() async {
   await NotificationService().initialize();
 
   // Registrar el servicio de segundo plano
-  await BackgroundServiceManager.initializeService();
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS)) {
+    await BackgroundServiceManager.initializeService();
+  }
 
   runApp(const InventtiaMarketplaceApp());
 }
