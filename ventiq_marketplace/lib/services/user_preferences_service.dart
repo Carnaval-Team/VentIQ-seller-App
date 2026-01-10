@@ -1,11 +1,37 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum NotificationConsentStatus {
+  accepted('aceptado'),
+  denied('denegado'),
+  remindLater('mas_tarde'),
+  never('nunca');
+
+  final String value;
+  const NotificationConsentStatus(this.value);
+
+  static NotificationConsentStatus? fromValue(String? value) {
+    if (value == null || value.isEmpty) return null;
+    for (final status in NotificationConsentStatus.values) {
+      if (status.value == value) return status;
+    }
+    return null;
+  }
+}
+
 class UserPreferencesService {
   static const String _appVersionKey = 'app_version_marketplace';
 
   static const String _lastUpdateDialogShownKey =
       'last_update_dialog_shown_marketplace';
   static const int _updateDialogIntervalHours = 3;
+
+  static const String _notificationConsentStatusKey =
+      'notification_consent_status_marketplace';
+  static const String _notificationConsentUpdatedAtKey =
+      'notification_consent_updated_at_marketplace';
+  static const String _notificationConsentPromptLastShownAtKey =
+      'notification_consent_prompt_last_shown_at_marketplace';
+  static const int _notificationRemindLaterIntervalHours = 24;
 
   Future<void> saveAppVersion(String version) async {
     final prefs = await SharedPreferences.getInstance();
@@ -87,5 +113,76 @@ class UserPreferencesService {
         DateTime.now().millisecondsSinceEpoch,
       );
     } catch (_) {}
+  }
+
+  Future<NotificationConsentStatus?> getNotificationConsentStatus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_notificationConsentStatusKey);
+      return NotificationConsentStatus.fromValue(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<DateTime?> getNotificationConsentUpdatedAt() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getInt(_notificationConsentUpdatedAtKey);
+      if (raw == null) return null;
+      return DateTime.fromMillisecondsSinceEpoch(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setNotificationConsentStatus(
+    NotificationConsentStatus status, {
+    DateTime? updatedAt,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_notificationConsentStatusKey, status.value);
+      await prefs.setInt(
+        _notificationConsentUpdatedAtKey,
+        (updatedAt ?? DateTime.now()).millisecondsSinceEpoch,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> markNotificationConsentPromptShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        _notificationConsentPromptLastShownAtKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (_) {}
+  }
+
+  Future<bool> shouldShowNotificationConsentPrompt() async {
+    try {
+      final status = await getNotificationConsentStatus();
+      if (status == NotificationConsentStatus.accepted) return false;
+      if (status == NotificationConsentStatus.never) return false;
+      if (status == NotificationConsentStatus.denied) return false;
+
+      if (status == null) return true;
+
+      if (status == NotificationConsentStatus.remindLater) {
+        final prefs = await SharedPreferences.getInstance();
+        final lastShown = prefs.getInt(
+          _notificationConsentPromptLastShownAtKey,
+        );
+        if (lastShown == null) return true;
+        final lastShownTime = DateTime.fromMillisecondsSinceEpoch(lastShown);
+        final diff = DateTime.now().difference(lastShownTime);
+        return diff.inHours >= _notificationRemindLaterIntervalHours;
+      }
+
+      return true;
+    } catch (_) {
+      return true;
+    }
   }
 }

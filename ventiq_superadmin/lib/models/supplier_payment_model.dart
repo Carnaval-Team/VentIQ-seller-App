@@ -11,8 +11,10 @@ class SupplierPaymentSummary {
   final double totalCup;
   final double totalUsd;
   final double totalEuro;
+  final double totalCash; // New: Total amount paid in cash
+  final double totalTransfer; // New: Total amount paid via transfer
   final int totalOrders;
-  List<ProductPaymentDetail>? products; // Loaded on demand
+  List<OrderPaymentDetail>? orders; // Loaded on demand
 
   SupplierPaymentSummary({
     required this.id,
@@ -27,8 +29,10 @@ class SupplierPaymentSummary {
     required this.totalCup,
     required this.totalUsd,
     required this.totalEuro,
+    required this.totalCash,
+    required this.totalTransfer,
     required this.totalOrders,
-    this.products,
+    this.orders,
   });
 
   factory SupplierPaymentSummary.fromJson(Map<String, dynamic> json) {
@@ -48,6 +52,8 @@ class SupplierPaymentSummary {
       totalCup: (json['total_cup'] as num?)?.toDouble() ?? 0.0,
       totalUsd: (json['total_usd'] as num?)?.toDouble() ?? 0.0,
       totalEuro: (json['total_euro'] as num?)?.toDouble() ?? 0.0,
+      totalCash: (json['total_cash'] as num?)?.toDouble() ?? 0.0,
+      totalTransfer: (json['total_transfer'] as num?)?.toDouble() ?? 0.0,
       totalOrders: json['total_orders'] as int? ?? 0,
     );
   }
@@ -66,28 +72,47 @@ class SupplierPaymentSummary {
       'total_cup': totalCup,
       'total_usd': totalUsd,
       'total_euro': totalEuro,
+      'total_cash': totalCash,
+      'total_transfer': totalTransfer,
       'total_orders': totalOrders,
     };
   }
+}
+
+class OrderPaymentDetail {
+  final int orderId;
+  final DateTime createdAt;
+  final double total;
+  final bool isTransfer; // True if transfer, False if cash
+  final List<ProductPaymentDetail> products;
+
+  OrderPaymentDetail({
+    required this.orderId,
+    required this.createdAt,
+    required this.total,
+    required this.isTransfer,
+    required this.products,
+  });
+
+  double get discountAmount => isTransfer ? total * 0.15 : total * 0.05;
+  double get totalToPay => total - discountAmount;
 }
 
 class ProductPaymentDetail {
   final int productId;
   final String productName;
   final String? productImage;
-  final int totalQuantity;
-  final double totalCup;
-  final double totalUsd;
-  final double totalEuro;
+  final int quantity;
+  final double price;
+  final double subtotal;
 
   ProductPaymentDetail({
     required this.productId,
     required this.productName,
     this.productImage,
-    required this.totalQuantity,
-    required this.totalCup,
-    required this.totalUsd,
-    required this.totalEuro,
+    required this.quantity,
+    required this.price,
+    required this.subtotal,
   });
 
   factory ProductPaymentDetail.fromJson(Map<String, dynamic> json) {
@@ -95,10 +120,9 @@ class ProductPaymentDetail {
       productId: json['product_id'] as int,
       productName: json['product_name'] as String? ?? 'Sin nombre',
       productImage: json['product_image'] as String?,
-      totalQuantity: json['total_quantity'] as int? ?? 0,
-      totalCup: (json['total_cup'] as num?)?.toDouble() ?? 0.0,
-      totalUsd: (json['total_usd'] as num?)?.toDouble() ?? 0.0,
-      totalEuro: (json['total_euro'] as num?)?.toDouble() ?? 0.0,
+      quantity: json['quantity'] as int? ?? 0,
+      price: (json['price'] as num?)?.toDouble() ?? 0.0,
+      subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
@@ -107,10 +131,9 @@ class ProductPaymentDetail {
       'product_id': productId,
       'product_name': productName,
       'product_image': productImage,
-      'total_quantity': totalQuantity,
-      'total_cup': totalCup,
-      'total_usd': totalUsd,
-      'total_euro': totalEuro,
+      'quantity': quantity,
+      'price': price,
+      'subtotal': subtotal,
     };
   }
 }

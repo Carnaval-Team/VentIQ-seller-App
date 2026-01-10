@@ -5,14 +5,14 @@ class MarketplaceService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
   /// Obtiene productos del marketplace con filtros opcionales
-  /// 
+  ///
   /// [idTienda] - ID de la tienda (opcional, null = todas las tiendas)
   /// [idCategoria] - ID de la categoría (opcional, null = todas las categorías)
   /// [soloDisponibles] - Si true, solo retorna productos con stock > 0
   /// [searchQuery] - Texto de búsqueda (búsqueda fonética en múltiples campos)
   /// [limit] - Cantidad máxima de productos a retornar (default: 50)
   /// [offset] - Cantidad de productos a saltar (para paginación)
-  /// 
+  ///
   /// Retorna una lista de productos con metadatos extendidos incluyendo:
   /// - Información de la tienda
   /// - Rating promedio y total de ratings
@@ -99,7 +99,7 @@ class MarketplaceService {
   }
 
   /// Obtiene productos con mejor rating
-  /// 
+  ///
   /// [minRating] - Rating mínimo requerido (default: 4.0)
   /// [limit] - Cantidad máxima de productos a retornar (default: 10)
   Future<List<Map<String, dynamic>>> getTopRatedProducts({
@@ -140,7 +140,7 @@ class MarketplaceService {
   }
 
   /// Busca productos por texto (búsqueda en servidor con normalización fonética)
-  /// 
+  ///
   /// [searchText] - Texto a buscar (búsqueda fonética en múltiples campos)
   /// [idCategoria] - Categoría opcional para filtrar
   /// [limit] - Cantidad máxima de resultados (default: 100)
@@ -170,7 +170,7 @@ class MarketplaceService {
   }
 
   /// Obtiene productos con bajo stock
-  /// 
+  ///
   /// [maxStock] - Stock máximo para considerar "bajo" (default: 10)
   Future<List<Map<String, dynamic>>> getLowStockProducts({
     int maxStock = 10,
@@ -204,9 +204,9 @@ class MarketplaceService {
   }
 
   /// Obtiene el estado de los TPVs de una tienda (abierto/cerrado)
-  /// 
+  ///
   /// [storeId] - ID de la tienda
-  /// 
+  ///
   /// Retorna una lista de TPVs con su estado:
   /// - id_tpv: ID del TPV
   /// - denominacion_tpv: Nombre del TPV
@@ -219,16 +219,14 @@ class MarketplaceService {
 
       final response = await _supabase.rpc(
         'get_tienda_estado_tpvs',
-        params: {
-          'id_tienda_param': storeId,
-        },
+        params: {'id_tienda_param': storeId},
       );
 
       final tpvs = List<Map<String, dynamic>>.from(response);
-      
+
       final abiertos = tpvs.where((tpv) => tpv['esta_abierto'] == true).length;
       final cerrados = tpvs.length - abiertos;
-      
+
       print('✅ ${tpvs.length} TPVs obtenidos');
       print('  - Abiertos: $abiertos');
       print('  - Cerrados: $cerrados');
@@ -248,8 +246,9 @@ class MarketplaceService {
       final products = await getProductsByStore(storeId);
 
       final totalProducts = products.length;
-      final productsWithStock =
-          products.where((p) => (p['tiene_stock'] ?? false)).length;
+      final productsWithStock = products
+          .where((p) => (p['tiene_stock'] ?? false))
+          .length;
       final totalStock = products.fold<num>(
         0,
         (sum, p) => sum + (p['stock_disponible'] ?? 0),
@@ -291,46 +290,27 @@ class MarketplaceService {
   /// Obtiene productos recomendados basados en rating y stock
   Future<List<Map<String, dynamic>>> getRecommendedProducts({
     int limit = 20,
+    int offset = 0,
   }) async {
     try {
       print('💡 Obteniendo productos recomendados...');
 
-      final products = await getProducts(soloDisponibles: true);
+      print('  - Limit: $limit, Offset: $offset');
 
-      // Calcular score de recomendación
-      final scoredProducts = products.map((product) {
-        final metadata = product['metadata'] as Map<String, dynamic>?;
-        final rating = metadata?['rating_promedio'] ?? 0.0;
-        final totalRatings = metadata?['total_ratings'] ?? 0;
-        final stock = product['stock_disponible'] ?? 0;
+      final userId = _supabase.auth.currentUser?.id;
 
-        // Score = (rating * log(totalRatings + 1)) + (stock > 50 ? 1 : 0)
-        final score = (rating * (totalRatings + 1).toDouble().log()) +
-            (stock > 50 ? 1.0 : 0.0);
+      final response = await _supabase.rpc(
+        'fn_get_productos_recomendados_v2',
+        params: {
+          'id_usuario_param': userId,
+          'limit_param': limit,
+          'offset_param': offset,
+        },
+      );
 
-        return {
-          ...product,
-          '_recommendation_score': score,
-        };
-      }).toList();
-
-      // Ordenar por score descendente
-      scoredProducts.sort((a, b) {
-        final scoreA = a['_recommendation_score'] ?? 0.0;
-        final scoreB = b['_recommendation_score'] ?? 0.0;
-        return scoreB.compareTo(scoreA);
-      });
-
-      final recommended = scoredProducts.take(limit).toList();
-
-      // Remover el score temporal
-      for (var product in recommended) {
-        product.remove('_recommendation_score');
-      }
-
-      print('✅ ${recommended.length} productos recomendados');
-
-      return recommended;
+      final products = List<Map<String, dynamic>>.from(response);
+      print('✅ ${products.length} productos recomendados');
+      return products;
     } catch (e) {
       print('❌ Error obteniendo productos recomendados: $e');
       rethrow;

@@ -5,6 +5,7 @@ import '../widgets/product_card.dart';
 import '../widgets/store_card.dart';
 import '../widgets/product_list_card.dart';
 import '../widgets/store_list_card.dart';
+import '../widgets/notifications_panel.dart';
 import 'product_detail_screen.dart';
 import 'store_detail_screen.dart';
 import 'map_screen.dart';
@@ -16,6 +17,7 @@ import '../services/auth_service.dart';
 import '../services/store_management_service.dart';
 import '../services/changelog_service.dart';
 import '../services/user_preferences_service.dart';
+import '../services/notification_service.dart';
 import '../services/update_service.dart';
 import '../widgets/changelog_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -43,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
       StoreManagementService();
   final ChangelogService _changelogService = ChangelogService();
   final UserPreferencesService _preferencesService = UserPreferencesService();
+  final NotificationService _notificationService = NotificationService();
 
   List<Map<String, dynamic>> _bestSellingProducts = [];
   List<Map<String, dynamic>> _featuredStores = [];
@@ -69,9 +72,148 @@ class _HomeScreenState extends State<HomeScreen> {
     _startBannerTimer();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkForChangelog();
-      _checkForUpdatesAfterNavigation();
+      _runStartupDialogs();
     });
+  }
+
+  Future<void> _runStartupDialogs() async {
+    await _checkForChangelog();
+    if (!mounted) return;
+    await _checkForUpdatesAfterNavigation();
+    if (!mounted) return;
+    await _notificationService.syncNotificationConsentWithSupabase();
+    if (!mounted) return;
+    await _maybeShowNotificationConsentPrompt();
+    if (!mounted) return;
+    await _notificationService.initializeUserNotifications();
+  }
+
+  Future<void> _onNotificationsPressed() async {
+    final status = await _preferencesService.getNotificationConsentStatus();
+    if (!mounted) return;
+
+    if (status != NotificationConsentStatus.accepted) {
+      await _maybeShowNotificationConsentPrompt(force: true);
+      return;
+    }
+
+    final isLoggedIn = await _userSessionService.isLoggedIn();
+    if (!mounted) return;
+
+    if (!isLoggedIn) {
+      final goToLogin =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              return AlertDialog(
+                title: const Text('Iniciar sesión'),
+                content: const Text(
+                  'Para ver tus notificaciones necesitas iniciar sesión o registrarte.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Ir a login'),
+                  ),
+                ],
+              );
+            },
+          ) ??
+          false;
+
+      if (!goToLogin || !mounted) return;
+
+      final result = await Navigator.of(context).pushNamed('/auth');
+      if (!mounted) return;
+      if (result != true) return;
+    }
+
+    await _notificationService.initializeUserNotifications(force: true);
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) {
+        return NotificationsPanel(notificationService: _notificationService);
+      },
+    );
+  }
+
+  Future<void> _maybeShowNotificationConsentPrompt({bool force = false}) async {
+    try {
+      final shouldShow = force
+          ? (await _preferencesService.getNotificationConsentStatus() !=
+                NotificationConsentStatus.accepted)
+          : await _preferencesService.shouldShowNotificationConsentPrompt();
+      if (!shouldShow) return;
+      if (!mounted) return;
+
+      await _preferencesService.markNotificationConsentPromptShown();
+
+      final selected = await showDialog<NotificationConsentStatus>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Notificaciones'),
+            content: const Text(
+              '¿Quieres recibir notificaciones sobre novedades, productos y recomendaciones?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(context).pop(NotificationConsentStatus.never),
+                child: const Text('Nunca'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(
+                  context,
+                ).pop(NotificationConsentStatus.remindLater),
+                child: const Text('Más tarde'),
+              ),
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(context).pop(NotificationConsentStatus.denied),
+                child: const Text('No'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(
+                  context,
+                ).pop(NotificationConsentStatus.accepted),
+                child: const Text('Sí'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (!mounted || selected == null) return;
+
+      final enabled = await _notificationService.saveNotificationConsent(
+        status: selected,
+      );
+
+      if (!mounted) return;
+
+      if (selected == NotificationConsentStatus.accepted && !enabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Permiso de notificaciones denegado. Puedes activarlo desde Ajustes.',
+            ),
+          ),
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkForChangelog() async {
@@ -108,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final updateInfo = await UpdateService.checkForUpdates();
       if (updateInfo['hay_actualizacion'] == true && mounted) {
-        _showUpdateAvailableDialog(updateInfo);
+        await _showUpdateAvailableDialog(updateInfo);
       }
     } catch (_) {}
   }
@@ -134,7 +276,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
 
       if (updateInfo['hay_actualizacion'] == true) {
-        _showUpdateAvailableDialog(updateInfo);
+        await _showUpdateAvailableDialog(updateInfo);
         return;
       }
 
@@ -160,7 +302,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showUpdateAvailableDialog(Map<String, dynamic> updateInfo) {
+  Future<void> _showUpdateAvailableDialog(
+    Map<String, dynamic> updateInfo,
+  ) async {
     final bool isObligatory = updateInfo['obligatoria'] ?? false;
     final String newVersion = updateInfo['version_disponible'] ?? 'Desconocida';
     final String currentVersion =
@@ -170,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _preferencesService.markUpdateDialogShown();
 
-    showDialog(
+    await showDialog(
       context: context,
       barrierDismissible: !isObligatory,
       builder: (context) => WillPopScope(
@@ -366,7 +510,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final result = await Navigator.of(context).pushNamed('/auth');
       if (!mounted) return;
       if (result == true) {
-        setState(() {});
+        await _notificationService.initializeUserNotifications(force: true);
+        if (mounted) setState(() {});
       }
       return;
     }
@@ -480,6 +625,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.notifications_active_outlined),
+                  title: const Text(
+                    'Recomendados y notificaciones',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    if (!mounted) return;
+                    await Navigator.of(context).pushNamed(
+                      '/notification-hub',
+                      arguments: {'initialTabIndex': 0},
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.system_update),
                   title: const Text(
                     'Buscar actualizaciones',
@@ -503,6 +664,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () async {
                     try {
                       await _authService.signOut();
+                    } catch (_) {}
+                    try {
+                      await _notificationService.clearUserNotifications();
                     } catch (_) {}
                     if (context.mounted) Navigator.of(context).pop();
                     if (mounted) setState(() {});
@@ -832,12 +996,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         .toDouble(),
                 imageUrl: product['imagen'],
                 storeName: 'Ver detalle', // Simplify for search result
-                availableStock: (product['stock_disponible'] is num)
-                    ? (product['stock_disponible'] as num).toInt()
-                    : int.tryParse(
-                            product['stock_disponible']?.toString() ?? '',
-                          ) ??
-                          0,
+                availableStock: 0,
+                showStockStatus: false,
                 rating: 0,
                 presentations: const [], // Detailed view handles this
                 onTap: () {
@@ -929,16 +1089,62 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       // Notification Button
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.notifications_outlined),
-                          color: Colors.white,
-                          onPressed: () {},
-                        ),
+                      StreamBuilder<int>(
+                        stream: _notificationService.unreadCountStream,
+                        initialData: _notificationService.unreadCount,
+                        builder: (context, snapshot) {
+                          final unread = snapshot.data ?? 0;
+
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.notifications_outlined,
+                                  ),
+                                  color: Colors.white,
+                                  onPressed: _onNotificationsPressed,
+                                ),
+                              ),
+                              if (unread > 0)
+                                Positioned(
+                                  right: -2,
+                                  top: -2,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 2,
+                                    ),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 18,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      unread > 99 ? '99+' : '$unread',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
                       ),
                       const SizedBox(width: 8),
                       // Map Button
@@ -1361,22 +1567,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemBuilder: (context, index) {
                     final product = _bestSellingProducts[index];
 
-                    final hasStockField =
-                        product.containsKey('stock_disponible') ||
-                        product.containsKey('stock') ||
-                        product.containsKey('cantidad_total');
-
-                    final dynamic stockValue =
-                        product['stock_disponible'] ??
-                        product['stock'] ??
-                        product['cantidad_total'];
-
-                    final int? availableStock = hasStockField
-                        ? (stockValue is num
-                              ? stockValue.toInt()
-                              : int.tryParse(stockValue?.toString() ?? '') ?? 0)
-                        : null;
-
                     return Padding(
                       padding: const EdgeInsets.only(right: AppTheme.paddingM),
                       child: ProductCard(
@@ -1396,7 +1586,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             0.0,
                         salesCount:
                             (product['total_vendido'] as num?)?.toInt() ?? 0,
-                        availableStock: availableStock,
                         onTap: () {
                           Navigator.push(
                             context,

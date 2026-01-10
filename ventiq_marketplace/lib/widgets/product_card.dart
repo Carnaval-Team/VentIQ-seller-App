@@ -14,6 +14,7 @@ class ProductCard extends StatelessWidget {
   final double rating;
   final int salesCount;
   final int? availableStock;
+  final double? width;
   final VoidCallback onTap;
 
   const ProductCard({
@@ -26,6 +27,7 @@ class ProductCard extends StatelessWidget {
     required this.rating,
     required this.salesCount,
     this.availableStock,
+    this.width = 220,
     required this.onTap,
   });
 
@@ -34,7 +36,7 @@ class ProductCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 220,
+        width: width,
         decoration: BoxDecoration(
           color: AppTheme.cardBackground,
           borderRadius: BorderRadius.circular(AppTheme.radiusL),

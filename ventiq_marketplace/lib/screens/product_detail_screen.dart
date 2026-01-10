@@ -9,6 +9,9 @@ import '../widgets/stock_status_chip.dart';
 import '../services/rating_service.dart';
 import '../widgets/rating_input_dialog.dart';
 import '../services/store_service.dart'; // Import agregado
+import '../services/notification_service.dart';
+import '../services/user_preferences_service.dart';
+import '../services/user_session_service.dart';
 import 'map_screen.dart';
 
 /// Pantalla de detalles del producto del marketplace
@@ -26,6 +29,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   final CartService _cartService = CartService();
   final RatingService _ratingService = RatingService();
   final StoreService _storeService = StoreService(); // Servicio agregado
+
+  final UserSessionService _userSessionService = UserSessionService();
+  final UserPreferencesService _preferencesService = UserPreferencesService();
+  final NotificationService _notificationService = NotificationService();
+
+  bool _isProductSubscribed = false;
+  bool _isProductSubscriptionLoading = false;
 
   Map<String, dynamic>? _productDetails;
   Map<String, dynamic>? _storeDetails; // Variable para detalles de la tienda
@@ -198,6 +208,193 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void initState() {
     super.initState();
     _loadProductDetails();
+    _loadProductSubscriptionStatus();
+  }
+
+  int? _getProductId() {
+    final dynamic productIdValue =
+        widget.product['id_producto'] ?? widget.product['id'];
+    if (productIdValue == null) return null;
+
+    if (productIdValue is int) return productIdValue;
+    if (productIdValue is String) return int.tryParse(productIdValue);
+    if (productIdValue is num) return productIdValue.toInt();
+    return int.tryParse(productIdValue.toString());
+  }
+
+  Future<void> _loadProductSubscriptionStatus() async {
+    final productId = _getProductId();
+    if (productId == null) return;
+
+    final active = await _notificationService.isProductSubscriptionActive(
+      productId: productId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isProductSubscribed = active;
+    });
+  }
+
+  Future<bool> _ensureLoggedIn() async {
+    final isLoggedIn = await _userSessionService.isLoggedIn();
+    if (!mounted) return false;
+
+    if (!isLoggedIn) {
+      final goToLogin =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              return AlertDialog(
+                title: const Text('Iniciar sesión'),
+                content: const Text(
+                  'Para continuar necesitas iniciar sesión o registrarte.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Ir a login'),
+                  ),
+                ],
+              );
+            },
+          ) ??
+          false;
+
+      if (!goToLogin || !mounted) return false;
+
+      final result = await Navigator.of(context).pushNamed('/auth');
+      if (!mounted) return false;
+
+      if (result == true) {
+        await _notificationService.initializeUserNotifications(force: true);
+        await _loadProductSubscriptionStatus();
+        return true;
+      }
+
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<bool> _ensureNotificationsAccepted() async {
+    final status = await _preferencesService.getNotificationConsentStatus();
+    if (!mounted) return false;
+
+    if (status == NotificationConsentStatus.accepted) {
+      return true;
+    }
+
+    final selected = await showDialog<NotificationConsentStatus>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Notificaciones'),
+          content: const Text(
+            '¿Quieres recibir notificaciones sobre novedades, productos y recomendaciones?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(NotificationConsentStatus.never),
+              child: const Text('Nunca'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(
+                context,
+              ).pop(NotificationConsentStatus.remindLater),
+              child: const Text('Más tarde'),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(NotificationConsentStatus.denied),
+              child: const Text('No'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(NotificationConsentStatus.accepted),
+              child: const Text('Sí'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || selected == null) return false;
+
+    final enabled = await _notificationService.saveNotificationConsent(
+      status: selected,
+    );
+
+    if (!mounted) return enabled;
+
+    if (selected == NotificationConsentStatus.accepted && !enabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Permiso de notificaciones denegado. Puedes activarlo desde Ajustes.',
+          ),
+        ),
+      );
+    }
+
+    return enabled;
+  }
+
+  Future<void> _onProductNotificationsPressed() async {
+    final productId = _getProductId();
+    if (productId == null) return;
+    if (_isProductSubscriptionLoading) return;
+
+    final canProceed = await _ensureLoggedIn();
+    if (!canProceed || !mounted) return;
+
+    final consentOk = await _ensureNotificationsAccepted();
+    if (!consentOk || !mounted) return;
+
+    setState(() {
+      _isProductSubscriptionLoading = true;
+    });
+
+    try {
+      final next = await _notificationService.toggleProductSubscription(
+        productId: productId,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _isProductSubscribed = next;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            next
+                ? 'Notificaciones del producto activadas'
+                : 'Notificaciones del producto desactivadas',
+          ),
+          backgroundColor: next ? AppTheme.successColor : Colors.grey.shade800,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo actualizar la suscripción'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isProductSubscriptionLoading = false;
+      });
+    }
   }
 
   String _normalizeWhatsappPhone(String raw) {
@@ -686,6 +883,45 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ),
         ),
         actions: [
+          Container(
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: _isProductSubscriptionLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          AppTheme.primaryColor,
+                        ),
+                      ),
+                    )
+                  : Icon(
+                      _isProductSubscribed
+                          ? Icons.notifications_active_rounded
+                          : Icons.notifications_none_rounded,
+                      color: AppTheme.primaryColor,
+                    ),
+              onPressed: _isProductSubscriptionLoading
+                  ? null
+                  : _onProductNotificationsPressed,
+              tooltip: _isProductSubscribed
+                  ? 'Desactivar notificaciones'
+                  : 'Activar notificaciones',
+            ),
+          ),
           Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(

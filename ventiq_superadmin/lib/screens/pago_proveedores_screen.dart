@@ -5,6 +5,7 @@ import '../config/app_colors.dart';
 import '../models/supplier_payment_model.dart';
 import '../services/supplier_payment_service.dart';
 import '../utils/platform_utils.dart';
+import '../utils/supplier_pdf_generator.dart';
 import '../widgets/app_drawer.dart';
 
 class PagoProveedoresScreen extends StatefulWidget {
@@ -24,8 +25,8 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
   String? _errorMessage;
 
   final Map<int, bool> _expandedSuppliers = {};
-  final Map<int, List<ProductPaymentDetail>> _supplierProducts = {};
-  final Map<int, bool> _loadingProducts = {};
+  final Map<int, List<OrderPaymentDetail>> _supplierOrders = {};
+  final Map<int, bool> _loadingOrders = {};
 
   @override
   void initState() {
@@ -66,17 +67,17 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
     }
   }
 
-  Future<void> _loadProductDetails(int supplierId) async {
-    if (_supplierProducts.containsKey(supplierId)) {
+  Future<void> _loadOrderDetails(int supplierId) async {
+    if (_supplierOrders.containsKey(supplierId)) {
       return; // Already loaded
     }
 
     setState(() {
-      _loadingProducts[supplierId] = true;
+      _loadingOrders[supplierId] = true;
     });
 
     try {
-      final products = await SupplierPaymentService.getSupplierProductDetails(
+      final orders = await SupplierPaymentService.getSupplierOrders(
         supplierId,
         _fechaInicio,
         _fechaFin,
@@ -84,18 +85,18 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
 
       if (mounted) {
         setState(() {
-          _supplierProducts[supplierId] = products;
-          _loadingProducts[supplierId] = false;
+          _supplierOrders[supplierId] = orders;
+          _loadingOrders[supplierId] = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _loadingProducts[supplierId] = false;
+          _loadingOrders[supplierId] = false;
         });
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error cargando productos: $e')));
+        ).showSnackBar(SnackBar(content: Text('Error cargando órdenes: $e')));
       }
     }
   }
@@ -691,65 +692,161 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
   Widget _buildSupplierItem(SupplierPaymentSummary supplier, bool isExpanded) {
     final numberFormat = NumberFormat('#,##0.00', 'es');
 
-    return ExpansionTile(
-      leading:
-          supplier.logo != null
-              ? ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  supplier.logo!,
+    // Calculate discounts and net amounts
+    final cashDiscount = supplier.totalCash * 0.05;
+    final netCash = supplier.totalCash - cashDiscount;
+
+    final transferDiscount = supplier.totalTransfer * 0.15;
+    final netTransfer = supplier.totalTransfer - transferDiscount;
+
+    final totalToPay = netCash + netTransfer;
+
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        leading:
+            supplier.logo != null
+                ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    supplier.logo!,
+                    width: 50,
+                    height: 50,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        width: 50,
+                        height: 50,
+                        color: AppColors.primary.withOpacity(0.1),
+                        child: const Icon(
+                          Icons.store,
+                          color: AppColors.primary,
+                        ),
+                      );
+                    },
+                  ),
+                )
+                : Container(
                   width: 50,
                   height: 50,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: 50,
-                      height: 50,
-                      color: AppColors.primary.withOpacity(0.1),
-                      child: const Icon(Icons.store, color: AppColors.primary),
-                    );
-                  },
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.store, color: AppColors.primary),
                 ),
-              )
-              : Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.store, color: AppColors.primary),
-              ),
-      title: Text(
-        supplier.name,
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      subtitle: Text(
-        supplier.categoria ?? 'Sin categoría',
-        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-      ),
-      trailing: SizedBox(
-        width: 300,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        title: Text(
+          supplier.name,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildCurrencyChip('CUP', supplier.totalCup, AppColors.primary),
-            const SizedBox(width: 4),
-            _buildCurrencyChip('USD', supplier.totalUsd, AppColors.success),
-            const SizedBox(width: 4),
-            _buildCurrencyChip('EUR', supplier.totalEuro, AppColors.warning),
+            Text(
+              supplier.categoria ?? 'Sin categoría',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+            if (!isExpanded) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Total a pagar: \$${numberFormat.format(totalToPay)}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.success,
+                ),
+              ),
+            ],
           ],
         ),
+        trailing:
+            isExpanded
+                ? null
+                : _buildCurrencyChip(
+                  'CUP',
+                  supplier.totalCup,
+                  AppColors.primary,
+                ),
+        onExpansionChanged: (expanded) {
+          setState(() {
+            _expandedSuppliers[supplier.id] = expanded;
+          });
+          if (expanded) {
+            _loadOrderDetails(supplier.id);
+          }
+        },
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Column(
+                children: [
+                  _buildPaymentRow(
+                    'Efectivo',
+                    supplier.totalCash,
+                    '5%',
+                    cashDiscount,
+                    netCash,
+                  ),
+                  const Divider(),
+                  _buildPaymentRow(
+                    'Transferencia',
+                    supplier.totalTransfer,
+                    '15%',
+                    transferDiscount,
+                    netTransfer,
+                  ),
+                  const Divider(thickness: 2),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'TOTAL A PAGAR',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        '\$${numberFormat.format(totalToPay)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _generatePdf(supplier),
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('Exportar Reporte PDF'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _buildOrderDetails(supplier.id),
+        ],
       ),
-      onExpansionChanged: (expanded) {
-        setState(() {
-          _expandedSuppliers[supplier.id] = expanded;
-        });
-        if (expanded) {
-          _loadProductDetails(supplier.id);
-        }
-      },
-      children: [_buildProductDetails(supplier.id)],
     );
   }
 
@@ -771,9 +868,9 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
     );
   }
 
-  Widget _buildProductDetails(int supplierId) {
-    final isLoading = _loadingProducts[supplierId] ?? false;
-    final products = _supplierProducts[supplierId];
+  Widget _buildOrderDetails(int supplierId) {
+    final isLoading = _loadingOrders[supplierId] ?? false;
+    final orders = _supplierOrders[supplierId];
 
     if (isLoading) {
       return const Padding(
@@ -782,103 +879,218 @@ class _PagoProveedoresScreenState extends State<PagoProveedoresScreen> {
       );
     }
 
-    if (products == null || products.isEmpty) {
+    if (orders == null || orders.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(16),
-        child: Text('No hay productos vendidos en este período'),
+        child: Text('No hay ventas en este período'),
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Productos Vendidos (${products.length})',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: orders.length,
+      itemBuilder: (context, index) {
+        final order = orders[index];
+        return _buildOrderItem(order);
+      },
+    );
+  }
+
+  Widget _buildPaymentRow(
+    String method,
+    double total,
+    String discountLabel,
+    double discountAmount,
+    double netTotal,
+  ) {
+    final numberFormat = NumberFormat('#,##0.00', 'es');
+    return Row(
+      children: [
+        Expanded(
+          flex: 2,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(method, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(
+                'Total: \$${numberFormat.format(total)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          ...products.map((product) => _buildProductRow(product)),
+        ),
+        Expanded(
+          flex: 2,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'Desc. ($discountLabel)',
+                style: TextStyle(color: AppColors.error, fontSize: 12),
+              ),
+              Text(
+                '-\$${numberFormat.format(discountAmount)}',
+                style: const TextStyle(color: AppColors.error),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const Text(
+                'Neto',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+              ),
+              Text(
+                '\$${numberFormat.format(netTotal)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOrderItem(OrderPaymentDetail order) {
+    final numberFormat = NumberFormat('#,##0.00', 'es');
+    final dateFormat = DateFormat('dd/MM HH:mm');
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: ExpansionTile(
+        title: Text('Orden #${order.orderId}'),
+        subtitle: Row(
+          children: [
+            Text(
+              dateFormat.format(order.createdAt),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(width: 8),
+            _buildPaymentMethodChip(order.isTransfer),
+          ],
+        ),
+        trailing: Text(
+          '\$${numberFormat.format(order.total)}',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        children: [
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: order.products.length,
+            itemBuilder: (context, index) {
+              final product = order.products[index];
+              return ListTile(
+                leading:
+                    product.productImage != null
+                        ? ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.network(
+                            product.productImage!,
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                        : const Icon(Icons.image_not_supported),
+                title: Text(
+                  product.productName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Text(
+                  '${product.quantity} x \$${numberFormat.format(product.price)} = \$${numberFormat.format(product.subtotal)}',
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildProductRow(ProductPaymentDetail product) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+  Widget _buildPaymentMethodChip(bool isTransfer) {
+    final color = isTransfer ? Colors.blue : Colors.green;
+    final label = isTransfer ? 'Transferencia' : 'Efectivo';
+    final icon = isTransfer ? Icons.credit_card : Icons.money;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (product.productImage != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                product.productImage!,
-                width: 40,
-                height: 40,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    width: 40,
-                    height: 40,
-                    color: Colors.grey[200],
-                    child: const Icon(Icons.image, size: 20),
-                  );
-                },
-              ),
-            )
-          else
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Icon(Icons.shopping_bag, size: 20),
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
             ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.productName,
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                ),
-                Text(
-                  'Cantidad: ${product.totalQuantity}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '\$${NumberFormat('#,##0.00').format(product.totalCup)} CUP',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                ),
-              ),
-              if (product.totalUsd > 0)
-                Text(
-                  '\$${NumberFormat('#,##0.00').format(product.totalUsd)} USD',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-            ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _generatePdf(SupplierPaymentSummary supplier) async {
+    try {
+      // Ensure orders are loaded
+      List<OrderPaymentDetail> orders = _supplierOrders[supplier.id] ?? [];
+
+      if (orders.isEmpty) {
+        // Show loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Obteniendo detalles para PDF...')),
+        );
+
+        orders = await SupplierPaymentService.getSupplierOrders(
+          supplier.id,
+          _fechaInicio,
+          _fechaFin,
+        );
+
+        if (mounted) {
+          setState(() {
+            _supplierOrders[supplier.id] = orders;
+          });
+        }
+      }
+
+      if (orders.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No hay órdenes para generar reporte'),
+            ),
+          );
+        }
+        return;
+      }
+
+      await SupplierPdfGenerator.generateAndDownloadPdf(
+        supplier: supplier,
+        fechaInicio: _fechaInicio,
+        fechaFin: _fechaFin,
+        orders: orders,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error generando PDF: $e')));
+      }
+    }
   }
 }

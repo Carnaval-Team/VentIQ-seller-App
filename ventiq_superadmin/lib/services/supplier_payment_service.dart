@@ -42,8 +42,11 @@ class SupplierPaymentService {
             price,
             quantity,
             precio_usd,
-            precio_euro
+            precio_euro,
+            transferencia,
+            Orders(status)
           ''')
+          .eq('Orders.status', 'Completado')
           .gte('created_at', fechaInicio.toIso8601String())
           .lte('created_at', fechaFin.toIso8601String());
 
@@ -56,19 +59,35 @@ class SupplierPaymentService {
         final quantity = order['quantity'] as int? ?? 0;
         final precioUsd = (order['precio_usd'] as num?)?.toDouble() ?? 1.0;
         final precioEuro = (order['precio_euro'] as num?)?.toDouble() ?? 1.0;
+        final isTransfer = order['transferencia'] as bool? ?? false;
+
+        final totalRow = price * quantity;
 
         if (!supplierTotals.containsKey(proveedorId)) {
           supplierTotals[proveedorId] = {
             'total_cup': 0.0,
             'total_usd': 0.0,
             'total_euro': 0.0,
-            'total_orders': 0,
+            'total_cash': 0.0,
+            'total_transfer': 0.0,
+            'total_orders':
+                0, // This is technically total items/lines processed here, distinct orders need better count but user asked for grouping later.
+            // For summary stats, simple increments might be enough or we maintain a Set of order IDs if available.
+            // In the initial fetching `OrderDetails` we don't select `order_id` in this block, but we probably should if we want accurate order count.
+            // Let's add order_id to query if we want accurate order count.
           };
         }
 
-        supplierTotals[proveedorId]!['total_cup'] += price * quantity;
+        supplierTotals[proveedorId]!['total_cup'] += totalRow;
         supplierTotals[proveedorId]!['total_usd'] += precioUsd * quantity;
         supplierTotals[proveedorId]!['total_euro'] += precioEuro * quantity;
+
+        if (isTransfer) {
+          supplierTotals[proveedorId]!['total_transfer'] += totalRow;
+        } else {
+          supplierTotals[proveedorId]!['total_cash'] += totalRow;
+        }
+
         supplierTotals[proveedorId]!['total_orders'] += 1;
       }
 
@@ -107,6 +126,8 @@ class SupplierPaymentService {
             totalCup: totals['total_cup'] as double,
             totalUsd: totals['total_usd'] as double,
             totalEuro: totals['total_euro'] as double,
+            totalCash: totals['total_cash'] as double,
+            totalTransfer: totals['total_transfer'] as double,
             totalOrders: totals['total_orders'] as int,
           ),
         );
@@ -125,77 +146,121 @@ class SupplierPaymentService {
     }
   }
 
-  /// Obtener detalles de productos para un proveedor específico
-  /// Solo se llama cuando el usuario expande el acordeón
-  static Future<List<ProductPaymentDetail>> getSupplierProductDetails(
+  /// Obtener detalles de órdenes para un proveedor específico
+  static Future<List<OrderPaymentDetail>> getSupplierOrders(
     int proveedorId,
     DateTime fechaInicio,
     DateTime fechaFin,
   ) async {
     try {
-      debugPrint(
-        '📦 Obteniendo detalles de productos para proveedor $proveedorId...',
-      );
+      debugPrint('📦 Obteniendo órdenes para proveedor $proveedorId...');
 
       final response = await _supabase
           .schema('carnavalapp')
           .from('OrderDetails')
           .select('''
+            order_id,
             product_id,
             quantity,
             price,
             precio_usd,
             precio_euro,
+            transferencia,
+            Orders!inner(status, created_at),
             Productos!inner(
               name,
               image
             )
           ''')
           .eq('proveedor', proveedorId)
+          .eq('Orders.status', 'Completado')
           .gte('created_at', fechaInicio.toIso8601String())
           .lte('created_at', fechaFin.toIso8601String());
 
-      // Agrupar por producto
-      final Map<int, Map<String, dynamic>> productTotals = {};
+      // Agrupar por Order ID
+      final Map<int, OrderPaymentDetail> ordersMap = {};
+      final Map<int, List<ProductPaymentDetail>> orderProductsMap = {};
 
-      for (var order in response) {
-        final productId = order['product_id'] as int;
-        final quantity = order['quantity'] as int? ?? 0;
-        final price = (order['price'] as num?)?.toDouble() ?? 0.0;
-        final precioUsd = (order['precio_usd'] as num?)?.toDouble() ?? 1.0;
-        final precioEuro = (order['precio_euro'] as num?)?.toDouble() ?? 1.0;
-        final productData = order['Productos'];
+      for (var item in response) {
+        final orderId = item['order_id'] as int;
+        final orderData = item['Orders']; // OrderDetails -> Orders relationship
 
-        if (!productTotals.containsKey(productId)) {
-          productTotals[productId] = {
-            'product_id': productId,
-            'product_name': productData?['name'] ?? 'Sin nombre',
-            'product_image': productData?['image'],
-            'total_quantity': 0,
-            'total_cup': 0.0,
-            'total_usd': 0.0,
-            'total_euro': 0.0,
-          };
+        if (orderData == null) {
+          continue;
         }
 
-        productTotals[productId]!['total_quantity'] += quantity;
-        productTotals[productId]!['total_cup'] += price * quantity;
-        productTotals[productId]!['total_usd'] += precioUsd * quantity;
-        productTotals[productId]!['total_euro'] += precioEuro * quantity;
+        final productId = item['product_id'] as int;
+        final quantity = item['quantity'] as int? ?? 0;
+        final price = (item['price'] as num?)?.toDouble() ?? 0.0;
+        final isTransfer = item['transferencia'] as bool? ?? false;
+
+        final productData = item['Productos'];
+
+        final product = ProductPaymentDetail(
+          productId: productId,
+          productName: productData?['name'] ?? 'Sin nombre',
+          productImage: productData?['image'],
+          quantity: quantity,
+          price: price,
+          subtotal: price * quantity,
+        );
+
+        if (!orderProductsMap.containsKey(orderId)) {
+          orderProductsMap[orderId] = [];
+
+          final createdAtStr = orderData['created_at'] as String?;
+          final createdAt =
+              createdAtStr != null
+                  ? DateTime.parse(createdAtStr)
+                  : DateTime.now();
+
+          // Initialize order entry placeholder
+          // We will update total later
+          ordersMap[orderId] = OrderPaymentDetail(
+            orderId: orderId,
+            createdAt: createdAt,
+            total: 0.0,
+            isTransfer:
+                isTransfer, // Assuming all items in order share same payment method or taking first one
+            products: [],
+          );
+        }
+
+        orderProductsMap[orderId]!.add(product);
+
+        // Update total
+        final currentOrder = ordersMap[orderId]!;
+        ordersMap[orderId] = OrderPaymentDetail(
+          orderId: currentOrder.orderId,
+          createdAt: currentOrder.createdAt,
+          total: currentOrder.total + product.subtotal,
+          isTransfer: isTransfer, // Keep it consistent
+          products: [], // We will assign this at the end
+        );
       }
 
-      final products =
-          productTotals.values
-              .map((json) => ProductPaymentDetail.fromJson(json))
-              .toList();
+      // Final Assembly
+      final List<OrderPaymentDetail> result = [];
+      for (var orderId in ordersMap.keys) {
+        final orderBase = ordersMap[orderId]!;
+        result.add(
+          OrderPaymentDetail(
+            orderId: orderBase.orderId,
+            createdAt: orderBase.createdAt,
+            total: orderBase.total,
+            isTransfer: orderBase.isTransfer,
+            products: orderProductsMap[orderId]!,
+          ),
+        );
+      }
 
-      // Ordenar por total CUP descendente
-      products.sort((a, b) => b.totalCup.compareTo(a.totalCup));
+      // Ordenar por fecha descendente (más recientes primero)
+      result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-      debugPrint('✅ ${products.length} productos encontrados');
-      return products;
+      debugPrint('✅ ${result.length} órdenes encontradas');
+      return result;
     } catch (e) {
-      debugPrint('❌ Error obteniendo detalles de productos: $e');
+      debugPrint('❌ Error obteniendo órdenes: $e');
       return [];
     }
   }

@@ -1,8 +1,35 @@
 {
-  "current_version": "1.2.3",
-  "build": 6,
+  "current_version": "1.3.0",
+  "build": 8,
   "app_name": "ventiq_marketplace",
   "changelogs": [
+    {
+      "version": "1.3.0",
+      "date": "2026-01-08",
+      "title": "🔔 Hub y accesos rápidos en Inventta Catálogo",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo Hub con Recomendados",
+          "description": "Agregamos el Hub para que descubras productos recomendados y lo más interesante del catálogo en un solo lugar."
+        },
+        {
+          "type": "feature",
+          "title": "Centro de Notificaciones",
+          "description": "Ahora tienes una sección dedicada para revisar tus notificaciones del catálogo y mantenerte al día con novedades."
+        },
+        {
+          "type": "feature",
+          "title": "Barra de accesos rápidos (Android)",
+          "description": "Incluimos una barra persistente en Android con accesos directos para ir al Hub, ver Notificaciones, abrir Buscar y entrar a Configuración sin perder tiempo."
+        },
+        {
+          "type": "improvement",
+          "title": "Navegación directa desde notificaciones",
+          "description": "Al tocar una notificación o un acceso rápido, la app te lleva directamente a la pantalla correcta para que completes tu acción más rápido."
+        }
+      ]
+    },
     {
       "version": "1.2.3",
       "date": "2026-01-06",

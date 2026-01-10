@@ -39,6 +39,8 @@ dependencies:
   # Platform Detection
   universal_platform: ^1.1.0
   image_picker: ^1.2.1
+  pdf: ^3.11.3
+  printing: ^5.14.2
 
 dev_dependencies:
   flutter_test:

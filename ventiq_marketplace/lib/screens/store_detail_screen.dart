@@ -9,6 +9,9 @@ import '../widgets/supabase_image.dart';
 import 'product_detail_screen.dart';
 import '../services/marketplace_service.dart';
 import '../services/rating_service.dart';
+import '../services/notification_service.dart';
+import '../services/user_preferences_service.dart';
+import '../services/user_session_service.dart';
 import '../widgets/rating_input_dialog.dart';
 import 'map_screen.dart';
 
@@ -27,6 +30,13 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   final MarketplaceService _marketplaceService = MarketplaceService();
   final RatingService _ratingService = RatingService();
   final ScrollController _scrollController = ScrollController();
+
+  final UserSessionService _userSessionService = UserSessionService();
+  final UserPreferencesService _preferencesService = UserPreferencesService();
+  final NotificationService _notificationService = NotificationService();
+
+  bool _isStoreSubscribed = false;
+  bool _isStoreSubscriptionLoading = false;
 
   String? _storePhone;
 
@@ -51,6 +61,182 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
     _loadTPVsStatus();
     _loadStorePhoneIfMissing();
     _scrollController.addListener(_onScroll);
+    _loadStoreSubscriptionStatus();
+  }
+
+  Future<void> _loadStoreSubscriptionStatus() async {
+    final storeId = widget.store['id'] as int?;
+    if (storeId == null) return;
+
+    final active = await _notificationService.isStoreSubscriptionActive(
+      storeId: storeId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isStoreSubscribed = active;
+    });
+  }
+
+  Future<bool> _ensureLoggedIn() async {
+    final isLoggedIn = await _userSessionService.isLoggedIn();
+    if (!mounted) return false;
+
+    if (!isLoggedIn) {
+      final goToLogin =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              return AlertDialog(
+                title: const Text('Iniciar sesión'),
+                content: const Text(
+                  'Para continuar necesitas iniciar sesión o registrarte.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Ir a login'),
+                  ),
+                ],
+              );
+            },
+          ) ??
+          false;
+
+      if (!goToLogin || !mounted) return false;
+
+      final result = await Navigator.of(context).pushNamed('/auth');
+      if (!mounted) return false;
+
+      if (result == true) {
+        await _notificationService.initializeUserNotifications(force: true);
+        await _loadStoreSubscriptionStatus();
+        return true;
+      }
+
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<bool> _ensureNotificationsAccepted() async {
+    final status = await _preferencesService.getNotificationConsentStatus();
+    if (!mounted) return false;
+
+    if (status == NotificationConsentStatus.accepted) {
+      return true;
+    }
+
+    final selected = await showDialog<NotificationConsentStatus>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Notificaciones'),
+          content: const Text(
+            '¿Quieres recibir notificaciones sobre novedades, productos y recomendaciones?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(NotificationConsentStatus.never),
+              child: const Text('Nunca'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(
+                context,
+              ).pop(NotificationConsentStatus.remindLater),
+              child: const Text('Más tarde'),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(NotificationConsentStatus.denied),
+              child: const Text('No'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(NotificationConsentStatus.accepted),
+              child: const Text('Sí'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || selected == null) return false;
+
+    final enabled = await _notificationService.saveNotificationConsent(
+      status: selected,
+    );
+
+    if (!mounted) return enabled;
+
+    if (selected == NotificationConsentStatus.accepted && !enabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Permiso de notificaciones denegado. Puedes activarlo desde Ajustes.',
+          ),
+        ),
+      );
+    }
+
+    return enabled;
+  }
+
+  Future<void> _onStoreNotificationsPressed() async {
+    final storeId = widget.store['id'] as int?;
+    if (storeId == null) return;
+    if (_isStoreSubscriptionLoading) return;
+
+    final canProceed = await _ensureLoggedIn();
+    if (!canProceed || !mounted) return;
+
+    final consentOk = await _ensureNotificationsAccepted();
+    if (!consentOk || !mounted) return;
+
+    setState(() {
+      _isStoreSubscriptionLoading = true;
+    });
+
+    try {
+      final next = await _notificationService.toggleStoreSubscription(
+        storeId: storeId,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _isStoreSubscribed = next;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            next
+                ? 'Notificaciones de la tienda activadas'
+                : 'Notificaciones de la tienda desactivadas',
+          ),
+          backgroundColor: next ? AppTheme.successColor : Colors.grey.shade800,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo actualizar la suscripción'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isStoreSubscriptionLoading = false;
+      });
+    }
   }
 
   Future<void> _loadStorePhoneIfMissing() async {
@@ -413,6 +599,29 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
       expandedHeight: 250,
       pinned: true,
       actions: [
+        IconButton(
+          icon: _isStoreSubscriptionLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Icon(
+                  _isStoreSubscribed
+                      ? Icons.notifications_active_rounded
+                      : Icons.notifications_none_rounded,
+                  color: Colors.white,
+                ),
+          tooltip: _isStoreSubscribed
+              ? 'Desactivar notificaciones'
+              : 'Activar notificaciones',
+          onPressed: _isStoreSubscriptionLoading
+              ? null
+              : _onStoreNotificationsPressed,
+        ),
         IconButton(
           icon: const Icon(Icons.star_rate_rounded, color: Colors.white),
           tooltip: 'Calificar Tienda',

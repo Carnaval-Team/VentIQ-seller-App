@@ -10,6 +10,7 @@ class ProductListCard extends StatelessWidget {
   final String? imageUrl;
   final String storeName;
   final int availableStock;
+  final bool showStockStatus;
   final double rating;
   final List<String> presentations;
   final VoidCallback onTap;
@@ -21,6 +22,7 @@ class ProductListCard extends StatelessWidget {
     this.imageUrl,
     required this.storeName,
     required this.availableStock,
+    this.showStockStatus = true,
     required this.rating,
     required this.presentations,
     required this.onTap,
@@ -109,8 +111,8 @@ class ProductListCard extends StatelessWidget {
                       Row(
                         children: [
                           Expanded(child: _buildStoreInfo()),
-                          const SizedBox(width: 8),
-                          _buildStockInfo(),
+                          if (showStockStatus) const SizedBox(width: 8),
+                          if (showStockStatus) _buildStockInfo(),
                         ],
                       ),
                     ],
