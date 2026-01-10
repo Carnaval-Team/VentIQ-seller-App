@@ -641,6 +641,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.tune),
+                  title: const Text(
+                    'Configuración de notificaciones',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    if (!mounted) return;
+                    await Navigator.of(
+                      context,
+                    ).pushNamed('/notification-settings');
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.system_update),
                   title: const Text(
                     'Buscar actualizaciones',

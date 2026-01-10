@@ -3,6 +3,7 @@ import '../config/app_colors.dart';
 import '../models/usuario.dart';
 import '../widgets/app_drawer.dart';
 import '../utils/platform_utils.dart';
+import '../services/user_service.dart';
 
 class UsuariosScreen extends StatefulWidget {
   const UsuariosScreen({super.key});
@@ -12,60 +13,118 @@ class UsuariosScreen extends StatefulWidget {
 }
 
 class _UsuariosScreenState extends State<UsuariosScreen> {
+  final UserService _userService = UserService();
+  final ScrollController _scrollController = ScrollController();
+
   List<Usuario> _usuarios = [];
-  List<Usuario> _filteredUsuarios = [];
+  Map<String, dynamic> _counts = {
+    'total_usuarios': 0,
+    'total_inventtia': 0,
+    'total_carnaval': 0,
+    'total_catalogo': 0,
+  };
+
   bool _isLoading = true;
+  bool _isMoreLoading = false;
   String _searchQuery = '';
   String _selectedFilter = 'todos';
+  int _currentPage = 0;
+  final int _pageSize = 20;
+  int _totalCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadUsuarios();
+    _loadInitialData();
+    _scrollController.addListener(_onScroll);
   }
 
-  Future<void> _loadUsuarios() async {
-    setState(() => _isLoading = true);
-    
-    // Simular carga de datos
-    await Future.delayed(const Duration(seconds: 1));
-    
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_isMoreLoading &&
+        _usuarios.length < _totalCount) {
+      _loadMoreUsuarios();
+    }
+  }
+
+  Future<void> _loadInitialData() async {
     setState(() {
-      _usuarios = Usuario.getMockData();
-      _filteredUsuarios = _usuarios;
-      _isLoading = false;
+      _isLoading = true;
+      _currentPage = 0;
+    });
+
+    await Future.wait([_loadCounts(), _loadUsuarios(reset: true)]);
+
+    setState(() => _isLoading = false);
+  }
+
+  Future<void> _loadCounts() async {
+    final counts = await _userService.getUsersCountSummary();
+    setState(() => _counts = counts);
+  }
+
+  Future<void> _loadUsuarios({bool reset = false}) async {
+    if (reset) {
+      _currentPage = 0;
+    }
+
+    final result = await _userService.getPaginatedUsersSummary(
+      limit: _pageSize,
+      offset: _currentPage * _pageSize,
+      search: _searchQuery,
+      category: _selectedFilter,
+    );
+
+    setState(() {
+      if (reset) {
+        _usuarios = List<Usuario>.from(result['users']);
+      } else {
+        _usuarios.addAll(List<Usuario>.from(result['users']));
+      }
+      _totalCount = result['total'];
     });
   }
 
-  void _filterUsuarios() {
-    setState(() {
-      _filteredUsuarios = _usuarios.where((usuario) {
-        final matchesSearch = usuario.nombreCompleto.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                            usuario.email.toLowerCase().contains(_searchQuery.toLowerCase());
-        
-        final matchesFilter = _selectedFilter == 'todos' ||
-                            (_selectedFilter == 'activos' && usuario.activo) ||
-                            (_selectedFilter == 'inactivos' && !usuario.activo) ||
-                            (_selectedFilter == 'super_admin' && usuario.esSuperAdmin) ||
-                            (_selectedFilter == 'admin_tienda' && usuario.esAdminTienda);
-        
-        return matchesSearch && matchesFilter;
-      }).toList();
-    });
+  Future<void> _loadMoreUsuarios() async {
+    if (_isMoreLoading) return;
+
+    setState(() => _isMoreLoading = true);
+    _currentPage++;
+    await _loadUsuarios();
+    setState(() => _isMoreLoading = false);
+  }
+
+  void _onSearchChanged(String value) {
+    _searchQuery = value;
+    _loadInitialData();
+  }
+
+  void _onFilterChanged(String? value) {
+    if (value != null) {
+      _selectedFilter = value;
+      _loadInitialData();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isDesktop = PlatformUtils.shouldUseDesktopLayout(screenSize.width);
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gestión de Usuarios'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadUsuarios,
+            onPressed: _loadInitialData,
             tooltip: 'Actualizar',
           ),
           IconButton(
@@ -77,13 +136,17 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
         ],
       ),
       drawer: const AppDrawer(),
-      body: _isLoading 
-          ? const Center(child: CircularProgressIndicator())
-          : _buildBody(isDesktop),
-      floatingActionButton: !isDesktop ? FloatingActionButton(
-        onPressed: () => _showCreateUsuarioDialog(),
-        child: const Icon(Icons.person_add),
-      ) : null,
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _buildBody(isDesktop),
+      floatingActionButton:
+          !isDesktop
+              ? FloatingActionButton(
+                onPressed: () => _showCreateUsuarioDialog(),
+                child: const Icon(Icons.person_add),
+              )
+              : null,
     );
   }
 
@@ -97,9 +160,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
           _buildStats(),
           const SizedBox(height: 16),
           Expanded(
-            child: isDesktop 
-                ? _buildDesktopTable()
-                : _buildMobileList(),
+            child: isDesktop ? _buildDesktopTable() : _buildMobileList(),
           ),
         ],
       ),
@@ -120,10 +181,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                   prefixIcon: Icon(Icons.search),
                   border: OutlineInputBorder(),
                 ),
-                onChanged: (value) {
-                  _searchQuery = value;
-                  _filterUsuarios();
-                },
+                onChanged: _onSearchChanged,
               ),
             ),
             const SizedBox(width: 16),
@@ -138,16 +196,20 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                 items: const [
                   DropdownMenuItem(value: 'todos', child: Text('Todos')),
                   DropdownMenuItem(value: 'activos', child: Text('Activos')),
-                  DropdownMenuItem(value: 'inactivos', child: Text('Inactivos')),
-                  DropdownMenuItem(value: 'super_admin', child: Text('Super Admins')),
-                  DropdownMenuItem(value: 'admin_tienda', child: Text('Admin Tienda')),
+                  DropdownMenuItem(
+                    value: 'inactivos',
+                    child: Text('Inactivos'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'super_admin',
+                    child: Text('Super Admins'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'admin_tienda',
+                    child: Text('Admin Tienda'),
+                  ),
                 ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedFilter = value!;
-                  });
-                  _filterUsuarios();
-                },
+                onChanged: _onFilterChanged,
               ),
             ),
           ],
@@ -157,16 +219,12 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   }
 
   Widget _buildStats() {
-    final activos = _usuarios.where((u) => u.activo).length;
-    final inactivos = _usuarios.length - activos;
-    final superAdmins = _usuarios.where((u) => u.esSuperAdmin).length;
-
     return Row(
       children: [
         Expanded(
           child: _buildStatCard(
             'Total Usuarios',
-            _usuarios.length.toString(),
+            _counts['total_usuarios'].toString(),
             Icons.people,
             AppColors.primary,
           ),
@@ -174,35 +232,40 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
         const SizedBox(width: 8),
         Expanded(
           child: _buildStatCard(
-            'Activos',
-            activos.toString(),
-            Icons.check_circle,
-            AppColors.success,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildStatCard(
-            'Inactivos',
-            inactivos.toString(),
-            Icons.cancel,
-            AppColors.error,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildStatCard(
-            'Super Admins',
-            superAdmins.toString(),
-            Icons.admin_panel_settings,
+            'Inventtia (Ven/Adm)',
+            _counts['total_inventtia'].toString(),
+            Icons.business_center,
             AppColors.secondary,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _buildStatCard(
+            'Carnaval',
+            _counts['total_carnaval'].toString(),
+            Icons.shopping_cart,
+            AppColors.warning,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _buildStatCard(
+            'Catalogo',
+            _counts['total_catalogo'].toString(),
+            Icons.list_alt,
+            AppColors.info,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -250,7 +313,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                   Icon(Icons.people, color: AppColors.primary),
                   const SizedBox(width: 8),
                   Text(
-                    'Lista de Usuarios (${_filteredUsuarios.length})',
+                    'Lista de Usuarios ($_totalCount)',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -320,97 +383,145 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                       DataColumn(
                         label: Expanded(
                           child: Text(
+                            'Categoría',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Expanded(
+                          child: Text(
                             'Acciones',
                             style: TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
                     ],
-                    rows: _filteredUsuarios.map((usuario) {
-                      return DataRow(
-                        cells: [
-                          DataCell(
-                            SizedBox(
-                              width: double.infinity,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    usuario.nombreCompleto,
-                                    style: const TextStyle(fontWeight: FontWeight.w600),
-                                    overflow: TextOverflow.ellipsis,
+                    rows:
+                        _usuarios.map((usuario) {
+                          return DataRow(
+                            cells: [
+                              DataCell(
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        usuario.nombreCompleto,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'ID: ${usuario.id}',
+                                        style:
+                                            Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'ID: ${usuario.id}',
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            SizedBox(
-                              width: double.infinity,
-                              child: Text(
-                                usuario.email,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            SizedBox(
-                              width: double.infinity,
-                              child: _buildRoleChip(usuario.rol),
-                            ),
-                          ),
-                          DataCell(
-                            SizedBox(
-                              width: double.infinity,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppColors.info.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  usuario.tiendasAsignadas.length.toString(),
-                                  style: TextStyle(
-                                    color: AppColors.info,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  textAlign: TextAlign.center,
                                 ),
                               ),
-                            ),
-                          ),
-                          DataCell(
-                            SizedBox(
-                              width: double.infinity,
-                              child: _buildStatusChip(usuario.activo),
-                            ),
-                          ),
-                          DataCell(
-                            SizedBox(
-                              width: double.infinity,
-                              child: _buildLastAccessInfo(usuario),
-                            ),
-                          ),
-                          DataCell(
-                            SizedBox(
-                              width: double.infinity,
-                              child: _buildActions(usuario),
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
+                              DataCell(
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: Text(
+                                    usuario.email,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: _buildRoleChip(usuario.rol),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.info.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      usuario.tiendasAsignadas.length
+                                          .toString(),
+                                      style: TextStyle(
+                                        color: AppColors.info,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: _buildStatusChip(usuario.activo),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: _buildLastAccessInfo(usuario),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: _buildCategoryChip(usuario.category),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: _buildActions(usuario),
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
                   ),
                 ),
               ),
             ),
+            if (_usuarios.length < _totalCount)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child:
+                    _isMoreLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : Center(
+                          child: TextButton.icon(
+                            onPressed: _loadMoreUsuarios,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Cargar más usuarios'),
+                            style: TextButton.styleFrom(
+                              backgroundColor: AppColors.primary.withOpacity(
+                                0.1,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+              ),
           ],
         ),
       ),
@@ -419,9 +530,21 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
 
   Widget _buildMobileList() {
     return ListView.builder(
-      itemCount: _filteredUsuarios.length,
+      controller: _scrollController,
+      itemCount: _usuarios.length + (_usuarios.length < _totalCount ? 1 : 0),
       itemBuilder: (context, index) {
-        final usuario = _filteredUsuarios[index];
+        if (index == _usuarios.length) {
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child:
+                  _isMoreLoading
+                      ? const CircularProgressIndicator()
+                      : const SizedBox.shrink(),
+            ),
+          );
+        }
+        final usuario = _usuarios[index];
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
@@ -445,49 +568,55 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                   children: [
                     _buildRoleChip(usuario.rol),
                     const SizedBox(width: 8),
+                    _buildCategoryChip(usuario.category),
+                    const SizedBox(width: 8),
                     _buildStatusChip(usuario.activo),
                   ],
                 ),
               ],
             ),
             trailing: PopupMenuButton(
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'view',
-                  child: ListTile(
-                    leading: Icon(Icons.visibility),
-                    title: Text('Ver Detalles'),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: ListTile(
-                    leading: Icon(Icons.edit),
-                    title: Text('Editar'),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'password',
-                  child: ListTile(
-                    leading: Icon(Icons.lock_reset),
-                    title: Text('Cambiar Contraseña'),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'toggle',
-                  child: ListTile(
-                    leading: Icon(Icons.toggle_on),
-                    title: Text('Activar/Desactivar'),
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: ListTile(
-                    leading: Icon(Icons.delete, color: Colors.red),
-                    title: Text('Eliminar', style: TextStyle(color: Colors.red)),
-                  ),
-                ),
-              ],
+              itemBuilder:
+                  (context) => [
+                    const PopupMenuItem(
+                      value: 'view',
+                      child: ListTile(
+                        leading: Icon(Icons.visibility),
+                        title: Text('Ver Detalles'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(
+                        leading: Icon(Icons.edit),
+                        title: Text('Editar'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'password',
+                      child: ListTile(
+                        leading: Icon(Icons.lock_reset),
+                        title: Text('Cambiar Contraseña'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'toggle',
+                      child: ListTile(
+                        leading: Icon(Icons.toggle_on),
+                        title: Text('Activar/Desactivar'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete, color: Colors.red),
+                        title: Text(
+                          'Eliminar',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ),
+                  ],
               onSelected: (value) => _handleAction(value.toString(), usuario),
             ),
           ),
@@ -532,6 +661,36 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     );
   }
 
+  Widget _buildCategoryChip(String category) {
+    Color color;
+    switch (category) {
+      case 'Inventtia':
+        color = AppColors.secondary;
+        break;
+      case 'Carnaval':
+        color = AppColors.warning;
+        break;
+      case 'Catalogo':
+        color = AppColors.info;
+        break;
+      default:
+        color = AppColors.textSecondary;
+    }
+
+    return Chip(
+      label: Text(
+        category.toUpperCase(),
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      backgroundColor: color.withOpacity(0.1),
+      side: BorderSide(color: color),
+    );
+  }
+
   Widget _buildLastAccessInfo(Usuario usuario) {
     if (usuario.ultimoAcceso == null) {
       return const Text('Nunca');
@@ -539,7 +698,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
 
     final now = DateTime.now();
     final difference = now.difference(usuario.ultimoAcceso!);
-    
+
     String text;
     Color color = AppColors.textSecondary;
 
@@ -560,10 +719,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
 
     return Text(
       text,
-      style: TextStyle(
-        color: color,
-        fontWeight: FontWeight.w600,
-      ),
+      style: TextStyle(color: color, fontWeight: FontWeight.w600),
     );
   }
 
@@ -671,131 +827,154 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   void _showCreateUsuarioDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nuevo Usuario'),
-        content: const Text('Funcionalidad de creación de usuario en desarrollo.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Nuevo Usuario'),
+            content: const Text(
+              'Funcionalidad de creación de usuario en desarrollo.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _showUsuarioDetails(Usuario usuario) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(usuario.nombreCompleto),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Email: ${usuario.email}'),
-            Text('Rol: ${_getRoleDisplayText(usuario.rol)}'),
-            Text('Tiendas Asignadas: ${usuario.tiendasAsignadas.length}'),
-            Text('Estado: ${usuario.activo ? "Activo" : "Inactivo"}'),
-            Text('Fecha de Creación: ${usuario.fechaCreacion.toString().split(' ')[0]}'),
-            if (usuario.ultimoAcceso != null)
-              Text('Último Acceso: ${usuario.ultimoAcceso.toString().split(' ')[0]}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(usuario.nombreCompleto),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Email: ${usuario.email}'),
+                Text('Rol: ${_getRoleDisplayText(usuario.rol)}'),
+                Text('Categoría: ${usuario.category}'),
+                Text('Tiendas Asignadas: ${usuario.tiendasAsignadas.length}'),
+                Text('Estado: ${usuario.activo ? "Activo" : "Inactivo"}'),
+                Text(
+                  'Fecha de Creación: ${usuario.fechaCreacion.toString().split(' ')[0]}',
+                ),
+                if (usuario.ultimoAcceso != null)
+                  Text(
+                    'Último Acceso: ${usuario.ultimoAcceso.toString().split(' ')[0]}',
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _showEditUsuarioDialog(Usuario usuario) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Editar ${usuario.nombreCompleto}'),
-        content: const Text('Funcionalidad de edición en desarrollo.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text('Editar ${usuario.nombreCompleto}'),
+            content: const Text('Funcionalidad de edición en desarrollo.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _showChangePasswordDialog(Usuario usuario) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Cambiar Contraseña - ${usuario.nombreCompleto}'),
-        content: const Text('Funcionalidad de cambio de contraseña en desarrollo.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text('Cambiar Contraseña - ${usuario.nombreCompleto}'),
+            content: const Text(
+              'Funcionalidad de cambio de contraseña en desarrollo.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _toggleUsuarioStatus(Usuario usuario) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('${usuario.activo ? "Desactivar" : "Activar"} Usuario'),
-        content: Text(
-          '¿Estás seguro de que deseas ${usuario.activo ? "desactivar" : "activar"} a "${usuario.nombreCompleto}"?'
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: Text('${usuario.activo ? "Desactivar" : "Activar"} Usuario'),
+            content: Text(
+              '¿Estás seguro de que deseas ${usuario.activo ? "desactivar" : "activar"} a "${usuario.nombreCompleto}"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  // TODO: Implementar cambio de estado
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Funcionalidad en desarrollo'),
+                    ),
+                  );
+                },
+                child: Text(usuario.activo ? 'Desactivar' : 'Activar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // TODO: Implementar cambio de estado
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Funcionalidad en desarrollo')),
-              );
-            },
-            child: Text(usuario.activo ? 'Desactivar' : 'Activar'),
-          ),
-        ],
-      ),
     );
   }
 
   void _showDeleteConfirmation(Usuario usuario) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar Eliminación'),
-        content: Text('¿Estás seguro de que deseas eliminar a "${usuario.nombreCompleto}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Confirmar Eliminación'),
+            content: Text(
+              '¿Estás seguro de que deseas eliminar a "${usuario.nombreCompleto}"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  // TODO: Implementar eliminación
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Funcionalidad en desarrollo'),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                ),
+                child: const Text('Eliminar'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // TODO: Implementar eliminación
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Funcionalidad en desarrollo')),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
     );
   }
 }

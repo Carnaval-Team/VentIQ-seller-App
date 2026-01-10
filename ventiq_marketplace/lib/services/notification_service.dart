@@ -75,8 +75,6 @@ class NotificationService with WidgetsBindingObserver {
   bool _realtimeActive = false;
   String? _realtimeUserId;
 
-  AppLifecycleState? _lastLifecycleState;
-
   Uint8List? _persistentBarLargeIconBytes;
 
   DateTime? _parseNullableDate(dynamic value) {
@@ -88,7 +86,6 @@ class NotificationService with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _lastLifecycleState = state;
     try {
       if (state == AppLifecycleState.resumed) {
         unawaited(_startOrSchedulePersistentBar());
@@ -449,6 +446,7 @@ class NotificationService with WidgetsBindingObserver {
         await prefs.setString('user_id', uuid);
 
         await BackgroundServiceManager.initializeService();
+        await BackgroundServiceManager.startService();
       }
     } catch (_) {}
   }
@@ -531,6 +529,14 @@ class NotificationService with WidgetsBindingObserver {
 
     try {
       await _cancelPersistentBar();
+    } catch (_) {}
+
+    try {
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
+        await BackgroundServiceManager.stopService();
+      }
     } catch (_) {}
   }
 
@@ -900,6 +906,36 @@ class NotificationService with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  Future<List<Map<String, dynamic>>> getStoreSubscriptions() async {
+    final uuid = await _sessionService.getUserId();
+    if (uuid == null) {
+      throw StateError('Usuario no autenticado');
+    }
+
+    final response = await _supabase
+        .from(_tableStoreSubscriptions)
+        .select('id, id_tienda, activo, app_dat_tienda(id, denominacion)')
+        .eq('id_usuario', uuid)
+        .order('id', ascending: false);
+
+    return List<Map<String, dynamic>>.from(response as List);
+  }
+
+  Future<List<Map<String, dynamic>>> getProductSubscriptions() async {
+    final uuid = await _sessionService.getUserId();
+    if (uuid == null) {
+      throw StateError('Usuario no autenticado');
+    }
+
+    final response = await _supabase
+        .from(_tableProductSubscriptions)
+        .select('id, id_producto, activo, app_dat_producto(id, denominacion)')
+        .eq('id_usuario', uuid)
+        .order('id', ascending: false);
+
+    return List<Map<String, dynamic>>.from(response as List);
+  }
+
   Future<bool> isStoreSubscriptionActive({required int storeId}) async {
     try {
       final uuid = await _sessionService.getUserId();
@@ -937,6 +973,24 @@ class NotificationService with WidgetsBindingObserver {
     return next;
   }
 
+  Future<bool> setStoreSubscriptionActive({
+    required int storeId,
+    required bool active,
+  }) async {
+    final uuid = await _sessionService.getUserId();
+    if (uuid == null) {
+      throw StateError('Usuario no autenticado');
+    }
+
+    await _supabase.from(_tableStoreSubscriptions).upsert({
+      'id_usuario': uuid,
+      'id_tienda': storeId,
+      'activo': active,
+    }, onConflict: 'id_usuario,id_tienda');
+
+    return active;
+  }
+
   Future<bool> isProductSubscriptionActive({required int productId}) async {
     try {
       final uuid = await _sessionService.getUserId();
@@ -972,6 +1026,24 @@ class NotificationService with WidgetsBindingObserver {
     }, onConflict: 'id_usuario,id_producto');
 
     return next;
+  }
+
+  Future<bool> setProductSubscriptionActive({
+    required int productId,
+    required bool active,
+  }) async {
+    final uuid = await _sessionService.getUserId();
+    if (uuid == null) {
+      throw StateError('Usuario no autenticado');
+    }
+
+    await _supabase.from(_tableProductSubscriptions).upsert({
+      'id_usuario': uuid,
+      'id_producto': productId,
+      'activo': active,
+    }, onConflict: 'id_usuario,id_producto');
+
+    return active;
   }
 
   Future<void> showTestNotification({

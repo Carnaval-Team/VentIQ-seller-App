@@ -22,19 +22,37 @@ class BackgroundServiceManager {
     await service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: onStart,
-        autoStart: true,
+        autoStart: false,
         isForegroundMode: true,
         notificationChannelId: 'ventiq_marketplace_notifications',
-        initialNotificationTitle: 'VentiQ Marketplace',
+        initialNotificationTitle: 'Invnettia Catalogo',
         initialNotificationContent: 'Servicio de notificaciones activo',
         foregroundServiceNotificationId: 888,
       ),
       iosConfiguration: IosConfiguration(
-        autoStart: true,
+        autoStart: false,
         onForeground: onStart,
         onBackground: onIosBackground,
       ),
     );
+  }
+
+  static Future<void> startService() async {
+    try {
+      final service = FlutterBackgroundService();
+      final isRunning = await service.isRunning();
+      if (isRunning) return;
+      await service.startService();
+    } catch (_) {}
+  }
+
+  static Future<void> stopService() async {
+    try {
+      final service = FlutterBackgroundService();
+      final isRunning = await service.isRunning();
+      if (!isRunning) return;
+      service.invoke('stop');
+    } catch (_) {}
   }
 
   @pragma('vm:entry-point')
@@ -48,15 +66,12 @@ class BackgroundServiceManager {
   static void onStart(ServiceInstance service) async {
     DartPluginRegistrant.ensureInitialized();
 
-    // Inicializar Supabase en el Isolate de segundo plano
-    await Supabase.initialize(
-      url: SupabaseConfig.supabaseUrl,
-      anonKey: SupabaseConfig.supabaseAnonKey,
-    );
+    try {
+      service.on('stop').listen((event) {
+        service.stopSelf();
+      });
+    } catch (_) {}
 
-    final supabase = Supabase.instance.client;
-
-    // Obtener el ID de usuario persistido (necesitamos esto porque el Isolate es independiente)
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('user_id');
 
@@ -64,8 +79,19 @@ class BackgroundServiceManager {
       print(
         'BackgroundService: No userId found, skipping realtime subscription',
       );
+      try {
+        service.stopSelf();
+      } catch (_) {}
       return;
     }
+
+    // Inicializar Supabase en el Isolate de segundo plano
+    await Supabase.initialize(
+      url: SupabaseConfig.supabaseUrl,
+      anonKey: SupabaseConfig.supabaseAnonKey,
+    );
+
+    final supabase = Supabase.instance.client;
 
     print('BackgroundService: Initializing for user $userId');
 
