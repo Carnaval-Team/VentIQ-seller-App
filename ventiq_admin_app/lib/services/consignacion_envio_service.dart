@@ -61,6 +61,7 @@ class ConsignacionEnvioService {
       // precio_costo_usd: precio_venta convertido a USD según tasa vigente
       // precio_costo_cup: precio_venta (precio configurado por consignador)
       // precio_venta_cup: se configura después por el consignatario en ConfirmarRecepcionConsignacionScreen
+      // ⭐ NUEVO: Incluye datos originales (presentación, variante, ubicación) para devoluciones
       final productosJson = productos.map((p) {
         final precioVentaCup = (p['precio_venta'] ?? 0.0) as double;
         final tasaCambio = (p['tasa_cambio'] ?? 440.0) as double;
@@ -74,6 +75,10 @@ class ConsignacionEnvioService {
           'precio_costo_cup': precioVentaCup, // Precio configurado por consignador
           'precio_venta': precioVentaCup, // Mismo valor para compatibilidad con RPC
           'tasa_cambio': tasaCambio,
+          // ⭐ DATOS ORIGINALES (el RPC los obtiene del inventario, pero los pasamos por si acaso)
+          'id_presentacion': p['id_presentacion'],
+          'id_variante': p['id_variante'],
+          'id_ubicacion': p['id_ubicacion'],
         };
       }).toList();
       

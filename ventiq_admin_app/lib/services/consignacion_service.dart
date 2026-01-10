@@ -1819,19 +1819,22 @@ class ConsignacionService {
         }
       }
 
-      // ✅ NUEVO: Actualizar estado del envío a ACEPTADO (4) si se proporcionó idEnvio
+      // ✅ NUEVO: Actualizar estado del envío a CONFIGURADO (2) si se proporcionó idEnvio
+      // Los triggers se encargarán de cambiar a EN TRÁNSITO (3) y ACEPTADO (4) automáticamente
       if (idEnvio != null) {
         try {
           await _supabase
               .from('app_dat_consignacion_envio')
               .update({
-                'estado_envio': 4, // ACEPTADO
-                'fecha_envio': DateTime.now().toIso8601String(),
+                'estado_envio': 2, // CONFIGURADO (precios configurados por consignatario)
+                'fecha_configuracion': DateTime.now().toIso8601String(),
                 'updated_at': DateTime.now().toIso8601String(),
               })
               .eq('id', idEnvio);
           
-          debugPrint('✅ Estado del envío actualizado a ACEPTADO (4)');
+          debugPrint('✅ Estado del envío actualizado a CONFIGURADO (2)');
+          debugPrint('   ℹ️ El estado cambiará automáticamente a EN TRÁNSITO (3) al completar extracción');
+          debugPrint('   ℹ️ El estado cambiará automáticamente a ACEPTADO (4) al completar recepción');
         } catch (e) {
           debugPrint('⚠️ Error actualizando estado del envío (no crítico): $e');
         }
