@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/liquidacion_service.dart';
+import '../services/consignacion_movimientos_service.dart';
 import '../widgets/crear_liquidacion_dialog.dart';
 
 /// Pantalla para listar y gestionar liquidaciones de un contrato
@@ -79,47 +80,159 @@ class _LiquidacionesListScreenState extends State<LiquidacionesListScreen> {
   }
 
   Future<void> _confirmarLiquidacion(int liquidacionId) async {
-    final observaciones = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: const Text('Confirmar Liquidación'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('¿Confirmar esta liquidación?'),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  labelText: 'Observaciones (opcional)',
-                  border: OutlineInputBorder(),
+    try {
+      // Obtener datos de la liquidación
+      final liquidacion = _liquidaciones.firstWhere(
+        (l) => l['id'] == liquidacionId,
+        orElse: () => {},
+      );
+
+      if (liquidacion.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Liquidación no encontrada'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Obtener total de ventas para verificar pago por adelantado
+      final estadisticas = await ConsignacionMovimientosService.getEstadisticasVentas(
+        idContrato: widget.contratoId,
+        fechaDesde: null,
+        fechaHasta: null,
+      );
+
+      final totalMontoVentas = (estadisticas['totalMontoVentas'] as num?)?.toDouble() ?? 0.0;
+      final montoLiquidacion = (liquidacion['monto_usd'] as num?)?.toDouble() ?? 0.0;
+      final totalLiquidadoActual = _totales['total_liquidaciones'] ?? 0.0;
+      final totalLiquidadoNuevo = totalLiquidadoActual + montoLiquidacion;
+
+      // Verificar si es pago por adelantado
+      bool esPagoPorAdelantado = totalLiquidadoNuevo > totalMontoVentas;
+
+      final observaciones = await showDialog<String>(
+        context: context,
+        builder: (context) {
+          final controller = TextEditingController();
+          return AlertDialog(
+            title: const Text('Confirmar Liquidación'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (esPagoPorAdelantado)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '⚠️ Atención - Pago por Adelantado',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange.shade900,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'El monto total liquidado superará el monto de ventas realizadas.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildInfoRowDialog('Total vendido:', '\$${totalMontoVentas.toStringAsFixed(2)} USD'),
+                          const SizedBox(height: 8),
+                          _buildInfoRowDialog('Total liquidado actualmente:', '\$${totalLiquidadoActual.toStringAsFixed(2)} USD'),
+                          const SizedBox(height: 8),
+                          _buildInfoRowDialog('Monto de esta liquidación:', '\$${montoLiquidacion.toStringAsFixed(2)} USD'),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info, color: Colors.red.shade700, size: 20),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Total a liquidar:',
+                                        style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                                      ),
+                                      Text(
+                                        '\$${totalLiquidadoNuevo.toStringAsFixed(2)} USD',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red.shade700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Exceso: \$${(totalLiquidadoNuevo - totalMontoVentas).toStringAsFixed(2)} USD',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    )
+                  else
+                    const Text('¿Confirmar esta liquidación?'),
+                  if (esPagoPorAdelantado) const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      labelText: 'Observaciones (opcional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, controller.text),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: esPagoPorAdelantado ? Colors.orange : Colors.green,
+                  foregroundColor: Colors.white,
                 ),
-                maxLines: 3,
+                child: Text(esPagoPorAdelantado ? 'Confirmar de Todas Formas' : 'Confirmar'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, controller.text),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Confirmar'),
-            ),
-          ],
-        );
-      },
-    );
+          );
+        },
+      );
 
-    if (observaciones != null) {
-      try {
+      if (observaciones != null) {
         await LiquidacionService.confirmarLiquidacion(
           liquidacionId: liquidacionId,
           observaciones: observaciones.isEmpty ? null : observaciones,
@@ -133,17 +246,33 @@ class _LiquidacionesListScreenState extends State<LiquidacionesListScreen> {
           );
           _loadData();
         }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Error: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
+  }
+
+  Widget _buildInfoRowDialog(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+        ),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
   }
 
   Future<void> _rechazarLiquidacion(int liquidacionId) async {
