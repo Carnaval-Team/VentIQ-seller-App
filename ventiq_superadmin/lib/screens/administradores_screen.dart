@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_colors.dart';
 import '../widgets/app_drawer.dart';
 import '../utils/platform_utils.dart';
+import '../services/gerente_service.dart';
 
 class AdministradoresScreen extends StatefulWidget {
   const AdministradoresScreen({super.key});
@@ -12,14 +12,14 @@ class AdministradoresScreen extends StatefulWidget {
 }
 
 class _AdministradoresScreenState extends State<AdministradoresScreen> {
-  final _supabase = Supabase.instance.client;
+  final _gerenteService = GerenteService();
   List<Map<String, dynamic>> _administradores = [];
   List<Map<String, dynamic>> _filteredAdministradores = [];
   List<Map<String, dynamic>> _tiendas = [];
   bool _isLoading = true;
   String _searchQuery = '';
-  String _selectedRole = 'todos';
   int? _selectedTienda;
+  String _filterByEmail = '';
 
   @override
   void initState() {
@@ -31,99 +31,46 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
     setState(() => _isLoading = true);
     
     try {
-      // Cargar tiendas
-      final tiendasResponse = await _supabase
-          .from('app_dat_tienda')
-          .select('id, denominacion')
-          .order('denominacion');
+      debugPrint('═══════════════════════════════════════════');
+      debugPrint('📥 CARGANDO DATOS DE GERENTES');
       
-      // Cargar gerentes
-      final gerentesResponse = await _supabase
-          .from('app_dat_gerente')
-          .select('''
-            id,
-            uuid,
-            id_tienda,
-            created_at,
-            app_dat_tienda!inner(
-              denominacion,
-              direccion,
-              ubicacion
-            ),
-            app_dat_trabajadores!inner(
-              id,
-              nombres,
-              apellidos
-            )
-          ''');
+      // Cargar tiendas y gerentes (gerentes ya incluye datos de trabajador y tienda)
+      final tiendas = await _gerenteService.getAllTiendas();
+      final gerentes = await _gerenteService.getAllGerentes();
       
-      // Cargar supervisores
-      final supervisoresResponse = await _supabase
-          .from('app_dat_supervisor')
-          .select('''
-            id,
-            uuid,
-            id_tienda,
-            created_at,
-            app_dat_tienda!inner(
-              denominacion,
-              direccion,
-              ubicacion
-            ),
-            app_dat_trabajadores!inner(
-              id,
-              nombres,
-              apellidos
-            )
-          ''');
+      debugPrint('✅ Datos cargados:');
+      debugPrint('  - Tiendas: ${tiendas.length}');
+      debugPrint('  - Gerentes: ${gerentes.length}');
       
-      // Combinar y formatear datos
-      final administradores = <Map<String, dynamic>>[];
-      
-      for (var gerente in gerentesResponse) {
-        final trabajador = gerente['app_dat_trabajadores'];
-        final tienda = gerente['app_dat_tienda'];
+      // Mapear datos del RPC directamente
+      final administradores = gerentes.map((gerente) {
+        final nombreCompleto = '${gerente['nombres'] ?? 'Sin asignar'} ${gerente['apellidos'] ?? ''}'.trim();
         
-        administradores.add({
-          'id': gerente['id'],
+        return {
+          'id': gerente['id_gerente'],
           'uuid': gerente['uuid'],
-          'nombres': trabajador?['nombres'] ?? 'Sin nombre',
-          'apellidos': trabajador?['apellidos'] ?? '',
+          'nombre_trabajador': nombreCompleto,
           'rol': 'Gerente',
           'id_tienda': gerente['id_tienda'],
-          'tienda': tienda?['denominacion'] ?? 'Sin tienda',
-          'ubicacion': tienda?['ubicacion'] ?? 'Sin ubicación',
+          'tienda': gerente['tienda_denominacion'] ?? 'Sin tienda',
           'created_at': gerente['created_at'],
-        });
-      }
+          'id_trabajador': gerente['id_trabajador'],
+        };
+      }).toList();
       
-      for (var supervisor in supervisoresResponse) {
-        final trabajador = supervisor['app_dat_trabajadores'];
-        final tienda = supervisor['app_dat_tienda'];
-        
-        administradores.add({
-          'id': supervisor['id'],
-          'uuid': supervisor['uuid'],
-          'nombres': trabajador?['nombres'] ?? 'Sin nombre',
-          'apellidos': trabajador?['apellidos'] ?? '',
-          'rol': 'Supervisor',
-          'id_tienda': supervisor['id_tienda'],
-          'tienda': tienda?['denominacion'] ?? 'Sin tienda',
-          'ubicacion': tienda?['ubicacion'] ?? 'Sin ubicación',
-          'created_at': supervisor['created_at'],
-        });
-      }
+      debugPrint('✅ Administradores procesados: ${administradores.length}');
+      debugPrint('═══════════════════════════════════════════');
       
       if (mounted) {
         setState(() {
-          _tiendas = List<Map<String, dynamic>>.from(tiendasResponse);
+          _tiendas = tiendas;
           _administradores = administradores;
           _filteredAdministradores = administradores;
           _isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint('Error cargando administradores: $e');
+      debugPrint('❌ Error cargando administradores: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -142,17 +89,16 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
   void _filterAdministradores() {
     setState(() {
       _filteredAdministradores = _administradores.where((admin) {
-        final nombreCompleto = '${admin['nombres']} ${admin['apellidos']}'.toLowerCase();
-        final matchesSearch = nombreCompleto.contains(_searchQuery.toLowerCase()) ||
-                            admin['tienda'].toString().toLowerCase().contains(_searchQuery.toLowerCase());
+        final email = (admin['email'] ?? '').toString().toLowerCase();
+        final tienda = (admin['tienda'] ?? '').toString().toLowerCase();
+        final searchLower = _searchQuery.toLowerCase();
+        final emailFilterLower = _filterByEmail.toLowerCase();
         
-        final matchesRole = _selectedRole == 'todos' ||
-                          admin['rol'].toString().toLowerCase() == _selectedRole.toLowerCase();
+        final matchesSearch = email.contains(searchLower) || tienda.contains(searchLower);
+        final matchesEmailFilter = _filterByEmail.isEmpty || email.contains(emailFilterLower);
+        final matchesTienda = _selectedTienda == null || admin['id_tienda'] == _selectedTienda;
         
-        final matchesTienda = _selectedTienda == null ||
-                            admin['id_tienda'] == _selectedTienda;
-        
-        return matchesSearch && matchesRole && matchesTienda;
+        return matchesSearch && matchesEmailFilter && matchesTienda;
       }).toList();
     });
   }
@@ -214,10 +160,10 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
             Row(
               children: [
                 Expanded(
-                  flex: 3,
+                  flex: 2,
                   child: TextField(
                     decoration: const InputDecoration(
-                      labelText: 'Buscar administrador',
+                      labelText: 'Buscar por tienda o email',
                       prefixIcon: Icon(Icons.search),
                       border: OutlineInputBorder(),
                     ),
@@ -232,20 +178,15 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
                 const SizedBox(width: 16),
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    value: _selectedRole,
+                  child: TextField(
                     decoration: const InputDecoration(
-                      labelText: 'Rol',
+                      labelText: 'Filtrar por correo',
+                      prefixIcon: Icon(Icons.email),
                       border: OutlineInputBorder(),
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'todos', child: Text('Todos')),
-                      DropdownMenuItem(value: 'gerente', child: Text('Gerentes')),
-                      DropdownMenuItem(value: 'supervisor', child: Text('Supervisores')),
-                    ],
                     onChanged: (value) {
                       setState(() {
-                        _selectedRole = value!;
+                        _filterByEmail = value;
                       });
                       _filterAdministradores();
                     },
@@ -253,7 +194,7 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  flex: 2,
+                  flex: 1,
                   child: DropdownButtonFormField<int?>(
                     value: _selectedTienda,
                     decoration: const InputDecoration(
@@ -284,8 +225,7 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
   }
 
   Widget _buildStats() {
-    final gerentes = _administradores.where((a) => a['rol'] == 'Gerente').length;
-    final supervisores = _administradores.where((a) => a['rol'] == 'Supervisor').length;
+    final gerentes = _administradores.length;
     final tiendasConAdmin = _administradores.map((a) => a['id_tienda']).toSet().length;
     
     return Row(
@@ -308,14 +248,6 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
           ),
         ),
         const SizedBox(width: 8),
-        Expanded(
-          child: _buildStatCard(
-            'Supervisores',
-            supervisores.toString(),
-            Icons.supervisor_account,
-            AppColors.info,
-          ),
-        ),
         const SizedBox(width: 8),
         Expanded(
           child: _buildStatCard(
@@ -363,7 +295,7 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Lista de Administradores',
+              'Lista de Gerentes (${_filteredAdministradores.length})',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
@@ -374,26 +306,19 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
                   child: DataTable(
                     columns: const [
                       DataColumn(label: Text('Nombre')),
-                      DataColumn(label: Text('Rol')),
                       DataColumn(label: Text('Tienda')),
-                      DataColumn(label: Text('Ubicación')),
                       DataColumn(label: Text('Fecha Registro')),
                       DataColumn(label: Text('Acciones')),
                     ],
                     rows: _filteredAdministradores.map((admin) {
                       return DataRow(
+                        onSelectChanged: (_) => _showAdministradorDetails(admin),
                         cells: [
                           DataCell(
-                            Text('${admin['nombres']} ${admin['apellidos']}'),
-                          ),
-                          DataCell(
-                            _buildRoleChip(admin['rol']),
+                            Text(admin['nombre_trabajador'] ?? 'Sin asignar'),
                           ),
                           DataCell(
                             Text(admin['tienda']),
-                          ),
-                          DataCell(
-                            Text(admin['ubicacion']),
                           ),
                           DataCell(
                             Text(_formatDate(admin['created_at'])),
@@ -402,11 +327,6 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconButton(
-                                  icon: const Icon(Icons.visibility),
-                                  onPressed: () => _showAdministradorDetails(admin),
-                                  tooltip: 'Ver Detalles',
-                                ),
                                 IconButton(
                                   icon: const Icon(Icons.edit),
                                   onPressed: () => _showEditAdministradorDialog(admin),
@@ -441,15 +361,16 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
+            onTap: () => _showAdministradorDetails(admin),
             leading: CircleAvatar(
-              backgroundColor: _getRoleColor(admin['rol']).withOpacity(0.1),
-              child: Icon(
-                _getRoleIcon(admin['rol']),
-                color: _getRoleColor(admin['rol']),
+              backgroundColor: AppColors.primary.withOpacity(0.1),
+              child: const Icon(
+                Icons.admin_panel_settings,
+                color: AppColors.primary,
               ),
             ),
             title: Text(
-              '${admin['nombres']} ${admin['apellidos']}',
+              admin['nombre_trabajador'] ?? 'Sin asignar',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             subtitle: Column(
@@ -457,18 +378,14 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
               children: [
                 Text(admin['tienda']),
                 const SizedBox(height: 4),
-                _buildRoleChip(admin['rol']),
+                Text(
+                  'Registrado: ${_formatDate(admin['created_at'])}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ],
             ),
             trailing: PopupMenuButton(
               itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'view',
-                  child: ListTile(
-                    leading: Icon(Icons.visibility),
-                    title: Text('Ver Detalles'),
-                  ),
-                ),
                 const PopupMenuItem(
                   value: 'edit',
                   child: ListTile(
@@ -490,44 +407,6 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
         );
       },
     );
-  }
-
-  Widget _buildRoleChip(String role) {
-    final color = _getRoleColor(role);
-    return Chip(
-      label: Text(
-        role.toUpperCase(),
-        style: TextStyle(
-          color: color,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      backgroundColor: color.withOpacity(0.1),
-      side: BorderSide(color: color),
-    );
-  }
-
-  Color _getRoleColor(String role) {
-    switch (role.toLowerCase()) {
-      case 'gerente':
-        return AppColors.success;
-      case 'supervisor':
-        return AppColors.info;
-      default:
-        return AppColors.textSecondary;
-    }
-  }
-
-  IconData _getRoleIcon(String role) {
-    switch (role.toLowerCase()) {
-      case 'gerente':
-        return Icons.admin_panel_settings;
-      case 'supervisor':
-        return Icons.supervisor_account;
-      default:
-        return Icons.person;
-    }
   }
 
   String _formatDate(String dateString) {
@@ -554,34 +433,222 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
   }
 
   void _showCreateAdministradorDialog() {
+    String emailUsuario = '';
+    int? selectedTiendaId;
+    String tiendaSearchQuery = '';
+    String nombresTrabajador = '';
+    String apellidosTrabajador = '';
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nuevo Administrador'),
-        content: const Text('Funcionalidad de creación de administrador en desarrollo.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Crear Nuevo Gerente'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 500,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Sección 1: Ingresa datos para crear gerente
+                  Text('Crear Nuevo Gerente', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Email del Usuario',
+                      hintText: 'Ingresa el email del usuario de Supabase Auth',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.email),
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() => emailUsuario = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Nombres',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() => nombresTrabajador = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Apellidos',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() => apellidosTrabajador = value);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Seleccionar Tienda', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Buscar Tienda',
+                      hintText: 'Escribe para filtrar tiendas',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() => tiendaSearchQuery = value.toLowerCase());
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 150),
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: _tiendas
+                            .where((tienda) =>
+                                tienda['denominacion']
+                                    .toString()
+                                    .toLowerCase()
+                                    .contains(tiendaSearchQuery))
+                            .map((tienda) {
+                          final isSelected = selectedTiendaId == tienda['id'];
+                          return ListTile(
+                            selected: isSelected,
+                            title: Text(tienda['denominacion'] ?? 'Sin nombre'),
+                            tileColor: isSelected ? AppColors.primary.withOpacity(0.1) : null,
+                            onTap: () {
+                              setDialogState(() {
+                                selectedTiendaId = tienda['id'] as int;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                  if (selectedTiendaId != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withOpacity(0.1),
+                          border: Border.all(color: AppColors.success),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Tienda seleccionada: ${_tiendas.firstWhere((t) => t['id'] == selectedTiendaId)['denominacion']}',
+                          style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: (emailUsuario.isNotEmpty && nombresTrabajador.isNotEmpty && apellidosTrabajador.isNotEmpty && selectedTiendaId != null)
+                          ? () {
+                              debugPrint('═══════════════════════════════════════════');
+                              debugPrint('📝 CREAR GERENTE DESDE EMAIL');
+                              debugPrint('Email: $emailUsuario');
+                              debugPrint('Nombres: $nombresTrabajador');
+                              debugPrint('Apellidos: $apellidosTrabajador');
+                              debugPrint('ID Tienda: $selectedTiendaId');
+                              debugPrint('═══════════════════════════════════════════');
+                              _createGerenteFromEmail(
+                                emailUsuario,
+                                nombresTrabajador,
+                                apellidosTrabajador,
+                                selectedTiendaId!,
+                              );
+                            }
+                          : null,
+                      child: const Text('Crear Gerente'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _createGerenteFromEmail(
+    String email,
+    String nombres,
+    String apellidos,
+    int idTienda,
+  ) async {
+    try {
+      debugPrint('═══════════════════════════════════════════');
+      debugPrint('➕ CREANDO GERENTE DESDE EMAIL');
+      debugPrint('Email: $email');
+      debugPrint('Nombres: $nombres');
+      debugPrint('Apellidos: $apellidos');
+      debugPrint('ID Tienda: $idTienda');
+      debugPrint('═══════════════════════════════════════════');
+      
+      final resultado = await _gerenteService.createGerenteFromEmail(
+        email: email,
+        nombres: nombres,
+        apellidos: apellidos,
+        idTienda: idTienda,
+      );
+
+      debugPrint('✅ Gerente creado exitosamente');
+      debugPrint('Gerente ID: ${resultado['gerente_id']}');
+      debugPrint('Trabajador ID: ${resultado['trabajador_id']}');
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gerente creado exitosamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _showAdministradorDetails(Map<String, dynamic> admin) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('${admin['nombres']} ${admin['apellidos']}'),
+        title: Text('Detalles del Gerente'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Rol: ${admin['rol']}'),
+            Text('Email: ${admin['email']}'),
+            const SizedBox(height: 8),
             Text('Tienda: ${admin['tienda']}'),
-            Text('Ubicación: ${admin['ubicacion']}'),
+            const SizedBox(height: 8),
             Text('UUID: ${admin['uuid']}'),
+            const SizedBox(height: 8),
             Text('Fecha de Registro: ${_formatDate(admin['created_at'])}'),
           ],
         ),
@@ -596,19 +663,80 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
   }
 
   void _showEditAdministradorDialog(Map<String, dynamic> admin) {
+    int? selectedTiendaId = admin['id_tienda'];
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Editar ${admin['nombres']} ${admin['apellidos']}'),
-        content: const Text('Funcionalidad de edición en desarrollo.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Editar Gerente - ${admin['email']}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Tienda Actual: ${admin['tienda']}'),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  value: selectedTiendaId,
+                  decoration: const InputDecoration(
+                    labelText: 'Nueva Tienda',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _tiendas.map<DropdownMenuItem<int>>((tienda) => DropdownMenuItem(
+                    value: tienda['id'] as int,
+                    child: Text(tienda['denominacion'] ?? 'Sin nombre'),
+                  )).toList(),
+                  onChanged: (value) {
+                    setDialogState(() => selectedTiendaId = value);
+                  },
+                ),
+              ],
+            ),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: selectedTiendaId != null
+                  ? () => _updateGerente(admin['id'], selectedTiendaId!)
+                  : null,
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _updateGerente(int id, int idTienda) async {
+    try {
+      await _gerenteService.updateGerente(
+        id: id,
+        idTienda: idTienda,
+      );
+      
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gerente actualizado exitosamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar gerente: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _showDeleteConfirmation(Map<String, dynamic> admin) {
@@ -616,25 +744,46 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmar Eliminación'),
-        content: Text('¿Estás seguro de que deseas eliminar a "${admin['nombres']} ${admin['apellidos']}"?'),
+        content: Text('¿Estás seguro de que deseas eliminar al gerente "${admin['email']}" de la tienda "${admin['tienda']}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // TODO: Implementar eliminación
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Funcionalidad en desarrollo')),
-              );
-            },
+            onPressed: () => _deleteGerente(admin['id']),
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('Eliminar'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _deleteGerente(int id) async {
+    try {
+      await _gerenteService.deleteGerente(id);
+      
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gerente eliminado exitosamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al eliminar gerente: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 }
