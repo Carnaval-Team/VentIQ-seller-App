@@ -515,6 +515,7 @@ class CarnavalService {
     required int idUbicacion,
   }) async {
     try {
+      print('comenzando');
       // 1. Obtener datos del producto local
       final productData =
           await _supabase
@@ -534,17 +535,18 @@ class CarnavalService {
               .limit(1)
               .maybeSingle();
 
-      final basePrice = priceData?['precio_venta_cup'] ?? 0;
+      final double basePrice =
+          ((priceData?['precio_venta_cup'] as num?) ?? 0).toDouble();
 
       // Calcular precios con markup:
       // precio_descuento = basePrice + 5.35% (redondeado a entero)
       // price (oficial) = basePrice + 11%
-      double precioDescuento = (basePrice * 1.0535).round();
+      double precioDescuento = (basePrice * 1.0535).roundToDouble();
 
-      if (carnavalStoreId == 1) {
+      if (carnavalStoreId == 1 || carnavalStoreId == 177) {
         precioDescuento = basePrice;
       }
-      final precioOficial = basePrice * 1.11;
+      final  precioOficial = (basePrice * 1.11).roundToDouble();
 
       // 3. Obtener stock actual de la ubicación específica
       final stockData =
@@ -607,8 +609,9 @@ class CarnavalService {
       );
 
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('❌ Error al sincronizar producto: $e');
+      print(stackTrace);
       return false;
     }
   }

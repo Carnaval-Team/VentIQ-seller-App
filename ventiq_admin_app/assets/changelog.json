@@ -1,12 +1,12 @@
 {
-  "current_version": "1.7.1",
-  "build": 171,
+  "current_version": "1.7.2",
+  "build": 172,
   "app_name": "ventiq_admin",
   "changelogs": [
 
     {
-      "version": "1.7.1",
-      "date": "2026-01-06",
+      "version": "1.7.2",
+      "date": "2026-01-11",
       "title": "🔒 Solución de seguridad",
       "changes": [
         {
