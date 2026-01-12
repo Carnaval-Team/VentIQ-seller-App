@@ -638,16 +638,14 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Detalles del Gerente'),
+        title: const Text('Detalles del Gerente'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Email: ${admin['email']}'),
+            Text('Nombre: ${admin['nombre_trabajador'] ?? 'Sin asignar'}'),
             const SizedBox(height: 8),
             Text('Tienda: ${admin['tienda']}'),
-            const SizedBox(height: 8),
-            Text('UUID: ${admin['uuid']}'),
             const SizedBox(height: 8),
             Text('Fecha de Registro: ${_formatDate(admin['created_at'])}'),
           ],
@@ -664,33 +662,84 @@ class _AdministradoresScreenState extends State<AdministradoresScreen> {
 
   void _showEditAdministradorDialog(Map<String, dynamic> admin) {
     int? selectedTiendaId = admin['id_tienda'];
+    String tiendaSearchQuery = '';
     
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text('Editar Gerente - ${admin['email']}'),
+          title: Text('Editar Gerente - ${admin['nombre_trabajador']}'),
           content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Tienda Actual: ${admin['tienda']}'),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<int>(
-                  value: selectedTiendaId,
-                  decoration: const InputDecoration(
-                    labelText: 'Nueva Tienda',
-                    border: OutlineInputBorder(),
+            child: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Tienda Actual: ${admin['tienda']}'),
+                  const SizedBox(height: 16),
+                  Text('Seleccionar Nueva Tienda', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Buscar Tienda',
+                      hintText: 'Escribe para filtrar',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() => tiendaSearchQuery = value.toLowerCase());
+                    },
                   ),
-                  items: _tiendas.map<DropdownMenuItem<int>>((tienda) => DropdownMenuItem(
-                    value: tienda['id'] as int,
-                    child: Text(tienda['denominacion'] ?? 'Sin nombre'),
-                  )).toList(),
-                  onChanged: (value) {
-                    setDialogState(() => selectedTiendaId = value);
-                  },
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: _tiendas
+                            .where((tienda) =>
+                                tienda['denominacion']
+                                    .toString()
+                                    .toLowerCase()
+                                    .contains(tiendaSearchQuery))
+                            .map((tienda) {
+                          final isSelected = selectedTiendaId == tienda['id'];
+                          return ListTile(
+                            selected: isSelected,
+                            title: Text(tienda['denominacion'] ?? 'Sin nombre'),
+                            tileColor: isSelected ? AppColors.primary.withOpacity(0.1) : null,
+                            onTap: () {
+                              setDialogState(() {
+                                selectedTiendaId = tienda['id'] as int;
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                  if (selectedTiendaId != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withOpacity(0.1),
+                          border: Border.all(color: AppColors.success),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Tienda seleccionada: ${_tiendas.firstWhere((t) => t['id'] == selectedTiendaId)['denominacion']}',
+                          style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           actions: [
