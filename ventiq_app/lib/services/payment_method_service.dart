@@ -5,16 +5,27 @@ class PaymentMethodService {
   static final SupabaseClient _supabase = Supabase.instance.client;
 
   /// Obtiene todos los medios de pago activos
-  static Future<List<PaymentMethod>> getActivePaymentMethods() async {
+  static Future<List<PaymentMethod>> getActivePaymentMethods({
+    bool only_efectivo = false,
+  }) async {
     try {
       print('🔍 Fetching active payment methods...');
-
-      final response = await _supabase
-          .from('app_nom_medio_pago')
-          .select('*')
-          .eq('es_activo', true)
-          .order('denominacion', ascending: true);
-
+      List<Map<String, dynamic>> response;
+      if (!only_efectivo) {
+        response = await _supabase
+            .from('app_nom_medio_pago')
+            .select('*')
+            .eq('es_activo', true)
+            .order('denominacion', ascending: true);
+      } else {
+        print('solo efectivo');
+        response = await _supabase
+            .from('app_nom_medio_pago')
+            .select('*')
+            .eq('es_activo', true)
+            .eq('id',1)
+            .order('denominacion', ascending: true);
+      }
       print('📊 Payment methods response: $response');
 
       if (response.isNotEmpty) {

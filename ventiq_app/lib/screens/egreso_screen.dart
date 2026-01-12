@@ -120,7 +120,7 @@ class _EgresoScreenState extends State<EgresoScreen> {
 
       print('🌐 Modo online - Cargando métodos de pago desde servidor...');
       final paymentMethods =
-          await PaymentMethodService.getActivePaymentMethods();
+          await PaymentMethodService.getActivePaymentMethods(only_efectivo: true);
 
       setState(() {
         _paymentMethods = paymentMethods;
