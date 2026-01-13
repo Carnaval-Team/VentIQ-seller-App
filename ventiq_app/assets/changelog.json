@@ -1,8 +1,35 @@
 {
-  "current_version": "1.8.5",
-  "build": 715,
+  "current_version": "1.8.6",
+  "build": 716,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.8.6",
+      "date": "2026-01-12",
+      "title": "🛠️ Estabilidad Offline y Egresos Claros",
+      "changes": [
+        {
+          "type": "fix",
+          "title": "Categorías offline sin cierres inesperados",
+          "description": "Si una categoría no tiene imagen, ahora el catálogo se muestra sin errores en modo offline."
+        },
+        {
+          "type": "improvement",
+          "title": "Catálogo más consistente al recuperar la conexión",
+          "description": "Cuando la app cambia automáticamente entre online y offline, las categorías se recargan solas para que siempre veas tu catálogo."
+        },
+        {
+          "type": "improvement",
+          "title": "Guardado offline más seguro",
+          "description": "Mejoramos cómo se guarda el cache interno para evitar pérdidas de datos durante ventas sin conexión."
+        },
+        {
+          "type": "improvement",
+          "title": "Egresos siempre en efectivo",
+          "description": "Para evitar confusiones en caja, los egresos (salidas de dinero) ahora se registran siempre como efectivo."
+        }
+      ]
+    },
     {
       "version": "1.8.5",
       "date": "2026-01-06",

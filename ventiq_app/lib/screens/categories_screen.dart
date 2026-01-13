@@ -100,29 +100,37 @@ class _CategoriesScreenState extends State<CategoriesScreen>
 
   /// Configurar listener para eventos del SmartOfflineManager
   void _setupSmartOfflineListener() {
-    _smartOfflineSubscription = _smartOfflineManager.eventStream.listen((event) {
-      print('📡 Evento SmartOffline recibido: ${event.type} - ${event.message}');
-      
+    _smartOfflineSubscription = _smartOfflineManager.eventStream.listen((
+      event,
+    ) {
+      print(
+        '📡 Evento SmartOffline recibido: ${event.type} - ${event.message}',
+      );
+
       // Manejar eventos específicos
       switch (event.type) {
         case SmartOfflineEventType.offlineModeAutoDeactivated:
           // Modo offline desactivado automáticamente
           print('✅ Modo offline desactivado automáticamente - Actualizando UI');
           _loadOfflineModeSettings();
+          _loadCategories(forceRefresh: true);
           break;
-          
+
         case SmartOfflineEventType.offlineModeAutoActivated:
           // Modo offline activado automáticamente
           print('🔌 Modo offline activado automáticamente - Actualizando UI');
           _loadOfflineModeSettings();
+          _loadCategories(forceRefresh: true);
           break;
-          
+
         case SmartOfflineEventType.connectionRestoredWhileOffline:
           // Conexión restaurada mientras está en modo offline
-          print('📶 Conexión restaurada - Verificando si desactivar modo offline');
+          print(
+            '📶 Conexión restaurada - Verificando si desactivar modo offline',
+          );
           _handleConnectionRestored();
           break;
-          
+
         default:
           // Otros eventos no requieren acción en el UI
           break;
@@ -134,19 +142,19 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   Future<void> _handleConnectionRestored() async {
     // Verificar si hay conexión real
     final isConnected = await _checkInternetConnection();
-    
+
     if (isConnected) {
       print('✅ Conexión confirmada - Desactivando modo offline');
-      
+
       // Desactivar modo offline
       await _preferencesService.setOfflineMode(false);
-      
+
       // Notificar al SmartOfflineManager que fue desactivado manualmente
       await _smartOfflineManager.onOfflineModeManuallyDisabled();
-      
+
       // Actualizar UI
       await _loadOfflineModeSettings();
-      
+
       // Mostrar mensaje al usuario
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -157,7 +165,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
           ),
         );
       }
-      
+
       // Recargar categorías desde el servidor
       _loadCategories(forceRefresh: true);
     } else {
@@ -171,13 +179,13 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       // Usar ConnectivityService para verificar conexión real
       final connectivityService = ConnectivityService();
       final hasConnection = await connectivityService.checkConnectivity();
-      
+
       if (hasConnection) {
         print('🌐 Verificación de internet: ✅ Conectado');
       } else {
         print('🌐 Verificación de internet: ❌ Sin conexión');
       }
-      
+
       return hasConnection;
     } catch (e) {
       print('❌ Error verificando conexión: $e');
@@ -197,10 +205,10 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       print('📱 App reanudada - Verificando estado de conexión...');
-      
+
       // Verificar conexión cuando la app se reanuda
       _checkConnectionAfterResume();
-      
+
       // Refresh the screen when returning from other screens
       _loadDataUsageSettings();
       _loadFluidModeSettings();
@@ -216,16 +224,18 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     try {
       // Esperar un poco para que el sistema restaure la conexión
       await Future.delayed(const Duration(seconds: 2));
-      
+
       // Verificar si hay conexión real
       final hasConnection = await _checkInternetConnection();
-      
+
       // Verificar si el modo offline está activado
       final isOfflineMode = await _preferencesService.isOfflineModeEnabled();
-      
+
       if (hasConnection && isOfflineMode) {
-        print('🔄 Conexión detectada después de reanudar - Verificando si desactivar modo offline');
-        
+        print(
+          '🔄 Conexión detectada después de reanudar - Verificando si desactivar modo offline',
+        );
+
         // Si hay conexión y el modo offline está activo, manejarlo
         _handleConnectionRestored();
       } else if (hasConnection) {
@@ -243,9 +253,11 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       // Obtener el changelog más reciente para obtener la versión actual
       final changelog = await _changelogService.getLatestChangelog();
       if (changelog == null) return;
-      
+
       // Verificar si es primera vez o hay nueva versión
-      final shouldShowChangelog = await _preferencesService.isFirstTimeOpening(changelog.version);
+      final shouldShowChangelog = await _preferencesService.isFirstTimeOpening(
+        changelog.version,
+      );
 
       if (shouldShowChangelog) {
         // Wait a bit for the screen to load
@@ -260,10 +272,14 @@ class _CategoriesScreenState extends State<CategoriesScreen>
 
           // Guardar la versión actual del changelog
           await _preferencesService.saveAppVersion(changelog.version);
-          print('📱 Changelog mostrado y versión guardada: ${changelog.version}');
+          print(
+            '📱 Changelog mostrado y versión guardada: ${changelog.version}',
+          );
         }
       } else {
-        print('📱 Changelog no mostrado - Versión actual: ${changelog.version}');
+        print(
+          '📱 Changelog no mostrado - Versión actual: ${changelog.version}',
+        );
       }
     } catch (e) {
       debugPrint('Error checking changelog: $e');
@@ -272,7 +288,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
 
   Future<void> _loadCategories({bool forceRefresh = false}) async {
     // Si ya están cargadas y no es un refresh forzado, no hacer nada
-    if (_categoriesLoaded && !forceRefresh) {
+    if (_categoriesLoaded && !forceRefresh && _categories.isNotEmpty) {
       setState(() {
         _isLoading = false;
       });
@@ -289,36 +305,53 @@ class _CategoriesScreenState extends State<CategoriesScreen>
       final isOfflineModeEnabled =
           await _preferencesService.isOfflineModeEnabled();
 
-      List<Category> categories;
+      List<Category> categories = [];
 
       if (isOfflineModeEnabled) {
         print('🔌 Modo offline - Cargando categorías desde cache...');
 
-        // Cargar datos offline
         final offlineData = await _preferencesService.getOfflineData();
+        final categoriesData = offlineData?['categories'];
 
-        if (offlineData != null && offlineData['categories'] != null) {
-          final categoriesData = offlineData['categories'] as List<dynamic>;
-
-          // Convertir datos JSON a objetos Category
+        if (categoriesData is List) {
           categories =
               categoriesData.map((catData) {
+                final categoryData = Map<String, dynamic>.from(catData as Map);
+
+                final id = (categoryData['id'] as num?)?.toInt() ?? 0;
+                final name =
+                    categoryData['name'] as String? ??
+                    categoryData['nombre'] as String? ??
+                    'Sin nombre';
+                final imageUrl =
+                    categoryData['imageUrl'] as String? ??
+                    categoryData['imagen'] as String? ??
+                    categoryData['image'] as String?;
+                final colorValue = (categoryData['color'] as num?)?.toInt();
+
                 return Category(
-                  id: catData['id'] as int,
-                  name: catData['name'] as String,
-                  imageUrl: catData['imageUrl'] as String,
-                  color: Color(catData['color'] as int),
+                  id: id,
+                  name: name,
+                  description: categoryData['descripcion'] as String?,
+                  imageUrl: imageUrl,
+                  color: Color(colorValue ?? const Color(0xFF4A90E2).value),
+                  isActive: categoryData['activo'] as bool? ?? true,
+                  productCount:
+                      (categoryData['total_productos'] as num?)?.toInt() ?? 0,
                 );
               }).toList();
-
-          print(
-            '✅ Categorías cargadas desde cache offline: ${categories.length}',
-          );
-        } else {
-          throw Exception('No hay categorías sincronizadas en modo offline');
         }
+
+        if (categories.isEmpty) {
+          throw Exception(
+            'No hay categorías disponibles en cache offline. Sincroniza datos en Configuración.',
+          );
+        }
+
+        print(
+          '✅ Categorías cargadas desde cache offline: ${categories.length}',
+        );
       } else {
-        print('🌐 Modo online - Cargando categorías desde Supabase...');
         categories = await _categoryService.getCategories();
         print('✅ Categorías cargadas desde Supabase: ${categories.length}');
       }
@@ -327,6 +360,8 @@ class _CategoriesScreenState extends State<CategoriesScreen>
         _categories = categories;
         _isLoading = false;
         _categoriesLoaded = true; // Marcar como cargadas
+        _isConnectionError = false;
+        _showRetryWidget = false;
       });
 
       debugPrint('✅ Categorías cargadas: ${categories.length}');
@@ -709,9 +744,11 @@ class _CategoriesScreenState extends State<CategoriesScreen>
 
       // ✅ NUEVO: Verificar si se debe mostrar el diálogo según el tiempo transcurrido
       final shouldShow = await _preferencesService.shouldShowUpdateDialog();
-      
+
       if (!shouldShow) {
-        print('⏳ Diálogo de actualización omitido - Aún no ha pasado el tiempo necesario');
+        print(
+          '⏳ Diálogo de actualización omitido - Aún no ha pasado el tiempo necesario',
+        );
         return;
       }
 
@@ -746,73 +783,77 @@ class _CategoriesScreenState extends State<CategoriesScreen>
     }
 
     print('📱 Mostrando diálogo de actualización desde CategoriesScreen');
-    
+
     // ✅ NUEVO: Marcar que el diálogo fue mostrado
     _preferencesService.markUpdateDialogShown();
 
     showDialog(
       context: context,
-      barrierDismissible: !isObligatory, // Si es obligatoria, no se puede cerrar
-      builder: (context) => WillPopScope(
-        onWillPop: () async => !isObligatory, // Prevenir cierre con botón atrás si es obligatoria
-        child: AlertDialog(
-          title: Row(
-            children: [
-              Icon(
-                isObligatory ? Icons.warning : Icons.system_update,
-                color: isObligatory ? Colors.orange : Colors.blue,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  isObligatory
-                      ? 'Actualización Obligatoria'
-                      : 'Nueva Versión Disponible',
-                  style: const TextStyle(fontSize: 16),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Nueva versión disponible: $newVersion'),
-              Text('Versión actual: $currentVersion'),
-              const SizedBox(height: 16),
-              if (isObligatory)
-                const Text(
-                  'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
-                  style: TextStyle(
-                    color: Colors.orange,
-                    fontWeight: FontWeight.w500,
+      barrierDismissible:
+          !isObligatory, // Si es obligatoria, no se puede cerrar
+      builder:
+          (context) => WillPopScope(
+            onWillPop:
+                () async =>
+                    !isObligatory, // Prevenir cierre con botón atrás si es obligatoria
+            child: AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    isObligatory ? Icons.warning : Icons.system_update,
+                    color: isObligatory ? Colors.orange : Colors.blue,
                   ),
-                )
-              else
-                const Text(
-                  'Se recomienda actualizar para obtener las últimas mejoras y correcciones.',
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isObligatory
+                          ? 'Actualización Obligatoria'
+                          : 'Nueva Versión Disponible',
+                      style: const TextStyle(fontSize: 16),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Nueva versión disponible: $newVersion'),
+                  Text('Versión actual: $currentVersion'),
+                  const SizedBox(height: 16),
+                  if (isObligatory)
+                    const Text(
+                      'Esta actualización es obligatoria y debe instalarse para continuar usando la aplicación.',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    )
+                  else
+                    const Text(
+                      'Se recomienda actualizar para obtener las últimas mejoras y correcciones.',
+                    ),
+                ],
+              ),
+              actions: [
+                if (!isObligatory)
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Más tarde'),
+                  ),
+                ElevatedButton(
+                  onPressed: () => _downloadUpdate(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isObligatory ? Colors.orange : Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Descargar'),
                 ),
-            ],
-          ),
-          actions: [
-            if (!isObligatory)
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Más tarde'),
-              ),
-            ElevatedButton(
-              onPressed: () => _downloadUpdate(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isObligatory ? Colors.orange : Colors.blue,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Descargar'),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -884,79 +925,82 @@ class _CategoriesScreenState extends State<CategoriesScreen>
   void _showManualDownloadDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.download, color: Colors.blue),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Descarga Manual',
-                style: TextStyle(fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.download, color: Colors.blue),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Descarga Manual',
+                    style: TextStyle(fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'No se pudo abrir automáticamente el enlace de descarga.',
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'No se pudo abrir automáticamente el enlace de descarga.',
+                ),
+                const SizedBox(height: 16),
+                const Text('Copia este enlace y ábrelo en tu navegador:'),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: SelectableText(
+                    UpdateService.downloadUrl,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            const Text('Copia este enlace y ábrelo en tu navegador:'),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.grey[300]!),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Cerrar diálogo manual
+                  Navigator.of(
+                    context,
+                  ).pop(); // Cerrar diálogo de actualización
+                },
+                child: const Text('Cerrar'),
               ),
-              child: SelectableText(
-                UpdateService.downloadUrl,
-                style: const TextStyle(fontSize: 12),
+              ElevatedButton(
+                onPressed: () async {
+                  // Intentar copiar al portapapeles
+                  try {
+                    await _copyToClipboard(UpdateService.downloadUrl);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('📋 Enlace copiado al portapapeles'),
+                          backgroundColor: Colors.green,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    print('❌ Error copiando al portapapeles: $e');
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Copiar Enlace'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Cerrar diálogo manual
-              Navigator.of(context).pop(); // Cerrar diálogo de actualización
-            },
-            child: const Text('Cerrar'),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              // Intentar copiar al portapapeles
-              try {
-                await _copyToClipboard(UpdateService.downloadUrl);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('📋 Enlace copiado al portapapeles'),
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                }
-              } catch (e) {
-                print('❌ Error copiando al portapapeles: $e');
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Copiar Enlace'),
-          ),
-        ],
-      ),
     );
   }
 

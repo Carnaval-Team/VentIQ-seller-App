@@ -1093,7 +1093,7 @@ class UserPreferencesService {
     if (updated) {
       // Guardar cache actualizado
       offlineData['products'] = productsData;
-      await saveOfflineData(offlineData);
+      await saveOfflineDataTransactional(offlineData);
       print('✅ Cache de productos actualizado');
     }
   }
