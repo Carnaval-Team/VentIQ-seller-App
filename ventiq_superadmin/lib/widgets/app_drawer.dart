@@ -56,6 +56,11 @@ class AppDrawer extends StatelessWidget {
                       route: '/carnaval-tiendas',
                     ),
                     _DrawerItem(
+                      icon: Icons.compare_arrows,
+                      title: 'Productos Carnaval - Inventtia',
+                      route: '/productos-carnaval-inventtia',
+                    ),
+                    _DrawerItem(
                       icon: Icons.payment,
                       title: 'Pago a Proveedores',
                       route: '/pago-proveedores',
@@ -257,6 +262,7 @@ class AppDrawer extends StatelessWidget {
                 item.route == '/renovaciones' ||
                 item.route == '/configuracion' ||
                 item.route == '/carnaval-tiendas' ||
+                item.route == '/productos-carnaval-inventtia' ||
                 item.route == '/pago-proveedores') {
               Navigator.of(context).pushReplacementNamed(item.route);
             } else {

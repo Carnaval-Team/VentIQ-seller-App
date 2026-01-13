@@ -16,6 +16,7 @@ import 'screens/renovaciones_screen.dart';
 import 'screens/configuracion_screen.dart';
 import 'screens/consignacion_screen.dart';
 import 'screens/carnaval_store_mapping_screen.dart';
+import 'screens/carnaval_inventtia_products_screen.dart';
 import 'screens/pago_proveedores_screen.dart';
 import 'services/auth_service.dart';
 
@@ -57,6 +58,8 @@ class VentIQSuperAdminApp extends StatelessWidget {
         '/configuracion': (context) => const ConfiguracionScreen(),
         '/consignacion': (context) => const ConsignacionScreen(),
         '/carnaval-tiendas': (context) => const CarnavalStoreMappingScreen(),
+        '/productos-carnaval-inventtia':
+            (context) => const CarnavalInventtiaProductsScreen(),
         '/pago-proveedores': (context) => const PagoProveedoresScreen(),
       },
     );
