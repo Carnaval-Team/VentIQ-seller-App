@@ -383,6 +383,7 @@ class _ConsignacionEnvioDetallesScreenState
     final nombreProducto =
         producto['producto_denominacion'] as String? ??
         producto['nombre_producto'] as String? ??
+        producto['denominacion'] as String? ??
         'N/A';
     final sku =
         producto['producto_sku'] as String? ??
@@ -392,6 +393,11 @@ class _ConsignacionEnvioDetallesScreenState
     final precioCostoUsd =
         (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
     final precioVentaCup = (producto['precio_venta_cup'] as num?)?.toDouble();
+    
+    // Obtener estado_producto (0=Pendiente, 1=Confirmado, 2=Rechazado)
+    final estadoProducto = (producto['estado_producto'] as num?)?.toInt() ?? 0;
+    final estadoTexto = _obtenerTextoEstadoProducto(estadoProducto);
+    final estadoColor = _obtenerColorEstadoProducto(estadoProducto);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -438,23 +444,47 @@ class _ConsignacionEnvioDetallesScreenState
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    '$cantidad unidades',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '$cantidad un.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: estadoColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        estadoTexto,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: estadoColor,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1076,6 +1106,36 @@ class _ConsignacionEnvioDetallesScreenState
       } finally {
         if (mounted) setState(() => _isAccepting = false);
       }
+    }
+  }
+
+  /// Obtiene el texto del estado del producto
+  /// 0 = Pendiente, 1 = Confirmado, 2 = Rechazado
+  String _obtenerTextoEstadoProducto(int estado) {
+    switch (estado) {
+      case 0:
+        return 'Pendiente';
+      case 1:
+        return 'Confirmado';
+      case 2:
+        return 'Rechazado';
+      default:
+        return 'Desconocido';
+    }
+  }
+
+  /// Obtiene el color del estado del producto
+  /// 0 = Pendiente (naranja), 1 = Confirmado (verde), 2 = Rechazado (rojo)
+  Color _obtenerColorEstadoProducto(int estado) {
+    switch (estado) {
+      case 0:
+        return Colors.orange;
+      case 1:
+        return Colors.green;
+      case 2:
+        return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
 }

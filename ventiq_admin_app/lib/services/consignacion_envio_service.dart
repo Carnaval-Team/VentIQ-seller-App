@@ -665,7 +665,7 @@ class ConsignacionEnvioService {
       debugPrint('📦 Obteniendo productos del envío: $idEnvio');
       
       final response = await _supabase.rpc(
-        'obtener_productos_envio',
+        'obtener_productos_envio2',
         params: {
           'p_id_envio': idEnvio,
         },
