@@ -13,6 +13,7 @@ import '../widgets/presentations_tab_view.dart';
 import '../widgets/units_tab_view.dart';
 import '../widgets/carnaval_tab_view.dart';
 import '../widgets/price_management_tab_view.dart';
+import '../widgets/personal_rates_tab_view.dart';
 import '../services/store_data_service.dart';
 import '../services/store_service.dart';
 import '../services/catalogo_service.dart';
@@ -59,7 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 8, vsync: this, initialIndex: 1);
+    _tabController = TabController(length: 9, vsync: this, initialIndex: 1);
     _loadPermissions();
   }
 
@@ -127,6 +128,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
             Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
             Tab(text: 'Precios', icon: Icon(Icons.sell)),
+            Tab(text: 'Tasas pers.', icon: Icon(Icons.currency_exchange)),
             Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
           ],
         ),
@@ -141,6 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           PresentationsTabView(key: _presentationsTabKey),
           UnitsTabView(key: _unitsTabKey),
           PriceManagementTabView(),
+          PersonalRatesTabView(canEdit: _canEditSettings),
           CarnavalTabView(key: _carnavalTabKey),
         ],
       ),
@@ -158,11 +161,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                   // Ocultar FAB en pestañas donde no aplica agregar:
                   // - Unidades (índice 5)
                   // - Precios (índice 6) para que el FAB "Proceder" quede libre
-                  // - Carnaval (índice 7)
+                  // - Tasas pers. (índice 7) se gestiona con su propio botón
+                  // - Carnaval (índice 8)
                   final isHidden =
                       _tabController.index == 5 ||
                       _tabController.index == 6 ||
-                      _tabController.index == 7;
+                      _tabController.index == 7 ||
+                      _tabController.index == 8;
                   return isHidden
                       ? const SizedBox.shrink()
                       : FloatingActionButton(
