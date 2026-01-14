@@ -538,15 +538,27 @@ class CarnavalService {
       final double basePrice =
           ((priceData?['precio_venta_cup'] as num?) ?? 0).toDouble();
 
-      // Calcular precios con markup:
-      // precio_descuento = basePrice + 5.35% (redondeado a entero)
-      // price (oficial) = basePrice + 11%
-      double precioDescuento = (basePrice * 1.0535).roundToDouble();
+      // 2.1 Obtener configuración de porcentajes para Carnaval (con fallback)
+      final priceConfig = await _getCarnavalPriceConfig(
+        productData['id_tienda'],
+      );
+
+      // Calcular precios con markup dinámico (permitiendo valores negativos)
+      // precio_descuento = basePrice + porcentaje carnaval
+      // price (oficial) = basePrice + porcentaje transferencia
+      double precioDescuento =
+          (basePrice * (1 + priceConfig['precio_venta_carnaval']! / 100))
+              .roundToDouble();
 
       if (carnavalStoreId == 1 || carnavalStoreId == 177) {
         precioDescuento = basePrice;
       }
-      final  precioOficial = (basePrice * 1.11).roundToDouble();
+      final precioOficial =
+          (basePrice *
+                  (1 +
+                      priceConfig['precio_venta_carnaval_transferencia']! /
+                          100))
+              .roundToDouble();
 
       // 3. Obtener stock actual de la ubicación específica
       final stockData =
@@ -613,6 +625,43 @@ class CarnavalService {
       print('❌ Error al sincronizar producto: $e');
       print(stackTrace);
       return false;
+    }
+  }
+
+  /// Obtiene configuración de porcentajes de precio para Carnaval.
+  /// Si no existe registro, retorna defaults (5.3% y 11.1%).
+  static Future<Map<String, double>> _getCarnavalPriceConfig(
+    int storeId,
+  ) async {
+    const defaults = {
+      'precio_venta_carnaval': 5.3,
+      'precio_venta_carnaval_transferencia': 11.1,
+    };
+
+    try {
+      final config =
+          await _supabase
+              .from('app_dat_precio_general_tienda')
+              .select(
+                'precio_venta_carnaval, precio_venta_carnaval_transferencia',
+              )
+              .eq('id_tienda', storeId)
+              .maybeSingle();
+
+      if (config == null) return defaults;
+
+      return {
+        'precio_venta_carnaval':
+            (config['precio_venta_carnaval'] as num?)?.toDouble() ??
+            defaults['precio_venta_carnaval']!,
+        'precio_venta_carnaval_transferencia':
+            (config['precio_venta_carnaval_transferencia'] as num?)
+                ?.toDouble() ??
+            defaults['precio_venta_carnaval_transferencia']!,
+      };
+    } catch (e) {
+      print('❌ Error obteniendo config de precio carnaval: $e');
+      return defaults;
     }
   }
 

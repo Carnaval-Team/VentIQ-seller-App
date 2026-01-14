@@ -69,7 +69,6 @@ class TpvPriceService {
             .from('app_dat_precio_venta')
             .select('precio_venta_cup')
             .eq('id_producto', productId)
-            .eq('es_activo', true)
             .lte('fecha_desde', today)
             .or('fecha_hasta.is.null,fecha_hasta.gte.$today')
             .order('fecha_desde', ascending: false)

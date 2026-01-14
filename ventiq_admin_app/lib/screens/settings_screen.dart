@@ -12,6 +12,7 @@ import '../widgets/variants_tab_view.dart';
 import '../widgets/presentations_tab_view.dart';
 import '../widgets/units_tab_view.dart';
 import '../widgets/carnaval_tab_view.dart';
+import '../widgets/price_management_tab_view.dart';
 import '../services/store_data_service.dart';
 import '../services/store_service.dart';
 import '../services/catalogo_service.dart';
@@ -58,7 +59,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this, initialIndex: 1);
+    _tabController = TabController(length: 8, vsync: this, initialIndex: 1);
     _loadPermissions();
   }
 
@@ -125,6 +126,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             Tab(text: 'Variantes', icon: Icon(Icons.format_shapes)),
             Tab(text: 'Presentaciones', icon: Icon(Icons.format_paint)),
             Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
+            Tab(text: 'Precios', icon: Icon(Icons.sell)),
             Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
           ],
         ),
@@ -138,6 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           VariantsTabView(key: _variantsTabKey),
           PresentationsTabView(key: _presentationsTabKey),
           UnitsTabView(key: _unitsTabKey),
+          PriceManagementTabView(),
           CarnavalTabView(key: _carnavalTabKey),
         ],
       ),
@@ -152,9 +155,14 @@ class _SettingsScreenState extends State<SettingsScreen>
               : AnimatedBuilder(
                 animation: _tabController,
                 builder: (context, child) {
-                  // Ocultar FAB en la pestaña de Carnaval (índice 5)
-                  // También se puede ocultar en Global (índice 0) si se desea
-                  final isHidden = _tabController.index == 5;
+                  // Ocultar FAB en pestañas donde no aplica agregar:
+                  // - Unidades (índice 5)
+                  // - Precios (índice 6) para que el FAB "Proceder" quede libre
+                  // - Carnaval (índice 7)
+                  final isHidden =
+                      _tabController.index == 5 ||
+                      _tabController.index == 6 ||
+                      _tabController.index == 7;
                   return isHidden
                       ? const SizedBox.shrink()
                       : FloatingActionButton(
@@ -254,7 +262,9 @@ class _SettingsScreenState extends State<SettingsScreen>
           SnackBar(
             content: Text(
               successMessage ??
-                  (value ? '✅ Catálogo habilitado' : '✅ Catálogo deshabilitado'),
+                  (value
+                      ? '✅ Catálogo habilitado'
+                      : '✅ Catálogo deshabilitado'),
             ),
             backgroundColor: Colors.green,
           ),
@@ -1158,7 +1168,10 @@ class _WarehouseZoneSelectorState extends State<_WarehouseZoneSelector> {
                 child: Center(child: CircularProgressIndicator()),
               )
               : _errorMessage != null
-              ? Text('Error: $_errorMessage', style: const TextStyle(color: Colors.red))
+              ? Text(
+                'Error: $_errorMessage',
+                style: const TextStyle(color: Colors.red),
+              )
               : _warehouses.isEmpty
               ? const Text('No hay almacenes configurados para esta tienda.')
               : SizedBox(
@@ -1193,7 +1206,9 @@ class _WarehouseZoneSelectorState extends State<_WarehouseZoneSelector> {
                                     if (id != null) {
                                       widget.onSelected(id);
                                     } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('ID de zona inválido'),
                                           backgroundColor: Colors.red,
