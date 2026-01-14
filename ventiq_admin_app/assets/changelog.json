@@ -1,9 +1,36 @@
 {
-  "current_version": "1.7.2",
-  "build": 172,
+  "current_version": "1.7.3",
+  "build": 173,
   "app_name": "ventiq_admin",
   "changelogs": [
 
+    {
+      "version": "1.7.3",
+      "date": "2026-01-14",
+      "title": "🎉 Precios Carnaval a un clic",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Nuevo tab \"Precios Carnaval\" en Configuración",
+          "description": "Ahora tienes un espacio dedicado para revisar tus precios de Carnaval frente a Inventtia sin salir de Configuración. Todo se carga con la tienda que ya tienes seleccionada."
+        },
+        {
+          "type": "improvement",
+          "title": "Edita precios al instante",
+          "description": "Ajusta precio_descuento y price directo desde la tabla con un diálogo sencillo: editas, guardas y el listado se actualiza solo."
+        },
+        {
+          "type": "improvement",
+          "title": "Tienda fija desde StoreService",
+          "description": "Nos encargamos de tomar tu tienda actual automáticamente, así no vuelves a seleccionar nada para ver tus precios."
+        },
+        {
+          "type": "improvement",
+          "title": "Tasas USD→CUP personalizadas por tienda",
+          "description": "El dashboard, la conversión y la consignación ahora usan tu tasa extraoficial (si está activa) para mostrar valores consistentes en toda la app."
+        }
+      ]
+    },
     {
       "version": "1.7.2",
       "date": "2026-01-11",
