@@ -174,32 +174,19 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
 
     try {
-      print('💱 Loading USD rate from database...');
-      final rates = await CurrencyService.getCurrentRatesFromDatabase();
+      print('💱 Loading effective USD→CUP rate...');
+      final usdRate = await CurrencyService.getEffectiveUsdToCupRate();
 
-      // Find USD rate where moneda_origen = 'USD'
-      final usdRateData = rates.firstWhere(
-        (rate) => rate['moneda_origen'] == 'USD',
-        orElse: () => <String, dynamic>{},
-      );
+      setState(() {
+        _usdRate = usdRate;
+        _isLoadingUsdRate = false;
+      });
 
-      if (usdRateData.isNotEmpty) {
-        setState(() {
-          _usdRate = (usdRateData['tasa'] as num?)?.toDouble() ?? 0.0;
-          _isLoadingUsdRate = false;
-        });
-        print('✅ USD rate loaded: $_usdRate');
-      } else {
-        print('⚠️ No USD rate found in database');
-        setState(() {
-          _usdRate = 420.0; // Default fallback rate
-          _isLoadingUsdRate = false;
-        });
-      }
+      print('✅ Effective USD rate loaded: $_usdRate');
     } catch (e) {
       print('❌ Error loading USD rate: $e');
       setState(() {
-        _usdRate = 420.0; // Default fallback rate
+        _usdRate = 440.0; // Default fallback rate
         _isLoadingUsdRate = false;
       });
     }

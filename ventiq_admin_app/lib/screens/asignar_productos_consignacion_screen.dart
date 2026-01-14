@@ -18,19 +18,23 @@ class AsignarProductosConsignacionScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<AsignarProductosConsignacionScreen> createState() => _AsignarProductosConsignacionScreenState();
+  State<AsignarProductosConsignacionScreen> createState() =>
+      _AsignarProductosConsignacionScreenState();
 }
 
-class _AsignarProductosConsignacionScreenState extends State<AsignarProductosConsignacionScreen> {
+class _AsignarProductosConsignacionScreenState
+    extends State<AsignarProductosConsignacionScreen> {
   final _supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _almacenes = [];
-  Map<int, Map<String, dynamic>> _productosSeleccionados = {}; // id_inventario -> {seleccionado, cantidad}
+  Map<int, Map<String, dynamic>> _productosSeleccionados =
+      {}; // id_inventario -> {seleccionado, cantidad}
   bool _procediendo = false; // ✅ Estado de carga
-  
+
   // Estados de expansión
   Map<String, bool> _expandedAlmacenes = {}; // almacen_id -> expandido
   Map<String, bool> _expandedZonas = {}; // almacen_id_zona_id -> expandido
-  Map<String, List<Map<String, dynamic>>> _zonasInventario = {}; // almacen_id_zona_id -> productos
+  Map<String, List<Map<String, dynamic>>> _zonasInventario =
+      {}; // almacen_id_zona_id -> productos
   Map<String, bool> _loadingZonas = {}; // almacen_id_zona_id -> cargando
   bool _isLoading = true;
 
@@ -45,14 +49,16 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
 
     try {
       final List<dynamic> response;
-      
+
       if (widget.isDevolucion) {
         // En devoluciones: solo mostrar el almacén destino del contrato (donde están los productos consignados)
         final idAlmacen = widget.contrato['id_almacen_destino'] as int?;
         if (idAlmacen == null) {
-          throw Exception('El contrato no tiene un almacén destino configurado');
+          throw Exception(
+            'El contrato no tiene un almacén destino configurado',
+          );
         }
-        
+
         response = await _supabase
             .from('app_dat_almacen')
             .select('''
@@ -68,7 +74,7 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
       } else {
         // Para envíos normales: obtener todos los almacenes de la tienda consignadora
         final idTienda = widget.contrato['id_tienda_consignadora'] as int;
-        
+
         response = await _supabase
             .from('app_dat_almacen')
             .select('''
@@ -83,13 +89,11 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
             .eq('id_tienda', idTienda);
       }
 
-      final almacenesConZonas = response.map((almacen) {
-        final zonas = almacen['app_dat_layout_almacen'] as List? ?? [];
-        return {
-          ...almacen as Map<String, dynamic>,
-          'zonas': zonas,
-        };
-      }).toList();
+      final almacenesConZonas =
+          response.map((almacen) {
+            final zonas = almacen['app_dat_layout_almacen'] as List? ?? [];
+            return {...almacen as Map<String, dynamic>, 'zonas': zonas};
+          }).toList();
 
       setState(() {
         _almacenes = almacenesConZonas;
@@ -109,29 +113,44 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
   void _toggleProductoSeleccion(int idInventario) {
     setState(() {
       if (_productosSeleccionados[idInventario]?['seleccionado'] == true) {
-        _productosSeleccionados[idInventario] = {'seleccionado': false, 'cantidad': 0.0};
+        _productosSeleccionados[idInventario] = {
+          'seleccionado': false,
+          'cantidad': 0.0,
+        };
       } else {
-        _productosSeleccionados[idInventario] = {'seleccionado': true, 'cantidad': 0.0};
+        _productosSeleccionados[idInventario] = {
+          'seleccionado': true,
+          'cantidad': 0.0,
+        };
       }
     });
   }
 
-  void _actualizarCantidad(int idInventario, double cantidad, double cantidadDisponible) {
+  void _actualizarCantidad(
+    int idInventario,
+    double cantidad,
+    double cantidadDisponible,
+  ) {
     // Validar que la cantidad no exceda la disponible
     if (cantidad > cantidadDisponible) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('La cantidad no puede exceder $cantidadDisponible unidades disponibles'),
+          content: Text(
+            'La cantidad no puede exceder $cantidadDisponible unidades disponibles',
+          ),
           backgroundColor: Colors.orange,
           duration: const Duration(seconds: 2),
         ),
       );
       return;
     }
-    
+
     setState(() {
       if (_productosSeleccionados[idInventario] == null) {
-        _productosSeleccionados[idInventario] = {'seleccionado': false, 'cantidad': cantidad};
+        _productosSeleccionados[idInventario] = {
+          'seleccionado': false,
+          'cantidad': cantidad,
+        };
       } else {
         _productosSeleccionados[idInventario]!['cantidad'] = cantidad;
       }
@@ -139,14 +158,18 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
   }
 
   Future<void> _procederConConfiguracion() async {
-    final productosIds = _productosSeleccionados.entries
-        .where((e) => e.value['seleccionado'] == true)
-        .map((e) => e.key)
-        .toList();
+    final productosIds =
+        _productosSeleccionados.entries
+            .where((e) => e.value['seleccionado'] == true)
+            .map((e) => e.key)
+            .toList();
 
     if (productosIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debe seleccionar al menos un producto'), backgroundColor: Colors.orange),
+        const SnackBar(
+          content: Text('Debe seleccionar al menos un producto'),
+          backgroundColor: Colors.orange,
+        ),
       );
       return;
     }
@@ -155,7 +178,12 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     for (final id in productosIds) {
       if ((_productosSeleccionados[id]?['cantidad'] ?? 0) <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Todos los productos seleccionados deben tener cantidad > 0'), backgroundColor: Colors.orange),
+          const SnackBar(
+            content: Text(
+              'Todos los productos seleccionados deben tener cantidad > 0',
+            ),
+            backgroundColor: Colors.orange,
+          ),
         );
         return;
       }
@@ -165,7 +193,7 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
 
     try {
       final tasaCambio = await _obtenerTasaCambio();
-      
+
       final response = await _supabase
           .from('app_dat_inventario_productos')
           .select('''
@@ -188,20 +216,22 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
           .inFilter('id', productosIds);
 
       final productosData = List<Map<String, dynamic>>.from(response);
-      
+
       for (final p in productosData) {
         final idInv = p['id'] as int;
-        final cantSel = _productosSeleccionados[idInv]?['cantidad'] as double? ?? 0.0;
+        final cantSel =
+            _productosSeleccionados[idInv]?['cantidad'] as double? ?? 0.0;
         p['cantidad_seleccionada'] = cantSel;
         p['tasa_cambio'] = tasaCambio;
 
         // Precios: El consignador configura el precio_costo_usd que quiere cobrar
         // Este precio es independiente de los precios en la tienda consignadora
         final idProducto = p['id_producto'];
-        
+
         // ⚠️ NO obtener precio_venta del producto original - No se debe tocar
         // El precio_venta de la tienda consignadora debe permanecer intacto
-        p['precio_venta'] = 0.0; // Inicializar en 0, el consignador lo configurará
+        p['precio_venta'] =
+            0.0; // Inicializar en 0, el consignador lo configurará
 
         // Obtener precio_promedio de la presentación para usar como precio_costo_usd
         double costUSD = 0.0;
@@ -213,12 +243,12 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
               .eq('id_producto', idProducto)
               .eq('id_presentacion', idPresentacion)
               .limit(1);
-          
+
           if ((presResp as List).isNotEmpty) {
             costUSD = (presResp[0]['precio_promedio'] ?? 0).toDouble();
           }
         }
-        
+
         // Si no hay precio_promedio en la presentación, intentar obtener del producto base
         if (costUSD == 0.0) {
           final presBaseResp = await _supabase
@@ -227,12 +257,12 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
               .eq('id_producto', idProducto)
               .eq('es_base', true)
               .limit(1);
-          
+
           if ((presBaseResp as List).isNotEmpty) {
             costUSD = (presBaseResp[0]['precio_promedio'] ?? 0).toDouble();
           }
         }
-        
+
         p['precio_costo_usd'] = costUSD;
         p['precio_costo_cup'] = costUSD * tasaCambio;
       }
@@ -243,18 +273,24 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
       }
 
       // Proceso normal de envío (congelar stock y configurar precios)
-      final idTiendaConsignadora = widget.contrato['id_tienda_consignadora'] as int;
+      final idTiendaConsignadora =
+          widget.contrato['id_tienda_consignadora'] as int;
       final idOperacionReserva = await ConsignacionService.crearReservaStock(
         idContrato: widget.idContrato,
-        productos: productosData.map((p) => {
-          'id_producto': p['id_producto'],
-          'cantidad': p['cantidad_seleccionada'],
-          'id_presentacion': p['id_presentacion'],
-          'id_ubicacion': p['id_ubicacion'],
-          'id_variante': p['id_variante'],
-          'id_opcion_variante': p['id_opcion_variante'],
-          'precio_costo_unitario': p['precio_costo_usd'],
-        }).toList(),
+        productos:
+            productosData
+                .map(
+                  (p) => {
+                    'id_producto': p['id_producto'],
+                    'cantidad': p['cantidad_seleccionada'],
+                    'id_presentacion': p['id_presentacion'],
+                    'id_ubicacion': p['id_ubicacion'],
+                    'id_variante': p['id_variante'],
+                    'id_opcion_variante': p['id_opcion_variante'],
+                    'precio_costo_unitario': p['precio_costo_usd'],
+                  },
+                )
+                .toList(),
         idTiendaOrigen: idTiendaConsignadora,
       );
 
@@ -264,145 +300,225 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
       final result = await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => ConsignacionProductosConfigScreen(
-            productos: productosData,
-            contrato: widget.contrato,
-            idOperacionExtraccion: idOperacionReserva,
-            onConfirm: (finalProductos, opId) async {
-              final user = _supabase.auth.currentUser;
-              if (user == null) return;
+          builder:
+              (context) => ConsignacionProductosConfigScreen(
+                productos: productosData,
+                contrato: widget.contrato,
+                idOperacionExtraccion: idOperacionReserva,
+                onConfirm: (finalProductos, opId) async {
+                  final user = _supabase.auth.currentUser;
+                  if (user == null) return;
 
-              final idAlmacenDestino = widget.contrato['id_almacen_destino'] as int?;
-              if (idAlmacenDestino == null) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: El contrato no tiene un almacén destino configurado'), backgroundColor: Colors.red));
-                }
-                return;
-              }
+                  final idAlmacenDestino =
+                      widget.contrato['id_almacen_destino'] as int?;
+                  if (idAlmacenDestino == null) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Error: El contrato no tiene un almacén destino configurado',
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                    return;
+                  }
 
-              final envioResult = await ConsignacionEnvioService.crearEnvio(
-                idContrato: widget.idContrato,
-                idAlmacenOrigen: productosData[0]['id_ubicacion'],
-                idAlmacenDestino: idAlmacenDestino,
-                idUsuario: user.id,
-                productos: finalProductos,
-                idOperacionExtraccion: opId,
-              );
+                  final envioResult = await ConsignacionEnvioService.crearEnvio(
+                    idContrato: widget.idContrato,
+                    idAlmacenOrigen: productosData[0]['id_ubicacion'],
+                    idAlmacenDestino: idAlmacenDestino,
+                    idUsuario: user.id,
+                    productos: finalProductos,
+                    idOperacionExtraccion: opId,
+                  );
 
-              if (envioResult != null) {
-                Navigator.pop(context); // Cerrar config
-                Navigator.pop(context, true); // Volver al listado
-              }
-            },
-          ),
+                  if (envioResult != null) {
+                    Navigator.pop(context); // Cerrar config
+                    Navigator.pop(context, true); // Volver al listado
+                  }
+                },
+              ),
         ),
       );
     } catch (e) {
       debugPrint('Error en el proceso: $e');
       setState(() => _procediendo = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }
 
-  Future<void> _procederConCreacionDevolucion(List<Map<String, dynamic>> productos) async {
+  Future<void> _procederConCreacionDevolucion(
+    List<Map<String, dynamic>> productos,
+  ) async {
     try {
       final user = _supabase.auth.currentUser;
       if (user == null) throw Exception('Usuario no autenticado');
 
-      final idTiendaConsignataria = widget.contrato['id_tienda_consignataria'] as int;
-      final almacenes = await _supabase.from('app_dat_almacen').select('id').eq('id_tienda', idTiendaConsignataria).limit(1);
-      final idAlmacenOrigen = (almacenes as List).isNotEmpty ? almacenes[0]['id'] as int : 0;
+      final idTiendaConsignataria =
+          widget.contrato['id_tienda_consignataria'] as int;
+      final almacenes = await _supabase
+          .from('app_dat_almacen')
+          .select('id')
+          .eq('id_tienda', idTiendaConsignataria)
+          .limit(1);
+      final idAlmacenOrigen =
+          (almacenes as List).isNotEmpty ? almacenes[0]['id'] as int : 0;
 
-      final productosParaDevolucion = productos.map((p) => {
-        'id_inventario': p['id'] as int,
-        'id_producto': p['id_producto'],
-        'cantidad': p['cantidad_seleccionada'],
-        'precio_costo_usd': p['precio_costo_usd'],
-        'precio_costo_cup': p['precio_costo_cup'],
-        'tasa_cambio': p['tasa_cambio'],
-      }).toList();
+      final productosParaDevolucion =
+          productos
+              .map(
+                (p) => {
+                  'id_inventario': p['id'] as int,
+                  'id_producto': p['id_producto'],
+                  'cantidad': p['cantidad_seleccionada'],
+                  'precio_costo_usd': p['precio_costo_usd'],
+                  'precio_costo_cup': p['precio_costo_cup'],
+                  'tasa_cambio': p['tasa_cambio'],
+                },
+              )
+              .toList();
 
       final result = await ConsignacionEnvioService.crearDevolucion(
         idContrato: widget.idContrato,
         idAlmacenOrigen: idAlmacenOrigen,
         idUsuario: user.id,
         productos: productosParaDevolucion,
-        descripcion: 'Devolución de productos - ${widget.contrato['tienda_consignataria']['denominacion']}',
+        descripcion:
+            'Devolución de productos - ${widget.contrato['tienda_consignataria']['denominacion']}',
       );
 
       setState(() => _procediendo = false);
       if (result != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ Devolución solicitada: ${result['numero_envio']}'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Devolución solicitada: ${result['numero_envio']}'),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.pop(context, true);
       }
     } catch (e) {
       debugPrint('Error creando devolución: $e');
       setState(() => _procediendo = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    bool haySeleccion = _productosSeleccionados.values.any((v) => v['seleccionado'] == true);
+    bool haySeleccion = _productosSeleccionados.values.any(
+      (v) => v['seleccionado'] == true,
+    );
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isDevolucion ? 'Crear Devolución' : 'Asignar Productos en Consignación'),
-        backgroundColor: widget.isDevolucion ? Colors.deepOrange : AppColors.primary,
+        title: Text(
+          widget.isDevolucion
+              ? 'Crear Devolución'
+              : 'Asignar Productos en Consignación',
+        ),
+        backgroundColor:
+            widget.isDevolucion ? Colors.deepOrange : AppColors.primary,
         foregroundColor: Colors.white,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  color: Colors.blue.shade50,
-                  child: Row(
-                    children: [
-                      Icon(Icons.handshake, color: Colors.blue.shade700),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          widget.isDevolucion 
-                            ? 'Devolver a: ${widget.contrato['tienda_consignadora']['denominacion']}'
-                            : 'Contrato con: ${widget.contrato['tienda_consignataria']['denominacion']}',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade700),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: _almacenes.isEmpty
-                      ? const Center(child: Text('No hay almacenes disponibles'))
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _almacenes.length,
-                          itemBuilder: (context, index) => _buildAlmacenCard(_almacenes[index]),
-                        ),
-                ),
-                if (haySeleccion)
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                children: [
                   Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        onPressed: _procediendo ? null : _procederConConfiguracion,
-                        icon: _procediendo ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Icon(widget.isDevolucion ? Icons.replay : Icons.arrow_forward),
-                        label: Text(_procediendo ? 'Procesando...' : (widget.isDevolucion ? 'Solicitar Devolución' : 'Configurar Productos')),
-                        style: ElevatedButton.styleFrom(backgroundColor: widget.isDevolucion ? Colors.deepOrange : AppColors.primary, foregroundColor: Colors.white),
-                      ),
+                    color: Colors.blue.shade50,
+                    child: Row(
+                      children: [
+                        Icon(Icons.handshake, color: Colors.blue.shade700),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            widget.isDevolucion
+                                ? 'Devolver a: ${widget.contrato['tienda_consignadora']['denominacion']}'
+                                : 'Contrato con: ${widget.contrato['tienda_consignataria']['denominacion']}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-              ],
-            ),
+                  Expanded(
+                    child:
+                        _almacenes.isEmpty
+                            ? const Center(
+                              child: Text('No hay almacenes disponibles'),
+                            )
+                            : ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _almacenes.length,
+                              itemBuilder:
+                                  (context, index) =>
+                                      _buildAlmacenCard(_almacenes[index]),
+                            ),
+                  ),
+                  if (haySeleccion)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(color: Colors.black12, blurRadius: 4),
+                        ],
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              _procediendo ? null : _procederConConfiguracion,
+                          icon:
+                              _procediendo
+                                  ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                  : Icon(
+                                    widget.isDevolucion
+                                        ? Icons.replay
+                                        : Icons.arrow_forward,
+                                  ),
+                          label: Text(
+                            _procediendo
+                                ? 'Procesando...'
+                                : (widget.isDevolucion
+                                    ? 'Solicitar Devolución'
+                                    : 'Configurar Productos'),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                widget.isDevolucion
+                                    ? Colors.deepOrange
+                                    : AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
     );
   }
 
@@ -419,9 +535,11 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
             title: Text(almacen['denominacion']),
             subtitle: Text('${zonas.length} zonas'),
             trailing: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
-            onTap: () => setState(() => _expandedAlmacenes[idStr] = !isExpanded),
+            onTap:
+                () => setState(() => _expandedAlmacenes[idStr] = !isExpanded),
           ),
-          if (isExpanded) ...zonas.map((z) => _buildZonaCard(idStr, z)).toList(),
+          if (isExpanded)
+            ...zonas.map((z) => _buildZonaCard(idStr, z)).toList(),
         ],
       ),
     );
@@ -440,21 +558,42 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
         children: [
           InkWell(
             onTap: () async {
-              if (!isExp && _zonasInventario[key] == null) await _loadZonaProductos(key, zonaId);
+              if (!isExp && _zonasInventario[key] == null)
+                await _loadZonaProductos(key, zonaId);
               setState(() => _expandedZonas[key] = !isExp);
             },
             child: Row(
               children: [
-                Icon(isExp ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18),
+                Icon(
+                  isExp ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  size: 18,
+                ),
                 const SizedBox(width: 8),
-                Expanded(child: Text(zona['denominacion'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
-                if (loading) const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                Expanded(
+                  child: Text(
+                    zona['denominacion'],
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                if (loading)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
               ],
             ),
           ),
           if (isExp) ...[
             const SizedBox(height: 8),
-            if (prods.isEmpty && !loading) const Text('Sin productos en esta zona', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            if (prods.isEmpty && !loading)
+              const Text(
+                'Sin productos en esta zona',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
             ...prods.map((p) => _buildProductoTile(p)).toList(),
           ],
           const Divider(),
@@ -467,25 +606,41 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     final idInv = producto['id'] as int;
     final isSelected = _productosSeleccionados[idInv]?['seleccionado'] == true;
     final cant = _productosSeleccionados[idInv]?['cantidad'] as double? ?? 0.0;
-    final cantidadDisponible = (producto['cantidad_final'] as num?)?.toDouble() ?? 0.0;
-    
+    final cantidadDisponible =
+        (producto['cantidad_final'] as num?)?.toDouble() ?? 0.0;
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: isSelected ? AppColors.primary.withOpacity(0.05) : Colors.grey[50],
+        color:
+            isSelected ? AppColors.primary.withOpacity(0.05) : Colors.grey[50],
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isSelected ? AppColors.primary : Colors.grey[300]!),
+        border: Border.all(
+          color: isSelected ? AppColors.primary : Colors.grey[300]!,
+        ),
       ),
       child: Row(
         children: [
-          Checkbox(value: isSelected, onChanged: (_) => _toggleProductoSeleccion(idInv)),
+          Checkbox(
+            value: isSelected,
+            onChanged: (_) => _toggleProductoSeleccion(idInv),
+          ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(producto['denominacion_producto'] ?? 'Producto', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                Text('SKU: ${producto['sku_producto'] ?? 'N/A'}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                Text(
+                  producto['denominacion_producto'] ?? 'Producto',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  'SKU: ${producto['sku_producto'] ?? 'N/A'}',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
               ],
             ),
           ),
@@ -494,13 +649,28 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
               width: 70,
               child: TextFormField(
                 initialValue: cant > 0 ? cant.toString() : '',
-                decoration: const InputDecoration(isDense: true, labelText: 'Cant.', contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                onChanged: (val) => _actualizarCantidad(idInv, double.tryParse(val) ?? 0.0, cantidadDisponible),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  labelText: 'Cant.',
+                  contentPadding: EdgeInsets.all(8),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged:
+                    (val) => _actualizarCantidad(
+                      idInv,
+                      double.tryParse(val) ?? 0.0,
+                      cantidadDisponible,
+                    ),
               ),
             ),
           const SizedBox(width: 8),
-          Text('${cantidadDisponible.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            '${cantidadDisponible.toInt()}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
         ],
       ),
     );
@@ -510,7 +680,7 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
     setState(() => _loadingZonas[key] = true);
     try {
       List<dynamic> response;
-      
+
       if (widget.isDevolucion) {
         // Para devoluciones: solo productos que están en la zona del contrato de consignación
         // Verificar primero si esta zona pertenece al contrato
@@ -520,7 +690,7 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
             .eq('id_contrato', widget.idContrato)
             .eq('id_zona', int.parse(zonaId))
             .limit(1);
-        
+
         if ((zonaContratoCheck as List).isEmpty) {
           // Esta zona NO pertenece al contrato, no mostrar productos
           setState(() {
@@ -529,7 +699,7 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
           });
           return;
         }
-        
+
         // Obtener productos del inventario en esta zona específica del contrato
         // Como app_dat_inventario_productos es una tabla de movimientos,
         // necesitamos obtener solo el último registro (más reciente) por cada combinación única
@@ -566,70 +736,81 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
             .eq('id_ubicacion', int.parse(zonaId))
             .gt('cantidad_final', 0)
             .order('created_at', ascending: false);
-        
+
         // Agrupar por combinación única y quedarse solo con el más reciente
         final Map<String, dynamic> productosUnicos = {};
         for (final item in inventarioResponse) {
           // Crear clave única basada en producto-variante-presentación-opcion
-          final key = '${item['id_producto']}_${item['id_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}';
-          
+          final key =
+              '${item['id_producto']}_${item['id_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}';
+
           // Solo guardar si no existe o si este es más reciente (ya viene ordenado por created_at desc)
           if (!productosUnicos.containsKey(key)) {
             productosUnicos[key] = item;
           }
         }
-        
+
         response = productosUnicos.values.toList();
-        
+
         // Mapear la respuesta para tener la estructura esperada con información de variante/presentación
-        response = response.map((item) {
-          final producto = item['app_dat_producto'] as Map<String, dynamic>;
-          final presentacionData = item['app_dat_producto_presentacion'] as Map<String, dynamic>?;
-          final varianteData = item['app_dat_variantes'] as Map<String, dynamic>?;
-          final atributoOpcion = item['app_dat_atributo_opcion'] as Map<String, dynamic>?;
-          
-          // Extraer denominación de presentación
-          String? presentacionNombre;
-          if (presentacionData != null) {
-            final nomPresentacion = presentacionData['app_nom_presentacion'] as Map<String, dynamic>?;
-            presentacionNombre = nomPresentacion?['denominacion'] as String?;
-          }
-          
-          // Extraer denominación de atributo (variante)
-          String? atributoNombre;
-          if (varianteData != null) {
-            final atributos = varianteData['app_dat_atributos'] as Map<String, dynamic>?;
-            atributoNombre = atributos?['denominacion'] as String?;
-          }
-          
-          // Extraer valor de opción de variante
-          String? opcionValor = atributoOpcion?['valor'] as String?;
-          
-          // Construir denominación completa con variante/presentación
-          String denominacionCompleta = producto['denominacion'] ?? 'Producto';
-          if (presentacionNombre != null && presentacionNombre.isNotEmpty) {
-            denominacionCompleta += ' - $presentacionNombre';
-          }
-          if (atributoNombre != null && atributoNombre.isNotEmpty) {
-            denominacionCompleta += ' ($atributoNombre';
-            if (opcionValor != null && opcionValor.isNotEmpty) {
-              denominacionCompleta += ': $opcionValor';
-            }
-            denominacionCompleta += ')';
-          }
-          
-          return {
-            'id': item['id'],
-            'cantidad_final': item['cantidad_final'],
-            'id_producto': item['id_producto'],
-            'id_ubicacion': item['id_ubicacion'],
-            'id_presentacion': item['id_presentacion'],
-            'id_variante': item['id_variante'],
-            'id_opcion_variante': item['id_opcion_variante'],
-            'denominacion_producto': denominacionCompleta,
-            'sku_producto': producto['sku'],
-          };
-        }).toList();
+        response =
+            response.map((item) {
+              final producto = item['app_dat_producto'] as Map<String, dynamic>;
+              final presentacionData =
+                  item['app_dat_producto_presentacion']
+                      as Map<String, dynamic>?;
+              final varianteData =
+                  item['app_dat_variantes'] as Map<String, dynamic>?;
+              final atributoOpcion =
+                  item['app_dat_atributo_opcion'] as Map<String, dynamic>?;
+
+              // Extraer denominación de presentación
+              String? presentacionNombre;
+              if (presentacionData != null) {
+                final nomPresentacion =
+                    presentacionData['app_nom_presentacion']
+                        as Map<String, dynamic>?;
+                presentacionNombre =
+                    nomPresentacion?['denominacion'] as String?;
+              }
+
+              // Extraer denominación de atributo (variante)
+              String? atributoNombre;
+              if (varianteData != null) {
+                final atributos =
+                    varianteData['app_dat_atributos'] as Map<String, dynamic>?;
+                atributoNombre = atributos?['denominacion'] as String?;
+              }
+
+              // Extraer valor de opción de variante
+              String? opcionValor = atributoOpcion?['valor'] as String?;
+
+              // Construir denominación completa con variante/presentación
+              String denominacionCompleta =
+                  producto['denominacion'] ?? 'Producto';
+              if (presentacionNombre != null && presentacionNombre.isNotEmpty) {
+                denominacionCompleta += ' - $presentacionNombre';
+              }
+              if (atributoNombre != null && atributoNombre.isNotEmpty) {
+                denominacionCompleta += ' ($atributoNombre';
+                if (opcionValor != null && opcionValor.isNotEmpty) {
+                  denominacionCompleta += ': $opcionValor';
+                }
+                denominacionCompleta += ')';
+              }
+
+              return {
+                'id': item['id'],
+                'cantidad_final': item['cantidad_final'],
+                'id_producto': item['id_producto'],
+                'id_ubicacion': item['id_ubicacion'],
+                'id_presentacion': item['id_presentacion'],
+                'id_variante': item['id_variante'],
+                'id_opcion_variante': item['id_opcion_variante'],
+                'denominacion_producto': denominacionCompleta,
+                'sku_producto': producto['sku'],
+              };
+            }).toList();
       } else {
         // Para envíos normales: también obtener solo el último registro por combinación única
         final inventarioResponse = await _supabase
@@ -665,74 +846,87 @@ class _AsignarProductosConsignacionScreenState extends State<AsignarProductosCon
             .eq('id_ubicacion', int.parse(zonaId))
             .gt('cantidad_final', 0)
             .order('created_at', ascending: false);
-        
+
         // Agrupar por combinación única y quedarse solo con el más reciente
         final Map<String, dynamic> productosUnicos = {};
         for (final item in inventarioResponse) {
-          final key = '${item['id_producto']}_${item['id_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}';
+          final key =
+              '${item['id_producto']}_${item['id_variante'] ?? 'null'}_${item['id_presentacion'] ?? 'null'}_${item['id_opcion_variante'] ?? 'null'}';
           if (!productosUnicos.containsKey(key)) {
             productosUnicos[key] = item;
           }
         }
-        
-        response = productosUnicos.values.map((item) {
-          final producto = item['app_dat_producto'] as Map<String, dynamic>;
-          final presentacionData = item['app_dat_producto_presentacion'] as Map<String, dynamic>?;
-          final varianteData = item['app_dat_variantes'] as Map<String, dynamic>?;
-          final atributoOpcion = item['app_dat_atributo_opcion'] as Map<String, dynamic>?;
-          
-          // Extraer denominación de presentación
-          String? presentacionNombre;
-          if (presentacionData != null) {
-            final nomPresentacion = presentacionData['app_nom_presentacion'] as Map<String, dynamic>?;
-            presentacionNombre = nomPresentacion?['denominacion'] as String?;
-          }
-          
-          // Extraer denominación de atributo (variante)
-          String? atributoNombre;
-          if (varianteData != null) {
-            final atributos = varianteData['app_dat_atributos'] as Map<String, dynamic>?;
-            atributoNombre = atributos?['denominacion'] as String?;
-          }
-          
-          // Extraer valor de opción de variante
-          String? opcionValor = atributoOpcion?['valor'] as String?;
-          
-          // Construir denominación completa con variante/presentación
-          String denominacionCompleta = producto['denominacion'] ?? 'Producto';
-          if (presentacionNombre != null && presentacionNombre.isNotEmpty) {
-            denominacionCompleta += ' - $presentacionNombre';
-          }
-          if (atributoNombre != null && atributoNombre.isNotEmpty) {
-            denominacionCompleta += ' ($atributoNombre';
-            if (opcionValor != null && opcionValor.isNotEmpty) {
-              denominacionCompleta += ': $opcionValor';
-            }
-            denominacionCompleta += ')';
-          }
-          
-          return {
-            'id': item['id'],
-            'cantidad_final': item['cantidad_final'],
-            'id_producto': item['id_producto'],
-            'id_ubicacion': item['id_ubicacion'],
-            'id_presentacion': item['id_presentacion'],
-            'id_variante': item['id_variante'],
-            'id_opcion_variante': item['id_opcion_variante'],
-            'denominacion_producto': denominacionCompleta,
-            'sku_producto': producto['sku'],
-          };
-        }).toList();
+
+        response =
+            productosUnicos.values.map((item) {
+              final producto = item['app_dat_producto'] as Map<String, dynamic>;
+              final presentacionData =
+                  item['app_dat_producto_presentacion']
+                      as Map<String, dynamic>?;
+              final varianteData =
+                  item['app_dat_variantes'] as Map<String, dynamic>?;
+              final atributoOpcion =
+                  item['app_dat_atributo_opcion'] as Map<String, dynamic>?;
+
+              // Extraer denominación de presentación
+              String? presentacionNombre;
+              if (presentacionData != null) {
+                final nomPresentacion =
+                    presentacionData['app_nom_presentacion']
+                        as Map<String, dynamic>?;
+                presentacionNombre =
+                    nomPresentacion?['denominacion'] as String?;
+              }
+
+              // Extraer denominación de atributo (variante)
+              String? atributoNombre;
+              if (varianteData != null) {
+                final atributos =
+                    varianteData['app_dat_atributos'] as Map<String, dynamic>?;
+                atributoNombre = atributos?['denominacion'] as String?;
+              }
+
+              // Extraer valor de opción de variante
+              String? opcionValor = atributoOpcion?['valor'] as String?;
+
+              // Construir denominación completa con variante/presentación
+              String denominacionCompleta =
+                  producto['denominacion'] ?? 'Producto';
+              if (presentacionNombre != null && presentacionNombre.isNotEmpty) {
+                denominacionCompleta += ' - $presentacionNombre';
+              }
+              if (atributoNombre != null && atributoNombre.isNotEmpty) {
+                denominacionCompleta += ' ($atributoNombre';
+                if (opcionValor != null && opcionValor.isNotEmpty) {
+                  denominacionCompleta += ': $opcionValor';
+                }
+                denominacionCompleta += ')';
+              }
+
+              return {
+                'id': item['id'],
+                'cantidad_final': item['cantidad_final'],
+                'id_producto': item['id_producto'],
+                'id_ubicacion': item['id_ubicacion'],
+                'id_presentacion': item['id_presentacion'],
+                'id_variante': item['id_variante'],
+                'id_opcion_variante': item['id_opcion_variante'],
+                'denominacion_producto': denominacionCompleta,
+                'sku_producto': producto['sku'],
+              };
+            }).toList();
       }
-      
+
       // Ordenar productos alfabéticamente por nombre
       final productosOrdenados = List<Map<String, dynamic>>.from(response);
       productosOrdenados.sort((a, b) {
-        final nombreA = (a['denominacion_producto'] as String? ?? '').toLowerCase();
-        final nombreB = (b['denominacion_producto'] as String? ?? '').toLowerCase();
+        final nombreA =
+            (a['denominacion_producto'] as String? ?? '').toLowerCase();
+        final nombreB =
+            (b['denominacion_producto'] as String? ?? '').toLowerCase();
         return nombreA.compareTo(nombreB);
       });
-      
+
       setState(() {
         _zonasInventario[key] = productosOrdenados;
         _loadingZonas[key] = false;
@@ -768,20 +962,20 @@ class ConsignacionProductosConfigScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<ConsignacionProductosConfigScreen> createState() => _ConsignacionProductosConfigScreenState();
+  State<ConsignacionProductosConfigScreen> createState() =>
+      _ConsignacionProductosConfigScreenState();
 }
 
-class _ConsignacionProductosConfigScreenState extends State<ConsignacionProductosConfigScreen> {
+class _ConsignacionProductosConfigScreenState
+    extends State<ConsignacionProductosConfigScreen> {
   late Map<int, Map<String, dynamic>> _productosConfig;
   late Map<int, TextEditingController> _precioVentaControllers;
   bool _guardando = false;
   double _tasaCambio = 440.0;
-  late final Supabase _supabase;
 
   @override
   void initState() {
     super.initState();
-    _supabase = Supabase.instance;
     _productosConfig = {};
     _precioVentaControllers = {};
     for (var p in widget.productos) {
@@ -791,8 +985,11 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
         'margen_porcentaje': 1.0,
       };
       // Crear controller para cada producto
-      final precioInicial = (p['precio_venta'] > 0 ? p['precio_venta'] : '').toString();
-      _precioVentaControllers[p['id']] = TextEditingController(text: precioInicial);
+      final precioInicial =
+          (p['precio_venta'] > 0 ? p['precio_venta'] : '').toString();
+      _precioVentaControllers[p['id']] = TextEditingController(
+        text: precioInicial,
+      );
     }
     // Cargar tasa de cambio desde la base de datos
     _cargarTasaCambio();
@@ -800,36 +997,16 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
 
   Future<void> _cargarTasaCambio() async {
     try {
-      debugPrint('Iniciando carga de tasa de cambio...');
-      
-      // Obtener todos los registros para ver qué códigos existen
-      final allResponse = await _supabase.client
-          .from('tasas_conversion')
-          .select('*');
-      debugPrint('Todos los registros de tasas_conversion: $allResponse');
-      
-      var response = <dynamic>[];
-      
-      // Si hay registros, usar el primero (la tasa más reciente)
-      if (allResponse.isNotEmpty) {
-        debugPrint('Registros encontrados: ${allResponse.length}');
-        // Ordenar por fecha más reciente y tomar el primero
-        response = allResponse;
-      } else {
-        debugPrint('No hay registros en tasas_conversion');
-      }
-      
-      if (response.isNotEmpty) {
-        final tasaCargada = (response[0]['tasa'] as num).toDouble();
-        debugPrint('Tasa cargada: $tasaCargada');
-        if (mounted) {
-          setState(() {
-            _tasaCambio = tasaCargada;
-            debugPrint('Tasa actualizada en estado: $_tasaCambio');
-          });
-        }
-      } else {
-        debugPrint('No se encontró ninguna tasa de conversión, usando valor por defecto: $_tasaCambio');
+      debugPrint('Iniciando carga de tasa de cambio (efectiva USD→CUP)...');
+
+      final tasaCargada = await CurrencyService.getEffectiveUsdToCupRate();
+      debugPrint('Tasa cargada (efectiva): $tasaCargada');
+
+      if (mounted) {
+        setState(() {
+          _tasaCambio = tasaCargada;
+          debugPrint('Tasa actualizada en estado: $_tasaCambio');
+        });
       }
     } catch (e) {
       debugPrint('Error cargando tasa de cambio: $e');
@@ -848,27 +1025,33 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
   void _confirmar() {
     for (var config in _productosConfig.values) {
       if ((config['precio_venta'] ?? 0) <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Todos los productos deben tener un precio de venta'), backgroundColor: Colors.orange));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Todos los productos deben tener un precio de venta'),
+            backgroundColor: Colors.orange,
+          ),
+        );
         return;
       }
     }
 
     // Construir productos en el formato que espera ConsignacionEnvioService.crearEnvio()
-    final finalProds = widget.productos.map((p) {
-      final config = _productosConfig[p['id']]!;
-      return {
-        'id_inventario': p['id'],
-        'id_producto': p['id_producto'],
-        'id_variante': p['id_variante'],
-        'id_presentacion': p['id_presentacion'],
-        'id_ubicacion': p['id_ubicacion'],
-        'cantidad': config['cantidad'],
-        'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
-        'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
-        'tasa_cambio': p['tasa_cambio'] ?? 440.0,
-        'precio_venta': config['precio_venta'],
-      };
-    }).toList();
+    final finalProds =
+        widget.productos.map((p) {
+          final config = _productosConfig[p['id']]!;
+          return {
+            'id_inventario': p['id'],
+            'id_producto': p['id_producto'],
+            'id_variante': p['id_variante'],
+            'id_presentacion': p['id_presentacion'],
+            'id_ubicacion': p['id_ubicacion'],
+            'cantidad': config['cantidad'],
+            'precio_costo_usd': p['precio_costo_usd'] ?? 0.0,
+            'precio_costo_cup': p['precio_costo_cup'] ?? 0.0,
+            'tasa_cambio': p['tasa_cambio'] ?? 440.0,
+            'precio_venta': config['precio_venta'],
+          };
+        }).toList();
 
     widget.onConfirm(finalProds, widget.idOperacionExtraccion);
   }
@@ -876,7 +1059,11 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Configurar Precios de Venta'), backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+      appBar: AppBar(
+        title: const Text('Configurar Precios de Venta'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+      ),
       body: Column(
         children: [
           Expanded(
@@ -887,12 +1074,15 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                 final p = widget.productos[index];
                 final config = _productosConfig[p['id']]!;
                 final precioCostoUSD = (p['precio_costo_usd'] ?? 0).toDouble();
-                final precioCostoCUP = precioCostoUSD * _tasaCambio;  // Convertir USD a CUP usando tasa de cambio
+                final precioCostoCUP =
+                    precioCostoUSD *
+                    _tasaCambio; // Convertir USD a CUP usando tasa de cambio
                 final precioVentaCUP = (config['precio_venta'] ?? 0).toDouble();
-                final precioVentaUSD = precioVentaCUP > 0 ? precioVentaCUP / _tasaCambio : 0.0;
+                final precioVentaUSD =
+                    precioVentaCUP > 0 ? precioVentaCUP / _tasaCambio : 0.0;
                 final gananciaUSD = precioVentaUSD - precioCostoUSD;
                 final margenPorcentaje = config['margen_porcentaje'] ?? 0.0;
-                
+
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   child: Padding(
@@ -900,7 +1090,13 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(p['app_dat_producto']?['denominacion'] ?? 'Producto', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(
+                          p['app_dat_producto']?['denominacion'] ?? 'Producto',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
                         const SizedBox(height: 12),
                         // Sección de Precio Costo
                         Container(
@@ -908,31 +1104,50 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                           decoration: BoxDecoration(
                             color: Colors.blue[50],
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                            border: Border.all(
+                              color: Colors.blue.withOpacity(0.3),
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'Precio Costo Original (USD)',
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.blue[700]),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.blue[700],
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 '\$${precioCostoUSD.toStringAsFixed(2)} USD',
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue,
+                                ),
                               ),
                               const SizedBox(height: 8),
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
                                     'Precio Costo en CUP',
-                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.blue[700]),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.blue[700],
+                                    ),
                                   ),
                                   Text(
                                     '% Diferencia',
-                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.blue[700]),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.blue[700],
+                                    ),
                                   ),
                                 ],
                               ),
@@ -942,11 +1157,16 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                                   Expanded(
                                     flex: 2,
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           '\$${precioCostoCUP.toStringAsFixed(2)} CUP',
-                                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue,
+                                          ),
                                         ),
                                         /* Text(
                                           '(\$${precioCostoUSD.toStringAsFixed(2)} USD)',
@@ -961,21 +1181,54 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                                     child: DropdownButton<double>(
                                       isExpanded: true,
                                       value: margenPorcentaje,
-                                      items: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-                                          .map((val) => DropdownMenuItem<double>(
-                                            value: val.toDouble(),
-                                            child: Text('${val}%', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
-                                          ))
-                                          .toList(),
+                                      items:
+                                          [
+                                                1,
+                                                2,
+                                                3,
+                                                4,
+                                                5,
+                                                6,
+                                                7,
+                                                8,
+                                                9,
+                                                10,
+                                                11,
+                                                12,
+                                                13,
+                                                14,
+                                                15,
+                                              ]
+                                              .map(
+                                                (val) =>
+                                                    DropdownMenuItem<double>(
+                                                      value: val.toDouble(),
+                                                      child: Text(
+                                                        '${val}%',
+                                                        textAlign:
+                                                            TextAlign.center,
+                                                        style: const TextStyle(
+                                                          fontSize: 12,
+                                                        ),
+                                                      ),
+                                                    ),
+                                              )
+                                              .toList(),
                                       onChanged: (newVal) {
                                         if (newVal != null) {
                                           setState(() {
-                                            config['margen_porcentaje'] = newVal;
+                                            config['margen_porcentaje'] =
+                                                newVal;
                                             // Calcular precio de venta: precio_costo_cup * (1 + porcentaje/100)
-                                            final precioVentaCalculado = precioCostoCUP * (1 + (newVal / 100));
-                                            config['precio_venta'] = precioVentaCalculado;
+                                            final precioVentaCalculado =
+                                                precioCostoCUP *
+                                                (1 + (newVal / 100));
+                                            config['precio_venta'] =
+                                                precioVentaCalculado;
                                             // Actualizar el controller del TextField
-                                            _precioVentaControllers[p['id']]?.text = precioVentaCalculado.toStringAsFixed(2);
+                                            _precioVentaControllers[p['id']]
+                                                ?.text = precioVentaCalculado
+                                                .toStringAsFixed(2);
                                           });
                                         }
                                       },
@@ -995,14 +1248,25 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                             border: OutlineInputBorder(),
                             prefixIcon: Icon(Icons.attach_money),
                           ),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          onChanged: (val) => setState(() => config['precio_venta'] = double.tryParse(val)),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          onChanged:
+                              (val) => setState(
+                                () =>
+                                    config['precio_venta'] = double.tryParse(
+                                      val,
+                                    ),
+                              ),
                         ),
                         const SizedBox(height: 8),
                         // Información de Precio de Venta en USD y Ganancia
                         if (precioVentaCUP > 0)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.grey[100],
                               borderRadius: BorderRadius.circular(6),
@@ -1011,13 +1275,23 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                               children: [
                                 Text(
                                   'En USD: \$${precioVentaUSD.toStringAsFixed(2)}',
-                                  style: TextStyle(fontSize: 11, color: Colors.grey[700], fontWeight: FontWeight.w500),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: gananciaUSD >= 0 ? Colors.green[100] : Colors.red[100],
+                                    color:
+                                        gananciaUSD >= 0
+                                            ? Colors.green[100]
+                                            : Colors.red[100],
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
@@ -1025,7 +1299,10 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
-                                      color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
+                                      color:
+                                          gananciaUSD >= 0
+                                              ? Colors.green[700]
+                                              : Colors.red[700],
                                     ),
                                   ),
                                 ),
@@ -1044,7 +1321,14 @@ class _ConsignacionProductosConfigScreenState extends State<ConsignacionProducto
             child: SizedBox(
               width: double.infinity,
               height: 50,
-              child: ElevatedButton(onPressed: _confirmar, style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white), child: const Text('CONFIRMAR ENVÍO')),
+              child: ElevatedButton(
+                onPressed: _confirmar,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('CONFIRMAR ENVÍO'),
+              ),
             ),
           ),
         ],

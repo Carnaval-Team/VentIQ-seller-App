@@ -19,7 +19,7 @@ class PersonalRatesService {
         .from('tasa_cambio_extraoficial')
         .select('''
           id,
-          moneda_origen,
+          id_moneda_origen,
           id_moneda_destino,
           valor_cambio,
           usar_precio_toque,

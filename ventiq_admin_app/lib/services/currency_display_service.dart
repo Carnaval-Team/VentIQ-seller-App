@@ -36,8 +36,8 @@ class CurrencyDisplayService {
     try {
       if (fromCurrency == toCurrency) return 1.0;
 
-      // Usar el método existente del CurrencyService
-      final rates = await CurrencyService.getCurrentRatesFromDatabase();
+      // Usar el método efectivo (incluye override por tienda)
+      final rates = await CurrencyService.getEffectiveRatesFromDatabase();
 
       // Buscar tasa directa
       for (final rate in rates) {
@@ -87,8 +87,8 @@ class CurrencyDisplayService {
         };
       }
 
-      // Usar el método existente del CurrencyService
-      final rates = await CurrencyService.getCurrentRatesFromDatabase();
+      // Usar el método efectivo (incluye override por tienda)
+      final rates = await CurrencyService.getEffectiveRatesFromDatabase();
 
       // Buscar tasa directa
       for (final rate in rates) {
@@ -157,8 +157,8 @@ class CurrencyDisplayService {
   /// Obtiene todas las tasas para mostrar en la pantalla de visualización
   static Future<List<Map<String, dynamic>>> getAllRatesForDisplay() async {
     try {
-      // Usar el método existente del CurrencyService
-      return await CurrencyService.getCurrentRatesFromDatabase();
+      // Usar el método efectivo (incluye override por tienda)
+      return await CurrencyService.getEffectiveRatesFromDatabase();
     } catch (e) {
       print('❌ Error obteniendo todas las tasas para display: $e');
       return [];
