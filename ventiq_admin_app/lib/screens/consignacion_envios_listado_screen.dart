@@ -334,41 +334,17 @@ class _ConsignacionEnviosListadoScreenState
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            numeroEnvio,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          if (tipoEnvio == 2) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.deepOrange.shade100,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'DEVOLUCIÓN',
-                                style: TextStyle(
-                                  color: Colors.deepOrange,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                      Text(
+                        numeroEnvio,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         tipoEnvio == 2
                             ? '$tiendaConsignataria → $tiendaConsignadora'
@@ -378,7 +354,34 @@ class _ConsignacionEnviosListadoScreenState
                     ],
                   ),
                 ),
-                _buildBadgeEstado(estado, estadoTexto),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _buildBadgeEstado(estado, estadoTexto),
+                    if (tipoEnvio == 2) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.deepOrange.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'DEVOLUCIÓN',
+                          style: TextStyle(
+                            color: Colors.deepOrange,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
             const Divider(height: 20),

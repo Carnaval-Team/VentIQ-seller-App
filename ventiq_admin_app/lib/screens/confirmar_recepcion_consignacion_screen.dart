@@ -95,16 +95,17 @@ class _ConfirmarRecepcionConsignacionScreenState
         
         // Transformar formato de productos del envío al formato esperado
         productos = productosEnvio.map((p) {
-          final idEnvioProducto = (p['id_envio_producto'] as num?)?.toInt() ?? 0;
+          final idEnvioProducto = (p['id'] as num?)?.toInt() ?? 0;
           final idProducto = (p['id_producto'] as num?)?.toInt() ?? 0;
-          final nombreProducto = (p['nombre_producto'] as String?) ?? 'Producto sin nombre';
+          final nombreProducto = (p['denominacion'] as String?) ?? 'Producto sin nombre';
           final sku = (p['sku'] as String?) ?? 'N/A';
           final cantidadPropuesta = (p['cantidad_propuesta'] as num?)?.toDouble() ?? 0;
           final precioCostoCup = (p['precio_costo_cup'] as num?)?.toDouble() ?? 0;
           final precioCostoUsd = (p['precio_costo_usd'] as num?)?.toDouble() ?? 0;
           final precioVentaCup = (p['precio_venta_cup'] as num?)?.toDouble() ?? 0;
+          final estadoProducto = (p['estado_producto'] as num?)?.toInt() ?? 0;
           
-          debugPrint('✅ Producto mapeado: id=$idEnvioProducto, nombre=$nombreProducto, cantidad=$cantidadPropuesta');
+          debugPrint('✅ Producto mapeado: id=$idEnvioProducto, nombre=$nombreProducto, cantidad=$cantidadPropuesta, estado=$estadoProducto');
           
           return {
             'id': idEnvioProducto,
@@ -113,8 +114,9 @@ class _ConfirmarRecepcionConsignacionScreenState
             'precio_costo_unitario': precioCostoCup,
             'precio_costo_usd': precioCostoUsd,
             'precio_venta_sugerido': precioCostoCup,
-            'precio_venta_cup': precioVentaCup, // Agregar precio_venta_cup si ya está configurado
+            'precio_venta_cup': precioVentaCup,
             'puede_modificar_precio': true,
+            'estado_producto': estadoProducto,  // ✅ Agregar estado_producto del RPC
             'producto': {
               'id': idProducto,
               'denominacion': nombreProducto,
@@ -127,8 +129,19 @@ class _ConfirmarRecepcionConsignacionScreenState
         productos = await ConsignacionService.getProductosPendientesConsignacion(widget.idContrato);
       }
 
+      // ✅ FILTRAR: Excluir productos rechazados (estado_producto 2)
+      final productosNoRechazados = productos.where((p) {
+        // Intentar obtener estado_producto primero (para envíos), luego estado (para contrato directo)
+        final estadoProducto = (p['estado_producto'] as num?)?.toInt();
+        final estado = (p['estado'] as num?)?.toInt() ?? 0;
+        final estadoFinal = estadoProducto ?? estado;
+        return estadoFinal != 2; // Excluir rechazados (estado 2)
+      }).toList();
+      
+      debugPrint('📊 Productos totales: ${productos.length}, No rechazados: ${productosNoRechazados.length}');
+
       setState(() {
-        _productosPendientes = productos;
+        _productosPendientes = productosNoRechazados;
         _isLoading = false;
       });
     } catch (e) {
@@ -169,8 +182,17 @@ class _ConfirmarRecepcionConsignacionScreenState
   }
 
   Widget _buildEnvioResumen() {
-    final totalProductos = _productosPendientes.length;
-    final totalCantidad = _productosPendientes.fold<double>(
+    // ✅ FILTRAR: Solo productos NO rechazados (estado_producto != 2)
+    final productosNoRechazados = _productosPendientes.where((p) {
+      // Intentar obtener estado_producto primero (para envíos), luego estado (para contrato directo)
+      final estadoProducto = (p['estado_producto'] as num?)?.toInt();
+      final estado = (p['estado'] as num?)?.toInt() ?? 0;
+      final estadoFinal = estadoProducto ?? estado;
+      return estadoFinal != 2; // Excluir rechazados
+    }).toList();
+    
+    final totalProductos = productosNoRechazados.length;
+    final totalCantidad = productosNoRechazados.fold<double>(
       0,
       (sum, p) => sum + ((p['cantidad_enviada'] as num?) ?? 0).toDouble(),
     );
@@ -288,6 +310,17 @@ class _ConfirmarRecepcionConsignacionScreenState
           final idProductoConsignacion = producto['id'] as int;
           final nombreProducto = producto['producto']['denominacion'] ?? 'Producto';
           final sku = producto['producto']['sku'] ?? 'N/A';
+          
+          // Obtener estado_producto (para envíos) o estado (para contrato directo)
+          final estadoProducto = (producto['estado_producto'] as num?)?.toInt();
+          final estado = (producto['estado'] as num?)?.toInt() ?? 0;
+          final estadoFinal = estadoProducto ?? estado;
+          final estadoTexto = _obtenerTextoEstadoProducto(estadoFinal);
+          
+          // Obtener estado de app_dat_producto_consignacion
+          final estadoConsignacion = (producto['estado'] as num?)?.toInt() ?? 0;
+          final estadoConsignacionTexto = _obtenerTextoEstadoProducto(estadoConsignacion);
+          
           final cantidad = producto['cantidad_enviada'];
           // Precio de costo en CUP configurado por el consignador (precio_costo_cup)
           final precioCostoCUP = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
@@ -345,6 +378,8 @@ class _ConfirmarRecepcionConsignacionScreenState
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                               ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             Text(
                               'SKU: $sku',
@@ -363,7 +398,7 @@ class _ConfirmarRecepcionConsignacionScreenState
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          '$cantidad unidades',
+                          '$cantidad un.',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
@@ -373,110 +408,259 @@ class _ConfirmarRecepcionConsignacionScreenState
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  // Fila 2: Precio de costo, precio de venta y ganancias
+                  // Estados del producto
                   Row(
                     children: [
                       Expanded(
-                        flex: 2,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Precio Costo',
+                              'Estado Envío',
                               style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[700],
+                                fontSize: 10,
+                                color: Colors.grey[600],
                               ),
                             ),
                             const SizedBox(height: 4),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
-                                color: Colors.blue[50],
+                                color: _obtenerColorEstadoProducto(estadoFinal).withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.blue.withOpacity(0.3)),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '\$${precioCostoUSD.toStringAsFixed(2)} USD',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '\$${precioCostoCUP.toStringAsFixed(2)} CUP',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                ],
+                              child: Text(
+                                estadoTexto,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: _obtenerColorEstadoProducto(estadoFinal),
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Expanded(
-                        flex: 2,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Precio de Venta (CUP)',
+                              'Estado Consignación',
                               style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[700],
+                                fontSize: 10,
+                                color: Colors.grey[600],
                               ),
                             ),
                             const SizedBox(height: 4),
-                            _buildPrecioTextField(
-                              idProductoConsignacion,
-                              precioCostoCUP,
-                              puedeModificarPrecio,
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: _obtenerColorEstadoProducto(estadoConsignacion).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                estadoConsignacionTexto,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: _obtenerColorEstadoProducto(estadoConsignacion),
+                                ),
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 2,
-                        child: _buildGananciasColumn(
-                          idProductoConsignacion,
-                          precioCostoCUP,
-                          precioCostoUSD,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 1,
-                        child: ElevatedButton.icon(
-                          onPressed: () => _rechazarEnvio(idProductoConsignacion),
-                          icon: const Icon(Icons.close),
-                          label: const Text('Rechazar'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                        ),
-                      ),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Layout Responsive: Detectar tamaño de pantalla
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isSmallScreen = constraints.maxWidth < 600;
+                      
+                      if (isSmallScreen) {
+                        // Layout vertical para pantallas pequeñas
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Precio de costo
+                            _buildPriceSection(
+                              'Precio Costo',
+                              precioCostoUSD,
+                              precioCostoCUP,
+                              Colors.blue,
+                            ),
+                            const SizedBox(height: 12),
+                            // Precio de venta
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Precio de Venta (CUP)',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                _buildPrecioTextField(
+                                  idProductoConsignacion,
+                                  precioCostoCUP,
+                                  puedeModificarPrecio,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            // Ganancias
+                            _buildGananciasColumn(
+                              idProductoConsignacion,
+                              precioCostoCUP,
+                              precioCostoUSD,
+                            ),
+                            const SizedBox(height: 12),
+                            // Botón Rechazar (ancho completo)
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () => _rechazarEnvio(idProductoConsignacion),
+                                icon: const Icon(Icons.close, size: 18),
+                                label: const Text('Rechazar Producto'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      } else {
+                        // Layout horizontal para pantallas grandes
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: _buildPriceSection(
+                                'Precio Costo',
+                                precioCostoUSD,
+                                precioCostoCUP,
+                                Colors.blue,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 2,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Precio de Venta (CUP)',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey[700],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  _buildPrecioTextField(
+                                    idProductoConsignacion,
+                                    precioCostoCUP,
+                                    puedeModificarPrecio,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 2,
+                              child: _buildGananciasColumn(
+                                idProductoConsignacion,
+                                precioCostoCUP,
+                                precioCostoUSD,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 1,
+                              child: ElevatedButton.icon(
+                                onPressed: () => _rechazarEnvio(idProductoConsignacion),
+                                icon: const Icon(Icons.close),
+                                label: const Text('Rechazar'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                    },
                   ),
                 ],
               ),
             ),
           );
         }),
+      ],
+    );
+  }
+
+  /// Widget reutilizable para mostrar sección de precio
+  Widget _buildPriceSection(
+    String label,
+    double priceUSD,
+    double priceCUP,
+    Color color,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey[700],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: color.withOpacity(0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '\$${priceUSD.toStringAsFixed(2)} USD',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '\$${priceCUP.toStringAsFixed(2)} CUP',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -497,45 +681,53 @@ class _ConfirmarRecepcionConsignacionScreenState
 
     final controller = _precioControllers[idProductoConsignacion]!;
 
-    return TextField(
-      // ✅ Siempre editable - El consignatario define el precio de venta
-      enabled: true,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      controller: controller,
-      decoration: InputDecoration(
-        hintText: 'Ingrese precio',
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(6),
-          borderSide: BorderSide(
-            color: Colors.grey[400]!,
-          ),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(6),
-          borderSide: BorderSide(
-            color: Colors.grey[400]!,
-          ),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        isDense: true,
-        prefixText: '\$ ',
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey[400]!),
       ),
-      onChanged: (value) {
-        final precio = double.tryParse(value);
-        if (precio != null && precio > 0) {
-          setState(() {
-            _preciosVentaConfigurables[idProductoConsignacion] = precio;
-          });
-        }
-      },
-      onSubmitted: (value) {
-        final precio = double.tryParse(value);
-        if (precio != null && precio > 0) {
-          setState(() {
-            _preciosVentaConfigurables[idProductoConsignacion] = precio;
-          });
-        }
-      },
+      child: TextField(
+        // ✅ Siempre editable - El consignatario define el precio de venta
+        enabled: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        controller: controller,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+        ),
+        decoration: InputDecoration(
+          hintText: 'Precio',
+          hintStyle: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[400],
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          isDense: true,
+          prefixText: '\$ ',
+          prefixStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        onChanged: (value) {
+          final precio = double.tryParse(value);
+          if (precio != null && precio > 0) {
+            setState(() {
+              _preciosVentaConfigurables[idProductoConsignacion] = precio;
+            });
+          }
+        },
+        onSubmitted: (value) {
+          final precio = double.tryParse(value);
+          if (precio != null && precio > 0) {
+            setState(() {
+              _preciosVentaConfigurables[idProductoConsignacion] = precio;
+            });
+          }
+        },
+      ),
     );
   }
 
@@ -550,6 +742,7 @@ class _ConfirmarRecepcionConsignacionScreenState
     final gananciaUSD = precioVentaUSD - precioCostoUSD;
     final gananciaCUP = precioVentaCUP - precioCostoCUP;
     final porcentajeGanancia = precioCostoCUP > 0 ? ((gananciaCUP / precioCostoCUP) * 100) : 0.0;
+    final esPositiva = gananciaUSD >= 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -564,41 +757,79 @@ class _ConfirmarRecepcionConsignacionScreenState
         ),
         const SizedBox(height: 4),
         Container(
+          width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
-            color: gananciaUSD >= 0 ? Colors.green[50] : Colors.red[50],
+            color: esPositiva ? Colors.green[50] : Colors.red[50],
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: gananciaUSD >= 0 ? Colors.green.withOpacity(0.3) : Colors.red.withOpacity(0.3),
+              color: esPositiva ? Colors.green.withOpacity(0.3) : Colors.red.withOpacity(0.3),
             ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '\$${gananciaUSD.toStringAsFixed(2)} USD',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '\$${gananciaUSD.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: esPositiva ? Colors.green[700] : Colors.red[700],
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'USD',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: esPositiva ? Colors.green[700] : Colors.red[700],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                '\$${gananciaCUP.toStringAsFixed(2)} CUP',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
-                ),
+              const SizedBox(height: 3),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '\$${gananciaCUP.toStringAsFixed(0)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: esPositiva ? Colors.green[700] : Colors.red[700],
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'CUP',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: esPositiva ? Colors.green[700] : Colors.red[700],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                '${porcentajeGanancia.toStringAsFixed(1)}%',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: gananciaUSD >= 0 ? Colors.green[700] : Colors.red[700],
+              const SizedBox(height: 3),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: esPositiva ? Colors.green[100] : Colors.red[100],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '${porcentajeGanancia.toStringAsFixed(1)}%',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: esPositiva ? Colors.green[900] : Colors.red[900],
+                  ),
                 ),
               ),
             ],
@@ -882,14 +1113,47 @@ class _ConfirmarRecepcionConsignacionScreenState
           debugPrint('📦 Envío encontrado: $idEnvio');
         }
 
+        // ✅ FILTRAR: Solo productos NO rechazados (estado_producto != 2)
+        final productosNoRechazados = _productosPendientes.where((p) {
+          final estadoProducto = (p['estado_producto'] as num?)?.toInt();
+          final estado = (p['estado'] as num?)?.toInt() ?? 0;
+          final estadoFinal = estadoProducto ?? estado;
+          return estadoFinal != 2; // Excluir rechazados
+        }).toList();
+        
+        debugPrint('📊 Productos a procesar: ${productosNoRechazados.length} (excluidos rechazados)');
+        
         // Construir JSON de precios del formulario
         final preciosProductos = <Map<String, dynamic>>[];
-        for (final producto in _productosPendientes) {
+        final productosConPrecioInvalido = <String>[];
+        
+        debugPrint('📋 Precios configurados en _preciosVentaConfigurables: $_preciosVentaConfigurables');
+        
+        for (final producto in productosNoRechazados) {
           final idProductoConsignacion = producto['id'] as int;
           final idProducto = producto['id_producto'] as int;
+          final nombreProducto = producto['producto']['denominacion'] as String? ?? 'Producto';
           final precioSugerido = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
-          final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioSugerido;
           final precioCostoUsd = (producto['precio_costo_usd'] as num?)?.toDouble() ?? 0.0;
+          final estadoProducto = (producto['estado_producto'] as num?)?.toInt() ?? 0;
+          
+          debugPrint('🔍 Procesando producto: $nombreProducto (ID consignación: $idProductoConsignacion, estado: $estadoProducto)');
+          debugPrint('   - Precio sugerido: $precioSugerido');
+          debugPrint('   - Precio en _preciosVentaConfigurables: ${_preciosVentaConfigurables[idProductoConsignacion]}');
+          
+          // ✅ USAR el precio configurado por el usuario, o el precio sugerido como fallback
+          final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioSugerido;
+          
+          debugPrint('   - Precio final a usar: $precioConfigurable');
+          
+          // ✅ VALIDAR: precio_venta_cup debe ser > 0 y NO null
+          if (precioConfigurable == null || precioConfigurable <= 0) {
+            debugPrint('❌ Producto $nombreProducto (ID: $idProducto) tiene precio inválido: $precioConfigurable');
+            productosConPrecioInvalido.add(nombreProducto);
+            continue; // Saltar este producto
+          }
+          
+          debugPrint('✅ Producto $nombreProducto: precio_venta_cup=$precioConfigurable');
           
           preciosProductos.add({
             'id_producto': idProducto,
@@ -899,8 +1163,71 @@ class _ConfirmarRecepcionConsignacionScreenState
         }
         
         debugPrint('💰 Precios del formulario: $preciosProductos');
+        debugPrint('📊 Total productos a enviar: ${preciosProductos.length}');
+        
+        // ✅ VALIDAR: Si hay productos con precio inválido, NO aceptar el envío
+        if (productosConPrecioInvalido.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ No se puede aceptar el envío. Los siguientes productos tienen precio inválido: ${productosConPrecioInvalido.join(", ")}. Por favor, configura los precios correctamente.'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          if (mounted) {
+            setState(() => _isConfirming = false);
+          }
+          return;
+        }
+        
+        if (preciosProductos.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ No hay productos para confirmar (todos fueron rechazados)'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          if (mounted) {
+            setState(() => _isConfirming = false);
+          }
+          return;
+        }
         
         bool success = false;
+        
+        // ✅ Validar que preciosProductos no esté vacío
+        if (preciosProductos.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ No hay productos con precios válidos para confirmar'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          if (mounted) {
+            setState(() => _isConfirming = false);
+          }
+          return;
+        }
+        
+        // ✅ Validar que todos los precios sean válidos (no null, > 0)
+        for (final precio in preciosProductos) {
+          final precioVentaCup = precio['precio_venta_cup'];
+          if (precioVentaCup == null || precioVentaCup <= 0) {
+            debugPrint('❌ Precio inválido en preciosProductos: $precioVentaCup');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ Error: Hay precios inválidos en los datos a enviar'),
+                backgroundColor: Colors.red,
+              ),
+            );
+            if (mounted) {
+              setState(() => _isConfirming = false);
+            }
+            return;
+          }
+        }
+        
+        debugPrint('✅ Validación de precios completada correctamente');
         
         // ✅ Decidir qué método usar según el flujo
         final envioId = widget.idEnvio ?? idEnvio;
@@ -922,13 +1249,37 @@ class _ConfirmarRecepcionConsignacionScreenState
           // FLUJO DE CONTRATO DIRECTO: Usar confirmarRecepcionProductosConsignacion
           debugPrint('📋 Usando flujo de contrato directo');
           
+          // ✅ FILTRAR: Solo productos NO rechazados (estado_producto != 2)
+          final productosAConfirmar = _productosPendientes.where((p) {
+            // Intentar obtener estado_producto primero (para envíos), luego estado (para contrato directo)
+            final estadoProducto = (p['estado_producto'] as num?)?.toInt();
+            final estado = (p['estado'] as num?)?.toInt() ?? 0;
+            final estadoFinal = estadoProducto ?? estado;
+            return estadoFinal != 2; // Excluir rechazados
+          }).toList();
+          
+          debugPrint('📊 Productos a confirmar: ${productosAConfirmar.length} (excluidos rechazados)');
+          
+          if (productosAConfirmar.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ No hay productos para confirmar (todos fueron rechazados)'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            if (mounted) {
+              setState(() => _isConfirming = false);
+            }
+            return;
+          }
+          
           // Preparar IDs de productos consignación y mapa de precios
-          final idsProductosConsignacion = _productosPendientes
+          final idsProductosConsignacion = productosAConfirmar
               .map((p) => p['id'] as int)
               .toList();
           
           final preciosVentaMap = <int, double>{};
-          for (final producto in _productosPendientes) {
+          for (final producto in productosAConfirmar) {
             final idProductoConsignacion = producto['id'] as int;
             final precioSugerido = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
             final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioSugerido;
@@ -1002,7 +1353,7 @@ class _ConfirmarRecepcionConsignacionScreenState
     }
   }
 
-  Future<void> _rechazarEnvio(int idProductoConsignacion) async {
+  Future<void> _rechazarEnvio(int idEnvioProducto) async {
     final motivoController = TextEditingController();
     
     final confirmed = await showDialog<bool>(
@@ -1059,17 +1410,82 @@ class _ConfirmarRecepcionConsignacionScreenState
       }
 
       try {
-        // Actualizar el estado del producto consignación a 2 (rechazado)
-        // y guardar el motivo en observaciones
         final supabase = Supabase.instance.client;
         
+        // idEnvioProducto es el ID del envío-producto (app_dat_consignacion_envio_producto)
+        final idEnvioProductoReg = idEnvioProducto;
+        
+        debugPrint('🔍 Rechazando envío-producto: $idEnvioProductoReg');
+        
+        // 1. Obtener datos de app_dat_consignacion_envio_producto
+        final envioProductoData = await supabase
+            .from('app_dat_consignacion_envio_producto')
+            .select('id_producto, id_envio')
+            .eq('id', idEnvioProductoReg)
+            .single();
+        
+        final idProducto = (envioProductoData['id_producto'] as num?)?.toInt();
+        final idEnvio = (envioProductoData['id_envio'] as num?)?.toInt();
+        
+        if (idProducto == null) {
+          throw Exception('No se pudo obtener el id_producto del envío');
+        }
+        
+        debugPrint('🔍 Datos del envío-producto: idProducto=$idProducto, idEnvio=$idEnvio');
+        
+        // 2. Actualizar estado_producto en app_dat_consignacion_envio_producto (estado_producto = 2)
         await supabase
-            .from('app_dat_producto_consignacion')
+            .from('app_dat_consignacion_envio_producto')
             .update({
-              'estado': 2, // Estado rechazado
-              'observaciones': motivo,
+              'estado_producto': 2, // Estado rechazado
+              'fecha_rechazo': DateTime.now().toIso8601String(),
+              'motivo_rechazo': motivo,
             })
-            .eq('id', idProductoConsignacion);
+            .eq('id', idEnvioProductoReg);
+        
+        debugPrint('✅ Producto rechazado (estado_producto=2) en app_dat_consignacion_envio_producto');
+        
+        // 3. Obtener id_operacion_extraccion del envío
+        if (idEnvio != null) {
+          debugPrint('🔍 Obteniendo id_operacion_extraccion del envío $idEnvio');
+          
+          final envioData = await supabase
+              .from('app_dat_consignacion_envio')
+              .select('id_operacion_extraccion')
+              .eq('id', idEnvio)
+              .single();
+          
+          final idOperacionExtraccion = (envioData['id_operacion_extraccion'] as num?)?.toInt();
+          
+          if (idOperacionExtraccion != null) {
+            debugPrint('� Verificando si producto $idProducto existe en operación de extracción $idOperacionExtraccion');
+            
+            // Verificar si el producto existe en la extracción
+            final existeEnExtraccion = await supabase
+                .from('app_dat_extraccion_productos')
+                .select('id')
+                .eq('id_operacion', idOperacionExtraccion)
+                .eq('id_producto', idProducto)
+                .maybeSingle();
+            
+            if (existeEnExtraccion != null) {
+              debugPrint('✅ Producto $idProducto encontrado en extracción, eliminando...');
+              
+              // Eliminar del registro de extracción
+              await supabase
+                  .from('app_dat_extraccion_productos')
+                  .delete()
+                  .eq('id_operacion', idOperacionExtraccion)
+                  .eq('id_producto', idProducto);
+              
+              debugPrint('✅ Producto $idProducto eliminado de operación de extracción $idOperacionExtraccion');
+            } else {
+              debugPrint('⚠️ Producto $idProducto NO encontrado en extracción $idOperacionExtraccion');
+            }
+          } else {
+            debugPrint('⚠️ No se encontró id_operacion_extraccion para el envío $idEnvio');
+          }
+        }
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1095,6 +1511,36 @@ class _ConfirmarRecepcionConsignacionScreenState
       } finally {
         motivoController.dispose();
       }
+    }
+  }
+
+  /// Obtiene el texto del estado del producto
+  /// 0 = Pendiente, 1 = Confirmado, 2 = Rechazado
+  String _obtenerTextoEstadoProducto(int estado) {
+    switch (estado) {
+      case 0:
+        return 'Pendiente';
+      case 1:
+        return 'Confirmado';
+      case 2:
+        return 'Rechazado';
+      default:
+        return 'Desconocido';
+    }
+  }
+
+  /// Obtiene el color del estado del producto
+  /// 0 = Pendiente (naranja), 1 = Confirmado (verde), 2 = Rechazado (rojo)
+  Color _obtenerColorEstadoProducto(int estado) {
+    switch (estado) {
+      case 0:
+        return Colors.orange;
+      case 1:
+        return Colors.green;
+      case 2:
+        return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
 }
