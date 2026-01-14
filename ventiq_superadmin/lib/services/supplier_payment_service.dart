@@ -44,7 +44,7 @@ class SupplierPaymentService {
             precio_usd,
             precio_euro,
             transferencia,
-            Orders(status)
+            Orders!inner(status)
           ''')
           .eq('Orders.status', 'Completado')
           .gte('created_at', fechaInicio.toIso8601String())

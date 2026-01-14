@@ -14,6 +14,7 @@ import '../widgets/units_tab_view.dart';
 import '../widgets/carnaval_tab_view.dart';
 import '../widgets/price_management_tab_view.dart';
 import '../widgets/personal_rates_tab_view.dart';
+import '../widgets/carnaval_prices_tab_view.dart';
 import '../services/store_data_service.dart';
 import '../services/store_service.dart';
 import '../services/catalogo_service.dart';
@@ -60,7 +61,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 9, vsync: this, initialIndex: 1);
+    _tabController = TabController(length: 10, vsync: this, initialIndex: 1);
     _loadPermissions();
   }
 
@@ -129,6 +130,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             Tab(text: 'Unidades', icon: Icon(Icons.straighten)),
             Tab(text: 'Precios', icon: Icon(Icons.sell)),
             Tab(text: 'Tasas pers.', icon: Icon(Icons.currency_exchange)),
+            Tab(text: 'Precios Carnaval', icon: Icon(Icons.price_check)),
             Tab(text: 'Carnaval App', icon: Icon(Icons.storefront)),
           ],
         ),
@@ -144,6 +146,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           UnitsTabView(key: _unitsTabKey),
           PriceManagementTabView(),
           PersonalRatesTabView(canEdit: _canEditSettings),
+          const CarnavalPricesTabView(),
           CarnavalTabView(key: _carnavalTabKey),
         ],
       ),
@@ -167,7 +170,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                       _tabController.index == 5 ||
                       _tabController.index == 6 ||
                       _tabController.index == 7 ||
-                      _tabController.index == 8;
+                      _tabController.index == 8 ||
+                      _tabController.index == 9;
                   return isHidden
                       ? const SizedBox.shrink()
                       : FloatingActionButton(
