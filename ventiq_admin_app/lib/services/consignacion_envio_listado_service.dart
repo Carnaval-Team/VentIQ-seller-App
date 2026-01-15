@@ -126,13 +126,13 @@ class ConsignacionEnvioListadoService {
           .eq('uuid', idUsuario)
           .single();
 
-      final idTiendaUsuario = usuario['id_tienda'] as int;
-      final idConsignadora = contrato['id_tienda_consignadora'] as int;
-      final idConsignataria = contrato['id_tienda_consignataria'] as int;
+      final idTiendaUsuario = (usuario['id_tienda'] as num?)?.toInt() ?? 0;
+      final idTiendaConsignadora = (contrato['id_tienda_consignadora'] as num?)?.toInt() ?? 0;
+      final idTiendaConsignataria = (contrato['id_tienda_consignataria'] as num?)?.toInt() ?? 0;
 
-      if (idTiendaUsuario == idConsignadora) {
+      if (idTiendaUsuario == idTiendaConsignadora) {
         return 'consignador';
-      } else if (idTiendaUsuario == idConsignataria) {
+      } else if (idTiendaUsuario == idTiendaConsignataria) {
         return 'consignatario';
       }
       return null;

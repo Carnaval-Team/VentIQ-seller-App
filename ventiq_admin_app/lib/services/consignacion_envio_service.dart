@@ -579,13 +579,59 @@ class ConsignacionEnvioService {
       if (response != null && response is List && response.isNotEmpty) {
         final resultado = response[0] as Map<String, dynamic>;
         final success = resultado['success'] as bool;
-        debugPrint(success ? '✅ Envío rechazado y stock devuelto' : '❌ Error');
+        final mensaje = resultado['mensaje'] as String? ?? '';
+        
+        if (success) {
+          debugPrint('✅ Envío rechazado con éxito: $mensaje');
+        } else {
+          debugPrint('❌ Error rechazando envío: $mensaje');
+        }
         return success;
       }
 
       return false;
     } catch (e) {
-      debugPrint('❌ Error rechazando envío: $e');
+      debugPrint('❌ Error excepcion rechazando envío: $e');
+      return false;
+    }
+  }
+
+  /// Rechaza un producto individual del envío
+  static Future<bool> rechazarProductoEnvio({
+    required int idEnvio,
+    required int idEnvioProducto,
+    required String idUsuario,
+    required String motivoRechazo,
+  }) async {
+    try {
+      debugPrint('❌ Rechazando producto $idEnvioProducto del envío $idEnvio...');
+
+      final response = await _supabase.rpc(
+        'rechazar_producto_envio_consignacion',
+        params: {
+          'p_id_envio': idEnvio,
+          'p_id_envio_producto': idEnvioProducto,
+          'p_id_usuario': idUsuario,
+          'p_motivo_rechazo': motivoRechazo,
+        },
+      );
+
+      if (response != null && response is List && response.isNotEmpty) {
+        final resultado = response[0] as Map<String, dynamic>;
+        final success = resultado['success'] as bool;
+        final mensaje = resultado['mensaje'] as String? ?? '';
+        
+        if (success) {
+          debugPrint('✅ Producto rechazado con éxito: $mensaje');
+        } else {
+          debugPrint('❌ Error rechazando producto: $mensaje');
+        }
+        return success;
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('❌ Error excepcion rechazando producto: $e');
       return false;
     }
   }

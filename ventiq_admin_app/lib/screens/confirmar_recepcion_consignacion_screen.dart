@@ -110,6 +110,7 @@ class _ConfirmarRecepcionConsignacionScreenState
           return {
             'id': idEnvioProducto,
             'id_producto': idProducto,
+            'id_envio': widget.idEnvio ?? p['id_envio'], // ✅ Asegurar id_envio
             'cantidad_enviada': cantidadPropuesta,
             'precio_costo_unitario': precioCostoCup,
             'precio_costo_usd': precioCostoUsd,
@@ -307,7 +308,7 @@ class _ConfirmarRecepcionConsignacionScreenState
         const SizedBox(height: 12),
         ...List.generate(_productosPendientes.length, (index) {
           final producto = _productosPendientes[index];
-          final idProductoConsignacion = producto['id'] as int;
+          final idProductoConsignacion = (producto['id'] as num?)?.toInt() ?? 0;
           final nombreProducto = producto['producto']['denominacion'] ?? 'Producto';
           final sku = producto['producto']['sku'] ?? 'N/A';
           
@@ -1280,7 +1281,8 @@ class _ConfirmarRecepcionConsignacionScreenState
           
           final preciosVentaMap = <int, double>{};
           for (final producto in productosAConfirmar) {
-            final idProductoConsignacion = producto['id'] as int;
+            final idProductoConsignacion = (producto['id'] as num?)?.toInt() ?? 0;
+            if (idProductoConsignacion == 0) continue;
             final precioSugerido = (producto['precio_venta_sugerido'] as num?)?.toDouble() ?? 0.0;
             final precioConfigurable = _preciosVentaConfigurables[idProductoConsignacion] ?? precioSugerido;
             preciosVentaMap[idProductoConsignacion] = precioConfigurable;
@@ -1360,25 +1362,27 @@ class _ConfirmarRecepcionConsignacionScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Rechazar Envío'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('¿Rechazar este producto?'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: motivoController,
-              decoration: InputDecoration(
-                labelText: 'Motivo del rechazo',
-                hintText: 'Ingrese el motivo...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('¿Rechazar este producto?'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: motivoController,
+                decoration: InputDecoration(
+                  labelText: 'Motivo del rechazo',
+                  hintText: 'Ingrese el motivo...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
+                minLines: 3,
+                maxLines: 5,
               ),
-              minLines: 3,
-              maxLines: 5,
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1406,85 +1410,37 @@ class _ConfirmarRecepcionConsignacionScreenState
             backgroundColor: Colors.orange,
           ),
         );
+        motivoController.dispose();
         return;
       }
 
       try {
-        final supabase = Supabase.instance.client;
+        final userId = await UserPreferencesService().getUserId();
+        if (userId == null) throw Exception('Usuario no identificado');
+
+        // Obtener el id_envio de forma segura
+        final producto = _productosPendientes.firstWhere(
+          (p) => p['id'] == idEnvioProducto,
+          orElse: () => {},
+        );
         
-        // idEnvioProducto es el ID del envío-producto (app_dat_consignacion_envio_producto)
-        final idEnvioProductoReg = idEnvioProducto;
+        final idEnvioNum = widget.idEnvio ?? producto['id_envio'];
         
-        debugPrint('🔍 Rechazando envío-producto: $idEnvioProductoReg');
-        
-        // 1. Obtener datos de app_dat_consignacion_envio_producto
-        final envioProductoData = await supabase
-            .from('app_dat_consignacion_envio_producto')
-            .select('id_producto, id_envio')
-            .eq('id', idEnvioProductoReg)
-            .single();
-        
-        final idProducto = (envioProductoData['id_producto'] as num?)?.toInt();
-        final idEnvio = (envioProductoData['id_envio'] as num?)?.toInt();
-        
-        if (idProducto == null) {
-          throw Exception('No se pudo obtener el id_producto del envío');
+        if (idEnvioNum == null) {
+          throw Exception('No se pudo identificar el envío asociado al producto');
         }
         
-        debugPrint('🔍 Datos del envío-producto: idProducto=$idProducto, idEnvio=$idEnvio');
-        
-        // 2. Actualizar estado_producto en app_dat_consignacion_envio_producto (estado_producto = 2)
-        await supabase
-            .from('app_dat_consignacion_envio_producto')
-            .update({
-              'estado_producto': 2, // Estado rechazado
-              'fecha_rechazo': DateTime.now().toIso8601String(),
-              'motivo_rechazo': motivo,
-            })
-            .eq('id', idEnvioProductoReg);
-        
-        debugPrint('✅ Producto rechazado (estado_producto=2) en app_dat_consignacion_envio_producto');
-        
-        // 3. Obtener id_operacion_extraccion del envío
-        if (idEnvio != null) {
-          debugPrint('🔍 Obteniendo id_operacion_extraccion del envío $idEnvio');
-          
-          final envioData = await supabase
-              .from('app_dat_consignacion_envio')
-              .select('id_operacion_extraccion')
-              .eq('id', idEnvio)
-              .single();
-          
-          final idOperacionExtraccion = (envioData['id_operacion_extraccion'] as num?)?.toInt();
-          
-          if (idOperacionExtraccion != null) {
-            debugPrint('� Verificando si producto $idProducto existe en operación de extracción $idOperacionExtraccion');
-            
-            // Verificar si el producto existe en la extracción
-            final existeEnExtraccion = await supabase
-                .from('app_dat_extraccion_productos')
-                .select('id')
-                .eq('id_operacion', idOperacionExtraccion)
-                .eq('id_producto', idProducto)
-                .maybeSingle();
-            
-            if (existeEnExtraccion != null) {
-              debugPrint('✅ Producto $idProducto encontrado en extracción, eliminando...');
-              
-              // Eliminar del registro de extracción
-              await supabase
-                  .from('app_dat_extraccion_productos')
-                  .delete()
-                  .eq('id_operacion', idOperacionExtraccion)
-                  .eq('id_producto', idProducto);
-              
-              debugPrint('✅ Producto $idProducto eliminado de operación de extracción $idOperacionExtraccion');
-            } else {
-              debugPrint('⚠️ Producto $idProducto NO encontrado en extracción $idOperacionExtraccion');
-            }
-          } else {
-            debugPrint('⚠️ No se encontró id_operacion_extraccion para el envío $idEnvio');
-          }
+        final idEnvio = (idEnvioNum as num).toInt();
+
+        final success = await ConsignacionEnvioService.rechazarProductoEnvio(
+          idEnvio: idEnvio,
+          idEnvioProducto: idEnvioProducto,
+          idUsuario: userId,
+          motivoRechazo: motivo,
+        );
+
+        if (!success) {
+          throw Exception('Error al procesar el rechazo en el servidor');
         }
 
         if (mounted) {
@@ -1509,8 +1465,12 @@ class _ConfirmarRecepcionConsignacionScreenState
           );
         }
       } finally {
-        motivoController.dispose();
+        if (mounted) {
+          motivoController.dispose();
+        }
       }
+    } else {
+      motivoController.dispose();
     }
   }
 

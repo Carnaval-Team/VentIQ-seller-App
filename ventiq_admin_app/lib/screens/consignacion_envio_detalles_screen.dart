@@ -189,7 +189,7 @@ class _ConsignacionEnvioDetallesScreenState
 
                 if (puedeVerificarEnvio) ...[
                   const SizedBox(height: 24),
-                  _buildBotonVerificarEnvio(detalles),
+                  _buildBotonesVerificarYRechazar(detalles),
                 ],
 
                 if (puedeGestionarDevolucionConsignador) ...[
@@ -781,6 +781,46 @@ class _ConsignacionEnvioDetallesScreenState
           padding: const EdgeInsets.symmetric(vertical: 16),
         ),
       ),
+    );
+  }
+
+  Widget _buildBotonesVerificarYRechazar(Map<String, dynamic> detalles) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _isAccepting ? null : () => _navegarAVerificarEnvio(detalles),
+            icon: const Icon(Icons.fact_check),
+            label: const Text(
+              'Verificar Envío',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _isAccepting ? null : _rechazarEnvioGlobal,
+            icon: const Icon(Icons.close),
+            label: const Text(
+              'Rechazar Envío',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.red),
+              foregroundColor: Colors.red,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
