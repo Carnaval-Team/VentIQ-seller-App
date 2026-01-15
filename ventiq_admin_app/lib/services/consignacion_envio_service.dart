@@ -597,7 +597,7 @@ class ConsignacionEnvioService {
   }
 
   /// Rechaza un producto individual del envío
-  static Future<bool> rechazarProductoEnvio({
+  static Future<Map<String, dynamic>> rechazarProductoEnvio({
     required int idEnvio,
     required int idEnvioProducto,
     required String idUsuario,
@@ -626,13 +626,13 @@ class ConsignacionEnvioService {
         } else {
           debugPrint('❌ Error rechazando producto: $mensaje');
         }
-        return success;
+        return {'success': success, 'mensaje': mensaje};
       }
 
-      return false;
+      return {'success': false, 'mensaje': 'Sin respuesta del servidor'};
     } catch (e) {
       debugPrint('❌ Error excepcion rechazando producto: $e');
-      return false;
+      return {'success': false, 'mensaje': e.toString()};
     }
   }
 
