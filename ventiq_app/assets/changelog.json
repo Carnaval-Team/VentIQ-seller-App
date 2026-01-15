@@ -1,8 +1,20 @@
 {
-  "current_version": "1.8.6",
-  "build": 716,
+  "current_version": "1.8.7",
+  "build": 717,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.8.7",
+      "date": "2026-01-15",
+      "title": "💱 Tipo de Cambio por Tienda",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Tipo de cambio USD→CUP por tienda",
+          "description": "Si tu tienda tiene una tasa USD→CUP personalizada configurada, la app la usa por encima de la tasa global. Si no hay configuración, se mantiene la tasa estándar. El último valor se guarda en cache para seguir funcionando en modo offline."
+        }
+      ]
+    },
     {
       "version": "1.8.6",
       "date": "2026-01-12",
