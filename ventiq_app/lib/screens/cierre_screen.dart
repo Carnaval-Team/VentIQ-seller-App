@@ -1077,12 +1077,12 @@ class _CierreScreenState extends State<CierreScreen> {
 
       for (final expense in expenses) {
         total += expense.montoEntrega;
-        // Si esDigital es false explícitamente, es efectivo
-        // Si esDigital es true o null, considerarlo como transferencia/digital
-        if (expense.esDigital == false) {
-          efectivo += expense.montoEntrega;
-        } else {
+        // ✅ Solo es transferencia si esDigital == true. null cuenta como efectivo.
+        final isDigital = expense.esDigital == true;
+        if (isDigital) {
           transferencias += expense.montoEntrega;
+        } else {
+          efectivo += expense.montoEntrega;
         }
       }
 

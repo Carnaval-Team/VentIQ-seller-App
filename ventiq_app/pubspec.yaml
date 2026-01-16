@@ -65,6 +65,9 @@ dependencies:
   
   # Local notifications for push notifications
   flutter_local_notifications: ^17.2.3
+  pdf: ^3.11.3
+  share_plus: 7.2.2
+  path_provider: ^2.1.5
   
 dev_dependencies:
   flutter_test:

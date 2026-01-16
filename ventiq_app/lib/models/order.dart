@@ -15,6 +15,7 @@ class Order {
   final String? paymentMethod;
   final int? operationId;
   final List<dynamic>? pagos; // Lista de pagos de la orden
+  final Map<String, dynamic>? descuento; // Descuento aplicado (si existe)
   bool isOfflineOrder; // Campo para marcar órdenes offline
 
   Order({
@@ -30,6 +31,7 @@ class Order {
     this.paymentMethod,
     this.operationId,
     this.pagos,
+    this.descuento,
     this.isOfflineOrder = false, // Por defecto false
   });
 
@@ -54,6 +56,7 @@ class Order {
     String? paymentMethod,
     int? operationId,
     List<dynamic>? pagos,
+    Map<String, dynamic>? descuento,
     bool? isOfflineOrder,
   }) {
     return Order(
@@ -69,6 +72,7 @@ class Order {
       paymentMethod: paymentMethod ?? this.paymentMethod,
       operationId: operationId ?? this.operationId,
       pagos: pagos ?? this.pagos,
+      descuento: descuento ?? this.descuento,
       isOfflineOrder: isOfflineOrder ?? this.isOfflineOrder,
     );
   }
@@ -88,6 +92,7 @@ class Order {
       'paymentMethod': paymentMethod,
       'operationId': operationId,
       'pagos': pagos,
+      'descuento': descuento,
       'isOfflineOrder': isOfflineOrder,
     };
   }
@@ -97,9 +102,13 @@ class Order {
     return Order(
       id: json['id'] as String,
       fechaCreacion: DateTime.parse(json['fechaCreacion'] as String),
-      items: (json['items'] as List<dynamic>)
-          .map((itemJson) => OrderItem.fromJson(itemJson as Map<String, dynamic>))
-          .toList(),
+      items:
+          (json['items'] as List<dynamic>)
+              .map(
+                (itemJson) =>
+                    OrderItem.fromJson(itemJson as Map<String, dynamic>),
+              )
+              .toList(),
       total: (json['total'] as num).toDouble(),
       status: OrderStatus.values[json['status'] as int],
       notas: json['notas'] as String?,
@@ -109,6 +118,7 @@ class Order {
       paymentMethod: json['paymentMethod'] as String?,
       operationId: json['operationId'] as int?,
       pagos: json['pagos'] as List<dynamic>?,
+      descuento: json['descuento'] as Map<String, dynamic>?,
       isOfflineOrder: json['isOfflineOrder'] as bool? ?? false,
     );
   }
@@ -253,29 +263,39 @@ class OrderItem {
     return OrderItem(
       id: json['id'] as String,
       producto: Product.fromJson(json['producto'] as Map<String, dynamic>),
-      variante: json['variante'] != null 
-          ? ProductVariant.fromJson(json['variante'] as Map<String, dynamic>)
-          : null,
+      variante:
+          json['variante'] != null
+              ? ProductVariant.fromJson(
+                json['variante'] as Map<String, dynamic>,
+              )
+              : null,
       cantidad: json['cantidad'] as int,
       precioUnitario: (json['precioUnitario'] as num).toDouble(),
-      precioBase: json['precioBase'] != null 
-          ? (json['precioBase'] as num).toDouble()
-          : null,
+      precioBase:
+          json['precioBase'] != null
+              ? (json['precioBase'] as num).toDouble()
+              : null,
       ubicacionAlmacen: json['ubicacionAlmacen'] as String,
       inventoryData: json['inventoryData'] as Map<String, dynamic>?,
-      paymentMethod: json['paymentMethod'] != null
-          ? PaymentMethod.fromJson(json['paymentMethod'] as Map<String, dynamic>)
-          : null,
+      paymentMethod:
+          json['paymentMethod'] != null
+              ? PaymentMethod.fromJson(
+                json['paymentMethod'] as Map<String, dynamic>,
+              )
+              : null,
       promotionData: json['promotionData'] as Map<String, dynamic>?,
-      cantidadInicial: json['cantidadInicial'] != null
-          ? (json['cantidadInicial'] as num).toDouble()
-          : null,
-      cantidadFinal: json['cantidadFinal'] != null
-          ? (json['cantidadFinal'] as num).toDouble()
-          : null,
-      entradasProducto: json['entradasProducto'] != null
-          ? (json['entradasProducto'] as num).toDouble()
-          : null,
+      cantidadInicial:
+          json['cantidadInicial'] != null
+              ? (json['cantidadInicial'] as num).toDouble()
+              : null,
+      cantidadFinal:
+          json['cantidadFinal'] != null
+              ? (json['cantidadFinal'] as num).toDouble()
+              : null,
+      entradasProducto:
+          json['entradasProducto'] != null
+              ? (json['entradasProducto'] as num).toDouble()
+              : null,
       ingredientes: json['ingredientes'] as List<dynamic>?,
     );
   }

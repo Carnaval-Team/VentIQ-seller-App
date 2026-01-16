@@ -7,21 +7,32 @@ class StoreConfigService {
   static final _userPreferencesService = UserPreferencesService();
 
   /// Obtiene la configuración de la tienda desde Supabase
-  static Future<Map<String, dynamic>?> getStoreConfigFromSupabase(int storeId) async {
+  static Future<Map<String, dynamic>?> getStoreConfigFromSupabase(
+    int storeId,
+  ) async {
     try {
-      print('🔧 Obteniendo configuración de tienda desde Supabase para ID: $storeId');
-      
-      final response = await _supabase
-          .from('app_dat_configuracion_tienda')
-          .select('*')
-          .eq('id_tienda', storeId)
-          .maybeSingle();
+      print(
+        '🔧 Obteniendo configuración de tienda desde Supabase para ID: $storeId',
+      );
+
+      final response =
+          await _supabase
+              .from('app_dat_configuracion_tienda')
+              .select('*')
+              .eq('id_tienda', storeId)
+              .maybeSingle();
 
       if (response != null) {
         print('✅ Configuración de tienda obtenida desde Supabase');
-        print('  - need_master_password_to_cancel: ${response['need_master_password_to_cancel']}');
-        print('  - need_all_orders_completed_to_continue: ${response['need_all_orders_completed_to_continue']}');
-        print('  - permite_vender_aun_sin_disponibilidad: ${response['permite_vender_aun_sin_disponibilidad']}');
+        print(
+          '  - need_master_password_to_cancel: ${response['need_master_password_to_cancel']}',
+        );
+        print(
+          '  - need_all_orders_completed_to_continue: ${response['need_all_orders_completed_to_continue']}',
+        );
+        print(
+          '  - permite_vender_aun_sin_disponibilidad: ${response['permite_vender_aun_sin_disponibilidad']}',
+        );
         print('  - no_solicitar_cliente: ${response['no_solicitar_cliente']}');
         return response;
       } else {
@@ -35,16 +46,24 @@ class StoreConfigService {
   }
 
   /// Guarda la configuración de tienda en cache offline
-  static Future<void> saveStoreConfigToCache(Map<String, dynamic> config) async {
+  static Future<void> saveStoreConfigToCache(
+    Map<String, dynamic> config,
+  ) async {
     try {
       print('💾 Guardando configuración de tienda en cache offline...');
-      
+
       await _userPreferencesService.saveStoreConfig(config);
-      
+
       print('✅ Configuración de tienda guardada en cache offline');
-      print('  - need_master_password_to_cancel: ${config['need_master_password_to_cancel']}');
-      print('  - need_all_orders_completed_to_continue: ${config['need_all_orders_completed_to_continue']}');
-      print('  - permite_vender_aun_sin_disponibilidad: ${config['permite_vender_aun_sin_disponibilidad']}');
+      print(
+        '  - need_master_password_to_cancel: ${config['need_master_password_to_cancel']}',
+      );
+      print(
+        '  - need_all_orders_completed_to_continue: ${config['need_all_orders_completed_to_continue']}',
+      );
+      print(
+        '  - permite_vender_aun_sin_disponibilidad: ${config['permite_vender_aun_sin_disponibilidad']}',
+      );
       print('  - no_solicitar_cliente: ${config['no_solicitar_cliente']}');
     } catch (e) {
       print('❌ Error al guardar configuración de tienda en cache: $e');
@@ -55,19 +74,25 @@ class StoreConfigService {
   static Future<Map<String, dynamic>?> getStoreConfigFromCache() async {
     try {
       print('📱 Obteniendo configuración de tienda desde cache offline...');
-      
+
       final config = await _userPreferencesService.getStoreConfig();
-      
+
       if (config != null) {
         print('✅ Configuración de tienda obtenida desde cache offline');
-        print('  - need_master_password_to_cancel: ${config['need_master_password_to_cancel']}');
-        print('  - need_all_orders_completed_to_continue: ${config['need_all_orders_completed_to_continue']}');
-        print('  - permite_vender_aun_sin_disponibilidad: ${config['permite_vender_aun_sin_disponibilidad']}');
+        print(
+          '  - need_master_password_to_cancel: ${config['need_master_password_to_cancel']}',
+        );
+        print(
+          '  - need_all_orders_completed_to_continue: ${config['need_all_orders_completed_to_continue']}',
+        );
+        print(
+          '  - permite_vender_aun_sin_disponibilidad: ${config['permite_vender_aun_sin_disponibilidad']}',
+        );
         print('  - no_solicitar_cliente: ${config['no_solicitar_cliente']}');
       } else {
         print('⚠️ No hay configuración de tienda en cache offline');
       }
-      
+
       return config;
     } catch (e) {
       print('❌ Error al obtener configuración de tienda desde cache: $e');
@@ -81,21 +106,24 @@ class StoreConfigService {
       // ✅ NUEVO: Verificar conectividad real PRIMERO, no solo el modo offline
       final connectivityService = ConnectivityService();
       final hasRealConnection = await connectivityService.checkConnectivity();
-      
+
       // Verificar si modo offline está activado
-      final isOfflineMode = await _userPreferencesService.isOfflineModeEnabled();
-      
+      final isOfflineMode =
+          await _userPreferencesService.isOfflineModeEnabled();
+
       print('🔍 Estado de conexión:');
       print('  • Modo offline activado: $isOfflineMode');
       print('  • Conectividad real: $hasRealConnection');
-      
+
       // ✅ IMPORTANTE: Si hay conexión real, siempre intentar obtener desde Supabase
       if (hasRealConnection && !isOfflineMode) {
-        print('🌐 Conexión real detectada - Cargando configuración desde Supabase...');
-        
+        print(
+          '🌐 Conexión real detectada - Cargando configuración desde Supabase...',
+        );
+
         // Intentar obtener desde Supabase
         final config = await getStoreConfigFromSupabase(storeId);
-        
+
         if (config != null) {
           // Guardar en cache para uso offline futuro
           await saveStoreConfigToCache(config);
@@ -106,12 +134,14 @@ class StoreConfigService {
           return await getStoreConfigFromCache();
         }
       } else if (isOfflineMode || !hasRealConnection) {
-        print('🔌 Modo offline o sin conexión - Cargando configuración desde cache...');
+        print(
+          '🔌 Modo offline o sin conexión - Cargando configuración desde cache...',
+        );
         return await getStoreConfigFromCache();
       }
     } catch (e) {
       print('❌ Error al obtener configuración de tienda: $e');
-      
+
       // Fallback final: intentar desde cache
       print('🔄 Fallback final: Intentando cargar desde cache offline...');
       return await getStoreConfigFromCache();
@@ -122,9 +152,9 @@ class StoreConfigService {
   static Future<bool> syncStoreConfig(int storeId) async {
     try {
       print('🔄 Sincronizando configuración de tienda...');
-      
+
       final config = await getStoreConfigFromSupabase(storeId);
-      
+
       if (config != null) {
         await saveStoreConfigToCache(config);
         print('✅ Configuración de tienda sincronizada exitosamente');
@@ -180,6 +210,19 @@ class StoreConfigService {
     } catch (e) {
       print('❌ Error al obtener no_solicitar_cliente: $e');
       return false; // Valor por defecto en caso de error
+    }
+  }
+
+  /// Obtiene solo el valor de allow_discount_on_vendedor
+  static Future<bool> getAllowDiscountOnVendedor(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final value = config?['allow_discount_on_vendedor'] ?? false;
+      print('✅ allow_discount_on_vendedor: $value para tienda $storeId');
+      return value;
+    } catch (e) {
+      print('❌ Error al obtener allow_discount_on_vendedor: $e');
+      return false;
     }
   }
 

@@ -1,8 +1,45 @@
 {
-  "current_version": "1.8.7",
-  "build": 717,
+  "current_version": "1.9.0",
+  "build": 800,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.9.0",
+      "date": "2026-01-16",
+      "title": "💸 Descuentos Manuales Visibles en Órdenes",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Totales con descuento en la lista y detalles de órdenes",
+          "description": "Si una orden tiene descuento manual, ahora se muestra el total con descuento en verde, el ahorro y el total antes del descuento."
+        },
+        {
+          "type": "feature",
+          "title": "Desglose de pagos con importe original",
+          "description": "En el detalle de pagos se muestra también el importe sin descuento cuando difiere del monto cobrado, para mayor transparencia."
+        },
+        {
+          "type": "improvement",
+          "title": "Aplicación de descuentos y actualización de pagos",
+          "description": "Al aplicar un descuento, se ajusta el pago de mayor monto y se guarda el descuento en la orden, manteniendo todo sincronizado."
+        },
+        {
+          "type": "fix",
+          "title": "Estados offline se preservan al refrescar órdenes",
+          "description": "En modo offline, al hacer pull-to-refresh las órdenes mantienen el estado asignado (completada/cancelada) y no regresan a 'Pendiente de sincronización'."
+        },
+        {
+          "type": "improvement",
+          "title": "Egresos: null se trata como efectivo",
+          "description": "En Venta Total y Cierre, los egresos con esDigital null se contabilizan como efectivo; solo esDigital=true cuenta como transferencia/digital."
+        },
+        {
+          "type": "feature",
+          "title": "Factura cliente en PDF (compartible)",
+          "description": "En órdenes completadas puedes generar la factura del cliente en PDF y compartirla por WhatsApp u otras apps."
+        }
+      ]
+    },
     {
       "version": "1.8.7",
       "date": "2026-01-15",
