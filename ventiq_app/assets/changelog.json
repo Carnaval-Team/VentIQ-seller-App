@@ -1,8 +1,40 @@
 {
-  "current_version": "1.9.0",
-  "build": 800,
+  "current_version": "1.8.0",
+  "build": 180,
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.8.0",
+      "date": "2026-01-17",
+      "title": "📄 Facturas claras y fechas completas y configuraciones.",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Configuración de impresión",
+          "description": "Se añade una nueva configuración que determina si el vendedor puede imprimir la factura aun sin completar la orden."
+        },
+        {
+          "type": "feature",
+          "title": "Facturas en PDF más completas",
+          "description": "Al generar el PDF ves cada producto con su costo, subtotal y ganancia, además del total por orden."
+        },
+        {
+          "type": "improvement",
+          "title": "Fechas con hora exacta",
+          "description": "Las órdenes muestran fecha y hora completas para que sepas cuándo se creó cada venta."
+        },
+        {
+          "type": "fix",
+          "title": "Pagos sin referencias innecesarias",
+          "description": "El PDF ya no muestra el número de referencia de pago, solo el medio y el monto."
+        },
+        {
+          "type": "fix",
+          "title": "Mostrar descuento en las ordenes",
+          "description": "Las ordenes a las que el vendedor les hace descuento manual se muestras sus respectivos descunetos."
+        }
+      ]
+    },
     {
       "version": "1.9.0",
       "date": "2026-01-16",
@@ -37,6 +69,11 @@
           "type": "feature",
           "title": "Factura cliente en PDF (compartible)",
           "description": "En órdenes completadas puedes generar la factura del cliente en PDF y compartirla por WhatsApp u otras apps."
+        },
+        {
+          "type": "feature",
+          "title": "Imprime también tus órdenes pendientes",
+          "description": "Si tu tienda lo permite, ahora puedes imprimir pedidos aunque estén pendientes, para que tu cliente tenga su comprobante sin esperar."
         }
       ]
     },

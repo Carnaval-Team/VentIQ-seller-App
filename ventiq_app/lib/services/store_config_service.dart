@@ -226,6 +226,19 @@ class StoreConfigService {
     }
   }
 
+  /// Obtiene el valor de permitir_imprimir_pendientes
+  static Future<bool> getAllowPrintPending(int storeId) async {
+    try {
+      final config = await getStoreConfig(storeId);
+      final value = config?['permitir_imprimir_pendientes'] ?? false;
+      print('✅ permitir_imprimir_pendientes: $value para tienda $storeId');
+      return value;
+    } catch (e) {
+      print('❌ Error al obtener permitir_imprimir_pendientes: $e');
+      return false;
+    }
+  }
+
   /// Verifica si hay configuración de tienda en cache
   static Future<bool> hasStoreConfigInCache() async {
     try {

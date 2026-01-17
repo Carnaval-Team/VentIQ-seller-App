@@ -29,6 +29,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   bool _permiteVenderAunSinDisponibilidad = false;
   bool _noSolicitarCliente = false;
   bool _allowDiscountOnVendedor = false;
+  bool _allowPrintPending = false;
   bool _hasMasterPassword = false;
   bool _showMasterPasswordField = false;
   bool _obscureMasterPassword = true;
@@ -43,6 +44,52 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
   void initState() {
     super.initState();
     _loadStoreConfig();
+  }
+
+  Future<void> _updateAllowPrintPendingSetting(bool value) async {
+    if (_storeId == null) return;
+
+    try {
+      print(
+        '🔧 Actualizando configuración permitir_imprimir_pendientes: $value',
+      );
+
+      await StoreConfigService.updateAllowPrintPending(_storeId!, value);
+
+      setState(() {
+        _allowPrintPending = value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              value
+                  ? 'Ahora puedes imprimir órdenes pendientes'
+                  : 'La impresión de órdenes pendientes se ha desactivado',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+
+      print('✅ permitir_imprimir_pendientes actualizado');
+    } catch (e) {
+      print('❌ Error al actualizar permitir_imprimir_pendientes: $e');
+
+      setState(() {
+        _allowPrintPending = !value;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al actualizar configuración: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _loadStoreConfig() async {
@@ -89,6 +136,7 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
         _noSolicitarCliente = config['no_solicitar_cliente'] ?? false;
         _allowDiscountOnVendedor =
             config['allow_discount_on_vendedor'] ?? false;
+        _allowPrintPending = config['permitir_imprimir_pendientes'] ?? false;
         _hasMasterPassword = hasMasterPassword;
         _showMasterPasswordField = _needMasterPasswordToCancel;
         _showDescriptionInSelectors = showDescriptionInSelectors;
@@ -847,6 +895,21 @@ class _GlobalConfigTabViewState extends State<GlobalConfigTabView> {
                     : '🔒 Los vendedores no pueden aplicar descuentos manuales (solo precios configurados)',
             value: _allowDiscountOnVendedor,
             onChanged: _updateAllowDiscountOnVendedorSetting,
+          ),
+
+          const SizedBox(height: 16),
+
+          // Configuración de imprimir órdenes pendientes
+          _buildConfigCard(
+            icon: Icons.print_outlined,
+            iconColor: Colors.orange,
+            title: 'Imprimir Órdenes Pendientes',
+            subtitle:
+                _allowPrintPending
+                    ? '✅ Si la tienda lo permite, se pueden imprimir órdenes pendientes'
+                    : '🔒 Solo se imprimen órdenes pagadas o completadas',
+            value: _allowPrintPending,
+            onChanged: _updateAllowPrintPendingSetting,
           ),
 
           const SizedBox(height: 24),

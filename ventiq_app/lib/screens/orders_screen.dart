@@ -41,6 +41,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _isLoading = true;
   bool _allowDiscountOnVendedor = false;
   bool _isGeneratingCustomerInvoice = false;
+  bool _allowPrintPendingOrders = false;
 
   @override
   void initState() {
@@ -51,6 +52,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOrdersFromSupabase();
       _loadDiscountPermission();
+      _loadPrintPendingPermission();
     });
   }
 
@@ -71,6 +73,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
     } catch (e) {
       print('❌ Error cargando permiso de descuento: $e');
+    }
+  }
+
+  Future<void> _loadPrintPendingPermission() async {
+    try {
+      final storeId = await _userPreferencesService.getIdTienda();
+      if (storeId == null) {
+        print(
+          '⚠️ No se pudo obtener id_tienda para permitir impresión de pendientes',
+        );
+        return;
+      }
+      final allow = await StoreConfigService.getAllowPrintPending(storeId);
+      if (mounted) {
+        setState(() {
+          _allowPrintPendingOrders = allow;
+        });
+      }
+    } catch (e) {
+      print('❌ Error cargando permiso de impresión de pendientes: $e');
     }
   }
 
@@ -1206,7 +1228,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
         order.status == OrderStatus.completada) {
       return true;
     }
-
+    if (_allowPrintPendingOrders && order.status == OrderStatus.enviada) {
+      return true;
+    }
     final isCarnavalOrder = _getCarnavalOrderId(order.notas) != null;
     if (isCarnavalOrder &&
         (order.status == OrderStatus.enviada ||
@@ -2292,9 +2316,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
           (discountData['finalTotal'] as num?)?.toDouble() ?? order.total;
       final double saved = (discountData['saved'] as num?)?.toDouble() ?? 0.0;
       final String discountLabel = discountData['label'] as String? ?? '';
-
       final items = order.items.where((item) => item.subtotal > 0).toList();
-
+      final ingredientsByProduct = await _loadIngredientsForProducts(
+        items.map((i) => i.producto.id).toSet(),
+      );
       final pdf = pw.Document();
 
       pdf.addPage(
@@ -2501,21 +2526,87 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         _pdfHeaderCell('Subtotal'),
                       ],
                     ),
-                    ...items.map(
-                      (item) => pw.TableRow(
-                        children: [
-                          _pdfBodyCell(item.nombre),
-                          _pdfBodyCell('${item.cantidad}'),
-                          _pdfBodyCell(
-                            '\$${item.displayPrice.toStringAsFixed(2)}',
+                    ...items.expand((item) {
+                      final List<pw.TableRow> rows = [
+                        pw.TableRow(
+                          children: [
+                            _pdfBodyCell(item.nombre),
+                            _pdfBodyCell('${item.cantidad}'),
+                            _pdfBodyCell(
+                              '\$${item.displayPrice.toStringAsFixed(2)}',
+                            ),
+                            _pdfBodyCell(
+                              '\$${item.subtotal.toStringAsFixed(2)}',
+                              isBold: true,
+                            ),
+                          ],
+                        ),
+                      ];
+
+                      final ingredientes =
+                          ingredientsByProduct[item.producto.id] ??
+                          item.ingredientes;
+                      if (ingredientes != null && ingredientes.isNotEmpty) {
+                        rows.add(
+                          pw.TableRow(
+                            children: [
+                              _pdfBodyCell(
+                                '    Aditamentos',
+                                isBold: true,
+                                isIngredient: true,
+                              ),
+                              _pdfBodyCell('', isIngredient: true),
+                              _pdfBodyCell('', isIngredient: true),
+                              _pdfBodyCell('', isIngredient: true),
+                            ],
                           ),
-                          _pdfBodyCell(
-                            '\$${item.subtotal.toStringAsFixed(2)}',
-                            isBold: true,
-                          ),
-                        ],
-                      ),
-                    ),
+                        );
+
+                        rows.addAll(
+                          ingredientes.map<pw.TableRow>((ingrediente) {
+                            final nombreIngrediente =
+                                (ingrediente['nombre_ingrediente'] ??
+                                        'Ingrediente')
+                                    .toString();
+                            final double cantidadBase =
+                                (ingrediente['cantidad_necesaria'] ??
+                                            ingrediente['cantidad_vendida'] ??
+                                            0)
+                                        is num
+                                    ? (ingrediente['cantidad_necesaria'] ??
+                                            ingrediente['cantidad_vendida'])
+                                        .toDouble()
+                                    : 0;
+                            final unidad =
+                                (ingrediente['unidad_medida'] ?? 'unid')
+                                    .toString();
+                            final double cantidadTotal =
+                                (ingrediente['cantidad_vendida'] is num)
+                                    ? (ingrediente['cantidad_vendida'] as num)
+                                        .toDouble()
+                                    : (cantidadBase * item.cantidad);
+                            final cantidad = cantidadTotal.toStringAsFixed(2);
+
+                            return pw.TableRow(
+                              children: [
+                                _pdfBodyCell(
+                                  '    $nombreIngrediente',
+                                  isIngredient: true,
+                                ),
+                                _pdfBodyCell(
+                                  '$cantidad $unidad',
+                                  isIngredient: true,
+                                ),
+                                _pdfBodyCell('', isIngredient: true),
+                                _pdfBodyCell('', isIngredient: true),
+                              ],
+                            );
+                          }),
+                        );
+                      }
+
+                      return rows;
+                    }),
                   ],
                 ),
                 pw.SizedBox(height: 18),
@@ -2665,15 +2756,27 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  pw.Widget _pdfBodyCell(String text, {bool isBold = false}) {
+  pw.Widget _pdfBodyCell(
+    String text, {
+    bool isBold = false,
+    bool isIngredient = false,
+  }) {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(vertical: 4),
       child: pw.Text(
         text,
         style: pw.TextStyle(
-          fontSize: 10,
-          fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-          color: PdfColor.fromHex('#334155'),
+          fontSize: isIngredient ? 9 : 10,
+          fontWeight:
+              isBold
+                  ? pw.FontWeight.bold
+                  : (isIngredient
+                      ? pw.FontWeight.normal
+                      : pw.FontWeight.normal),
+          color:
+              isIngredient
+                  ? PdfColor.fromHex('#6B7280')
+                  : PdfColor.fromHex('#334155'),
         ),
       ),
     );
@@ -2692,6 +2795,56 @@ class _OrdersScreenState extends State<OrdersScreen> {
         color: PdfColor.fromHex('#475569'),
       ),
     );
+  }
+
+  /// Carga ingredientes de múltiples productos elaborados en una sola consulta
+  Future<Map<int, List<Map<String, dynamic>>>> _loadIngredientsForProducts(
+    Set<int> productIds,
+  ) async {
+    if (productIds.isEmpty) return {};
+
+    try {
+      final response = await Supabase.instance.client
+          .from('app_dat_producto_ingredientes')
+          .select('''
+            id_producto_elaborado,
+            id_ingrediente,
+            cantidad_necesaria,
+            unidad_medida,
+            app_dat_producto!app_dat_producto_ingredientes_ingrediente_fkey(
+              id,
+              denominacion,
+              sku
+            )
+          ''')
+          .filter('id_producto_elaborado', 'in', '(${productIds.join(',')})');
+
+      final Map<int, List<Map<String, dynamic>>> grouped = {};
+
+      for (final item in response) {
+        final int elaboradoId = item['id_producto_elaborado'] as int? ?? -1;
+        if (elaboradoId == -1) continue;
+
+        final producto =
+            item['app_dat_producto'] as Map<String, dynamic>? ?? {};
+
+        final mapped = {
+          'nombre_ingrediente':
+              producto['denominacion'] ?? 'Ingrediente desconocido',
+          'cantidad_necesaria': item['cantidad_necesaria'] ?? 0,
+          'unidad_medida': item['unidad_medida'] ?? 'unid',
+          'sku': producto['sku'],
+          'id_ingrediente': item['id_ingrediente'],
+        };
+
+        grouped.putIfAbsent(elaboradoId, () => []).add(mapped);
+      }
+
+      return grouped;
+    } catch (e) {
+      debugPrint('❌ Error cargando ingredientes para productos: $e');
+      return {};
+    }
   }
 
   pw.Widget _pdfSummaryValue(
