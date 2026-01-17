@@ -1,9 +1,34 @@
 {
-  "current_version": "1.7.3",
-  "build": 173,
+  "current_version": "1.8.0",
+  "build": 180,
   "app_name": "ventiq_admin",
   "changelogs": [
-
+    {
+      "version": "1.8.0",
+      "date": "2026-01-17",
+      "title": "📄 Facturas claras y fechas completas",
+      "changes": [
+        {
+          "type": "feature",
+          "title": "Facturas en PDF más completas",
+          "description": "Al generar el PDF ves cada producto con su costo, subtotal y ganancia, además del total por orden."
+        },
+        {
+          "type": "improvement",
+          "title": "Fechas con hora exacta",
+          "description": "Las órdenes muestran fecha y hora completas para que sepas cuándo se creó cada venta."
+        },
+        {
+          "type": "fix",
+          "title": "Pagos sin referencias innecesarias",
+          "description": "El PDF ya no muestra el número de referencia de pago, solo el medio y el monto."
+        },
+        {
+          "type": "fix",
+          "title": "Ingredientes bien listados",
+          "description": "Los productos con aditamentos ya no repiten el nombre del producto; verás solo los ingredientes agregados."
+        }
+      ]},
     {
       "version": "1.7.3",
       "date": "2026-01-14",
