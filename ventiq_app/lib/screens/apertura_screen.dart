@@ -5,6 +5,8 @@ import '../services/turno_service.dart';
 import '../models/inventory_product.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/connection_status_widget.dart';
+import '../services/notification_service.dart';
+import '../models/notification_model.dart';
 
 class AperturaScreen extends StatefulWidget {
   const AperturaScreen({Key? key}) : super(key: key);
@@ -18,6 +20,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
   final _montoInicialController = TextEditingController();
   final _observacionesController = TextEditingController();
   final UserPreferencesService _userPrefs = UserPreferencesService();
+  final NotificationService _notificationService = NotificationService();
 
   bool _isProcessing = false;
   bool _isLoadingPreviousShift = true;
@@ -51,6 +54,157 @@ class _AperturaScreenState extends State<AperturaScreen> {
     _checkExistingShift();
     _loadStoreConfig();
     _loadWorkerConfig(); // Load worker inventory control settings
+  }
+
+  /// Preguntar y recibir órdenes Carnaval creadas antes del turno
+  Future<void> _promptReceiveCarnavalOrders() async {
+    try {
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      if (isOffline) {
+        print('🔌 Modo offline: no se pueden recibir órdenes Carnaval');
+        return;
+      }
+
+      // Asegurar notificaciones cargadas
+      await _notificationService.loadNotifications();
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+      if (turnoAbierto == null) return;
+
+      final fechaTurno = DateTime.parse(
+        turnoAbierto['fecha_apertura'] as String,
+      );
+
+      // Filtrar notificaciones de venta con data válida y no leídas
+      final candidates =
+          _notificationService.notifications.where((n) {
+            if (n.tipo != NotificationType.venta || n.leida) return false;
+            final data = n.data;
+            if (data == null) return false;
+            return data['operacion_id'] != null && data['orden_id'] != null;
+          }).toList();
+
+      if (candidates.isEmpty) {
+        print('ℹ️ No hay notificaciones de venta pendientes');
+        return;
+      }
+
+      final supabase = Supabase.instance.client;
+      final List<NotificationModel> prevTurnNotifications = [];
+
+      for (final notification in candidates) {
+        final opId = notification.data!['operacion_id'];
+        try {
+          final opResponse =
+              await supabase
+                  .from('app_dat_operaciones')
+                  .select('created_at')
+                  .eq('id', opId)
+                  .maybeSingle();
+
+          final createdAtRaw = opResponse?['created_at'] as String?;
+          if (createdAtRaw == null) continue;
+          final fechaOperacion = DateTime.parse(createdAtRaw);
+          if (fechaOperacion.isBefore(fechaTurno)) {
+            prevTurnNotifications.add(notification);
+          }
+        } catch (e) {
+          print('⚠️ No se pudo validar operación $opId: $e');
+        }
+      }
+
+      if (prevTurnNotifications.isEmpty) {
+        print('ℹ️ No hay operaciones anteriores al turno actual');
+        return;
+      }
+
+      if (!mounted) return;
+      final shouldReceive = await showDialog<bool>(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Órdenes Carnaval pendientes'),
+              content: Text(
+                'Hay ${prevTurnNotifications.length} órdenes de Carnaval creadas antes de abrir el turno. ¿Quieres recibirlas ahora?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Luego'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4CAF50),
+                  ),
+                  child: const Text('Recibir'),
+                ),
+              ],
+            ),
+      );
+
+      if (shouldReceive != true) return;
+
+      int processed = 0;
+      for (final notification in prevTurnNotifications) {
+        final ok = await _receiveCarnavalOperation(notification);
+        if (ok) processed++;
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Órdenes recibidas: $processed'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      print('❌ Error en prompt de órdenes Carnaval: $e');
+    }
+  }
+
+  /// Recibir una operación Carnaval previa al turno (misma lógica que NotificationWidget)
+  Future<bool> _receiveCarnavalOperation(NotificationModel notification) async {
+    try {
+      final data = notification.data;
+      if (data == null) return false;
+      final operacionId = data['operacion_id'];
+      if (operacionId == null) return false;
+
+      final turnoAbierto = await TurnoService.getTurnoAbierto();
+      if (turnoAbierto == null) return false;
+      final fechaTurno = DateTime.parse(
+        turnoAbierto['fecha_apertura'] as String,
+      );
+
+      final supabase = Supabase.instance.client;
+      final operacionResponse =
+          await supabase
+              .from('app_dat_operaciones')
+              .select('created_at')
+              .eq('id', operacionId)
+              .maybeSingle();
+
+      final fechaOperacionRaw = operacionResponse?['created_at'] as String?;
+      if (fechaOperacionRaw == null) return false;
+      final fechaOperacion = DateTime.parse(fechaOperacionRaw);
+
+      if (!fechaOperacion.isBefore(fechaTurno)) {
+        print('⏭️ Operación $operacionId es posterior al turno, se omite');
+        return false;
+      }
+
+      await supabase
+          .from('app_dat_operaciones')
+          .update({'created_at': DateTime.now().toIso8601String()})
+          .eq('id', operacionId);
+
+      await _notificationService.markAsRead(notification.id);
+      return true;
+    } catch (e) {
+      print('❌ Error recibiendo operación Carnaval: $e');
+      return false;
+    }
   }
 
   /// Check if inventory has already been done for the current warehouse in an active shift
@@ -1232,7 +1386,7 @@ class _AperturaScreenState extends State<AperturaScreen> {
 
   // Inventory list method removed since inventory management is disabled
 
-  void _crearApertura() async {
+  Future<void> _crearApertura() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -1450,6 +1604,10 @@ class _AperturaScreenState extends State<AperturaScreen> {
             } catch (e) {
               print('⚠️ No se pudo cachear el turno online: $e');
             }
+
+            // Preguntar si desea recibir órdenes Carnaval anteriores al turno
+            await _promptReceiveCarnavalOrders();
+
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(

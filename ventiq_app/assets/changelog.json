@@ -1,8 +1,31 @@
 {
-  "current_version": "1.9.0",
-  "build": 800,
+  "current_version": "1.9.1",
+  "build": 801,
+
   "app_name": "ventiq_app",
   "changelogs": [
+    {
+      "version": "1.9.1",
+      "date": "2026-01-18",
+      "title": "Offline robusto y recepción automática Carnaval",
+      "changes": [
+        {
+          "type": "improvement",
+          "title": "Mejoras offline al crear/cerrar turno",
+          "description": "Refuerza la coherencia entre turnos online y offline: limpia el turno en cache al cerrar online y usa productos cacheados para inventario cuando no hay conexión."
+        },
+        {
+          "type": "feature",
+          "title": "Búsqueda global de productos desde Categorías",
+          "description": "Se habilita la búsqueda de productos global directamente desde la vista de categorías para encontrarlos más rápido."
+        },
+        {
+          "type": "feature",
+          "title": "Recepción automática de órdenes Carnaval fuera de turno",
+          "description": "Tras abrir turno se ofrece recibir automáticamente las órdenes de Carnaval creadas antes del turno para no perder ventas."
+        }
+      ]
+    },
     {
       "version": "1.9.0",
       "date": "2026-01-16",
