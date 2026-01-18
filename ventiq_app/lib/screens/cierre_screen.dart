@@ -149,21 +149,162 @@ class _CierreScreenState extends State<CierreScreen> {
     }
   }
 
-  Future<void> _loadStoreConfiguration() async {
+  /// Cargar productos de inventario desde cache offline (sin categorías)
+  Future<void> _loadInventoryProductsOffline() async {
     try {
-      // Verificar si está en modo offline
-      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      setState(() {
+        _isLoadingInventory = true;
+      });
 
-      if (isOffline) {
-        print('🔌 Modo offline activado - Inventario deshabilitado');
-        if (mounted) {
-          setState(() {
-            _manejaInventario = false;
-          });
-        }
+      final offlineData = await _userPrefs.getOfflineData();
+
+      if (offlineData == null || offlineData['products'] == null) {
+        print('⚠️ No hay productos cacheados para inventario offline');
+        setState(() {
+          _inventoryProducts = [];
+          _isLoadingInventory = false;
+        });
         return;
       }
 
+      final productsData = Map<String, dynamic>.from(
+        offlineData['products'] as Map,
+      );
+      final Map<int, InventoryProduct> productsByIdMap = {};
+
+      for (final categoryProducts in productsData.values) {
+        final productList = List<dynamic>.from(categoryProducts as List);
+
+        for (final prodDataRaw in productList) {
+          final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
+          final detalles =
+              prodData['detalles_completos'] as Map<String, dynamic>?;
+          if (detalles == null) continue;
+
+          final productoInfo = detalles['producto'] as Map<String, dynamic>?;
+          final inventarioList = detalles['inventario'] as List<dynamic>? ?? [];
+          if (productoInfo == null || inventarioList.isEmpty) continue;
+
+          // Saltar productos elaborados o servicios
+          final esElaborado = productoInfo['es_elaborado'] == true;
+          final esServicio = productoInfo['es_servicio'] == true;
+          if (esElaborado || esServicio) continue;
+
+          final productId = (productoInfo['id'] ?? prodData['id']) as int;
+          if (productsByIdMap.containsKey(productId)) continue;
+
+          final firstInventory = Map<String, dynamic>.from(
+            inventarioList.first as Map,
+          );
+          final ubicacion = Map<String, dynamic>.from(
+            firstInventory['ubicacion'] ?? {},
+          );
+          final almacen = Map<String, dynamic>.from(ubicacion['almacen'] ?? {});
+          final variante =
+              firstInventory['variante'] != null &&
+                      firstInventory['variante'] is Map
+                  ? Map<String, dynamic>.from(firstInventory['variante'])
+                  : null;
+          final presentacion =
+              firstInventory['presentacion'] != null &&
+                      firstInventory['presentacion'] is Map
+                  ? Map<String, dynamic>.from(firstInventory['presentacion'])
+                  : null;
+
+          String varianteNombre = 'Variante';
+          if (variante != null &&
+              variante['atributo'] != null &&
+              variante['opcion'] != null) {
+            final atributo = variante['atributo'] as Map<String, dynamic>?;
+            final opcion = variante['opcion'] as Map<String, dynamic>?;
+            if (atributo != null && opcion != null) {
+              varianteNombre =
+                  '${atributo['label'] ?? 'Atributo'}: ${opcion['valor'] ?? ''}';
+            }
+          }
+
+          final cantidadDisponible =
+              (firstInventory['cantidad_disponible'] as num?)?.toDouble() ??
+              0.0;
+
+          productsByIdMap[productId] = InventoryProduct(
+            id: productId,
+            skuProducto: firstInventory['sku_producto']?.toString() ?? '',
+            nombreProducto:
+                productoInfo['denominacion'] ??
+                prodData['denominacion'] ??
+                'Producto',
+            idCategoria: (productoInfo['id_categoria'] ?? 0) as int,
+            categoria:
+                productoInfo['categoria']?['denominacion'] ??
+                prodData['categoria'] ??
+                'Sin categoría',
+            idSubcategoria: (productoInfo['id_subcategoria'] ?? 0) as int,
+            subcategoria: prodData['subcategoria'] ?? 'General',
+            idTienda:
+                (productoInfo['id_tienda'] ?? prodData['id_tienda'] ?? 0)
+                    as int,
+            tienda: '',
+            idAlmacen: (almacen['id'] ?? 0) as int,
+            almacen: almacen['denominacion']?.toString() ?? 'Almacén',
+            idUbicacion: (ubicacion['id'] ?? 0) as int,
+            ubicacion: ubicacion['denominacion']?.toString() ?? 'Ubicación',
+            idVariante: variante?['id'] as int?,
+            variante: varianteNombre,
+            idOpcionVariante: variante?['opcion']?['id'] as int?,
+            opcionVariante:
+                (variante?['opcion']?['valor'] as String?) ?? varianteNombre,
+            idPresentacion: presentacion?['id'] as int?,
+            presentacion: presentacion?['denominacion']?.toString() ?? 'Unidad',
+            cantidadInicial: cantidadDisponible,
+            cantidadFinal: cantidadDisponible,
+            stockDisponible: cantidadDisponible,
+            stockReservado: 0,
+            stockDisponibleAjustado: cantidadDisponible,
+            esVendible: true,
+            esInventariable: true,
+            precioVenta:
+                (productoInfo['precio_actual'] ?? prodData['precio'] ?? 0)
+                    .toDouble(),
+            costoPromedio: null,
+            margenActual: null,
+            clasificacionAbc: 3,
+            abcDescripcion: '',
+            fechaUltimaActualizacion: DateTime.now(),
+            totalCount: 0,
+            resumenInventario: null,
+            infoPaginacion: null,
+          );
+        }
+      }
+
+      // Crear lista consolidada y controllers
+      final products = productsByIdMap.values.toList();
+      for (var product in products) {
+        if (!_inventoryControllers.containsKey(product.id)) {
+          _inventoryControllers[product.id] = TextEditingController();
+        }
+      }
+
+      setState(() {
+        _inventoryProducts = products;
+        _isLoadingInventory = false;
+      });
+
+      print('✅ ${products.length} productos offline cargados para inventario');
+    } catch (e, stack) {
+      print('❌ Error cargando productos offline: $e');
+      print(stack);
+      setState(() {
+        _inventoryProducts = [];
+        _isLoadingInventory = false;
+      });
+    }
+  }
+
+  Future<void> _loadStoreConfiguration() async {
+    try {
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
       final storeConfig = await _userPrefs.getStoreConfig();
 
       if (storeConfig != null) {
@@ -180,9 +321,15 @@ class _CierreScreenState extends State<CierreScreen> {
             );
           });
 
-          // If inventory is managed, check if this is the last open shift
+          // If inventory is managed, check if this is the last open shift (solo online)
           if (_manejaInventario) {
-            _checkIfLastOpenShift();
+            if (!isOffline) {
+              _checkIfLastOpenShift();
+            } else {
+              setState(() {
+                _checkingShiftStatus = false;
+              });
+            }
           } else {
             setState(() {
               _checkingShiftStatus = false;
@@ -564,6 +711,13 @@ class _CierreScreenState extends State<CierreScreen> {
   }
 
   Future<void> _loadInventoryProducts() async {
+    // Si estamos offline, usamos cache local y evitamos llamadas a Supabase
+    final isOffline = await _userPrefs.isOfflineModeEnabled();
+    if (isOffline) {
+      print('🔌 Modo offline - cargando inventario desde cache');
+      return _loadInventoryProductsOffline();
+    }
+
     if (!_manejaInventario) {
       print('⏭️ Tienda no maneja inventario - Omitiendo carga');
       return;
@@ -992,6 +1146,54 @@ class _CierreScreenState extends State<CierreScreen> {
 
   Future<List<Map<String, dynamic>>> _getProductLocations(int productId) async {
     try {
+      final isOffline = await _userPrefs.isOfflineModeEnabled();
+      if (isOffline) {
+        final offlineData = await _userPrefs.getOfflineData();
+        if (offlineData == null || offlineData['products'] == null) return [];
+        final productsData = Map<String, dynamic>.from(
+          offlineData['products'] as Map,
+        );
+
+        final Map<String, Map<String, dynamic>> locationsMap = {};
+
+        for (final categoryProducts in productsData.values) {
+          final productList = List<dynamic>.from(categoryProducts as List);
+          for (final prodDataRaw in productList) {
+            final prodData = Map<String, dynamic>.from(prodDataRaw as Map);
+            final detalles =
+                prodData['detalles_completos'] as Map<String, dynamic>?;
+            if (detalles == null) continue;
+            final productoInfo = detalles['producto'] as Map<String, dynamic>?;
+            if (productoInfo == null) continue;
+            final pid = (productoInfo['id'] ?? prodData['id']) as int;
+            if (pid != productId) continue;
+
+            final inventarioList =
+                detalles['inventario'] as List<dynamic>? ?? [];
+            for (final invRaw in inventarioList) {
+              final inv = Map<String, dynamic>.from(invRaw as Map);
+              final ubicacion = Map<String, dynamic>.from(
+                inv['ubicacion'] ?? {},
+              );
+              final almacen = Map<String, dynamic>.from(
+                ubicacion['almacen'] ?? {},
+              );
+              final locationKey =
+                  '${almacen['id'] ?? 0}_${ubicacion['id'] ?? 0}';
+              final cantidad =
+                  (inv['cantidad_disponible'] as num?)?.toDouble() ?? 0.0;
+              locationsMap[locationKey] = {
+                'ubicacion': ubicacion['denominacion'] ?? 'Ubicación',
+                'almacen': almacen['denominacion'] ?? 'Almacén',
+                'cantidad': cantidad,
+              };
+            }
+          }
+        }
+
+        return locationsMap.values.toList();
+      }
+
       final userData = await _userPrefs.getUserData();
       final idAlmacen = await _userPrefs.getIdAlmacen();
       final idTiendaRaw = userData['idTienda'];
@@ -2229,6 +2431,18 @@ class _CierreScreenState extends State<CierreScreen> {
         );
 
         if (success) {
+          // Al cerrar online, limpiar cache de turno y resúmenes offline
+          try {
+            await _userPrefs.clearOfflineTurno();
+            await _userPrefs.clearResumenCierreCache();
+            await _userPrefs.clearTurnoResumenCache();
+            print(
+              '🧹 Cache de turno/resúmenes offline limpiado tras cierre online',
+            );
+          } catch (e) {
+            print('⚠️ No se pudo limpiar cache offline tras cierre: $e');
+          }
+
           // Close all pending orders locally
           _showSuccessDialog(montoFinal, diferencia);
         } else {
