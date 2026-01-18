@@ -1,18 +1,24 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart' hide Path;
+import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_theme.dart';
 import '../services/catalog_qr_print_service.dart';
 import '../services/store_management_service.dart';
+import '../services/user_preferences_service.dart';
 import '../services/user_session_service.dart';
 import '../widgets/supabase_image.dart';
 import 'create_product_screen.dart';
@@ -29,6 +35,7 @@ class StoreManagementScreen extends StatefulWidget {
 class _StoreManagementScreenState extends State<StoreManagementScreen> {
   final _sessionService = UserSessionService();
   final _storeService = StoreManagementService();
+  final _userPrefs = UserPreferencesService();
   final _picker = ImagePicker();
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -44,6 +51,13 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   bool _isSubscriptionLoading = false;
   String? _subscriptionErrorMessage;
   Map<String, dynamic>? _subscriptionCatalog;
+
+  // Selección múltiple de productos
+  bool _isMultiSelectMode = false;
+  final Set<int> _selectedProductIds = {};
+
+  // Favoritos de WhatsApp
+  List<Map<String, String>> _waFavorites = [];
 
   final _createFormKey = GlobalKey<FormState>();
   final _editFormKey = GlobalKey<FormState>();
@@ -65,6 +79,370 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   void initState() {
     super.initState();
     _loadStores();
+    _loadWhatsappFavorites();
+  }
+
+  String _getCatalogUrlForStore(int storeId) {
+    return 'https://inventtia-catalogo.netlify.app/open.html?${Uri(queryParameters: {'storeId': storeId.toString()}).query}';
+  }
+
+  String _buildWhatsappMessage(Map<String, dynamic> product) {
+    final store = (_stores.isNotEmpty && _selectedStoreIndex < _stores.length)
+        ? _stores[_selectedStoreIndex]
+        : null;
+
+    final storeName = (store?['denominacion'] ?? 'Tu tienda').toString();
+    final storePhone = (store?['phone'] ?? '').toString();
+    final storeIdRaw = store?['id'];
+    final storeId = storeIdRaw is int
+        ? storeIdRaw
+        : (storeIdRaw is num ? storeIdRaw.toInt() : null);
+
+    final catalogUrl = storeId == null ? null : _getCatalogUrlForStore(storeId);
+
+    final nombre = (product['denominacion'] ?? 'Producto destacado').toString();
+    final precioNum = product['precio_venta_cup'];
+    final precio = precioNum is num
+        ? '${precioNum.toStringAsFixed(2)} CUP'
+        : 'Pregunta por el precio';
+    final stockNum = product['stock'];
+    final stock = stockNum is num ? stockNum.toString() : 'Disponible';
+
+    final buffer = StringBuffer()
+      ..writeln('🔥 Oferta especial en $storeName')
+      ..writeln('🛍️ $nombre')
+      ..writeln('💰 Precio: $precio')
+      ..writeln('📦 Stock: $stock');
+
+    if (catalogUrl != null && catalogUrl.trim().isNotEmpty) {
+      buffer.writeln('🛒 Ver catálogo: $catalogUrl');
+    }
+    if (storePhone.trim().isNotEmpty) {
+      buffer.writeln('📲 Pedidos por WhatsApp: $storePhone');
+    }
+
+    buffer.writeln('✨ ¡Responde este mensaje y te atendemos al instante!');
+    return buffer.toString();
+  }
+
+  Future<XFile?> _downloadImageToFile(String url) async {
+    const objectPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/images_back/';
+    const renderPrefix =
+        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
+
+    // Construir URL de render con dimensiones fijas para supabase
+    final renderUrl = url.contains(objectPrefix)
+        ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
+        : url;
+    try {
+      final uri = Uri.tryParse(renderUrl);
+      if (uri == null) return null;
+      final resp = await http.get(uri);
+      if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) return null;
+      final tempDir = await getTemporaryDirectory();
+      final file = File(
+        '${tempDir.path}/wa_share_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      await file.writeAsBytes(resp.bodyBytes);
+      return XFile(file.path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _getFirstImageUrl(Map<String, dynamic> product) {
+    final url = (product['imagen'] ?? '').toString().trim();
+    if (url.isEmpty) return null;
+    return url;
+  }
+
+  Future<void> _shareProductOnWhatsapp(
+    Map<String, dynamic> product, {
+    String? targetValue,
+    String targetType = 'phone',
+  }) async {
+    try {
+      var message = _buildWhatsappMessage(product);
+      if (targetType == 'link' &&
+          targetValue != null &&
+          targetValue.trim().isNotEmpty) {
+        message = '$message\n🔗 Grupo: $targetValue';
+      }
+      final imageUrl = _getFirstImageUrl(product);
+
+      if (!kIsWeb &&
+          (Platform.isAndroid || Platform.isIOS) &&
+          imageUrl != null) {
+        final xfile = await _downloadImageToFile(imageUrl);
+        if (xfile != null) {
+          await Share.shareXFiles(
+            [xfile],
+            text: message,
+            subject: 'Oferta especial',
+          );
+          return;
+        }
+      }
+
+      // Fallback a wa.me (solo texto)
+      final baseUrl =
+          targetType != 'phone' ||
+              targetValue == null ||
+              targetValue.trim().isEmpty
+          ? 'https://wa.me/?'
+          : 'https://wa.me/${Uri.encodeComponent(targetValue)}?';
+      final uri = Uri.parse('${baseUrl}text=${Uri.encodeComponent(message)}');
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo compartir en WhatsApp: $e'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _shareMultipleOnWhatsapp(
+    List<Map<String, dynamic>> products, {
+    String? targetValue,
+    String targetType = 'phone',
+  }) async {
+    for (final product in products) {
+      try {
+        var message = _buildWhatsappMessage(product);
+        if (targetType == 'link' &&
+            targetValue != null &&
+            targetValue.trim().isNotEmpty) {
+          message = '$message\n🔗 Grupo: $targetValue';
+        }
+        final imageUrl = _getFirstImageUrl(product);
+
+        if (!kIsWeb &&
+            (Platform.isAndroid || Platform.isIOS) &&
+            imageUrl != null) {
+          final xfile = await _downloadImageToFile(imageUrl);
+          if (xfile != null) {
+            await Share.shareXFiles(
+              [xfile],
+              text: message,
+              subject: 'Oferta especial',
+            );
+            continue;
+          }
+        }
+
+        // Fallback a wa.me (solo texto)
+        final baseUrl =
+            targetType != 'phone' ||
+                targetValue == null ||
+                targetValue.trim().isEmpty
+            ? 'https://wa.me/?'
+            : 'https://wa.me/${Uri.encodeComponent(targetValue)}?';
+        final uri = Uri.parse('${baseUrl}text=${Uri.encodeComponent(message)}');
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo compartir un producto: $e'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadWhatsappFavorites() async {
+    final favs = await _userPrefs.getWhatsappFavorites();
+    if (!mounted) return;
+    setState(() {
+      _waFavorites = favs;
+    });
+  }
+
+  Future<void> _addWhatsappFavorite({
+    required String name,
+    required String value,
+    required String type, // 'phone' | 'link'
+  }) async {
+    final newList = List<Map<String, String>>.from(_waFavorites)
+      ..add({'name': name, 'value': value, 'type': type});
+    await _userPrefs.saveWhatsappFavorites(newList);
+    if (!mounted) return;
+    setState(() {
+      _waFavorites = newList;
+    });
+  }
+
+  Future<Map<String, String>?> _pickWhatsappFavorite() async {
+    return showDialog<Map<String, String>?>(
+      context: context,
+      builder: (context) {
+        final nameController = TextEditingController();
+        final valueController = TextEditingController();
+        bool isLink = false;
+        String? selectedValue;
+        String? selectedType;
+
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Enviar a grupo/contacto favorito'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_waFavorites.isEmpty)
+                        const Text(
+                          'No tienes favoritos guardados. Agrega uno abajo.',
+                          style: TextStyle(color: AppTheme.textSecondary),
+                        ),
+                      if (_waFavorites.isNotEmpty)
+                        ..._waFavorites.map(
+                          (f) => RadioListTile<String>(
+                            title: Text(f['name'] ?? ''),
+                            subtitle: Text(
+                              f['type'] == 'link'
+                                  ? '🔗 ${f['value'] ?? ''}'
+                                  : f['value'] ?? '',
+                            ),
+                            value: f['value'] ?? '',
+                            groupValue: selectedValue,
+                            onChanged: (v) {
+                              setStateDialog(() {
+                                selectedValue = v;
+                                selectedType = f['type'] ?? 'phone';
+                              });
+                            },
+                          ),
+                        ),
+                      const Divider(),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Añadir favorito',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre',
+                          prefixIcon: Icon(Icons.bookmark_outline),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: valueController,
+                        keyboardType: TextInputType.text,
+                        decoration: InputDecoration(
+                          labelText: isLink
+                              ? 'Enlace del grupo'
+                              : 'Teléfono / Grupo',
+                          prefixIcon: Icon(
+                            isLink ? Icons.link_outlined : Icons.phone_outlined,
+                          ),
+                          hintText: isLink
+                              ? 'https://chat.whatsapp.com/...'
+                              : '',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Es un enlace de grupo'),
+                        value: isLink,
+                        onChanged: (v) {
+                          setStateDialog(() {
+                            isLink = v;
+                          });
+                        },
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            final name = nameController.text.trim();
+                            final value = valueController.text.trim();
+                            if (name.isEmpty || value.isEmpty) return;
+                            await _addWhatsappFavorite(
+                              name: name,
+                              value: value,
+                              type: isLink ? 'link' : 'phone',
+                            );
+                            nameController.clear();
+                            valueController.clear();
+                            setStateDialog(() {});
+                          },
+                          icon: const Icon(Icons.add),
+                          label: const Text('Guardar favorito'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(null),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(
+                    selectedValue == null
+                        ? null
+                        : {
+                            'value': selectedValue!,
+                            'type': selectedType ?? 'phone',
+                          },
+                  ),
+                  child: const Text('Usar seleccionado'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _toggleMultiSelect() {
+    setState(() {
+      _isMultiSelectMode = !_isMultiSelectMode;
+      if (!_isMultiSelectMode) _selectedProductIds.clear();
+    });
+  }
+
+  void _toggleSelectProduct(int productId) {
+    setState(() {
+      if (_selectedProductIds.contains(productId)) {
+        _selectedProductIds.remove(productId);
+      } else {
+        _selectedProductIds.add(productId);
+      }
+    });
+  }
+
+  Future<void> _shareSelectedProducts() async {
+    final products = _products.where((p) {
+      final idRaw = p['id'];
+      final pid = idRaw is int ? idRaw : (idRaw is num ? idRaw.toInt() : null);
+      return pid != null && _selectedProductIds.contains(pid);
+    }).toList();
+    if (products.isEmpty) return;
+
+    final fav = await _pickWhatsappFavorite();
+    await _shareMultipleOnWhatsapp(
+      products,
+      targetValue: fav?['value'],
+      targetType: fav?['type'] ?? 'phone',
+    );
   }
 
   @override
@@ -1631,38 +2009,91 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: _isProductsLoading
-                      ? null
-                      : () async {
-                          final created = await Navigator.of(context)
-                              .push<bool>(
-                                MaterialPageRoute(
-                                  builder: (_) => CreateProductScreen(
-                                    storeId: storeId,
-                                    storeAllowsCatalog: isStoreEffectiveActive,
-                                  ),
-                                ),
-                              );
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _isProductsLoading
+                            ? null
+                            : () async {
+                                final created = await Navigator.of(context)
+                                    .push<bool>(
+                                      MaterialPageRoute(
+                                        builder: (_) => CreateProductScreen(
+                                          storeId: storeId,
+                                          storeAllowsCatalog:
+                                              isStoreEffectiveActive,
+                                        ),
+                                      ),
+                                    );
 
-                          if (created == true && mounted) {
-                            await _loadProductsForSelectedStore();
-                          }
-                        },
-                  icon: const Icon(Icons.add_circle_outline),
-                  label: const Text(
-                    'Nuevo producto',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.primaryColor,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                                if (created == true && mounted) {
+                                  await _loadProductsForSelectedStore();
+                                }
+                              },
+                        icon: const Icon(Icons.add_circle_outline),
+                        label: const Text(
+                          'Nuevo producto',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      tooltip: _isMultiSelectMode
+                          ? 'Cancelar selección múltiple'
+                          : 'Seleccionar múltiples para compartir',
+                      onPressed: _toggleMultiSelect,
+                      icon: Icon(
+                        _isMultiSelectMode
+                            ? Icons.checklist_rtl
+                            : Icons.library_add_check,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      tooltip: 'Compartir seleccionados',
+                      onPressed:
+                          !_isMultiSelectMode ||
+                              _selectedProductIds.isEmpty ||
+                              _isProductsLoading
+                          ? null
+                          : _shareSelectedProducts,
+                      icon: const Icon(Icons.campaign),
+                    ),
+                  ],
+                ),
+                if (_isMultiSelectMode)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 4),
+                    child: Row(
+                      children: [
+                        Chip(
+                          label: Text(
+                            '${_selectedProductIds.length} seleccionados',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          avatar: const Icon(
+                            Icons.check_circle,
+                            color: AppTheme.successColor,
+                            size: 18,
+                          ),
+                          backgroundColor: AppTheme.successColor.withOpacity(
+                            0.12,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 if (_isProductsLoading)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
@@ -1715,6 +2146,10 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
           final isProductVisible = product['mostrar_en_catalogo'] == true;
           final canToggleVisibility =
               isStoreEffectiveActive && productId != null;
+          final isSelected =
+              productId != null &&
+              _isMultiSelectMode &&
+              _selectedProductIds.contains(productId);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -1735,6 +2170,10 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
               onTap: productId == null
                   ? null
                   : () async {
+                      if (_isMultiSelectMode) {
+                        _toggleSelectProduct(productId);
+                        return;
+                      }
                       final updated = await Navigator.of(context).push<bool>(
                         MaterialPageRoute(
                           builder: (_) => ProductManagementDetailScreen(
@@ -1752,6 +2191,16 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
               borderRadius: BorderRadius.circular(16),
               child: Row(
                 children: [
+                  if (_isMultiSelectMode)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: Checkbox(
+                        value: isSelected,
+                        onChanged: productId == null
+                            ? null
+                            : (_) => _toggleSelectProduct(productId),
+                      ),
+                    ),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: SizedBox(
@@ -1806,6 +2255,19 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Compartir en WhatsApp',
+                    onPressed: () async {
+                      final fav = await _pickWhatsappFavorite();
+                      await _shareProductOnWhatsapp(
+                        product,
+                        targetValue: fav?['value'],
+                        targetType: fav?['type'] ?? 'phone',
+                      );
+                    },
+                    icon: const Icon(Icons.campaign_outlined),
+                  ),
+                  const SizedBox(width: 4),
                   Switch(
                     value: isProductVisible && isStoreEffectiveActive,
                     onChanged: !canToggleVisibility

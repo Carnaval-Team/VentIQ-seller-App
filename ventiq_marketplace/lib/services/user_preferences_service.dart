@@ -35,6 +35,9 @@ class UserPreferencesService {
       'notification_consent_prompt_last_shown_at_marketplace';
   static const int _notificationRemindLaterIntervalHours = 24;
 
+  // WhatsApp favoritos (destinos rápidos)
+  static const String _waFavoritesKey = 'wa_favorites_marketplace';
+
   Future<void> saveAppVersion(String version) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_appVersionKey, version);
@@ -201,6 +204,59 @@ class UserPreferencesService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_migrationDialogShownKey, true);
+    } catch (_) {}
+  }
+
+  /// Devuelve la lista de favoritos de WhatsApp guardados localmente.
+  /// Cada elemento: {'name': String, 'value': String, 'type': 'phone' | 'link'}
+  Future<List<Map<String, String>>> getWhatsappFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_waFavoritesKey) ?? [];
+      return list
+          .map((e) {
+            try {
+              final decoded = e.split('|');
+              if (decoded.length == 2) {
+                // Compatibilidad con formato antiguo (name|phone)
+                return {
+                  'name': decoded[0],
+                  'value': decoded[1],
+                  'type': 'phone',
+                };
+              }
+              if (decoded.length >= 3) {
+                return {
+                  'name': decoded[0],
+                  'value': decoded[1],
+                  'type': decoded[2].isNotEmpty ? decoded[2] : 'phone',
+                };
+              }
+              return null;
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<Map<String, String>>()
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Guarda la lista completa de favoritos de WhatsApp.
+  Future<void> saveWhatsappFavorites(
+    List<Map<String, String>> favorites,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = favorites
+          .map(
+            (f) =>
+                '${f['name'] ?? ''}|${f['value'] ?? ''}|${f['type'] ?? 'phone'}',
+          )
+          .toList();
+      await prefs.setStringList(_waFavoritesKey, encoded);
     } catch (_) {}
   }
 }

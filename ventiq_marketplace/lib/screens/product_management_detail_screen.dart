@@ -73,7 +73,7 @@ class _ProductManagementDetailScreenState
     });
 
     try {
-      final categories = await _storeService.getCatalogCategories();
+      final categoriesRaw = await _storeService.getCatalogCategories();
       final detail = await _storeService.getProductManagementDetail(
         productId: widget.productId,
       );
@@ -101,11 +101,25 @@ class _ProductManagementDetailScreenState
           ? basePresRaw
           : (basePresRaw is num ? basePresRaw.toInt() : null);
 
+      // Deduplicar categorías por id y validar selección
+      final Map<int, Map<String, dynamic>> uniqueById = {};
+      for (final c in categoriesRaw) {
+        final idRaw = c['id'];
+        final id = idRaw is int ? idRaw : (idRaw is num ? idRaw.toInt() : null);
+        if (id != null && !uniqueById.containsKey(id)) {
+          uniqueById[id] = Map<String, dynamic>.from(c);
+        }
+      }
+      final categories = uniqueById.values.toList();
+      final hasSelected =
+          categoryId != null && uniqueById.containsKey(categoryId);
+      final safeCategoryId = hasSelected ? categoryId : null;
+
       if (!mounted) return;
 
       setState(() {
         _categories = categories;
-        _selectedCategoryId = categoryId;
+        _selectedCategoryId = safeCategoryId;
         _imageUrl = image.isNotEmpty ? image : null;
         _currentQuantity = qty;
         _basePresentationId = basePres;
