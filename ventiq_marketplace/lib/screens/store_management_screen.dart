@@ -1,17 +1,12 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart' hide Path;
-import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -20,6 +15,7 @@ import '../services/catalog_qr_print_service.dart';
 import '../services/store_management_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/user_session_service.dart';
+import '../services/whapi_service.dart';
 import '../widgets/supabase_image.dart';
 import 'create_product_screen.dart';
 import 'product_management_detail_screen.dart';
@@ -36,6 +32,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   final _sessionService = UserSessionService();
   final _storeService = StoreManagementService();
   final _userPrefs = UserPreferencesService();
+  final _whapiService = WhapiService();
   final _picker = ImagePicker();
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -55,9 +52,6 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   // Selección múltiple de productos
   bool _isMultiSelectMode = false;
   final Set<int> _selectedProductIds = {};
-
-  // Favoritos de WhatsApp
-  List<Map<String, String>> _waFavorites = [];
 
   final _createFormKey = GlobalKey<FormState>();
   final _editFormKey = GlobalKey<FormState>();
@@ -79,7 +73,6 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   void initState() {
     super.initState();
     _loadStores();
-    _loadWhatsappFavorites();
   }
 
   String _getCatalogUrlForStore(int storeId) {
@@ -125,80 +118,29 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     return buffer.toString();
   }
 
-  Future<XFile?> _downloadImageToFile(String url) async {
-    const objectPrefix =
-        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/object/public/images_back/';
-    const renderPrefix =
-        'https://vsieeihstajlrdvpuooh.supabase.co/storage/v1/render/image/public/images_back/';
-
-    // Construir URL de render con dimensiones fijas para supabase
-    final renderUrl = url.contains(objectPrefix)
-        ? '${url.replaceFirst(objectPrefix, renderPrefix)}?width=500&height=600'
-        : url;
-    try {
-      final uri = Uri.tryParse(renderUrl);
-      if (uri == null) return null;
-      final resp = await http.get(uri);
-      if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) return null;
-      final tempDir = await getTemporaryDirectory();
-      final file = File(
-        '${tempDir.path}/wa_share_${DateTime.now().millisecondsSinceEpoch}.jpg',
-      );
-      await file.writeAsBytes(resp.bodyBytes);
-      return XFile(file.path);
-    } catch (_) {
-      return null;
-    }
-  }
-
   String? _getFirstImageUrl(Map<String, dynamic> product) {
     final url = (product['imagen'] ?? '').toString().trim();
     if (url.isEmpty) return null;
     return url;
   }
 
-  Future<void> _shareProductOnWhatsapp(
-    Map<String, dynamic> product, {
-    String? targetValue,
-    String targetType = 'phone',
-  }) async {
+  Future<void> _shareProductOnWhatsapp(Map<String, dynamic> product) async {
     try {
-      var message = _buildWhatsappMessage(product);
-      if (targetType == 'link' &&
-          targetValue != null &&
-          targetValue.trim().isNotEmpty) {
-        message = '$message\n🔗 Grupo: $targetValue';
-      }
-      final imageUrl = _getFirstImageUrl(product);
-
-      if (!kIsWeb &&
-          (Platform.isAndroid || Platform.isIOS) &&
-          imageUrl != null) {
-        final xfile = await _downloadImageToFile(imageUrl);
-        if (xfile != null) {
-          await Share.shareXFiles(
-            [xfile],
-            text: message,
-            subject: 'Oferta especial',
-          );
-          return;
-        }
-      }
-
-      // Fallback a wa.me (solo texto)
-      final baseUrl =
-          targetType != 'phone' ||
-              targetValue == null ||
-              targetValue.trim().isEmpty
-          ? 'https://wa.me/?'
-          : 'https://wa.me/${Uri.encodeComponent(targetValue)}?';
-      final uri = Uri.parse('${baseUrl}text=${Uri.encodeComponent(message)}');
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final group = await _resolveWhatsappGroup();
+      if (group == null) return;
+      await _sendProductToWhatsappGroup(product, groupId: group['group_id']!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Enviado a ${group['name'] ?? 'grupo de WhatsApp'}'),
+          backgroundColor: AppTheme.successColor,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No se pudo compartir en WhatsApp: $e'),
+          content: Text('No se pudo enviar el producto: $e'),
           backgroundColor: AppTheme.errorColor,
         ),
       );
@@ -206,203 +148,270 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
   }
 
   Future<void> _shareMultipleOnWhatsapp(
-    List<Map<String, dynamic>> products, {
-    String? targetValue,
-    String targetType = 'phone',
-  }) async {
+    List<Map<String, dynamic>> products,
+  ) async {
+    final group = await _resolveWhatsappGroup();
+    if (group == null) return;
+
+    final failures = <String>[];
     for (final product in products) {
       try {
-        var message = _buildWhatsappMessage(product);
-        if (targetType == 'link' &&
-            targetValue != null &&
-            targetValue.trim().isNotEmpty) {
-          message = '$message\n🔗 Grupo: $targetValue';
-        }
-        final imageUrl = _getFirstImageUrl(product);
-
-        if (!kIsWeb &&
-            (Platform.isAndroid || Platform.isIOS) &&
-            imageUrl != null) {
-          final xfile = await _downloadImageToFile(imageUrl);
-          if (xfile != null) {
-            await Share.shareXFiles(
-              [xfile],
-              text: message,
-              subject: 'Oferta especial',
-            );
-            continue;
-          }
-        }
-
-        // Fallback a wa.me (solo texto)
-        final baseUrl =
-            targetType != 'phone' ||
-                targetValue == null ||
-                targetValue.trim().isEmpty
-            ? 'https://wa.me/?'
-            : 'https://wa.me/${Uri.encodeComponent(targetValue)}?';
-        final uri = Uri.parse('${baseUrl}text=${Uri.encodeComponent(message)}');
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('No se pudo compartir un producto: $e'),
-            backgroundColor: AppTheme.errorColor,
-          ),
-        );
+        await _sendProductToWhatsappGroup(product, groupId: group['group_id']!);
+      } catch (_) {
+        failures.add((product['denominacion'] ?? 'Producto').toString());
       }
+    }
+
+    if (!mounted) return;
+    if (failures.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Productos enviados a ${group['name'] ?? 'WhatsApp'}'),
+          backgroundColor: AppTheme.successColor,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Fallaron ${failures.length} envíos. Revisa la conexión o el grupo.',
+          ),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
     }
   }
 
-  Future<void> _loadWhatsappFavorites() async {
-    final favs = await _userPrefs.getWhatsappFavorites();
-    if (!mounted) return;
-    setState(() {
-      _waFavorites = favs;
-    });
-  }
-
-  Future<void> _addWhatsappFavorite({
-    required String name,
-    required String value,
-    required String type, // 'phone' | 'link'
+  Future<void> _sendProductToWhatsappGroup(
+    Map<String, dynamic> product, {
+    required String groupId,
   }) async {
-    final newList = List<Map<String, String>>.from(_waFavorites)
-      ..add({'name': name, 'value': value, 'type': type});
-    await _userPrefs.saveWhatsappFavorites(newList);
-    if (!mounted) return;
-    setState(() {
-      _waFavorites = newList;
-    });
+    final message = _buildWhatsappMessage(product);
+    final imageUrl = _getFirstImageUrl(product);
+    if (imageUrl != null && imageUrl.trim().isNotEmpty) {
+      await _whapiService.sendImageMessage(
+        to: groupId,
+        caption: message,
+        mediaUrl: imageUrl,
+      );
+    } else {
+      await _whapiService.sendTextMessage(to: groupId, body: message);
+    }
   }
 
-  Future<Map<String, String>?> _pickWhatsappFavorite() async {
-    return showDialog<Map<String, String>?>(
+  Future<Map<String, String>?> _resolveWhatsappGroup() async {
+    final storeId = _getSelectedStoreId();
+    if (storeId == null) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona una tienda para compartir'),
+          backgroundColor: AppTheme.warningColor,
+        ),
+      );
+      return null;
+    }
+
+    final savedGroup = await _userPrefs.getWhatsappGroupForStore(storeId);
+    if (savedGroup != null) {
+      final useSaved = await _showSavedGroupDialog(savedGroup);
+      if (useSaved == true) return savedGroup;
+      if (useSaved == false) {
+        return await _showGroupPicker(storeId: storeId);
+      }
+      return null;
+    }
+
+    return await _showGroupPicker(storeId: storeId);
+  }
+
+  Future<bool?> _showSavedGroupDialog(Map<String, String> group) async {
+    return showDialog<bool>(
       context: context,
       builder: (context) {
+        return AlertDialog(
+          title: const Text('Grupo de WhatsApp guardado'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                group['name'] ?? 'Grupo WhatsApp',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                group['group_id'] ?? '',
+                style: const TextStyle(color: AppTheme.textSecondary),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cambiar grupo'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Usar guardado'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<Map<String, String>?> _showGroupPicker({required int storeId}) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Selecciona el grupo de WhatsApp'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.link_outlined),
+                title: const Text('Registrar con enlace de invitación'),
+                subtitle: const Text('Obligatorio para nuevos grupos'),
+                onTap: () => Navigator.of(context).pop('invite'),
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.groups_2_outlined),
+                title: const Text('Elegir de mis grupos'),
+                subtitle: const Text('Usa un grupo existente del WhatsApp'),
+                onTap: () => Navigator.of(context).pop('list'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (action == 'invite') {
+      return await _showInviteGroupDialog(storeId: storeId);
+    }
+    if (action == 'list') {
+      return await _showGroupListDialog(storeId: storeId);
+    }
+    return null;
+  }
+
+  Future<Map<String, String>?> _showInviteGroupDialog({
+    required int storeId,
+  }) async {
+    return showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) {
+        final inviteController = TextEditingController();
         final nameController = TextEditingController();
-        final valueController = TextEditingController();
-        bool isLink = false;
-        String? selectedValue;
-        String? selectedType;
+        String? errorText;
+        bool isSubmitting = false;
 
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
-              title: const Text('Enviar a grupo/contacto favorito'),
+              title: const Text('Registrar grupo por invitación'),
               content: SizedBox(
                 width: double.maxFinite,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_waFavorites.isEmpty)
-                        const Text(
-                          'No tienes favoritos guardados. Agrega uno abajo.',
-                          style: TextStyle(color: AppTheme.textSecondary),
-                        ),
-                      if (_waFavorites.isNotEmpty)
-                        ..._waFavorites.map(
-                          (f) => RadioListTile<String>(
-                            title: Text(f['name'] ?? ''),
-                            subtitle: Text(
-                              f['type'] == 'link'
-                                  ? '🔗 ${f['value'] ?? ''}'
-                                  : f['value'] ?? '',
-                            ),
-                            value: f['value'] ?? '',
-                            groupValue: selectedValue,
-                            onChanged: (v) {
-                              setStateDialog(() {
-                                selectedValue = v;
-                                selectedType = f['type'] ?? 'phone';
-                              });
-                            },
-                          ),
-                        ),
-                      const Divider(),
-                      const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Añadir favorito',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: inviteController,
+                      decoration: InputDecoration(
+                        labelText: 'Enlace de invitación',
+                        hintText: 'https://chat.whatsapp.com/...',
+                        prefixIcon: const Icon(Icons.link_outlined),
+                        errorText: errorText,
                       ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre',
-                          prefixIcon: Icon(Icons.bookmark_outline),
-                        ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre para guardar (opcional)',
+                        prefixIcon: Icon(Icons.bookmark_outline),
                       ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: valueController,
-                        keyboardType: TextInputType.text,
-                        decoration: InputDecoration(
-                          labelText: isLink
-                              ? 'Enlace del grupo'
-                              : 'Teléfono / Grupo',
-                          prefixIcon: Icon(
-                            isLink ? Icons.link_outlined : Icons.phone_outlined,
-                          ),
-                          hintText: isLink
-                              ? 'https://chat.whatsapp.com/...'
-                              : '',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Es un enlace de grupo'),
-                        value: isLink,
-                        onChanged: (v) {
-                          setStateDialog(() {
-                            isLink = v;
-                          });
-                        },
-                      ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: () async {
-                            final name = nameController.text.trim();
-                            final value = valueController.text.trim();
-                            if (name.isEmpty || value.isEmpty) return;
-                            await _addWhatsappFavorite(
-                              name: name,
-                              value: value,
-                              type: isLink ? 'link' : 'phone',
-                            );
-                            nameController.clear();
-                            valueController.clear();
-                            setStateDialog(() {});
-                          },
-                          icon: const Icon(Icons.add),
-                          label: const Text('Guardar favorito'),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Este enlace es obligatorio para registrar el grupo en el sistema.',
+                      style: TextStyle(color: AppTheme.textSecondary),
+                    ),
+                  ],
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(null),
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.of(context).pop(),
                   child: const Text('Cancelar'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.of(context).pop(
-                    selectedValue == null
-                        ? null
-                        : {
-                            'value': selectedValue!,
-                            'type': selectedType ?? 'phone',
-                          },
-                  ),
-                  child: const Text('Usar seleccionado'),
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final inviteRaw = inviteController.text.trim();
+                          final inviteCode = _extractInviteCode(inviteRaw);
+                          if (inviteCode == null || inviteCode.isEmpty) {
+                            setStateDialog(() {
+                              errorText =
+                                  'Ingresa un enlace válido de invitación';
+                            });
+                            return;
+                          }
+                          setStateDialog(() {
+                            errorText = null;
+                            isSubmitting = true;
+                          });
+                          try {
+                            final groupId = await _whapiService
+                                .acceptGroupInvite(inviteCode);
+                            final groupName = nameController.text.trim().isEmpty
+                                ? 'Grupo WhatsApp'
+                                : nameController.text.trim();
+                            await _userPrefs.saveWhatsappGroupForStore(
+                              storeId: storeId,
+                              groupId: groupId,
+                              name: groupName,
+                              inviteCode: inviteCode,
+                            );
+                            if (!context.mounted) return;
+                            Navigator.of(context).pop({
+                              'group_id': groupId,
+                              'name': groupName,
+                              'invite_code': inviteCode,
+                            });
+                          } catch (e) {
+                            setStateDialog(() {
+                              errorText = e.toString();
+                              isSubmitting = false;
+                            });
+                          }
+                        },
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Registrar'),
                 ),
               ],
             );
@@ -410,6 +419,140 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
         );
       },
     );
+  }
+
+  Future<Map<String, String>?> _showGroupListDialog({
+    required int storeId,
+  }) async {
+    return showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) {
+        Map<String, String>? selectedGroup;
+        Future<List<Map<String, dynamic>>>? groupsFuture;
+
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            groupsFuture ??= _whapiService.getGroups(count: 100);
+            return AlertDialog(
+              title: const Text('Selecciona un grupo'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: groupsFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'No se pudieron cargar los grupos: ${snapshot.error}',
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: () {
+                              setStateDialog(() {
+                                groupsFuture = _whapiService.getGroups(
+                                  count: 100,
+                                );
+                              });
+                            },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Reintentar'),
+                          ),
+                        ],
+                      );
+                    }
+
+                    final groups = snapshot.data ?? [];
+                    if (groups.isEmpty) {
+                      return const Text(
+                        'No se encontraron grupos en tu WhatsApp.',
+                        style: TextStyle(color: AppTheme.textSecondary),
+                      );
+                    }
+
+                    return ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: groups.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final group = groups[index];
+                        final groupId = group['id']?.toString() ?? '';
+                        final groupName =
+                            group['name']?.toString() ?? 'Grupo WhatsApp';
+                        final inviteCode = group['invite_code']?.toString();
+                        return RadioListTile<String>(
+                          title: Text(groupName),
+                          subtitle: Text(groupId),
+                          value: groupId,
+                          groupValue: selectedGroup?['group_id'],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setStateDialog(() {
+                              selectedGroup = {
+                                'group_id': groupId,
+                                'name': groupName,
+                                if (inviteCode != null &&
+                                    inviteCode.trim().isNotEmpty)
+                                  'invite_code': inviteCode,
+                              };
+                            });
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: selectedGroup == null
+                      ? null
+                      : () async {
+                          final group = selectedGroup!;
+                          await _userPrefs.saveWhatsappGroupForStore(
+                            storeId: storeId,
+                            groupId: group['group_id']!,
+                            name: group['name'] ?? 'Grupo WhatsApp',
+                            inviteCode: group['invite_code'],
+                          );
+                          if (!context.mounted) return;
+                          Navigator.of(context).pop(group);
+                        },
+                  child: const Text('Usar grupo'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String? _extractInviteCode(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return null;
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.pathSegments.isNotEmpty) {
+      final last = uri.pathSegments.last.trim();
+      if (last.isNotEmpty) return last;
+    }
+    return trimmed;
   }
 
   void _toggleMultiSelect() {
@@ -437,12 +580,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     }).toList();
     if (products.isEmpty) return;
 
-    final fav = await _pickWhatsappFavorite();
-    await _shareMultipleOnWhatsapp(
-      products,
-      targetValue: fav?['value'],
-      targetType: fav?['type'] ?? 'phone',
-    );
+    await _shareMultipleOnWhatsapp(products);
   }
 
   @override
@@ -454,6 +592,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
     _estadoController.dispose();
     _nombrePaisController.dispose();
     _nombreEstadoController.dispose();
+    _whapiService.dispose();
     super.dispose();
   }
 
@@ -2258,12 +2397,7 @@ class _StoreManagementScreenState extends State<StoreManagementScreen> {
                   IconButton(
                     tooltip: 'Compartir en WhatsApp',
                     onPressed: () async {
-                      final fav = await _pickWhatsappFavorite();
-                      await _shareProductOnWhatsapp(
-                        product,
-                        targetValue: fav?['value'],
-                        targetType: fav?['type'] ?? 'phone',
-                      );
+                      await _shareProductOnWhatsapp(product);
                     },
                     icon: const Icon(Icons.campaign_outlined),
                   ),

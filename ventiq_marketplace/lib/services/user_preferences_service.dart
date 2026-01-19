@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum NotificationConsentStatus {
@@ -37,6 +39,7 @@ class UserPreferencesService {
 
   // WhatsApp favoritos (destinos rápidos)
   static const String _waFavoritesKey = 'wa_favorites_marketplace';
+  static const String _waGroupsByStoreKey = 'wa_groups_by_store_marketplace';
 
   Future<void> saveAppVersion(String version) async {
     final prefs = await SharedPreferences.getInstance();
@@ -257,6 +260,57 @@ class UserPreferencesService {
           )
           .toList();
       await prefs.setStringList(_waFavoritesKey, encoded);
+    } catch (_) {}
+  }
+
+  /// Obtiene el grupo de WhatsApp guardado para una tienda específica.
+  /// Retorna: {'group_id': String, 'name': String, 'invite_code': String?}
+  Future<Map<String, String>?> getWhatsappGroupForStore(int storeId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_waGroupsByStoreKey);
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final entry = decoded[storeId.toString()];
+      if (entry is! Map) return null;
+      final groupId = entry['group_id']?.toString();
+      if (groupId == null || groupId.isEmpty) return null;
+      return {
+        'group_id': groupId,
+        'name': entry['name']?.toString() ?? 'Grupo WhatsApp',
+        if (entry['invite_code'] != null)
+          'invite_code': entry['invite_code'].toString(),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Guarda/actualiza el grupo de WhatsApp para una tienda específica.
+  Future<void> saveWhatsappGroupForStore({
+    required int storeId,
+    required String groupId,
+    required String name,
+    String? inviteCode,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_waGroupsByStoreKey);
+      Map<String, dynamic> decoded = {};
+      if (raw != null && raw.isNotEmpty) {
+        final parsed = jsonDecode(raw);
+        if (parsed is Map) {
+          decoded = Map<String, dynamic>.from(parsed);
+        }
+      }
+      decoded[storeId.toString()] = {
+        'group_id': groupId,
+        'name': name,
+        if (inviteCode != null && inviteCode.trim().isNotEmpty)
+          'invite_code': inviteCode.trim(),
+      };
+      await prefs.setString(_waGroupsByStoreKey, jsonEncode(decoded));
     } catch (_) {}
   }
 }
