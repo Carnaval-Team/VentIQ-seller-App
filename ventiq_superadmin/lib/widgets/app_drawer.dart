@@ -65,6 +65,11 @@ class AppDrawer extends StatelessWidget {
                       title: 'Pago a Proveedores',
                       route: '/pago-proveedores',
                     ),
+                    _DrawerItem(
+                      icon: Icons.delete,
+                      title: 'Eliminacion de tiendas',
+                      route: '/eliminacion-tiendas',
+                    ),
                   ],
                 ),
                 _buildMenuSection(
