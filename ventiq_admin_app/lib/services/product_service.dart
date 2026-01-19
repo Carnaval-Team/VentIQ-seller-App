@@ -439,6 +439,8 @@ class ProductService {
             (json['variantes_disponibles'] as List<dynamic>? ?? [])
                 .cast<Map<String, dynamic>>(),
         esElaborado: json['es_elaborado'] ?? false,
+        idProveedor: json['id_proveedor'],
+        nombreProveedor: json['nombre_proveedor'] ?? (json['app_dat_proveedor'] as Map<String, dynamic>?)?['denominacion'],
       );
 
       // Log para verificar que el campo es_elaborado se lee correctamente del RPC
@@ -947,12 +949,37 @@ class ProductService {
           'p_imagen': productData['imagen'],
           'p_es_vendible': productData['es_vendible'],
           'p_id_categoria': productData['id_categoria'],
+          'p_id_proveedor': productData['id_proveedor'],
         },
       );
 
       return response == true;
     } catch (e, stackTrace) {
       print('❌ Error al actualizar producto: $e');
+      print('📍 StackTrace: $stackTrace');
+      return false;
+    }
+  }
+
+  /// Actualiza solo el proveedor de un producto
+  static Future<bool> updateProductSupplier(
+    int productId,
+    int? supplierId,
+  ) async {
+    try {
+      print('🔍 Actualizando proveedor del producto: $productId a $supplierId');
+
+      final response = await _supabase.rpc(
+        'fn_actualizar_proveedor_producto',
+        params: {
+          'p_id_producto': productId,
+          'p_id_proveedor': supplierId,
+        },
+      );
+
+      return response == true;
+    } catch (e, stackTrace) {
+      print('❌ Error al actualizar proveedor del producto: $e');
       print('📍 StackTrace: $stackTrace');
       return false;
     }
@@ -1319,7 +1346,9 @@ class ProductService {
             um,
             created_at,
             id_categoria,
-            dias_alert_caducidad
+            dias_alert_caducidad,
+            id_proveedor,
+            app_dat_proveedor ( denominacion )
           ''')
           .eq('id', productId)
           .limit(1);
@@ -1481,6 +1510,8 @@ class ProductService {
         diasAlertCaducidad: (productData['dias_alert_caducidad'] as num?)?.toInt() ?? 0,
         unidadMedida: productData['um'],
         esElaborado: productData['es_elaborado'] ?? false,
+        idProveedor: productData['id_proveedor'],
+        nombreProveedor: (productData['app_dat_proveedor'] as Map<String, dynamic>?)?['denominacion'],
       );
     } catch (e, stackTrace) {
       print('❌ Error obteniendo producto completo: $e');
